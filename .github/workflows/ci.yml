@@ -95,6 +95,7 @@ jobs:
       - name: Generated code is up to date
         run: |
           sqlc generate -f packages/database/sqlc.yaml
+          go generate ./...
           if [ -d apps/web/ui ]; then go tool templ generate -path apps/web/ui; fi
           git diff --exit-code
           test -z "$(git status --porcelain)" || { git status --short; echo 'untracked generated files: run make generate and commit'; exit 1; }
@@ -106,13 +107,22 @@ jobs:
         with:
           version: v2.15.0
 
+      - name: Test boundaries
+        run: ./scripts/check-test-boundaries.sh
+
       - name: Layering rules
         run: ./scripts/check-layering.sh
         env:
           GOLANGCI_LINT: golangci-lint
 
+      - name: Test boundary probes
+        run: ./scripts/check-test-probes.sh
+
       - name: Test
-        run: go test -race ./...
+        run: |
+          mkdir -p .cache
+          go test -race -coverprofile=.cache/coverage.out ./...
+          ./scripts/check-coverage.sh .cache/coverage.out
         env:
           TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable
 

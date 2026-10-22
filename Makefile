@@ -39,8 +39,9 @@ build: ## Build a static binary into bin/server
 	CGO_ENABLED=0 $(GO) build -trimpath -ldflags='-s -w' -o $(BIN) ./apps/web/cmd/server
 
 .PHONY: generate
-generate: ## Regenerate sqlc (and templ, once apps/web/ui exists)
+generate: ## Regenerate sqlc, go:generate (mocks) and templ (once apps/web/ui exists)
 	$(TOOL) sqlc generate -f packages/database/sqlc.yaml
+	$(GO) generate ./...
 	@if [ -d apps/web/ui ] && $(GO) tool -n templ >/dev/null 2>&1; then $(GO) tool templ generate -path apps/web/ui; fi
 
 .PHONY: css
@@ -53,32 +54,40 @@ check-generated: generate ## Fail if generated code is out of date
 	@test -z "$$(git status --porcelain --untracked-files=all -- '*.go')" || (git status --short -- '*.go'; echo 'untracked generated files: run make generate and commit'; exit 1)
 
 .PHONY: lint
-lint: ## gofmt + golangci-lint (incl. layering rules)
+lint: ## gofmt + golangci-lint (incl. layering rules) + test file locations
 	@test -z "$$(gofmt -l .)" || (gofmt -l . && echo 'gofmt: run gofmt -w .' && exit 1)
 	$(TOOL) golangci-lint run
+	./scripts/check-test-boundaries.sh
 
 .PHONY: lint-layering
-lint-layering: ## Prove forbidden imports fail lint
+lint-layering: ## Prove forbidden imports (code and tests) fail lint
 	./scripts/check-layering.sh
 
+.PHONY: lint-tests
+lint-tests: ## Prove misplaced test files and coverage drops fail
+	./scripts/check-test-probes.sh
+
 .PHONY: test
-test: ## go test -race against this checkout's throwaway Postgres (or TEST_DATABASE_URL)
+test: ## go test -race against this checkout's throwaway Postgres (or TEST_DATABASE_URL), then coverage floors
+	@mkdir -p .cache
 ifdef TEST_DATABASE_URL
-	$(GO) test -race ./...
+	$(GO) test -race -coverprofile=.cache/coverage.out ./...
 else
 	@$(MAKE) --no-print-directory test-db-up
 	@port=$$($(COMPOSE) port postgres-test 5432 | sed 's/.*://'); \
 	  echo "test db: 127.0.0.1:$$port (project $(COMPOSE_PROJECT_NAME))"; \
-	  TEST_DATABASE_URL="postgres://postgres:postgres@127.0.0.1:$$port/postgres?sslmode=disable" $(GO) test -race ./...
+	  TEST_DATABASE_URL="postgres://postgres:postgres@127.0.0.1:$$port/postgres?sslmode=disable" $(GO) test -race -coverprofile=.cache/coverage.out ./...
 endif
+	./scripts/check-coverage.sh .cache/coverage.out
 
 .PHONY: ci
 ci: ## Run the same checks as CI
 	$(GO) build ./...
 	$(MAKE) check-generated
 	$(MAKE) lint test
-	@# Alone: its temporary probe packages would leak into the other checks under make -j.
+	@# Alone: their temporary probe files would leak into the other checks under make -j.
 	$(MAKE) lint-layering
+	$(MAKE) lint-tests
 
 .PHONY: migrate
 migrate: ## Run auth then app migrations against DATABASE_URL
