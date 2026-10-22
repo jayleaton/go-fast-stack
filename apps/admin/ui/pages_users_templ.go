@@ -2388,7 +2388,7 @@ func UserSessions(usr services.User, sessions []services.Session) templ.Componen
 				}
 				return nil
 			})
-			templ_7745c5c3_Err = uikit.TableWrap(i18n.T(ctx, "pages.user.sessions.title")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var115), templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = uikit.TableWrap(i18n.T(ctx, "pages.user.sessions.table")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var115), templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

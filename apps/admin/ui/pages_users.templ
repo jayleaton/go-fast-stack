@@ -296,7 +296,7 @@ templ UserSessions(usr services.User, sessions []services.Session) {
 		if len(sessions) == 0 {
 			@uikit.EmptyState(i18n.T(ctx, "pages.user.sessions.empty"), "")
 		} else {
-			@uikit.TableWrap(i18n.T(ctx, "pages.user.sessions.title")) {
+			@uikit.TableWrap(i18n.T(ctx, "pages.user.sessions.table")) {
 				<table class={ uikit.TableClass }>
 					<thead class="bg-muted/50">
 						<tr>

@@ -165,7 +165,8 @@
         "revoke": "Revoke",
         "revokeAll": "Revoke all sessions",
         "confirmRevokeAllTitle": "Revoke all sessions?",
-        "confirmRevokeAll": "{0} is signed out on every device and has to sign in again."
+        "confirmRevokeAll": "{0} is signed out on every device and has to sign in again.",
+        "table": "Session list"
       }
     },
     "admins": {

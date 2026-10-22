@@ -165,7 +165,8 @@
         "revoke": "無効にする",
         "revokeAll": "すべてのセッションを無効にする",
         "confirmRevokeAllTitle": "すべてのセッションを無効にしますか？",
-        "confirmRevokeAll": "{0} はすべての端末でサインアウトされ、もう一度サインインする必要があります。"
+        "confirmRevokeAll": "{0} はすべての端末でサインアウトされ、もう一度サインインする必要があります。",
+        "table": "セッション一覧"
       }
     },
     "admins": {
