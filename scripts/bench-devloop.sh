@@ -217,11 +217,14 @@ gotest() {
 }
 say "| run | cold (compile + run) | warm (run only) |"
 say "|---|--:|--:|"
+# Warm = run only: an untimed run first compiles everything into the cache.
 c=-
 if [ -n "$cold" ]; then c=$(cold gotest cold-race -race -coverprofile="$tmp/cover.out"); fi
+gotest race -race -coverprofile="$tmp/cover.out" >/dev/null
 say "| -race -coverprofile (CI) | $c | $(gotest race -race -coverprofile="$tmp/cover.out") |"
 c=-
 if [ -n "$cold" ]; then c=$(cold gotest cold-plain); fi
+gotest plain >/dev/null
 say "| plain | $c | $(gotest plain) |"
 say ""
 say "Per package (test binary wall time, warm):"
