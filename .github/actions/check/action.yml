@@ -48,8 +48,8 @@ runs:
         path: |
           ~/.cache/go-build
           ~/.cache/golangci-lint
-        key: v7-go-${{ runner.os }}-${{ github.sha }}
-        restore-keys: v7-go-${{ runner.os }}-
+        key: v9cold-go-${{ runner.os }}-${{ github.sha }}
+        restore-keys: v9cold-go-${{ runner.os }}-
 
     - uses: sqlc-dev/setup-sqlc@v5
       if: inputs.mode != 'other' && inputs.sqlc == 'true'
@@ -106,7 +106,7 @@ runs:
         path: |
           ~/.cache/go-build
           ~/.cache/golangci-lint
-        key: v7-go-${{ runner.os }}-${{ github.sha }}
+        key: v9cold-go-${{ runner.os }}-${{ github.sha }}
     # Any branch saves a missing node_modules: there is one per lockfile.
     - uses: actions/cache/save@v6
       if: inputs.mobile == 'true' && steps.node-modules.outputs.cache-hit != 'true'
