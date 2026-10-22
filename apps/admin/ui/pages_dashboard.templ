@@ -202,6 +202,7 @@ templ AuditPage(d AuditData) {
 									<th class={ view.ThClass }>{ i18n.T(ctx, "pages.audit.time") }</th>
 									<th class={ view.ThClass }>{ i18n.T(ctx, "pages.audit.actor") }</th>
 									<th class={ view.ThClass }>{ i18n.T(ctx, "pages.audit.action") }</th>
+									<th class={ view.ThClass }>{ i18n.T(ctx, "pages.audit.status") }</th>
 									<th class={ view.ThClass }>{ i18n.T(ctx, "pages.audit.target") }</th>
 									<th class={ view.ThClass }>{ i18n.T(ctx, "pages.audit.details") }</th>
 								</tr>
@@ -212,6 +213,9 @@ templ AuditPage(d AuditData) {
 										<td class={ view.TdClass }>{ dateTime(ctx, e.CreatedAt) }</td>
 										<td class={ view.TdClass }>{ orDash(e.ActorEmail) }</td>
 										<td class={ view.TdClass }><span title={ e.Action }>{ actionLabel(ctx, e.Action) }</span></td>
+										<td class={ view.TdClass }>
+											@auditStatusCell(auditStatus(ctx, e))
+										</td>
 										<td class={ view.TdClass }>
 											if href, label := auditTarget(e); href != "" {
 												<a href={ templ.SafeURL(href) } class={ view.TextLinkClass }>{ label }</a>
@@ -227,7 +231,7 @@ templ AuditPage(d AuditData) {
 									</tr>
 								}
 								if len(d.Entries) == 0 {
-									<tr><td colspan="5" class="px-3 py-6 text-center text-sm text-neutral-500">{ i18n.T(ctx, "pages.audit.empty") }</td></tr>
+									<tr><td colspan="6" class="px-3 py-6 text-center text-sm text-neutral-500">{ i18n.T(ctx, "pages.audit.empty") }</td></tr>
 								}
 							</tbody>
 						</table>
@@ -237,6 +241,25 @@ templ AuditPage(d AuditData) {
 			</div>
 		</div>
 	}
+}
+
+// auditStatusCell is an entry's outcome: the badge, then what a pending
+// entry means, the reconciled marker and the reason.
+templ auditStatusCell(s AuditStatus) {
+	<div class="flex max-w-xs flex-col items-start gap-1">
+		<div class="flex flex-wrap items-center gap-1">
+			@view.Badge(s.Tone, s.Label)
+			if s.Reconciled {
+				<span class="text-xs text-neutral-500 italic dark:text-neutral-400" title={ i18n.T(ctx, "pages.audit.statuses.reconciledHint") }>{ i18n.T(ctx, "pages.audit.statuses.reconciled") }</span>
+			}
+		</div>
+		if s.Hint != "" {
+			<p class="text-xs text-amber-700 dark:text-amber-400">{ s.Hint }</p>
+		}
+		if s.Reason != "" {
+			<p class="text-xs text-neutral-600 dark:text-neutral-400">{ s.Reason }</p>
+		}
+	</div>
 }
 
 templ statCard(label string, value int64) {

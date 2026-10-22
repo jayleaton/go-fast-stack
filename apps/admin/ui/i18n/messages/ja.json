@@ -188,6 +188,7 @@
       "actor": "管理者",
       "target": "対象",
       "details": "詳細",
+      "status": "結果",
       "empty": "まだ記録はありません。",
       "actions": {
         "userBan": "ユーザーを利用停止",
@@ -216,6 +217,21 @@
         "password": "パスワード",
         "twoFactor": "パスワード + 二要素認証",
         "setPassword": "パスワード設定リンク"
+      },
+      "statuses": {
+        "succeeded": "完了",
+        "failed": "失敗",
+        "pending": "結果不明",
+        "pendingHint": "変更が適用されたかどうかは不明です。現在の状態と照合して確定されます。",
+        "unknown": "判定不能",
+        "reconciled": "照合済み",
+        "reconciledHint": "操作時に記録された結果ではなく、後から現在の状態をもとに確定したものです。その後の操作で状態が変わっている可能性があります。"
+      },
+      "internalReason": "内部エラー（詳細はサーバーログを参照）",
+      "reconciledReasons": {
+        "stateMatches": "現在の状態に変更が反映されています。",
+        "stateDiffers": "現在の状態に変更は反映されていません。",
+        "undecidable": "現在の状態からは結果を判断できません。"
       }
     },
     "analytics": {
@@ -252,6 +268,7 @@
     "adminSelf": "自分自身を無効化または削除することはできません。",
     "lastAdmin": "最後の有効な管理者は無効化または削除できません。",
     "adminDisabled": "この管理者はすでに無効化されています。",
-    "adminNotDisabled": "この管理者は無効化されていません。"
+    "adminNotDisabled": "この管理者は無効化されていません。",
+    "auditUnavailable": "監査ログを利用できないため、変更は行われませんでした。しばらくしてからもう一度お試しください。"
   }
 }

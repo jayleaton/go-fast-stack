@@ -3,6 +3,7 @@ package ui_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -28,6 +29,18 @@ var (
 	actor   = services.Actor{AdminID: "a1", Email: "root@example.com", SessionID: "s1", TwoFactorEnabled: true}
 	newSes  = ui.Session{ID: "s2", Token: "tok-2"}
 	errBoom = errors.New("boom")
+	// errAudit is a mutation refused because its audit intent could not be
+	// written, wrapped with the cause as services.mutate returns it.
+	errAudit = fmt.Errorf("%w: audit intent: %w", services.ErrAuditUnavailable, errBoom)
+	// errApplied: the change was applied but its outcome was not recorded
+	// (an internal error the admin sees as "something went wrong").
+	errApplied = fmt.Errorf("audit outcome of entry 7 NOT recorded; the change WAS applied: %w", errBoom)
+)
+
+// Translated alerts for errAudit.
+const (
+	auditDownEN = "The audit log is unavailable, so nothing was changed."
+	auditDownJA = "監査ログを利用できないため、変更は行われませんでした。"
 )
 
 func ptr[T any](v T) *T { return &v }
@@ -558,6 +571,21 @@ func TestUserActions(t *testing.T) {
 			e.users.EXPECT().GetUser(gomock.Any(), actor, "u1").Return(bannedDetail(), nil)
 			assertPage(t, e.do("POST", a.path, a.form, signedIn), http.StatusUnprocessableEntity, "Something went wrong", `id="user-profile"`)
 
+			// applied, outcome not recorded: the generic message, no internals
+			a.expect(e).Return(errApplied)
+			rec := e.do("POST", a.path, a.form, datastar, signedIn)
+			assertSSE(t, rec, `id="user-status"`, "Something went wrong")
+			if strings.Contains(rec.Body.String(), "WAS applied") {
+				t.Error("internal error text reached the page")
+			}
+
+			// audit log down: refused, nothing changed (Datastar and plain)
+			a.expect(e).Return(errAudit).Times(3)
+			assertSSE(t, e.do("POST", a.path, a.form, datastar, signedIn), `id="user-status"`, `role="alert"`, auditDownEN)
+			assertSSE(t, e.do("POST", a.path, a.form, datastar, signedIn, lang("ja")), `id="user-status"`, auditDownJA)
+			e.users.EXPECT().GetUser(gomock.Any(), actor, "u1").Return(bannedDetail(), nil)
+			assertPage(t, e.do("POST", a.path, a.form, signedIn), http.StatusUnprocessableEntity, auditDownEN, `id="user-profile"`)
+
 			// 2FA required: off to enrolment
 			a.expect(e).Return(services.ErrTwoFactorRequired)
 			assertRedirectScript(t, e.do("POST", a.path, a.form, datastar, signedIn), config.AppRoutes.TwoFactorSetup)
@@ -565,7 +593,7 @@ func TestUserActions(t *testing.T) {
 			// reload after success failed: the status still shows
 			a.expect(e).Return(nil)
 			e.users.EXPECT().GetUser(gomock.Any(), actor, "u1").Return(services.UserDetail{}, errBoom)
-			rec := e.do("POST", a.path, a.form, datastar, signedIn)
+			rec = e.do("POST", a.path, a.form, datastar, signedIn)
 			assertSSE(t, rec, `id="user-status"`, a.done)
 			if strings.Contains(rec.Body.String(), `id="user-profile"`) {
 				t.Error("patched a profile it could not load")
@@ -624,6 +652,12 @@ func TestInviteAdmin(t *testing.T) {
 	e.admins.EXPECT().InviteAdmin(gomock.Any(), actor, in).Return(services.Admin{}, errBoom)
 	e.admins.EXPECT().ListAdmins(gomock.Any(), actor).Return(nil, errBoom)
 	assertPage(t, e.do("POST", routes.AdminInvite, form, signedIn), http.StatusUnprocessableEntity, "Something went wrong", `id="admins-table"`)
+	// audit log down: refused with the form kept (Datastar and plain)
+	e.admins.EXPECT().InviteAdmin(gomock.Any(), actor, in).Return(services.Admin{}, errAudit).Times(3)
+	assertSSE(t, e.do("POST", routes.AdminInvite, form, datastar, signedIn), `id="invite-error"`, auditDownEN, `value="Nia"`)
+	assertSSE(t, e.do("POST", routes.AdminInvite, form, datastar, signedIn, lang("ja")), `id="invite-error"`, auditDownJA)
+	e.admins.EXPECT().ListAdmins(gomock.Any(), actor).Return([]services.Admin{{ID: "a1", Email: "root@example.com", HasPassword: true}}, nil)
+	assertPage(t, e.do("POST", routes.AdminInvite, form, signedIn, lang("ja")), http.StatusUnprocessableEntity, auditDownJA, `id="admins-table"`)
 	e.admins.EXPECT().InviteAdmin(gomock.Any(), actor, in).Return(services.Admin{}, services.ErrTwoFactorRequired)
 	assertSeeOther(t, e.do("POST", routes.AdminInvite, form, signedIn), config.AppRoutes.TwoFactorSetup)
 
@@ -718,6 +752,7 @@ func TestAdminActions(t *testing.T) {
 				{services.ErrAdminDisabled, "This admin is already disabled.", "この管理者はすでに無効化されています。"},
 				{services.ErrAdminNotDisabled, "This admin is not disabled.", "この管理者は無効化されていません。"},
 				{services.ErrForbidden, "You are not allowed to do that.", "この操作は許可されていません。"},
+				{errAudit, auditDownEN, auditDownJA},
 			} {
 				a.expect(e, "a2").Return(c.err).Times(2)
 				assertSSE(t, e.do("POST", path, url.Values{}, datastar, signedIn), `id="admins-status"`, `role="alert"`, c.en)
@@ -735,6 +770,9 @@ func TestAdminActions(t *testing.T) {
 			a.expect(e, "a2").Return(services.ErrLastAdmin)
 			e.admins.EXPECT().ListAdmins(gomock.Any(), actor).Return(nil, errBoom)
 			assertPage(t, e.do("POST", path, url.Values{}, signedIn, lang("ja")), http.StatusUnprocessableEntity, "最後の有効な管理者")
+			a.expect(e, "a2").Return(errAudit)
+			e.admins.EXPECT().ListAdmins(gomock.Any(), actor).Return(refreshed, nil)
+			assertPage(t, e.do("POST", path, url.Values{}, signedIn), http.StatusUnprocessableEntity, auditDownEN, `id="admins-table"`)
 
 			// 2FA required: off to enrolment
 			a.expect(e, "a2").Return(services.ErrTwoFactorRequired).Times(2)
@@ -796,6 +834,56 @@ func TestAuditAdminActions(t *testing.T) {
 	// The filter passes the new actions through.
 	e.audit.EXPECT().List(gomock.Any(), actor, validate.ListAuditLog{Action: services.ActionAdminSignIn, Limit: 25}).Return(services.AuditPage{Limit: 25}, nil)
 	assertPage(t, e.do("GET", config.AppRoutes.Audit+"?action=admin.sign_in", nil, signedIn), http.StatusOK, `<option value="admin.sign_in" selected>`)
+}
+
+// TestAuditStatuses: every entry shows its outcome. Pending is "outcome
+// unknown" with what that means; known failure reasons and the reconciler's
+// reasons are translated, anything else shows as recorded.
+func TestAuditStatuses(t *testing.T) {
+	e := newEnv(t)
+	entry := func(status, reason string, reconciled bool) services.AuditEntry {
+		return services.AuditEntry{Action: services.ActionUserBan, ActorEmail: "root@example.com", TargetType: services.TargetUser, TargetID: "u1", TargetLabel: "ada@example.com", CreatedAt: created, Status: status, Reason: reason, Reconciled: reconciled}
+	}
+	page := services.AuditPage{Entries: []services.AuditEntry{
+		entry(services.StatusSucceeded, "", false),
+		entry(services.StatusFailed, services.ErrUserNotBanned.Message, false),
+		entry(services.StatusFailed, "Internal error", false),
+		entry(services.StatusPending, "", false),
+		entry(services.StatusUnknown, "", false),
+		entry(services.StatusSucceeded, "Reconciled: the current state shows the change", true),
+		entry(services.StatusFailed, "Reconciled: the current state does not show the change", true),
+		entry(services.StatusUnknown, "Reconciled: the outcome cannot be told from the current state", true),
+		entry("archived", "", false),
+	}, Total: 9, Limit: 25}
+	e.audit.EXPECT().List(gomock.Any(), actor, gomock.Any()).Return(page, nil).Times(2)
+
+	rec := e.do("GET", config.AppRoutes.Audit, nil, signedIn)
+	assertPage(t, rec, http.StatusOK, ">Status<",
+		">Done<", ">Failed<", ">Outcome unknown<", ">Unknown<", ">archived<",
+		">The user is not banned.<", ">Internal error (details are in the server log)<",
+		"The change may or may not have been applied.",
+		">reconciled<", `title="Resolved later from the current state`,
+		">The current state shows the change.<", ">The current state does not show the change.<",
+		">The outcome cannot be told from the current state.<")
+	if strings.Contains(rec.Body.String(), "Reconciled:") {
+		t.Error("a reconciler reason showed untranslated")
+	}
+	if n := strings.Count(rec.Body.String(), ">reconciled<"); n != 3 {
+		t.Errorf("%d reconciled markers, want 3", n)
+	}
+
+	rec = e.do("GET", config.AppRoutes.Audit, nil, signedIn, lang("ja"))
+	assertPage(t, rec, http.StatusOK, ">結果<",
+		">完了<", ">失敗<", ">結果不明<", ">判定不能<",
+		">このユーザーは利用停止されていません。<",
+		"変更が適用されたかどうかは不明です。", ">照合済み<",
+		">現在の状態に変更が反映されています。<", ">現在の状態に変更は反映されていません。<",
+		">現在の状態からは結果を判断できません。<")
+	for _, en := range []string{"Reconciled:", ">Done<", "Outcome unknown", "The user is not banned"} {
+		if strings.Contains(rec.Body.String(), en) {
+			t.Errorf("ja page shows %q", en)
+		}
+	}
 }
 
 // --- shell ---

@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"slices"
@@ -305,6 +306,62 @@ var twoFactorReasonKeys = map[string]string{
 	"INVALID_BACKUP_CODE":        "pages.audit.reasons.invalidBackupCode",
 	"ACCOUNT_TEMPORARILY_LOCKED": "pages.audit.reasons.locked",
 	"TOO_MANY_REQUESTS":          "pages.audit.reasons.tooManyRequests",
+}
+
+// AuditStatus is an entry's outcome as the audit log shows it (translated).
+type AuditStatus struct {
+	Tone, Label string
+	Hint        string // what the status means, where it needs saying
+	Reason      string // why it failed, or how it was reconciled
+	Reconciled  bool
+}
+
+// auditStatusKeys label the audit statuses with a badge tone; unknown
+// statuses show raw.
+var auditStatusKeys = map[string]struct{ tone, key string }{
+	services.StatusSucceeded: {"green", "pages.audit.statuses.succeeded"},
+	services.StatusFailed:    {"red", "pages.audit.statuses.failed"},
+	services.StatusPending:   {"amber", "pages.audit.statuses.pending"},
+	services.StatusUnknown:   {"neutral", "pages.audit.statuses.unknown"},
+}
+
+// reconciledReasonKeys translate the reconciler's reasons, which follow from
+// the status it resolved an entry to.
+var reconciledReasonKeys = map[string]string{
+	services.StatusSucceeded: "pages.audit.reconciledReasons.stateMatches",
+	services.StatusFailed:    "pages.audit.reconciledReasons.stateDiffers",
+	services.StatusUnknown:   "pages.audit.reconciledReasons.undecidable",
+}
+
+// auditStatus is the badge, hint and reason of an entry. A pending entry's
+// outcome was never recorded: the change may or may not have been applied.
+func auditStatus(ctx context.Context, e services.AuditEntry) AuditStatus {
+	s := AuditStatus{Tone: "neutral", Label: orDash(e.Status), Reason: auditReason(ctx, e.Reason), Reconciled: e.Reconciled}
+	if k, ok := auditStatusKeys[e.Status]; ok {
+		s.Tone, s.Label = k.tone, i18n.T(ctx, k.key)
+	}
+	if e.Status == services.StatusPending {
+		s.Hint = i18n.T(ctx, "pages.audit.statuses.pendingHint")
+	}
+	if key, ok := reconciledReasonKeys[e.Status]; ok && e.Reconciled {
+		s.Reason = i18n.T(ctx, key)
+	}
+	return s
+}
+
+// auditReason translates a recorded failure reason that is the message of a
+// service error the UI knows; anything else shows as recorded.
+func auditReason(ctx context.Context, reason string) string {
+	if reason == services.ReasonInternal {
+		return i18n.T(ctx, "pages.audit.internalReason")
+	}
+	for _, k := range errorKeys {
+		var se *services.Error
+		if errors.As(k.err, &se) && se.Message == reason {
+			return i18n.T(ctx, k.key)
+		}
+	}
+	return reason
 }
 
 // details renders an entry's details as "key: value" pairs, sorted by key.
