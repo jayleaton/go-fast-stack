@@ -48,12 +48,14 @@ func TestMain(m *testing.M) {
 
 func runWithDatabase(m *testing.M, dsn string) (int, error) {
 	ctx := context.Background()
-	admin, err := pgx.Connect(ctx, dsn)
+	admin, err := connectWhenReady(ctx, dsn)
 	if err != nil {
 		return 0, err
 	}
 	defer func() { _ = admin.Close(ctx) }()
-	name := fmt.Sprintf("auth_test_%d_%d", os.Getpid(), time.Now().UnixNano()%1e6)
+	// Random, not pid+time: concurrent or repeated test binaries must never pick
+	// the same name (a collision fails TestMain before any test runs).
+	name := "auth_test_" + strings.ToLower(generateID(16))
 	if _, err := admin.Exec(ctx, "CREATE DATABASE "+name); err != nil {
 		return 0, err
 	}
@@ -108,6 +110,28 @@ func newDatabase(t *testing.T) *pgxpool.Pool {
 		_ = admin.Close(context.Background())
 	})
 	return pool
+}
+
+// connectWhenReady connects to dsn, retrying for up to 30s while the server
+// is not accepting connections yet. A freshly started Postgres container runs
+// initdb with a socket-only server and then restarts, so a readiness check
+// over the socket can pass while TCP connections are still refused or reset;
+// the first test binary to connect would then fail before any test runs.
+func connectWhenReady(ctx context.Context, dsn string) (*pgx.Conn, error) {
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		conn, err := pgx.Connect(ctx, dsn)
+		if err == nil {
+			if err = conn.Ping(ctx); err == nil {
+				return conn, nil
+			}
+			_ = conn.Close(ctx)
+		}
+		if time.Now().After(deadline) || ctx.Err() != nil {
+			return nil, fmt.Errorf("postgres not ready after 30s: %w", err)
+		}
+		time.Sleep(200 * time.Millisecond) // readiness poll for the server, not test timing
+	}
 }
 
 func needDB(t *testing.T) {
@@ -214,6 +238,11 @@ func newHarness(t *testing.T, mutate func(*Config)) *harness {
 	}
 	clock := &testClock{t: time.Now()}
 	a.now = clock.Now
+	// Limiters run on the same clock as everything else, so a slow machine
+	// cannot let a rate-limit window lapse mid-test.
+	if m, ok := a.limiter.(*MemoryRateLimiter); ok {
+		m.now = clock.Now
+	}
 	return &harness{t: t, a: a, h: a.Handler(), mail: mail, clock: clock, logBuf: logBuf}
 }
 

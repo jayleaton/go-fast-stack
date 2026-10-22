@@ -15,6 +15,7 @@ import (
 	"os"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -85,7 +86,7 @@ func prepare(ctx context.Context, base, name string, setup Setup) error {
 }
 
 func createTemplate(ctx context.Context, base, name string, setup Setup) error {
-	admin, err := pgx.Connect(ctx, base)
+	admin, err := connectWhenReady(ctx, base)
 	if err != nil {
 		return err
 	}
@@ -123,6 +124,28 @@ func createTemplate(ctx context.Context, base, name string, setup Setup) error {
 	}
 	_, err = admin.Exec(ctx, fmt.Sprintf(`ALTER DATABASE %s WITH IS_TEMPLATE true ALLOW_CONNECTIONS false`, name))
 	return err
+}
+
+// connectWhenReady connects to dsn, retrying for up to 30s while the server
+// is not accepting connections yet. A freshly started Postgres container runs
+// initdb with a socket-only server and then restarts, so a readiness check
+// over the socket can pass while TCP connections are still refused or reset;
+// the first test binary to connect would then fail before any test runs.
+func connectWhenReady(ctx context.Context, dsn string) (*pgx.Conn, error) {
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		conn, err := pgx.Connect(ctx, dsn)
+		if err == nil {
+			if err = conn.Ping(ctx); err == nil {
+				return conn, nil
+			}
+			_ = conn.Close(ctx)
+		}
+		if time.Now().After(deadline) || ctx.Err() != nil {
+			return nil, fmt.Errorf("postgres not ready after 30s: %w", err)
+		}
+		time.Sleep(200 * time.Millisecond) // readiness poll for the server, not test timing
+	}
 }
 
 func connect(t testing.TB, url string) *pgx.Conn {
