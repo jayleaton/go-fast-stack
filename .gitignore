@@ -4,3 +4,4 @@
 .env.local
 *.test
 coverage.out
+.t3/
