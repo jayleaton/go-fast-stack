@@ -25,6 +25,11 @@ func (a *Auth) Handler() http.Handler {
 	mux.HandleFunc("POST "+BasePath+"/request-password-reset", a.handleRequestPasswordReset)
 	mux.HandleFunc("GET "+BasePath+"/reset-password/{token}", a.handleResetPasswordCallback)
 	mux.HandleFunc("POST "+BasePath+"/reset-password", a.handleResetPassword)
+	mux.HandleFunc("POST "+BasePath+"/change-password", a.handleChangePassword)
+	mux.HandleFunc("POST "+BasePath+"/change-email", a.handleChangeEmail)
+	mux.HandleFunc("GET "+BasePath+"/list-sessions", a.handleListSessions)
+	mux.HandleFunc("POST "+BasePath+"/revoke-session", a.handleRevokeSession)
+	mux.HandleFunc("POST "+BasePath+"/revoke-other-sessions", a.handleRevokeOtherSessions)
 	mux.HandleFunc("GET "+BasePath+"/ok", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	})

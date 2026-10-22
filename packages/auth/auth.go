@@ -74,6 +74,9 @@ func MobileTrustedOrigins(production bool) []string {
 type Mailer interface {
 	SendVerificationEmail(ctx context.Context, to, url string) error
 	SendPasswordResetEmail(ctx context.Context, to, url string) error
+	// SendEmailChangeNotice tells the current address that a change to
+	// newEmail was requested (the confirmation link goes to newEmail).
+	SendEmailChangeNotice(ctx context.Context, to, newEmail string) error
 }
 
 // User is a row of the "user" table, serialised like Better Auth's user object.
@@ -91,7 +94,7 @@ type User struct {
 type Session struct {
 	ID        string    `json:"id"`
 	ExpiresAt time.Time `json:"expiresAt"`
-	Token     string    `json:"token"`
+	Token     string    `json:"token,omitempty"` // empty in ListSessions: other sessions' tokens are never exposed
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
 	IPAddress *string   `json:"ipAddress"`

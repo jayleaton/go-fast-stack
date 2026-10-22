@@ -281,14 +281,22 @@ func (a *Auth) ResetPassword(ctx context.Context, token, newPassword string) err
 // password changed after they were issued. Verifying revokes the account's
 // other sessions. Once the email is verified the token no longer signs anyone
 // in: it returns the user with a zero Session.
+//
+// Change-email links (see ChangeEmail) switch the account to the new address,
+// mark it verified and sign in; they are single-use because the old address
+// they name is gone afterwards.
 func (a *Auth) VerifyEmail(ctx context.Context, token string) (User, Session, error) {
-	email, cred, err := a.parseVerificationToken(token)
+	claims, err := a.parseVerificationToken(token)
 	if errors.Is(err, errTokenExpired) {
 		return User{}, Session{}, ErrTokenExpired
 	}
 	if err != nil {
 		return User{}, Session{}, err
 	}
+	if claims.RequestType == changeEmailRequest {
+		return a.confirmEmailChange(ctx, claims.Email, claims.UpdateTo)
+	}
+	email, cred := claims.Email, claims.Cred
 	user, err := a.store.userByEmail(ctx, email)
 	if errors.Is(err, errNotFound) {
 		return User{}, Session{}, ErrUserNotFound

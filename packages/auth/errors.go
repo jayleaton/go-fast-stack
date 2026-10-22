@@ -37,6 +37,13 @@ var (
 	ErrInvalidRedirectURL     = &Error{http.StatusForbidden, "INVALID_REDIRECT_URL", "Invalid redirectURL"}
 	ErrUnauthorized           = &Error{http.StatusUnauthorized, "UNAUTHORIZED", "Unauthorized"}
 	ErrTooManyRequests        = &Error{http.StatusTooManyRequests, "TOO_MANY_REQUESTS", "Too many requests. Please try again later."}
+
+	// Account management (change password / email, sessions).
+	ErrInvalidPassword           = &Error{http.StatusBadRequest, "INVALID_PASSWORD", "Invalid password"}
+	ErrCredentialAccountNotFound = &Error{http.StatusBadRequest, "CREDENTIAL_ACCOUNT_NOT_FOUND", "Credential account not found"}
+	ErrEmailTaken                = &Error{http.StatusUnprocessableEntity, "USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL", "User already exists. Use another email."}
+	ErrEmailUnchanged            = &Error{http.StatusBadRequest, "EMAIL_IS_THE_SAME", "Email is the same"}
+	ErrSessionNotFound           = &Error{http.StatusNotFound, "SESSION_NOT_FOUND", "Session not found"}
 )
 
 // RateLimitError is returned when a client exceeded a rate limit. It matches

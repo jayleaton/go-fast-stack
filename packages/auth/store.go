@@ -232,3 +232,79 @@ func (s *store) deleteExpiredVerifications(ctx context.Context, now time.Time) e
 	_, err := s.pool.Exec(ctx, `DELETE FROM "verification" WHERE "expiresAt" <= $1`, now)
 	return err
 }
+
+// credentialHash returns the password hash of the user's credential account,
+// or errNotFound when they have none.
+func (s *store) credentialHash(ctx context.Context, userID string) (string, error) {
+	var hash *string
+	err := s.pool.QueryRow(ctx, `
+		SELECT "password" FROM "account"
+		WHERE "userId" = $1 AND "providerId" = $2 AND "accountId" = $1`, userID, credentialProvider).Scan(&hash)
+	if err != nil {
+		return "", notFound(err)
+	}
+	if hash == nil || *hash == "" {
+		return "", errNotFound
+	}
+	return *hash, nil
+}
+
+const sessionColumns = `"id", "expiresAt", "createdAt", "updatedAt", "ipAddress", "userAgent", "userId"`
+
+// listSessions returns the user's unexpired sessions, newest first, without
+// their tokens.
+func (s *store) listSessions(ctx context.Context, userID string, now time.Time) ([]Session, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT `+sessionColumns+` FROM "session"
+		WHERE "userId" = $1 AND "expiresAt" > $2
+		ORDER BY "createdAt" DESC, "id"`, userID, now)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (Session, error) {
+		var x Session
+		err := row.Scan(&x.ID, &x.ExpiresAt, &x.CreatedAt, &x.UpdatedAt, &x.IPAddress, &x.UserAgent, &x.UserID)
+		return x, err
+	})
+}
+
+// deleteUserSession deletes one of the user's sessions, matched by id or by
+// token. It returns errNotFound when the user has no such session.
+func (s *store) deleteUserSession(ctx context.Context, userID, id, token string) error {
+	tag, err := s.pool.Exec(ctx, `
+		DELETE FROM "session"
+		WHERE "userId" = $1 AND (("id" = $2 AND $2 <> '') OR ("token" = $3 AND $3 <> ''))`, userID, id, token)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return errNotFound
+	}
+	return nil
+}
+
+// deleteOtherSessions deletes every session of the user except keepID.
+func (s *store) deleteOtherSessions(ctx context.Context, q querier, userID, keepID string) error {
+	_, err := q.Exec(ctx, `DELETE FROM "session" WHERE "userId" = $1 AND "id" <> $2`, userID, keepID)
+	return err
+}
+
+// changeEmail moves the user who currently has email to newEmail and marks it
+// verified, dropping their outstanding reset links (they went to the old
+// address). It returns errNotFound when no user has email any more, and a
+// unique violation when newEmail was taken meanwhile.
+func (s *store) changeEmail(ctx context.Context, email, newEmail string, now time.Time) (User, error) {
+	var out User
+	err := s.tx(ctx, func(q querier) error {
+		u, err := scanUser(q.QueryRow(ctx, `
+			UPDATE "user" u SET "email" = $2, "emailVerified" = true, "updatedAt" = $3
+			WHERE u."email" = $1
+			RETURNING `+userColumns, email, newEmail, now))
+		if err != nil {
+			return err
+		}
+		out = u
+		return s.deleteResetTokens(ctx, q, u.ID)
+	})
+	return out, err
+}

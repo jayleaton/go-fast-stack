@@ -30,6 +30,7 @@ func TestResendMailerSends(t *testing.T) {
 		subject     string
 		htmlContain []string
 		textContain []string
+		noLink      bool // the email carries no link
 	}{
 		{
 			name:        "verification",
@@ -48,6 +49,17 @@ func TestResendMailerSends(t *testing.T) {
 			subject:     "Reset your password",
 			htmlContain: []string{"Reset Password", "user@example.test", "expire in 1 hour", "safely ignore this email"},
 			textContain: []string{"user@example.test", "expire in 1 hour", "safely ignore this email"},
+		},
+		{
+			name: "email change notice",
+			to:   "old@example.test",
+			send: func(m *ResendMailer, to string) error {
+				return m.SendEmailChangeNotice(context.Background(), to, "<i>new</i>@example.test")
+			},
+			subject:     "Your email address is being changed",
+			htmlContain: []string{"old@example.test", "&lt;i&gt;new&lt;/i&gt;@example.test", "reset your password"},
+			textContain: []string{"old@example.test", "<i>new</i>@example.test", "reset your password"},
+			noLink:      true,
 		},
 		{
 			name:        "email is html-escaped",
@@ -99,8 +111,12 @@ func TestResendMailerSends(t *testing.T) {
 				t.Errorf("subject = %q, want %q", got.Subject, tt.subject)
 			}
 			// html/template escapes & in attributes and text as &amp;.
-			escapedLink := strings.ReplaceAll(link, "&", "&amp;")
-			for _, s := range append([]string{escapedLink}, tt.htmlContain...) {
+			htmlWant, textWant := tt.htmlContain, tt.textContain
+			if !tt.noLink {
+				htmlWant = append([]string{strings.ReplaceAll(link, "&", "&amp;")}, htmlWant...)
+				textWant = append([]string{link}, textWant...)
+			}
+			for _, s := range htmlWant {
 				if !strings.Contains(got.HTML, s) {
 					t.Errorf("html missing %q", s)
 				}
@@ -108,7 +124,7 @@ func TestResendMailerSends(t *testing.T) {
 			if strings.Contains(tt.to, "<") && strings.Contains(got.HTML, tt.to) {
 				t.Errorf("html contains unescaped email %q", tt.to)
 			}
-			for _, s := range append([]string{link}, tt.textContain...) {
+			for _, s := range textWant {
 				if !strings.Contains(got.Text, s) {
 					t.Errorf("text missing %q", s)
 				}
