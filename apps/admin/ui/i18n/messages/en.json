@@ -1,0 +1,220 @@
+{
+  "common": {
+    "language": "Language",
+    "english": "English",
+    "japanese": "Japanese",
+    "loading": "Loading...",
+    "continue": "Continue",
+    "save": "Save",
+    "saving": "Saving...",
+    "name": "Name",
+    "email": "Email",
+    "password": "Password",
+    "yes": "Yes",
+    "no": "No",
+    "backToLogin": "Back to sign in"
+  },
+  "components": {
+    "languageSelector": {
+      "language": "Language"
+    },
+    "authStatus": {
+      "logout": "Sign Out"
+    },
+    "themeToggle": {
+      "toggle": "Toggle theme"
+    },
+    "nav": {
+      "label": "Dashboard",
+      "users": "Users",
+      "admins": "Admins",
+      "audit": "Audit log",
+      "analytics": "Analytics"
+    },
+    "pager": {
+      "previous": "Previous",
+      "next": "Next",
+      "showing": "Showing {0}–{1} of {2}"
+    }
+  },
+  "pages": {
+    "login": {
+      "title": "Sign in to the dashboard",
+      "description": "Admins only. Use the email you were invited with.",
+      "loginButton": "Sign in",
+      "emailPlaceholder": "Enter your email",
+      "passwordPlaceholder": "Enter your password",
+      "inviteOnly": "Access is by invitation. Ask an existing admin for an invite."
+    },
+    "setPassword": {
+      "title": "Set your password",
+      "description": "Choose a password to finish accepting your invite.",
+      "invalidLink": "This link is invalid or has expired. Ask an admin to send a new invite.",
+      "passwordMismatch": "Passwords don't match",
+      "newPassword": "New Password",
+      "newPasswordPlaceholder": "Enter your new password",
+      "passwordRequirement": "Password must be at least 8 characters long",
+      "confirmPassword": "Confirm Password",
+      "confirmPasswordPlaceholder": "Confirm your new password",
+      "submit": "Set password",
+      "saving": "Setting password..."
+    },
+    "twoFactor": {
+      "title": "Two-factor authentication",
+      "description": "Enter the 6-digit code from your authenticator app.",
+      "codeLabel": "Authentication code",
+      "backupCodeLabel": "Backup code",
+      "useBackupCode": "Use a backup code instead",
+      "trustDevice": "Trust this device for 30 days",
+      "verify": "Verify",
+      "verifying": "Verifying..."
+    },
+    "twoFactorSetup": {
+      "title": "Set up two-factor authentication",
+      "description": "Add a second step to your sign-in with an authenticator app. Confirm your password to start.",
+      "required": "This dashboard requires two-factor authentication. Set it up to continue.",
+      "passwordLabel": "Current password",
+      "start": "Start setup",
+      "scan": "Add this account to your authenticator app, then enter the code it shows.",
+      "openApp": "Open in authenticator app",
+      "manualEntry": "Or enter this key manually:",
+      "backupCodes": "Backup codes",
+      "backupCodesHint": "These codes are shown only once. Store them somewhere safe: each one signs you in once if you lose your device.",
+      "codeLabel": "Code from the app",
+      "confirm": "Turn on two-factor authentication",
+      "done": "Two-factor authentication is now on.",
+      "alreadyOn": "Two-factor authentication is on for your account."
+    },
+    "users": {
+      "title": "Users",
+      "subtitle": "Everyone with an account in the app.",
+      "role": "Role",
+      "verified": "Verified",
+      "created": "Created",
+      "bannedBadge": "Banned",
+      "activeBadge": "Active",
+      "empty": "No users match these filters.",
+      "filters": {
+        "search": "Search",
+        "searchPlaceholder": "Search users",
+        "searchField": "Search in",
+        "status": "Status",
+        "apply": "Apply",
+        "all": "All",
+        "banned": "Banned",
+        "active": "Active",
+        "anyRole": "Any role"
+      }
+    },
+    "user": {
+      "title": "User",
+      "back": "← All users",
+      "profile": "Profile",
+      "id": "ID",
+      "twoFactor": "Two-factor",
+      "hasPassword": "Has password",
+      "updated": "Updated",
+      "setRole": "Role",
+      "status": {
+        "banned": "User banned and signed out everywhere.",
+        "unbanned": "Ban lifted.",
+        "roleSet": "Role updated.",
+        "sessionsRevoked": "All sessions revoked.",
+        "sessionRevoked": "Session revoked."
+      },
+      "ban": {
+        "title": "Ban",
+        "notBanned": "This user is not banned. Banning signs them out everywhere.",
+        "reason": "Reason",
+        "reasonPlaceholder": "Why is this user banned?",
+        "expires": "Expires",
+        "permanent": "Never (permanent)",
+        "submit": "Ban user",
+        "update": "Update ban",
+        "unban": "Lift ban",
+        "expiry": {
+          "hour": "1 hour",
+          "day": "1 day",
+          "week": "7 days",
+          "month": "30 days",
+          "permanent": "Permanent"
+        }
+      },
+      "sessions": {
+        "title": "Active sessions",
+        "empty": "No active sessions.",
+        "expires": "Expires",
+        "ip": "IP address",
+        "userAgent": "User agent",
+        "revoke": "Revoke",
+        "revokeAll": "Revoke all sessions"
+      }
+    },
+    "admins": {
+      "title": "Admins",
+      "subtitle": "People who can use this dashboard.",
+      "twoFactorOn": "On",
+      "twoFactorOff": "Off",
+      "active": "Active",
+      "pending": "Invite pending",
+      "inviteSent": "Invite sent to {0}",
+      "invite": {
+        "title": "Invite an admin",
+        "description": "They get an email with a link to set their password.",
+        "name": "Name (optional)",
+        "submit": "Send invite",
+        "sending": "Sending..."
+      }
+    },
+    "audit": {
+      "title": "Audit log",
+      "subtitle": "Every admin action, newest first.",
+      "action": "Action",
+      "allActions": "All actions",
+      "time": "Time",
+      "actor": "Admin",
+      "target": "Target",
+      "details": "Details",
+      "empty": "No entries yet.",
+      "actions": {
+        "userBan": "Banned user",
+        "userUnban": "Lifted ban",
+        "userSetRole": "Changed role",
+        "userRevokeSession": "Revoked session",
+        "userRevokeSessions": "Revoked all sessions",
+        "adminInvite": "Invited admin",
+        "adminBootstrap": "Created first admin"
+      }
+    },
+    "analytics": {
+      "title": "Analytics",
+      "subtitle": "Headline numbers for the app.",
+      "placeholder": "This page is a placeholder: the numbers are simple counts over the app database, served through the services.Analytics port. Swap that port's implementation for a real analytics source (PostHog, a warehouse...) without changing this page.",
+      "totalUsers": "Total users",
+      "verifiedUsers": "Verified users",
+      "bannedUsers": "Banned users",
+      "newUsers7d": "New in the last 7 days",
+      "activeSessions": "Active sessions",
+      "generatedAt": "Generated at"
+    }
+  },
+  "errors": {
+    "invalidCredentials": "Invalid credentials",
+    "invalidCode": "That code is not valid. Try again.",
+    "invalidToken": "This link is invalid or has expired. Ask an admin to send a new invite.",
+    "passwordPolicy": "Password must be at least 8 characters long",
+    "invalidPassword": "Incorrect password",
+    "challengeExpired": "Your sign-in attempt expired. Please sign in again.",
+    "tooManyRequests": "Too many attempts. Please wait a moment and try again.",
+    "userNotFound": "User not found",
+    "sessionNotFound": "That session no longer exists.",
+    "invalidRole": "Unknown role",
+    "roleUnchanged": "The user already has this role.",
+    "userNotBanned": "The user is not banned.",
+    "adminExists": "This person is already an admin.",
+    "twoFactorRequired": "Two-factor authentication is required.",
+    "forbidden": "You are not allowed to do that.",
+    "invalidInput": "Please check your input and try again.",
+    "somethingWentWrong": "Something went wrong. Please try again."
+  }
+}
