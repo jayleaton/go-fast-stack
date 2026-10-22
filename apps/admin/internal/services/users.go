@@ -7,7 +7,7 @@ import (
 	"slices"
 	"time"
 
-	"github.com/jayleaton/ai-patterns-go/apps/admin/internal/validate"
+	"github.com/jayleaton/go-fast-stack/apps/admin/internal/validate"
 )
 
 // User is a user of the main app as the dashboard sees it: the Better Auth

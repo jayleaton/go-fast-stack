@@ -1,6 +1,6 @@
 # CONTEXT.md: shared language
 
-Use these words when talking about this repo, in code review, commits and agent output.
+Use these words when talking about Go Fast Stack (this repo), in code review, commits and agent output.
 
 | Term | Means | Lives in |
 |---|---|---|

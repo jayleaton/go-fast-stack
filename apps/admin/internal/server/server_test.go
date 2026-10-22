@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jayleaton/ai-patterns-go/apps/admin/internal/api"
-	"github.com/jayleaton/ai-patterns-go/apps/admin/internal/config"
+	"github.com/jayleaton/go-fast-stack/apps/admin/internal/api"
+	"github.com/jayleaton/go-fast-stack/apps/admin/internal/config"
 )
 
 type pinger struct{ err error }

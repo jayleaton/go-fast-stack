@@ -140,7 +140,7 @@ test-db-up:
 
 .PHONY: docker
 docker: ## Build the production image
-	docker build -t ai-patterns-go .
+	docker build -t go-fast-stack .
 
 # --- Admin app (optional; delete apps/admin and these targets to drop it) ---
 
@@ -163,7 +163,7 @@ admin-build: ## Build the admin static binary into bin/admin
 
 .PHONY: admin-docker
 admin-docker: ## Build the admin production image
-	docker build -f apps/admin/Dockerfile -t ai-patterns-go-admin .
+	docker build -f apps/admin/Dockerfile -t go-fast-stack-admin .
 
 .PHONY: actionlint
 actionlint: ## Lint GitHub workflows

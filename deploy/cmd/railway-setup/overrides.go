@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/jayleaton/ai-patterns-go/deploy/platform"
+	"github.com/jayleaton/go-fast-stack/deploy/platform"
 )
 
 // override is a platform.yaml key a person or agent can set without editing

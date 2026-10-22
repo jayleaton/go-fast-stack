@@ -8,7 +8,7 @@ import (
 
 	"go.uber.org/mock/gomock"
 
-	"github.com/jayleaton/ai-patterns-go/apps/admin/internal/services"
+	"github.com/jayleaton/go-fast-stack/apps/admin/internal/services"
 )
 
 // The reconciler's reasons, as shown in the audit log.

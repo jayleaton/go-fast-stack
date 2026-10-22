@@ -2,7 +2,7 @@
 
 Ports of Better Auth's `twoFactor` and `admin` plugins plus an invite / set-password flow.
 These signatures are stable: code against them now. Changes will be additive and listed here.
-Package: `github.com/jayleaton/ai-patterns-go/packages/auth`.
+Package: `github.com/jayleaton/go-fast-stack/packages/auth`.
 
 ## Running a second instance (admin app)
 

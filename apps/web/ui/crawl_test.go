@@ -29,12 +29,12 @@ import (
 
 	"go.uber.org/mock/gomock"
 
-	"github.com/jayleaton/ai-patterns-go/apps/web/internal/config"
-	"github.com/jayleaton/ai-patterns-go/apps/web/internal/services"
-	"github.com/jayleaton/ai-patterns-go/apps/web/ui"
-	"github.com/jayleaton/ai-patterns-go/apps/web/ui/mocks"
-	"github.com/jayleaton/ai-patterns-go/apps/web/ui/routes"
-	"github.com/jayleaton/ai-patterns-go/apps/web/ui/static"
+	"github.com/jayleaton/go-fast-stack/apps/web/internal/config"
+	"github.com/jayleaton/go-fast-stack/apps/web/internal/services"
+	"github.com/jayleaton/go-fast-stack/apps/web/ui"
+	"github.com/jayleaton/go-fast-stack/apps/web/ui/mocks"
+	"github.com/jayleaton/go-fast-stack/apps/web/ui/routes"
+	"github.com/jayleaton/go-fast-stack/apps/web/ui/static"
 )
 
 // Canaries: values the services hand the UI that must never be rendered.

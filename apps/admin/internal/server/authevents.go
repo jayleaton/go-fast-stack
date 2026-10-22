@@ -4,8 +4,8 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/jayleaton/ai-patterns-go/apps/admin/internal/services"
-	"github.com/jayleaton/ai-patterns-go/packages/auth"
+	"github.com/jayleaton/go-fast-stack/apps/admin/internal/services"
+	"github.com/jayleaton/go-fast-stack/packages/auth"
 )
 
 // NewAuditEvents is the admin auth instance's auth.Config.Events: it audits

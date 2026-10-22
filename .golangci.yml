@@ -29,10 +29,10 @@ linters:
       analyze-types: true
       forbid:
         - pattern: ^auth\.NewUserAdmin$
-          pkg: ^github\.com/jayleaton/ai-patterns-go/packages/auth$
+          pkg: ^github\.com/jayleaton/go-fast-stack/packages/auth$
           msg: user administration (ban, roles, any user's sessions) is for apps/admin only
         - pattern: ^auth\.Auth\.Users$
-          pkg: ^github\.com/jayleaton/ai-patterns-go/packages/auth$
+          pkg: ^github\.com/jayleaton/go-fast-stack/packages/auth$
           msg: user administration (ban, roles, any user's sessions) is for apps/admin only
         # Tests only (see exclusions): a test that sleeps is slow and flaky.
         - pattern: ^time\.Sleep$
@@ -53,9 +53,9 @@ linters:
           deny:
             - pkg: github.com/jackc/pgx
               desc: transports call services; only packages/database talks to Postgres
-            - pkg: github.com/jayleaton/ai-patterns-go/packages/database
+            - pkg: github.com/jayleaton/go-fast-stack/packages/database
               desc: transports call services (use services.User etc.), never repositories or sqlc
-            - pkg: github.com/jayleaton/ai-patterns-go/packages/secrets
+            - pkg: github.com/jayleaton/go-fast-stack/packages/secrets
               desc: secrets reach consumers through config.Secrets accessors wired in cmd/server, never the store itself
         services:
           files:
@@ -69,37 +69,37 @@ linters:
               desc: SSE belongs to apps/web/ui
             - pkg: github.com/jackc/pgx
               desc: services use repositories from packages/database
-            - pkg: github.com/jayleaton/ai-patterns-go/packages/database/sqlc
+            - pkg: github.com/jayleaton/go-fast-stack/packages/database/sqlc
               desc: services use repositories, not sqlc output
-            - pkg: github.com/jayleaton/ai-patterns-go/apps/web/internal/api
+            - pkg: github.com/jayleaton/go-fast-stack/apps/web/internal/api
               desc: services never import a transport
-            - pkg: github.com/jayleaton/ai-patterns-go/apps/web/ui
+            - pkg: github.com/jayleaton/go-fast-stack/apps/web/ui
               desc: services never import a transport
-            - pkg: github.com/jayleaton/ai-patterns-go/packages/secrets
+            - pkg: github.com/jayleaton/go-fast-stack/packages/secrets
               desc: services declare a port for what a secret enables (a client); cmd/server wires it from config.Secrets
         database:
           files:
             - "**/packages/database/**"
           deny:
-            - pkg: github.com/jayleaton/ai-patterns-go/apps
+            - pkg: github.com/jayleaton/go-fast-stack/apps
               desc: packages/database is the bottom layer and never imports apps
         auth:
           files:
             - "**/packages/auth/**"
           deny:
-            - pkg: github.com/jayleaton/ai-patterns-go/apps
+            - pkg: github.com/jayleaton/go-fast-stack/apps
               desc: packages/auth is self-contained and never imports apps
-            - pkg: github.com/jayleaton/ai-patterns-go/packages/database
+            - pkg: github.com/jayleaton/go-fast-stack/packages/database
               desc: packages/auth owns its tables and queries; it never uses the app's repositories
         secrets:
           files:
             - "**/packages/secrets/**"
           deny:
-            - pkg: github.com/jayleaton/ai-patterns-go/apps
+            - pkg: github.com/jayleaton/go-fast-stack/apps
               desc: packages/secrets is self-contained; apps/web/internal/config builds it
-            - pkg: github.com/jayleaton/ai-patterns-go/packages/database
+            - pkg: github.com/jayleaton/go-fast-stack/packages/database
               desc: packages/secrets is self-contained
-            - pkg: github.com/jayleaton/ai-patterns-go/packages/auth
+            - pkg: github.com/jayleaton/go-fast-stack/packages/auth
               desc: packages/secrets is self-contained
             - pkg: go.uber.org/mock
               desc: secrets tests use fake providers over httptest, never mocks
@@ -114,7 +114,7 @@ linters:
             - "!**/apps/*/cmd/**"
             - "!**/packages/secrets/**"
           deny:
-            - pkg: github.com/jayleaton/ai-patterns-go/packages/secrets/reveal
+            - pkg: github.com/jayleaton/go-fast-stack/packages/secrets/reveal
               desc: secrets are revealed only where a client is built (apps/*/cmd)
         # apps/admin is a separate, optional, higher-privilege app. Neither app
         # imports the other, and only apps/admin reaches adminrepo.
@@ -123,22 +123,22 @@ linters:
           files:
             - "**/apps/web/**"
           deny:
-            - pkg: github.com/jayleaton/ai-patterns-go/apps/admin
+            - pkg: github.com/jayleaton/go-fast-stack/apps/admin
               desc: apps/web never imports the admin app
-            - pkg: github.com/jayleaton/ai-patterns-go/packages/database/adminrepo
+            - pkg: github.com/jayleaton/go-fast-stack/packages/database/adminrepo
               desc: higher-privilege admin data access (audit log, cross-user stats) is for apps/admin only
         database-isolation:
           files:
             - "**/packages/database/**"
             - "!**/packages/database/adminrepo/**"
           deny:
-            - pkg: github.com/jayleaton/ai-patterns-go/packages/database/adminrepo
+            - pkg: github.com/jayleaton/go-fast-stack/packages/database/adminrepo
               desc: the app's repositories never use the admin data layer
         admin-isolation:
           files:
             - "**/apps/admin/**"
           deny:
-            - pkg: github.com/jayleaton/ai-patterns-go/apps/web
+            - pkg: github.com/jayleaton/go-fast-stack/apps/web
               desc: apps/admin copies the web app's patterns, never its code (it must stay deletable)
         admin-transports:
           files:
@@ -147,11 +147,11 @@ linters:
           deny:
             - pkg: github.com/jackc/pgx
               desc: admin transports call services; only packages/database talks to Postgres
-            - pkg: github.com/jayleaton/ai-patterns-go/packages/database
+            - pkg: github.com/jayleaton/go-fast-stack/packages/database
               desc: admin transports call services (services.AuditEntry etc.), never adminrepo or sqlc
-            - pkg: github.com/jayleaton/ai-patterns-go/packages/auth
+            - pkg: github.com/jayleaton/go-fast-stack/packages/auth
               desc: admin transports use their own ports; the adapters over packages/auth live in apps/admin/internal/server
-            - pkg: github.com/jayleaton/ai-patterns-go/packages/secrets
+            - pkg: github.com/jayleaton/go-fast-stack/packages/secrets
               desc: secrets never reach templates, SSE or JSON; cmd/admin reveals them where clients are built
         # packages/uikit is the component set both UIs share: rendering only.
         # It takes translated strings and plain values, so either app (or
@@ -160,13 +160,13 @@ linters:
           files:
             - "**/packages/uikit/**"
           deny:
-            - pkg: github.com/jayleaton/ai-patterns-go/apps
+            - pkg: github.com/jayleaton/go-fast-stack/apps
               desc: packages/uikit is shared by both apps; pass it translated strings and values, never import an app
-            - pkg: github.com/jayleaton/ai-patterns-go/packages/database
+            - pkg: github.com/jayleaton/go-fast-stack/packages/database
               desc: packages/uikit renders values; data comes from the app's services
-            - pkg: github.com/jayleaton/ai-patterns-go/packages/auth
+            - pkg: github.com/jayleaton/go-fast-stack/packages/auth
               desc: packages/uikit renders values; auth stays behind the app's ports
-            - pkg: github.com/jayleaton/ai-patterns-go/packages/secrets
+            - pkg: github.com/jayleaton/go-fast-stack/packages/secrets
               desc: secrets never reach templates
             - pkg: github.com/jackc/pgx
               desc: packages/uikit never talks to Postgres
@@ -178,13 +178,13 @@ linters:
           files:
             - "**/apps/web/ui/**"
           deny:
-            - pkg: github.com/jayleaton/ai-patterns-go/apps/web/internal/api
+            - pkg: github.com/jayleaton/go-fast-stack/apps/web/internal/api
               desc: the browser UI never talks to or renders the JSON API; call the service
         admin-ui-not-api:
           files:
             - "**/apps/admin/ui/**"
           deny:
-            - pkg: github.com/jayleaton/ai-patterns-go/apps/admin/internal/api
+            - pkg: github.com/jayleaton/go-fast-stack/apps/admin/internal/api
               desc: the browser UI never talks to or renders the JSON API; call the service
         admin-services:
           files:
@@ -198,15 +198,15 @@ linters:
               desc: SSE belongs to apps/admin/ui
             - pkg: github.com/jackc/pgx
               desc: services use repositories from packages/database/adminrepo
-            - pkg: github.com/jayleaton/ai-patterns-go/packages/database/adminrepo/adminsql
+            - pkg: github.com/jayleaton/go-fast-stack/packages/database/adminrepo/adminsql
               desc: services use repositories, not sqlc output
-            - pkg: github.com/jayleaton/ai-patterns-go/packages/database/adminrepo/appsql
+            - pkg: github.com/jayleaton/go-fast-stack/packages/database/adminrepo/appsql
               desc: services use repositories, not sqlc output
-            - pkg: github.com/jayleaton/ai-patterns-go/packages/auth
+            - pkg: github.com/jayleaton/go-fast-stack/packages/auth
               desc: services reach auth through ports; adapters live in apps/admin/internal/server
-            - pkg: github.com/jayleaton/ai-patterns-go/apps/admin/internal/api
+            - pkg: github.com/jayleaton/go-fast-stack/apps/admin/internal/api
               desc: services never import a transport
-            - pkg: github.com/jayleaton/ai-patterns-go/apps/admin/ui
+            - pkg: github.com/jayleaton/go-fast-stack/apps/admin/ui
               desc: services never import a transport
         # Test boundaries: each layer is tested with the layer below mocked or
         # real, never skipped. See AGENTS.md "Test boundaries".
@@ -216,11 +216,11 @@ linters:
           deny:
             - pkg: github.com/jackc/pgx
               desc: service tests use the generated port mocks in services/mocks only
-            - pkg: github.com/jayleaton/ai-patterns-go/packages/database
+            - pkg: github.com/jayleaton/go-fast-stack/packages/database
               desc: service tests use the generated port mocks in services/mocks only (services re-export the model types)
-            - pkg: github.com/jayleaton/ai-patterns-go/packages/auth
+            - pkg: github.com/jayleaton/go-fast-stack/packages/auth
               desc: service tests use the generated port mocks in services/mocks only
-            - pkg: github.com/jayleaton/ai-patterns-go/apps/web/internal/api
+            - pkg: github.com/jayleaton/go-fast-stack/apps/web/internal/api
               desc: service tests use the generated port mocks in services/mocks only
         handler-tests:
           files: # "/**/" needs a subdirectory, so list the package dir too
@@ -231,11 +231,11 @@ linters:
           deny:
             - pkg: github.com/jackc/pgx
               desc: handler tests mock the service and the session, never the database
-            - pkg: github.com/jayleaton/ai-patterns-go/packages/database
+            - pkg: github.com/jayleaton/go-fast-stack/packages/database
               desc: handler tests mock the service and the session, never the database
-            - pkg: github.com/jayleaton/ai-patterns-go/apps/web/internal/services/mocks
+            - pkg: github.com/jayleaton/go-fast-stack/apps/web/internal/services/mocks
               desc: those are repository/credential mocks; handler tests mock the SERVICE, never the repos underneath it
-            - pkg: github.com/jayleaton/ai-patterns-go/packages/auth
+            - pkg: github.com/jayleaton/go-fast-stack/packages/auth
               desc: handler tests mock the session; real auth is tested in packages/auth and server
         repository-tests:
           files:
@@ -243,7 +243,7 @@ linters:
           deny:
             - pkg: go.uber.org/mock
               desc: repository tests run against real Postgres (dbtest), never mocks
-            - pkg: github.com/jayleaton/ai-patterns-go/apps
+            - pkg: github.com/jayleaton/go-fast-stack/apps
               desc: repository tests run against real Postgres (dbtest) and never import apps
         admin-service-tests:
           files:
@@ -251,11 +251,11 @@ linters:
           deny:
             - pkg: github.com/jackc/pgx
               desc: service tests use the generated port mocks in services/mocks only
-            - pkg: github.com/jayleaton/ai-patterns-go/packages/database
+            - pkg: github.com/jayleaton/go-fast-stack/packages/database
               desc: service tests use the generated port mocks in services/mocks only (services re-export the model types)
-            - pkg: github.com/jayleaton/ai-patterns-go/packages/auth
+            - pkg: github.com/jayleaton/go-fast-stack/packages/auth
               desc: service tests use the generated port mocks in services/mocks only
-            - pkg: github.com/jayleaton/ai-patterns-go/apps/admin/internal/api
+            - pkg: github.com/jayleaton/go-fast-stack/apps/admin/internal/api
               desc: service tests use the generated port mocks in services/mocks only
         admin-handler-tests:
           files: # "/**/" needs a subdirectory, so list the package dir too
@@ -266,11 +266,11 @@ linters:
           deny:
             - pkg: github.com/jackc/pgx
               desc: handler tests mock the service and the session, never the database
-            - pkg: github.com/jayleaton/ai-patterns-go/packages/database
+            - pkg: github.com/jayleaton/go-fast-stack/packages/database
               desc: handler tests mock the service and the session, never the database
-            - pkg: github.com/jayleaton/ai-patterns-go/apps/admin/internal/services/mocks
+            - pkg: github.com/jayleaton/go-fast-stack/apps/admin/internal/services/mocks
               desc: those are port mocks; handler tests mock the SERVICE, never what is underneath it
-            - pkg: github.com/jayleaton/ai-patterns-go/packages/auth
+            - pkg: github.com/jayleaton/go-fast-stack/packages/auth
               desc: handler tests mock the session; real auth is tested in packages/auth and server
         adminrepo-tests:
           files:
@@ -278,7 +278,7 @@ linters:
           deny:
             - pkg: go.uber.org/mock
               desc: repository tests run against real Postgres (dbtest), never mocks
-            - pkg: github.com/jayleaton/ai-patterns-go/apps
+            - pkg: github.com/jayleaton/go-fast-stack/apps
               desc: repository tests run against real Postgres (dbtest) and never import apps
         no-test-helpers:
           files:
@@ -289,19 +289,19 @@ linters:
           deny:
             - pkg: go.uber.org/mock
               desc: mocks are for tests; production code never imports them
-            - pkg: github.com/jayleaton/ai-patterns-go/apps/web/internal/api/apitest
+            - pkg: github.com/jayleaton/go-fast-stack/apps/web/internal/api/apitest
               desc: test helpers are for tests; production code never imports them
-            - pkg: github.com/jayleaton/ai-patterns-go/apps/web/internal/services/mocks
+            - pkg: github.com/jayleaton/go-fast-stack/apps/web/internal/services/mocks
               desc: mocks are for tests; production code never imports them
-            - pkg: github.com/jayleaton/ai-patterns-go/apps/web/internal/api/mocks
+            - pkg: github.com/jayleaton/go-fast-stack/apps/web/internal/api/mocks
               desc: mocks are for tests; production code never imports them
-            - pkg: github.com/jayleaton/ai-patterns-go/apps/admin/internal/api/apitest
+            - pkg: github.com/jayleaton/go-fast-stack/apps/admin/internal/api/apitest
               desc: test helpers are for tests; production code never imports them
-            - pkg: github.com/jayleaton/ai-patterns-go/apps/admin/internal/services/mocks
+            - pkg: github.com/jayleaton/go-fast-stack/apps/admin/internal/services/mocks
               desc: mocks are for tests; production code never imports them
-            - pkg: github.com/jayleaton/ai-patterns-go/apps/admin/internal/api/mocks
+            - pkg: github.com/jayleaton/go-fast-stack/apps/admin/internal/api/mocks
               desc: mocks are for tests; production code never imports them
-            - pkg: github.com/jayleaton/ai-patterns-go/apps/admin/ui/mocks
+            - pkg: github.com/jayleaton/go-fast-stack/apps/admin/ui/mocks
               desc: mocks are for tests; production code never imports them
   exclusions:
     generated: lax
@@ -324,4 +324,4 @@ formatters:
   settings:
     goimports:
       local-prefixes:
-        - github.com/jayleaton/ai-patterns-go
+        - github.com/jayleaton/go-fast-stack

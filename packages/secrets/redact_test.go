@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jayleaton/ai-patterns-go/packages/secrets"
+	"github.com/jayleaton/go-fast-stack/packages/secrets"
 )
 
 // redactLog logs through a redacting text and JSON handler and returns both

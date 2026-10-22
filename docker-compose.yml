@@ -2,7 +2,7 @@
 # Makefile gives each checkout its own project name and ports (`make env`), so
 # parallel worktrees never collide. The defaults below apply to bare
 # `docker compose` only.
-name: ${COMPOSE_PROJECT_NAME:-ai-patterns-go}
+name: ${COMPOSE_PROJECT_NAME:-go-fast-stack}
 
 services:
   postgres:

@@ -7,9 +7,9 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/jayleaton/ai-patterns-go/packages/database"
-	"github.com/jayleaton/ai-patterns-go/packages/database/dbtest"
-	"github.com/jayleaton/ai-patterns-go/packages/database/model"
+	"github.com/jayleaton/go-fast-stack/packages/database"
+	"github.com/jayleaton/go-fast-stack/packages/database/dbtest"
+	"github.com/jayleaton/go-fast-stack/packages/database/model"
 )
 
 func seedUser(t *testing.T, pool *pgxpool.Pool, id, email string) {

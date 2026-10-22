@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/jayleaton/ai-patterns-go/apps/web/ui/i18n"
+	"github.com/jayleaton/go-fast-stack/apps/web/ui/i18n"
 )
 
 func orDash(s string) string {

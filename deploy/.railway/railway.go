@@ -18,7 +18,7 @@ import (
 
 	railway "github.com/railwayapp/railway-go-sdk"
 
-	"github.com/jayleaton/ai-patterns-go/deploy/platform"
+	"github.com/jayleaton/go-fast-stack/deploy/platform"
 )
 
 // Railway is called by the CLI with the target environment.

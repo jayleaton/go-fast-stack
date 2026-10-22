@@ -15,10 +15,10 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/jayleaton/ai-patterns-go/packages/auth"
-	"github.com/jayleaton/ai-patterns-go/packages/database"
-	"github.com/jayleaton/ai-patterns-go/packages/database/dbtest"
-	"github.com/jayleaton/ai-patterns-go/packages/database/model"
+	"github.com/jayleaton/go-fast-stack/packages/auth"
+	"github.com/jayleaton/go-fast-stack/packages/database"
+	"github.com/jayleaton/go-fast-stack/packages/database/dbtest"
+	"github.com/jayleaton/go-fast-stack/packages/database/model"
 )
 
 // syncBuffer is a log sink safe for the pool's background goroutines.

@@ -18,16 +18,16 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/jayleaton/ai-patterns-go/apps/admin/internal/config"
-	"github.com/jayleaton/ai-patterns-go/apps/admin/internal/server"
-	"github.com/jayleaton/ai-patterns-go/apps/admin/internal/services"
-	"github.com/jayleaton/ai-patterns-go/apps/admin/internal/validate"
-	"github.com/jayleaton/ai-patterns-go/apps/admin/ui"
-	"github.com/jayleaton/ai-patterns-go/packages/auth"
-	"github.com/jayleaton/ai-patterns-go/packages/database"
-	"github.com/jayleaton/ai-patterns-go/packages/database/adminrepo"
-	"github.com/jayleaton/ai-patterns-go/packages/secrets"
-	"github.com/jayleaton/ai-patterns-go/packages/secrets/reveal"
+	"github.com/jayleaton/go-fast-stack/apps/admin/internal/config"
+	"github.com/jayleaton/go-fast-stack/apps/admin/internal/server"
+	"github.com/jayleaton/go-fast-stack/apps/admin/internal/services"
+	"github.com/jayleaton/go-fast-stack/apps/admin/internal/validate"
+	"github.com/jayleaton/go-fast-stack/apps/admin/ui"
+	"github.com/jayleaton/go-fast-stack/packages/auth"
+	"github.com/jayleaton/go-fast-stack/packages/database"
+	"github.com/jayleaton/go-fast-stack/packages/database/adminrepo"
+	"github.com/jayleaton/go-fast-stack/packages/secrets"
+	"github.com/jayleaton/go-fast-stack/packages/secrets/reveal"
 )
 
 const shutdownTimeout = 15 * time.Second

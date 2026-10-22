@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jayleaton/ai-patterns-go/packages/secrets"
-	"github.com/jayleaton/ai-patterns-go/packages/secrets/reveal"
+	"github.com/jayleaton/go-fast-stack/packages/secrets"
+	"github.com/jayleaton/go-fast-stack/packages/secrets/reveal"
 )
 
 // These run the Doppler adapter over a real socket (httptest.Server).

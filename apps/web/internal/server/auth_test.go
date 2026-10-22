@@ -10,12 +10,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jayleaton/ai-patterns-go/apps/web/internal/api"
-	"github.com/jayleaton/ai-patterns-go/apps/web/internal/config"
-	"github.com/jayleaton/ai-patterns-go/apps/web/internal/services"
-	"github.com/jayleaton/ai-patterns-go/packages/auth"
-	"github.com/jayleaton/ai-patterns-go/packages/database"
-	"github.com/jayleaton/ai-patterns-go/packages/database/dbtest"
+	"github.com/jayleaton/go-fast-stack/apps/web/internal/api"
+	"github.com/jayleaton/go-fast-stack/apps/web/internal/config"
+	"github.com/jayleaton/go-fast-stack/apps/web/internal/services"
+	"github.com/jayleaton/go-fast-stack/packages/auth"
+	"github.com/jayleaton/go-fast-stack/packages/database"
+	"github.com/jayleaton/go-fast-stack/packages/database/dbtest"
 )
 
 const origin = "http://app.test"

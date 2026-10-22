@@ -13,8 +13,8 @@ import (
 	context "context"
 	reflect "reflect"
 
-	services "github.com/jayleaton/ai-patterns-go/apps/admin/internal/services"
-	validate "github.com/jayleaton/ai-patterns-go/apps/admin/internal/validate"
+	services "github.com/jayleaton/go-fast-stack/apps/admin/internal/services"
+	validate "github.com/jayleaton/go-fast-stack/apps/admin/internal/validate"
 	gomock "go.uber.org/mock/gomock"
 )
 

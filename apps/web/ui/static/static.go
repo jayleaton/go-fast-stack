@@ -10,7 +10,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/jayleaton/ai-patterns-go/apps/web/ui/routes"
+	"github.com/jayleaton/go-fast-stack/apps/web/ui/routes"
 )
 
 // Datastar bundle pin. Update all three together; TestDatastarPin checks the

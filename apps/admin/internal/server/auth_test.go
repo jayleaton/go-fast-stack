@@ -22,13 +22,13 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/jayleaton/ai-patterns-go/apps/admin/internal/api"
-	"github.com/jayleaton/ai-patterns-go/apps/admin/internal/config"
-	"github.com/jayleaton/ai-patterns-go/apps/admin/internal/services"
-	"github.com/jayleaton/ai-patterns-go/apps/admin/internal/validate"
-	"github.com/jayleaton/ai-patterns-go/packages/auth"
-	"github.com/jayleaton/ai-patterns-go/packages/database/adminrepo"
-	"github.com/jayleaton/ai-patterns-go/packages/database/dbtest"
+	"github.com/jayleaton/go-fast-stack/apps/admin/internal/api"
+	"github.com/jayleaton/go-fast-stack/apps/admin/internal/config"
+	"github.com/jayleaton/go-fast-stack/apps/admin/internal/services"
+	"github.com/jayleaton/go-fast-stack/apps/admin/internal/validate"
+	"github.com/jayleaton/go-fast-stack/packages/auth"
+	"github.com/jayleaton/go-fast-stack/packages/database/adminrepo"
+	"github.com/jayleaton/go-fast-stack/packages/database/dbtest"
 )
 
 const (

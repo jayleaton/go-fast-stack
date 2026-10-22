@@ -10,7 +10,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-mod=github.com/jayleaton/ai-patterns-go
+mod=github.com/jayleaton/go-fast-stack
 paths=() dirs=()
 cleanup() {
   rm -f "${paths[@]}"

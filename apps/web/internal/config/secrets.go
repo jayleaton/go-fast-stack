@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/jayleaton/ai-patterns-go/packages/secrets"
+	"github.com/jayleaton/go-fast-stack/packages/secrets"
 )
 
 // SECRETS_PROVIDER values.

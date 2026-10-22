@@ -4,8 +4,8 @@ import (
 	"context"
 	"strings"
 
-	"github.com/jayleaton/ai-patterns-go/apps/web/internal/services"
-	"github.com/jayleaton/ai-patterns-go/apps/web/ui/i18n"
+	"github.com/jayleaton/go-fast-stack/apps/web/internal/services"
+	"github.com/jayleaton/go-fast-stack/apps/web/ui/i18n"
 )
 
 func deref(s *string) string {

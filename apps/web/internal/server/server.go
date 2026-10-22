@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jayleaton/ai-patterns-go/apps/web/internal/api"
-	"github.com/jayleaton/ai-patterns-go/apps/web/internal/config"
+	"github.com/jayleaton/go-fast-stack/apps/web/internal/api"
+	"github.com/jayleaton/go-fast-stack/apps/web/internal/config"
 )
 
 // Auth is the part of *auth.Auth the server mounts.

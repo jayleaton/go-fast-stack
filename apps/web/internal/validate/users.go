@@ -6,7 +6,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/jayleaton/ai-patterns-go/apps/web/internal/config"
+	"github.com/jayleaton/go-fast-stack/apps/web/internal/config"
 )
 
 // UpdateUserSettings is the PATCH body for a user. Email and password changes

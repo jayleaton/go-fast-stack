@@ -36,7 +36,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jayleaton/ai-patterns-go/packages/secrets/internal/access"
+	"github.com/jayleaton/go-fast-stack/packages/secrets/internal/access"
 )
 
 const redacted = "[redacted]"

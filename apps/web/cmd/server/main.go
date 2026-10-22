@@ -19,15 +19,15 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/jayleaton/ai-patterns-go/apps/web/internal/api"
-	"github.com/jayleaton/ai-patterns-go/apps/web/internal/config"
-	"github.com/jayleaton/ai-patterns-go/apps/web/internal/server"
-	"github.com/jayleaton/ai-patterns-go/apps/web/internal/services"
-	"github.com/jayleaton/ai-patterns-go/apps/web/ui"
-	"github.com/jayleaton/ai-patterns-go/packages/auth"
-	"github.com/jayleaton/ai-patterns-go/packages/database"
-	"github.com/jayleaton/ai-patterns-go/packages/secrets"
-	"github.com/jayleaton/ai-patterns-go/packages/secrets/reveal"
+	"github.com/jayleaton/go-fast-stack/apps/web/internal/api"
+	"github.com/jayleaton/go-fast-stack/apps/web/internal/config"
+	"github.com/jayleaton/go-fast-stack/apps/web/internal/server"
+	"github.com/jayleaton/go-fast-stack/apps/web/internal/services"
+	"github.com/jayleaton/go-fast-stack/apps/web/ui"
+	"github.com/jayleaton/go-fast-stack/packages/auth"
+	"github.com/jayleaton/go-fast-stack/packages/database"
+	"github.com/jayleaton/go-fast-stack/packages/secrets"
+	"github.com/jayleaton/go-fast-stack/packages/secrets/reveal"
 )
 
 // migrations run in order: auth owns "user", app tables reference it.

@@ -9,9 +9,9 @@ import (
 
 	"go.uber.org/mock/gomock"
 
-	"github.com/jayleaton/ai-patterns-go/apps/web/internal/services"
-	"github.com/jayleaton/ai-patterns-go/apps/web/internal/services/mocks"
-	"github.com/jayleaton/ai-patterns-go/apps/web/internal/validate"
+	"github.com/jayleaton/go-fast-stack/apps/web/internal/services"
+	"github.com/jayleaton/go-fast-stack/apps/web/internal/services/mocks"
+	"github.com/jayleaton/go-fast-stack/apps/web/internal/validate"
 )
 
 var (

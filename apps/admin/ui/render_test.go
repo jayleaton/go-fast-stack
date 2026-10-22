@@ -15,10 +15,10 @@ import (
 	templruntime "github.com/a-h/templ/runtime"
 	"github.com/boombuler/barcode/qr"
 
-	"github.com/jayleaton/ai-patterns-go/apps/admin/internal/services"
-	"github.com/jayleaton/ai-patterns-go/apps/admin/ui/i18n"
-	"github.com/jayleaton/ai-patterns-go/apps/admin/ui/view"
-	"github.com/jayleaton/ai-patterns-go/packages/uikit"
+	"github.com/jayleaton/go-fast-stack/apps/admin/internal/services"
+	"github.com/jayleaton/go-fast-stack/apps/admin/ui/i18n"
+	"github.com/jayleaton/go-fast-stack/apps/admin/ui/view"
+	"github.com/jayleaton/go-fast-stack/packages/uikit"
 )
 
 // rawKey catches a message key that rendered as itself (missing translation).

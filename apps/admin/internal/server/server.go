@@ -14,9 +14,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jayleaton/ai-patterns-go/apps/admin/internal/api"
-	"github.com/jayleaton/ai-patterns-go/apps/admin/internal/config"
-	"github.com/jayleaton/ai-patterns-go/packages/auth"
+	"github.com/jayleaton/go-fast-stack/apps/admin/internal/api"
+	"github.com/jayleaton/go-fast-stack/apps/admin/internal/config"
+	"github.com/jayleaton/go-fast-stack/packages/auth"
 )
 
 // Auth is the part of the admin *auth.Auth the server mounts.

@@ -1,4 +1,4 @@
-module github.com/jayleaton/ai-patterns-go/tools/actionlint
+module github.com/jayleaton/go-fast-stack/tools/actionlint
 
 go 1.26.8
 

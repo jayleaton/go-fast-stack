@@ -11,9 +11,9 @@ import templruntime "github.com/a-h/templ/runtime"
 import (
 	"strconv"
 
-	"github.com/jayleaton/ai-patterns-go/apps/web/internal/config"
-	"github.com/jayleaton/ai-patterns-go/apps/web/ui/view"
-	"github.com/jayleaton/ai-patterns-go/packages/uikit"
+	"github.com/jayleaton/go-fast-stack/apps/web/internal/config"
+	"github.com/jayleaton/go-fast-stack/apps/web/ui/view"
+	"github.com/jayleaton/go-fast-stack/packages/uikit"
 )
 
 func shell() templ.Component {

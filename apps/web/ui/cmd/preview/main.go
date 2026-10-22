@@ -15,8 +15,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/jayleaton/ai-patterns-go/apps/web/internal/config"
-	"github.com/jayleaton/ai-patterns-go/apps/web/ui"
+	"github.com/jayleaton/go-fast-stack/apps/web/internal/config"
+	"github.com/jayleaton/go-fast-stack/apps/web/ui"
 )
 
 func main() {

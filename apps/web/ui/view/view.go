@@ -10,7 +10,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/jayleaton/ai-patterns-go/packages/uikit"
+	"github.com/jayleaton/go-fast-stack/packages/uikit"
 )
 
 // State is the per-request data the layout needs.

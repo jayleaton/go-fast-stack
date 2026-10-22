@@ -6,8 +6,8 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/jayleaton/ai-patterns-go/apps/admin/internal/config"
-	"github.com/jayleaton/ai-patterns-go/apps/admin/internal/services"
+	"github.com/jayleaton/go-fast-stack/apps/admin/internal/config"
+	"github.com/jayleaton/go-fast-stack/apps/admin/internal/services"
 )
 
 // AnalyticsService is the port this endpoint calls (*services.AnalyticsService).

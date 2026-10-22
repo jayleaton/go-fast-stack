@@ -9,10 +9,10 @@ import (
 
 	"go.uber.org/mock/gomock"
 
-	"github.com/jayleaton/ai-patterns-go/apps/web/internal/config"
-	"github.com/jayleaton/ai-patterns-go/apps/web/ui"
-	"github.com/jayleaton/ai-patterns-go/apps/web/ui/i18n"
-	"github.com/jayleaton/ai-patterns-go/apps/web/ui/routes"
+	"github.com/jayleaton/go-fast-stack/apps/web/internal/config"
+	"github.com/jayleaton/go-fast-stack/apps/web/ui"
+	"github.com/jayleaton/go-fast-stack/apps/web/ui/i18n"
+	"github.com/jayleaton/go-fast-stack/apps/web/ui/routes"
 )
 
 func TestPages(t *testing.T) {

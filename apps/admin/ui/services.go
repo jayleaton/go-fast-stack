@@ -5,8 +5,8 @@ package ui
 import (
 	"context"
 
-	"github.com/jayleaton/ai-patterns-go/apps/admin/internal/services"
-	"github.com/jayleaton/ai-patterns-go/apps/admin/internal/validate"
+	"github.com/jayleaton/go-fast-stack/apps/admin/internal/services"
+	"github.com/jayleaton/go-fast-stack/apps/admin/internal/validate"
 )
 
 // Users is the user service the users pages call (*services.UserService).

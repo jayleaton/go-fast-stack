@@ -5,9 +5,9 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/jayleaton/ai-patterns-go/packages/auth"
-	"github.com/jayleaton/ai-patterns-go/packages/database/adminrepo"
-	"github.com/jayleaton/ai-patterns-go/packages/database/dbtest"
+	"github.com/jayleaton/go-fast-stack/packages/auth"
+	"github.com/jayleaton/go-fast-stack/packages/database/adminrepo"
+	"github.com/jayleaton/go-fast-stack/packages/database/dbtest"
 )
 
 // adminDB is the admin database: the admin auth instance's tables, then the

@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/jayleaton/ai-patterns-go/apps/web/internal/services"
-	"github.com/jayleaton/ai-patterns-go/packages/auth"
+	"github.com/jayleaton/go-fast-stack/apps/web/internal/services"
+	"github.com/jayleaton/go-fast-stack/packages/auth"
 )
 
 // AccountCredentials adapts *auth.Auth to services.AccountCredentials. It is

@@ -1,6 +1,8 @@
-# ai-patterns-go
+# Go Fast Stack
 
-A Go + Datastar monorepo template: one static binary serving server-rendered `templ` pages, a JSON API, and Better Auth–style auth on Postgres. It succeeds [ai-patterns-monorepo](https://github.com/jayleaton/ai-patterns-monorepo) and keeps the same layered patterns.
+A Go + Datastar monorepo template: one static binary serving server-rendered `templ` pages, a JSON API, and Better Auth–style auth on Postgres, with the same layered patterns as its predecessor.
+
+Go Fast Stack succeeds [jayleaton/ai-patterns-monorepo](https://github.com/jayleaton/ai-patterns-monorepo) (this repo was previously named `ai-patterns-go`).
 
 ## Quick start
 
@@ -223,7 +225,7 @@ With `env`, all of these are read at boot and change with a redeploy. The admin 
 
 **Doppler setup for a team.**
 
-1. Create a Doppler workspace and a project (e.g. `myapp`). Each environment (`dev`, `stg`, `prd`) is a config; add `DATABASE_URL`, `AUTH_SECRET` and `RESEND_API_KEY` to each (`AUTH_SECRET_PREVIOUS` only while rotating). The Developer plan is free for three people and service tokens are free.
+1. Create a Doppler workspace and a project (e.g. `go-fast-stack`). Each environment (`dev`, `stg`, `prd`) is a config; add `DATABASE_URL`, `AUTH_SECRET` and `RESEND_API_KEY` to each (`AUTH_SECRET_PREVIOUS` only while rotating). The Developer plan is free for three people and service tokens are free.
 2. Per Railway environment, create a **read-only service token** for that environment's config (project → config → Access → Generate). One token per service per environment, so staging can't read production and a future admin service gets its own config.
 3. `make railway-secrets` (see "Deploy to Railway") stores each token sealed on its service and environment and sets `SECRETS_PROVIDER=doppler`, which redeploys it. The Railway copies of `DATABASE_URL`, `AUTH_SECRET` and `RESEND_API_KEY` are then ignored. The pre-deploy `server migrate` reads `DATABASE_URL` from Doppler too, so put the Postgres service's private `DATABASE_URL` in the Doppler config first.
 4. Deploy. The log shows `secrets: loaded provider=doppler`. From now on a change in Doppler reaches every replica within one interval (60 s ± 10 %): `secrets: rotated changed=[…]`, then the consumer's line (`database: DATABASE_URL rotated`, `auth: AUTH_SECRET rotated`, `mailer: resend client built`) with fingerprints. Revoke an old credential upstream once every replica logged the new fingerprint.

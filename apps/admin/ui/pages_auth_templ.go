@@ -9,11 +9,11 @@ import "github.com/a-h/templ"
 import templruntime "github.com/a-h/templ/runtime"
 
 import (
-	"github.com/jayleaton/ai-patterns-go/apps/admin/internal/config"
-	"github.com/jayleaton/ai-patterns-go/apps/admin/ui/i18n"
-	"github.com/jayleaton/ai-patterns-go/apps/admin/ui/routes"
-	"github.com/jayleaton/ai-patterns-go/apps/admin/ui/view"
-	"github.com/jayleaton/ai-patterns-go/packages/uikit"
+	"github.com/jayleaton/go-fast-stack/apps/admin/internal/config"
+	"github.com/jayleaton/go-fast-stack/apps/admin/ui/i18n"
+	"github.com/jayleaton/go-fast-stack/apps/admin/ui/routes"
+	"github.com/jayleaton/go-fast-stack/apps/admin/ui/view"
+	"github.com/jayleaton/go-fast-stack/packages/uikit"
 )
 
 // Patch target ids shared by pages and handlers.

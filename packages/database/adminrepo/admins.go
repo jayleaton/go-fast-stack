@@ -3,8 +3,8 @@ package adminrepo
 import (
 	"context"
 
-	"github.com/jayleaton/ai-patterns-go/packages/database/adminrepo/adminsql"
-	"github.com/jayleaton/ai-patterns-go/packages/database/adminrepo/model"
+	"github.com/jayleaton/go-fast-stack/packages/database/adminrepo/adminsql"
+	"github.com/jayleaton/go-fast-stack/packages/database/adminrepo/model"
 )
 
 // Admins is the admin database's own view of its admins (the admin auth

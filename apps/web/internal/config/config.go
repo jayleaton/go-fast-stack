@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jayleaton/ai-patterns-go/packages/secrets"
+	"github.com/jayleaton/go-fast-stack/packages/secrets"
 )
 
 // Env is the deployment environment (APP_ENV).

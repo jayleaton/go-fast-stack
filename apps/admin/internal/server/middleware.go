@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jayleaton/ai-patterns-go/apps/admin/internal/api"
-	"github.com/jayleaton/ai-patterns-go/apps/admin/internal/config"
+	"github.com/jayleaton/go-fast-stack/apps/admin/internal/api"
+	"github.com/jayleaton/go-fast-stack/apps/admin/internal/config"
 )
 
 type statusRecorder struct {

@@ -15,10 +15,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jayleaton/ai-patterns-go/apps/web/internal/services"
-	"github.com/jayleaton/ai-patterns-go/apps/web/internal/validate"
-	"github.com/jayleaton/ai-patterns-go/apps/web/ui"
-	"github.com/jayleaton/ai-patterns-go/packages/auth"
+	"github.com/jayleaton/go-fast-stack/apps/web/internal/services"
+	"github.com/jayleaton/go-fast-stack/apps/web/internal/validate"
+	"github.com/jayleaton/go-fast-stack/apps/web/ui"
+	"github.com/jayleaton/go-fast-stack/packages/auth"
 )
 
 // CookieName matches Better Auth's session cookie.
