@@ -1,0 +1,244 @@
+package ui
+
+import (
+	"strconv"
+
+	"github.com/jayleaton/ai-patterns-go/apps/web/internal/config"
+	"github.com/jayleaton/ai-patterns-go/apps/web/internal/services"
+	"github.com/jayleaton/ai-patterns-go/apps/web/ui/i18n"
+	"github.com/jayleaton/ai-patterns-go/apps/web/ui/routes"
+	"github.com/jayleaton/ai-patterns-go/apps/web/ui/view"
+)
+
+// Patch targets of the Account page.
+const (
+	profileCardID    = "profile-card"
+	profileStatusID  = "profile-status"
+	emailCardID      = "email-card"
+	emailStatusID    = "email-status"
+	passwordCardID   = "password-card"
+	passwordStatusID = "password-status"
+	sessionsCardID   = "sessions-card"
+	deleteErrorID    = "delete-error"
+)
+
+// AccountData is everything the Account page renders.
+type AccountData struct {
+	User         User
+	Sessions     []services.Session
+	Summary      services.UserDataSummary
+	EmailChanged bool
+	// LoadError is shown when sessions or the data summary failed to load.
+	LoadError string
+}
+
+// Status is the outcome line of one account form; both fields are translated.
+type Status struct {
+	Message string
+	Error   string
+}
+
+templ AccountPage(d AccountData) {
+	@view.Layout(i18n.T(ctx, "pages.account.title")) {
+		<div class="container-balanced py-8 md:py-20">
+			<div class="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+				<div>
+					<h1 class="text-2xl font-semibold text-neutral-900 dark:text-neutral-50">{ i18n.T(ctx, "pages.account.title") }</h1>
+					<p class="text-sm text-neutral-600 dark:text-neutral-400">{ i18n.T(ctx, "pages.account.subtitle") }</p>
+				</div>
+				<div class="flex items-center gap-2">
+					<a href={ templ.SafeURL(config.AppRoutes.Dashboard) } class="rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800">
+						{ i18n.T(ctx, "pages.account.backToDashboard") }
+					</a>
+				</div>
+			</div>
+			if d.EmailChanged {
+				<div role="status" class={ "mb-6", view.SuccessAlertClass }>{ i18n.Tf(ctx, "pages.account.emailChanged", "email", d.User.Email) }</div>
+			}
+			if d.LoadError != "" {
+				<div role="alert" class={ "mb-6", view.ErrorAlertClass }>{ d.LoadError }</div>
+			}
+			<div class="grid grid-cols-1 gap-6 md:grid-cols-2">
+				@ProfileCard(d.User, Status{})
+				@EmailCard(d.User.Email, "", Status{})
+				@PasswordCard(d.User.Email, Status{})
+				@SessionsCard(d.Sessions, Status{})
+			</div>
+			<div class="mt-6">
+				@DangerCard(d.Summary)
+			</div>
+		</div>
+	}
+}
+
+templ cardHeading(titleKey, descriptionKey string) {
+	<h3 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{ i18n.T(ctx, titleKey) }</h3>
+	<p class="mt-2 text-sm text-neutral-600 dark:text-neutral-300">{ i18n.T(ctx, descriptionKey) }</p>
+}
+
+// StatusAlert renders a form's outcome into its patch slot.
+templ StatusAlert(id string, s Status) {
+	if s.Error != "" {
+		@view.Alert(id, "alert", view.ErrorAlertClass+" text-sm", s.Error)
+	} else {
+		@view.Alert(id, "status", view.SuccessAlertClass+" text-sm", s.Message)
+	}
+}
+
+templ formButton(label, loadingLabel, signal string) {
+	<button type="submit" data-attr:disabled={ "$" + signal } class="inline-flex items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-600/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-blue-500 dark:hover:bg-blue-400">
+		<span data-show={ "!$" + signal }>{ label }</span>
+		<span style="display: none" data-show={ "$" + signal }>{ loadingLabel }</span>
+	</button>
+}
+
+templ ProfileCard(u User, s Status) {
+	<div id={ profileCardID } class={ "p-6", cardClass }>
+		@cardHeading("pages.account.profile.title", "pages.account.profile.description")
+		<form class="mt-4 space-y-4" method="post" action={ templ.SafeURL(routes.AccountProfile) } data-on:submit={ view.PostForm(routes.AccountProfile) } data-indicator:_saving-profile>
+			@StatusAlert(profileStatusID, s)
+			<div class="flex items-center gap-4">
+				if u.Image != nil && *u.Image != "" {
+					<img src={ *u.Image } alt="" class="h-14 w-14 rounded-full border border-neutral-200 object-cover dark:border-neutral-800"/>
+				} else {
+					<span aria-hidden="true" class="flex h-14 w-14 items-center justify-center rounded-full bg-neutral-100 text-lg font-semibold text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">{ initials(u.Name) }</span>
+				}
+				<div class="min-w-0 flex-1">
+					@view.Input(view.Field{ID: "name", Type: "text", Label: i18n.T(ctx, "common.name"), Autocomplete: "name", Value: u.Name})
+				</div>
+			</div>
+			@view.Input(view.Field{ID: "image", Type: "url", Label: i18n.T(ctx, "pages.account.profile.image"), Placeholder: "https://", Value: deref(u.Image), Optional: true, Hint: i18n.T(ctx, "pages.account.profile.imageHint")})
+			<div class="flex justify-end">
+				@formButton(i18n.T(ctx, "common.save"), i18n.T(ctx, "pages.account.profile.saving"), "_savingProfile")
+			</div>
+		</form>
+	</div>
+}
+
+// EmailCard shows the request form, or the "check your new inbox" state once
+// a link went to sentTo.
+templ EmailCard(current, sentTo string, s Status) {
+	<div id={ emailCardID } class={ "p-6", cardClass }>
+		@cardHeading("pages.account.email.title", "pages.account.email.description")
+		<dl class="mt-4 text-sm">
+			<dt class="text-neutral-500">{ i18n.T(ctx, "pages.account.email.current") }</dt>
+			<dd class="mt-1 font-medium text-neutral-900 dark:text-neutral-100" data-testid="current-email">{ current }</dd>
+		</dl>
+		if sentTo != "" {
+			<div class="mt-4 space-y-3">
+				<div class="rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-900 dark:bg-blue-950/40">
+					<p class="text-sm font-semibold text-blue-800 dark:text-blue-200">{ i18n.T(ctx, "pages.account.email.checkInbox") }</p>
+					<p class="mt-1 text-sm text-blue-700 dark:text-blue-300">{ i18n.Tf(ctx, "pages.account.email.sentTo", "email", sentTo) }</p>
+				</div>
+				<a href={ templ.SafeURL(config.AppRoutes.Account) } class={ "text-sm", view.TextLinkClass }>{ i18n.T(ctx, "pages.account.email.useDifferent") }</a>
+			</div>
+		} else {
+			<form class="mt-4 space-y-4" method="post" action={ templ.SafeURL(routes.AccountEmail) } data-on:submit={ view.PostForm(routes.AccountEmail) } data-indicator:_sending-email>
+				@StatusAlert(emailStatusID, s)
+				@view.Input(view.Field{ID: "newEmail", Type: "email", Label: i18n.T(ctx, "pages.account.email.new"), Placeholder: i18n.T(ctx, "pages.account.email.newPlaceholder"), Autocomplete: "email"})
+				<div class="flex justify-end">
+					@formButton(i18n.T(ctx, "pages.account.email.submit"), i18n.T(ctx, "pages.account.email.sending"), "_sendingEmail")
+				</div>
+			</form>
+		}
+	</div>
+}
+
+// PasswordCard carries the email as a hidden username for password managers.
+templ PasswordCard(email string, s Status) {
+	<div id={ passwordCardID } class={ "p-6", cardClass }>
+		@cardHeading("pages.account.password.title", "pages.account.password.description")
+		<form class="mt-4 space-y-4" method="post" action={ templ.SafeURL(routes.AccountPassword) } data-on:submit={ view.PostForm(routes.AccountPassword) } data-indicator:_changing-password>
+			@StatusAlert(passwordStatusID, s)
+			<input type="email" name="username" autocomplete="username" value={ email } readonly hidden/>
+			@view.Input(view.Field{ID: "currentPassword", Type: "password", Label: i18n.T(ctx, "pages.account.password.current"), Autocomplete: "current-password"})
+			@view.Input(view.Field{ID: "newPassword", Type: "password", Label: i18n.T(ctx, "pages.account.password.new"), Autocomplete: "new-password", MinLength: services.MinPasswordLength, MaxLength: services.MaxPasswordLength})
+			@view.Input(view.Field{ID: "confirmPassword", Type: "password", Label: i18n.T(ctx, "pages.account.password.confirm"), Autocomplete: "new-password", MinLength: services.MinPasswordLength, MaxLength: services.MaxPasswordLength})
+			<label class="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-300">
+				<input type="checkbox" name="revokeOtherSessions" value="on" class="h-4 w-4 rounded border-neutral-300 text-blue-600 focus:ring-blue-500 dark:border-neutral-700 dark:bg-neutral-900"/>
+				{ i18n.T(ctx, "pages.account.password.revokeOthers") }
+			</label>
+			<div class="flex justify-end">
+				@formButton(i18n.T(ctx, "pages.account.password.submit"), i18n.T(ctx, "pages.account.password.changing"), "_changingPassword")
+			</div>
+		</form>
+	</div>
+}
+
+// SessionsCard lists the user's sessions; every action re-renders it.
+templ SessionsCard(sessions []services.Session, s Status) {
+	<div id={ sessionsCardID } class={ "p-6", cardClass }>
+		@cardHeading("pages.account.sessions.title", "pages.account.sessions.description")
+		<div class="mt-4">
+			@StatusAlert("sessions-status", s)
+		</div>
+		<ul class="mt-2 divide-y divide-neutral-200 dark:divide-neutral-800" data-testid="sessions">
+			for _, sess := range sessions {
+				<li class="flex items-start justify-between gap-4 py-3" data-session-id={ sess.ID }>
+					<div class="min-w-0 text-sm">
+						<p class="font-medium text-neutral-900 dark:text-neutral-100">
+							{ deviceLabel(ctx, sess.UserAgent) }
+							if sess.Current {
+								<span class="ml-2 inline-flex items-center rounded-md border border-emerald-300 bg-emerald-50 px-1.5 py-0.5 text-xs font-medium text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-900/30 dark:text-emerald-300">{ i18n.T(ctx, "pages.account.sessions.thisDevice") }</span>
+							}
+						</p>
+						<p class="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">
+							{ i18n.Tf(ctx, "pages.account.sessions.signedIn", "date", i18n.From(ctx).DateTime(sess.CreatedAt.UTC())) }
+							if sess.IPAddress != nil && *sess.IPAddress != "" {
+								· { i18n.Tf(ctx, "pages.account.sessions.ip", "ip", *sess.IPAddress) }
+							}
+						</p>
+						<p class="text-xs text-neutral-500 dark:text-neutral-400">{ i18n.Tf(ctx, "pages.account.sessions.expires", "date", i18n.From(ctx).DateTime(sess.ExpiresAt.UTC())) }</p>
+					</div>
+					if !sess.Current {
+						<form method="post" action={ templ.SafeURL(routes.AccountRevokeSession) } data-on:submit={ view.PostForm(routes.AccountRevokeSession) } data-indicator:_revoking>
+							<input type="hidden" name="sessionId" value={ sess.ID }/>
+							<button type="submit" data-attr:disabled="$_revoking" class="shrink-0 rounded-md border border-neutral-300 bg-white px-3 py-1.5 text-sm text-neutral-800 hover:bg-neutral-50 disabled:opacity-50 dark:border-neutral-800 dark:bg-neutral-800 dark:text-neutral-200">
+								{ i18n.T(ctx, "pages.account.sessions.revoke") }
+							</button>
+						</form>
+					}
+				</li>
+			}
+		</ul>
+		if hasOtherSessions(sessions) {
+			<form class="mt-4 flex justify-end" method="post" action={ templ.SafeURL(routes.AccountRevokeOthers) } data-on:submit={ view.PostForm(routes.AccountRevokeOthers) } data-indicator:_revoking-others>
+				@formButton(i18n.T(ctx, "pages.account.sessions.revokeOthers"), i18n.T(ctx, "pages.account.sessions.working"), "_revokingOthers")
+			</form>
+		} else {
+			<p class="mt-4 text-sm text-neutral-500 dark:text-neutral-400">{ i18n.T(ctx, "pages.account.sessions.none") }</p>
+		}
+	</div>
+}
+
+// DangerCard asks for confirmation in a local signal, then posts.
+templ DangerCard(sum services.UserDataSummary) {
+	<div class="rounded-xl border border-red-300 bg-white p-6 shadow-sm dark:border-red-900/60 dark:bg-neutral-900/80" data-signals="{_confirmDelete: false}">
+		<h3 class="text-lg font-semibold text-red-700 dark:text-red-400">{ i18n.T(ctx, "pages.account.danger.title") }</h3>
+		<p class="mt-2 text-sm text-neutral-600 dark:text-neutral-300">{ i18n.T(ctx, "pages.account.danger.description") }</p>
+		<p class="mt-2 text-sm text-neutral-500 dark:text-neutral-400" data-testid="data-summary">{ i18n.Tf(ctx, "pages.account.danger.summary", "count", strconv.FormatInt(sum.Sessions, 10)) }</p>
+		<div class="mt-4">
+			@view.ErrorAlert(deleteErrorID, "")
+		</div>
+		<button
+			type="button"
+			data-show="!$_confirmDelete"
+			data-on:click="$_confirmDelete = true"
+			class="mt-4 rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-100 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300 dark:hover:bg-red-950/60"
+		>
+			{ i18n.T(ctx, "pages.account.danger.button") }
+		</button>
+		<form style="display: none" data-show="$_confirmDelete" class="mt-4 space-y-3" method="post" action={ templ.SafeURL(routes.AccountDelete) } data-on:submit={ view.PostForm(routes.AccountDelete) } data-indicator:_deleting>
+			<p class="text-sm font-medium text-red-700 dark:text-red-300">{ i18n.T(ctx, "pages.account.danger.confirm") }</p>
+			<div class="flex flex-wrap gap-2">
+				<button type="submit" data-attr:disabled="$_deleting" class="rounded-md bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50">
+					<span data-show="!$_deleting">{ i18n.T(ctx, "pages.account.danger.confirmButton") }</span>
+					<span style="display: none" data-show="$_deleting">{ i18n.T(ctx, "pages.account.danger.deleting") }</span>
+				</button>
+				<button type="button" data-on:click="$_confirmDelete = false" class="rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-800 hover:bg-neutral-50 dark:border-neutral-800 dark:bg-neutral-800 dark:text-neutral-200">
+					{ i18n.T(ctx, "common.cancel") }
+				</button>
+			</div>
+		</form>
+	</div>
+}

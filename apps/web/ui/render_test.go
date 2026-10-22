@@ -9,6 +9,7 @@ import (
 
 	"github.com/a-h/templ"
 
+	"github.com/jayleaton/ai-patterns-go/apps/web/internal/services"
 	"github.com/jayleaton/ai-patterns-go/apps/web/ui/i18n"
 	"github.com/jayleaton/ai-patterns-go/apps/web/ui/view"
 	"github.com/jayleaton/ai-patterns-go/apps/web/ui/welcome"
@@ -32,6 +33,8 @@ func renderIn(t *testing.T, l i18n.Locale, st view.State, c templ.Component) str
 // every locale and checks the heading text and that no key leaked through.
 func TestPagesRenderInEveryLocale(t *testing.T) {
 	user := User{ID: "u1", Name: "Ada", Email: "ada@example.com", CreatedAt: time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)}
+	ua := "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Version/18.0 Mobile/15E148 Safari/604.1"
+	sessions := []services.Session{{ID: "s1", Current: true, UserAgent: &ua}, {ID: "s2"}}
 	pages := []struct {
 		name    string
 		authed  bool
@@ -53,7 +56,15 @@ func TestPagesRenderInEveryLocale(t *testing.T) {
 		{"verify success done", true, VerifyEmailSuccessPage("", VerifyEmailSucceeded()), "pages.verifyEmail.emailVerifiedSuccessfully"},
 		{"verify success failed", false, VerifyEmailSuccessPage("", VerifyEmailFailed("x")), "pages.verifyEmail.verificationFailed"},
 		{"dashboard", true, DashboardPage(DashboardData{User: user, Tab: "t"}), "pages.dashboard.title"},
-		{"dashboard saved", true, DashboardPage(DashboardData{User: user, Settings: SettingsState{Saved: true}}), "pages.dashboard.settingsForm.saved"},
+		{"account", true, AccountPage(AccountData{User: user, Sessions: sessions, Summary: services.UserDataSummary{Sessions: 2}}), "pages.account.sessions.thisDevice"},
+		{"account email changed", true, AccountPage(AccountData{User: user, EmailChanged: true}), "pages.account.title"},
+		{"account load error", true, AccountPage(AccountData{User: user, LoadError: "x"}), "pages.account.sessions.none"},
+		{"profile saved", true, ProfileCard(user, Status{Message: "saved"}), "pages.account.profile.title"},
+		{"email sent", true, EmailCard(user.Email, "new@example.com", Status{}), "pages.account.email.checkInbox"},
+		{"email error", true, EmailCard(user.Email, "", Status{Error: "x"}), "pages.account.email.submit"},
+		{"password", true, PasswordCard(user.Email, Status{}), "pages.account.password.revokeOthers"},
+		{"sessions", true, SessionsCard(sessions, Status{Message: "ok"}), "pages.account.sessions.revokeOthers"},
+		{"danger", true, DangerCard(services.UserDataSummary{Sessions: 1}), "pages.account.danger.confirmButton"},
 		{"live body", true, LiveBody(time.Now(), Session{ExpiresAt: time.Now().Add(time.Hour)}), "pages.dashboard.live.serverTime"},
 		{"welcome landing", false, welcome.LandingPage(), ""},
 		{"welcome why", false, welcome.WhyPage(), ""},

@@ -65,20 +65,6 @@
           "description": "Manage your preferences and configuration."
         }
       },
-      "settingsForm": {
-        "title": "Account settings",
-        "description": "Update the name shown on your account. Your email is used to sign in and can't be changed here.",
-        "saving": "Saving...",
-        "saved": "Settings saved."
-      },
-      "deleteAccount": {
-        "title": "Delete account",
-        "description": "Permanently delete your account and all of its data. This cannot be undone.",
-        "button": "Delete account",
-        "confirm": "Are you sure? This permanently deletes your account.",
-        "confirmButton": "Yes, delete my account",
-        "deleting": "Deleting..."
-      },
       "live": {
         "title": "Live session",
         "description": "Streamed from the server over SSE.",
@@ -164,6 +150,82 @@
       "body": "The starter welcome page is turned off. Sign in, or replace this screen with your own homepage.",
       "signUp": "Sign up",
       "signIn": "Sign in"
+    },
+    "account": {
+      "title": "Account",
+      "subtitle": "Manage your profile, sign-in details and devices.",
+      "backToDashboard": "Back to dashboard",
+      "emailChanged": "Your email address is now {email}.",
+      "profile": {
+        "title": "Profile",
+        "description": "Your name and picture as others see them.",
+        "image": "Image URL",
+        "imageHint": "Optional. A link to an http(s) image; leave it empty to remove the picture.",
+        "saving": "Saving...",
+        "saved": "Profile saved."
+      },
+      "email": {
+        "title": "Email",
+        "description": "We send a confirmation link to the new address. Your email changes once you open it.",
+        "current": "Current email",
+        "new": "New email",
+        "newPlaceholder": "you@example.com",
+        "submit": "Send confirmation link",
+        "sending": "Sending...",
+        "checkInbox": "Check your new inbox",
+        "sentTo": "We sent a confirmation link to {email}. Your email stays the same until you open it.",
+        "useDifferent": "Use a different address"
+      },
+      "password": {
+        "title": "Password",
+        "description": "Use 8 to 128 characters.",
+        "current": "Current password",
+        "new": "New password",
+        "confirm": "Confirm new password",
+        "revokeOthers": "Sign out of all other devices",
+        "submit": "Change password",
+        "changing": "Changing...",
+        "changed": "Password changed.",
+        "changedRevoked": "Password changed. Other devices were signed out.",
+        "mismatch": "Passwords don't match"
+      },
+      "sessions": {
+        "title": "Devices",
+        "description": "Where you're signed in right now.",
+        "thisDevice": "This device",
+        "unknownDevice": "Unknown device",
+        "device": "{browser} on {os}",
+        "signedIn": "Signed in {date}",
+        "expires": "Expires {date}",
+        "ip": "IP {ip}",
+        "revoke": "Sign out",
+        "revokeOthers": "Sign out of all other devices",
+        "working": "Signing out...",
+        "revoked": "Device signed out.",
+        "othersRevoked": "All other devices were signed out.",
+        "none": "No other devices are signed in."
+      },
+      "danger": {
+        "title": "Delete account",
+        "description": "Permanently delete your account and all of its data. This cannot be undone.",
+        "summary": "Active sessions: {count}",
+        "button": "Delete account",
+        "confirm": "Are you sure? This permanently deletes your account.",
+        "confirmButton": "Yes, delete my account",
+        "deleting": "Deleting..."
+      },
+      "errors": {
+        "wrongPassword": "Current password is incorrect",
+        "passwordPolicy": "Password must be 8 to 128 characters",
+        "sameEmail": "The new email must be different from your current email",
+        "samePassword": "The new password must be different from your current password",
+        "sessionNotFound": "That device is already signed out",
+        "currentSession": "Use the sign-out button to end this device's session",
+        "name": "Name must be 1 to 255 characters",
+        "image": "Image must be an http(s) URL",
+        "sessionNotFresh": "For your security, sign in again to change your email",
+        "noPassword": "This account has no password to change"
+      }
     }
   },
   "errors": {
@@ -177,6 +239,9 @@
     "emailTaken": "Email already in use",
     "invalidInput": "Please check the form and try again",
     "tooManyRequests": "Too many attempts. Please try again later.",
-    "passwordTooLong": "Password must be at most 128 characters"
+    "passwordTooLong": "Password must be at most 128 characters",
+    "forbidden": "You can only manage your own account",
+    "notFound": "That no longer exists. Reload the page and try again.",
+    "conflict": "That conflicts with existing data. Reload the page and try again."
   }
 }

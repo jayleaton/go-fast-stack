@@ -1,13 +1,18 @@
-// Package routes holds the UI's own action endpoints (Datastar posts, the
-// live stream, static assets). Page paths live in config.AppRoutes; these move
-// there when the UI is wired into the server.
+// Package routes holds the UI's own action paths: Datastar posts, the live
+// stream and static assets. Pages live in config.AppRoutes.
 package routes
 
 const (
-	Logout         = "/logout"
-	Locale         = "/locale"
-	DashboardLive  = "/dashboard/live"
-	UpdateSettings = "/dashboard/settings"
-	DeleteAccount  = "/dashboard/delete-account"
-	Static         = "/static/"
+	// The Account page's forms (config.AppRoutes.Account).
+	AccountProfile       = "/dashboard/account/profile"
+	AccountEmail         = "/dashboard/account/email"
+	AccountPassword      = "/dashboard/account/password"
+	AccountRevokeSession = "/dashboard/account/sessions/revoke"
+	AccountRevokeOthers  = "/dashboard/account/sessions/revoke-others"
+	AccountDelete        = "/dashboard/account/delete"
+
+	Logout        = "/logout"
+	Locale        = "/locale"
+	DashboardLive = "/dashboard/live"
+	Static        = "/static/"
 )

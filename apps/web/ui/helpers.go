@@ -16,15 +16,6 @@ func orDash(s string) string {
 	return s
 }
 
-func firstNonEmpty(vals ...string) string {
-	for _, v := range vals {
-		if v != "" {
-			return v
-		}
-	}
-	return ""
-}
-
 func memberSince(ctx context.Context, t time.Time) string {
 	if t.IsZero() {
 		return "—"

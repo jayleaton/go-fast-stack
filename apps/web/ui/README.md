@@ -5,14 +5,14 @@ Ported from the original `apps/web-app` (same pages, same Tailwind classes, same
 
 | Package | What |
 |---|---|
-| `ui` | `ui.New(deps)` (`Routes(mux)` / `Handler()`), the `Auth`/`Users` interfaces, handlers, auth + dashboard pages |
+| `ui` | `ui.New(deps)` (`Routes(mux)` / `Handler()`), the `Auth`/`Users` interfaces, handlers, auth, dashboard and Account pages |
 | `ui/view` | layout shell (header: logout, theme, language), shared inputs/buttons/alerts/skeletons |
 | `ui/welcome` | template welcome landing + `/why` (feature-flagged, deletable; see its README) |
 | `ui/i18n` | `messages/{en,ja}.json`, locale negotiation, `i18n.T(ctx, key)` |
 | `ui/routes` | the UI's own action endpoints (logout, locale, live stream, settings, delete, static); pages use `config.AppRoutes` |
 | `ui/static` | embedded `app.css` (generated), pinned `datastar-1.0.4.js`, favicon |
-| `ui/uifake` | in-memory `Auth`/`Users` for tests and the preview |
-| `ui/cmd/preview` | all pages with fakes on `0.0.0.0:3001` |
+| `ui/mocks` | mockgen mocks of `ui.Auth` and `ui.Users` (`go generate`, committed, CI diff-checked) |
+| `ui/cmd/preview` | all pages on `0.0.0.0:3001` over an in-memory backend (`backend.go`) with the auth and service rules |
 
 ## Commands (for the Makefile)
 
@@ -28,7 +28,7 @@ TAILWIND="$(apps/web/ui/scripts/tailwind.sh)"
 
 # order matters: templ first, then CSS (Tailwind scans the .templ and .go files for classes)
 
-# preview every page with fakes (demo@example.com / password123; email links are logged)
+# preview every page over the in-memory backend (demo@example.com / password123; email links are logged)
 go run ./apps/web/ui/cmd/preview            # dev behavior: no email verification
 go run ./apps/web/ui/cmd/preview -verify    # production behavior
 
@@ -57,16 +57,28 @@ deps.UI = ui.Handler() // server.Deps.UI, mounted at "/" inside auth.Middleware
 with `packages/auth` and the user service.
 
 `ui.Auth` uses the auth types directly (`ui.User` = `auth.User`, ...) and the handlers map `auth.Err*` values to
-messages (`errorKeys`); unknown errors show "Something went wrong" and are logged. Sign-up and sign-in pass
+messages (`AuthErrors`); unknown errors show "Something went wrong" and are logged. Sign-up and sign-in pass
 `CallbackURL: config.AppRoutes.VerifyEmailSuccess`; password reset passes `config.AppRoutes.ResetPassword` as
 `redirectTo`. Auth joins app paths with its `BaseURL`, so no origin is hardcoded here. The verify link may land after
 auth's own `GET /api/auth/verify-email` already set the cookie (the page then checks the session) or carry `?token=`
 (the page POSTs it to `VerifyEmail`, so link scanners doing GETs cannot spend it).
 
-`ui.Users` is the method set of `*services.UserService` (`UpdateProfile`, `DeleteAccount`, ...). The settings form
-posts only the name: email changes belong to the auth flows, so the email is shown read-only. The form is validated
-with `validate.UpdateUserSettings` before the service call; validation and `KindInvalid` errors show
-`errors.invalidInput`.
+`ui.Users` is the method set of `*services.UserService`: profile, email change, password, sessions, delete and data
+summary. The Account page (`config.AppRoutes.Account`) is built only on it; the existing auth flows (sign-in, sign-up,
+verify, reset, sign-out) keep calling `*auth.Auth`. Forms decode into the `validate` types (`UpdateUserSettings`,
+`UpdateUserEmail`, `UpdateUserPassword`) and call `Validate()` before the service. Errors are translated in
+`account_errors.go`: the named service errors (`services.ErrInvalidPassword`, `ErrSessionNotFresh`, ...) first, then
+the kind sentinels (`services.ErrNotFound`, ...), then validator fields; anything else is logged and shown as
+"Something went wrong". The actor carries the request's session ID, so the page can mark "this device" and revoke
+the others. Revocations are pushed to open dashboard tabs, and a revoked tab goes to the login page.
+
+## Tests
+
+Handler tests (`*_test.go` in this directory, the UI's test boundary) run the real router with mockgen mocks of
+`ui.Auth` and `ui.Users` and a mock session (`Deps.UserFrom`); they never import `packages/auth` or the database. Auth
+errors come from `ui.AuthErrors`. Each Account action is tested anonymously (redirect), on its happy path, and with
+every service error it can show. `guards_test.go` holds the two non-handler guards (every template key exists in every
+locale; the Datastar bundle matches its pin) and `render_test.go` renders every page and state in en and ja.
 
 ## Patterns
 

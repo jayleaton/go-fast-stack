@@ -10,8 +10,6 @@ import (
 	"github.com/starfederation/datastar-go/datastar"
 
 	"github.com/jayleaton/ai-patterns-go/apps/web/internal/config"
-	"github.com/jayleaton/ai-patterns-go/apps/web/internal/services"
-	"github.com/jayleaton/ai-patterns-go/apps/web/internal/validate"
 	"github.com/jayleaton/ai-patterns-go/apps/web/ui/i18n"
 	"github.com/jayleaton/ai-patterns-go/apps/web/ui/view"
 	"github.com/jayleaton/ai-patterns-go/apps/web/ui/welcome"
@@ -212,7 +210,8 @@ func (u *UI) dashboard(w http.ResponseWriter, r *http.Request) {
 
 // dashboardLive is the server-push example: one SSE stream per open
 // dashboard that patches the clock every tick and the account card whenever
-// the user changes (from any tab or device served by this process).
+// the user changes (from any tab or device served by this process), and
+// sends the tab to the login page when its session is revoked elsewhere.
 func (u *UI) dashboardLive(w http.ResponseWriter, r *http.Request) {
 	user, session, ok := u.userFrom(r.Context())
 	if !ok {
@@ -239,6 +238,13 @@ func (u *UI) dashboardLive(w http.ResponseWriter, r *http.Request) {
 				_ = sse.Redirect(config.AppRoutes.Home)
 				return
 			}
+			if ev.revokes(session.ID) {
+				_ = sse.Redirect(config.AppRoutes.Login)
+				return
+			}
+			if ev.User.ID == "" {
+				continue
+			}
 			if err := sse.PatchElementTempl(AccountCard(ev.User)); err != nil {
 				return
 			}
@@ -249,53 +255,6 @@ func (u *UI) dashboardLive(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-}
-
-func (u *UI) updateSettings(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	user, _, ok := u.userFrom(ctx)
-	if !ok {
-		u.redirect(w, r, config.AppRoutes.Login)
-		return
-	}
-	tab := r.PostFormValue("tab")
-	name := r.PostFormValue("name")
-	in := validate.UpdateUserSettings{Name: &name}
-	err := in.Validate()
-	var saved services.User
-	if err == nil {
-		saved, err = u.users.UpdateProfile(ctx, actor(user), user.ID, in)
-	}
-	if err != nil {
-		st := SettingsState{Name: name, Error: u.serviceMessage(ctx, err)}
-		u.patch(w, r, http.StatusUnprocessableEntity, DashboardPage(DashboardData{User: user, Tab: tab, Settings: st}), SettingsStatus(st))
-		return
-	}
-	updated := userFromService(saved)
-	u.hub.publish(user.ID, userEvent{User: updated, Tab: tab})
-	st := SettingsState{Saved: true}
-	u.patch(w, r, http.StatusOK, DashboardPage(DashboardData{User: updated, Tab: tab, Settings: st}), SettingsStatus(st), AccountCard(updated))
-}
-
-func (u *UI) deleteAccount(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	user, session, ok := u.userFrom(ctx)
-	if !ok {
-		u.redirect(w, r, config.AppRoutes.Login)
-		return
-	}
-	if err := u.users.DeleteAccount(ctx, actor(user), user.ID); err != nil {
-		msg := u.serviceMessage(ctx, err)
-		u.patch(w, r, http.StatusInternalServerError, DashboardPage(DashboardData{User: user, Tab: newTabID(), Settings: SettingsState{DeleteError: msg}}), view.ErrorAlert(deleteErrorID, msg))
-		return
-	}
-	// Sessions go with the user row; sign out anyway in case they do not cascade.
-	if err := u.auth.SignOut(ctx, session.Token); err != nil {
-		u.log.WarnContext(ctx, "ui: sign out after delete", "err", err)
-	}
-	u.auth.ClearSessionCookie(w)
-	u.hub.publish(user.ID, userEvent{Deleted: true})
-	u.redirect(w, r, config.AppRoutes.Home)
 }
 
 func (u *UI) logout(w http.ResponseWriter, r *http.Request) {
