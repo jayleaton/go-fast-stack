@@ -1,0 +1,52 @@
+axe-core wcag2a,wcag2aa,wcag21a,wcag21aa,best-practice | label before | desktop 1280x860, en
+counts are violated rules per impact; contrast-nodes = elements failing color-contrast
+
+page                      theme  critical  serious  moderate  minor  rules  contrast-nodes  rule ids
+------------------------  -----  --------  -------  --------  -----  -----  --------------  ---------------------------------------------------------------
+web-welcome               light  0         1        0         0      1      0               label-content-name-mismatch
+web-welcome               dark   0         2        0         0      2      1               color-contrast,label-content-name-mismatch
+web-why                   light  0         1        0         0      1      0               label-content-name-mismatch
+web-why                   dark   0         2        0         0      2      5               color-contrast,label-content-name-mismatch
+web-login                 light  0         1        1         0      2      0               label-content-name-mismatch,page-has-heading-one
+web-login                 dark   0         2        1         0      3      1               color-contrast,label-content-name-mismatch,page-has-heading-one
+web-signup                light  0         1        1         0      2      0               label-content-name-mismatch,page-has-heading-one
+web-signup                dark   0         2        1         0      3      1               color-contrast,label-content-name-mismatch,page-has-heading-one
+web-forgot-password       light  0         1        1         0      2      0               label-content-name-mismatch,page-has-heading-one
+web-forgot-password       dark   0         2        1         0      3      1               color-contrast,label-content-name-mismatch,page-has-heading-one
+web-reset-password        light  0         1        1         0      2      0               label-content-name-mismatch,page-has-heading-one
+web-reset-password        dark   0         2        1         0      3      1               color-contrast,label-content-name-mismatch,page-has-heading-one
+web-verify-email          light  0         1        1         0      2      0               label-content-name-mismatch,page-has-heading-one
+web-verify-email          dark   0         2        1         0      3      1               color-contrast,label-content-name-mismatch,page-has-heading-one
+web-verify-email-success  light  0         1        1         0      2      0               label-content-name-mismatch,page-has-heading-one
+web-verify-email-success  dark   0         2        1         0      3      1               color-contrast,label-content-name-mismatch,page-has-heading-one
+web-login-error           light  0         1        1         0      2      0               label-content-name-mismatch,page-has-heading-one
+web-login-error           dark   0         2        1         0      3      1               color-contrast,label-content-name-mismatch,page-has-heading-one
+web-dashboard             light  0         1        0         0      1      0               label-content-name-mismatch
+web-dashboard             dark   0         2        0         0      2      5               color-contrast,label-content-name-mismatch
+web-account               light  0         1        1         0      2      0               heading-order,label-content-name-mismatch
+web-account               dark   0         2        1         0      3      5               color-contrast,heading-order,label-content-name-mismatch
+admin-login               light  0         1        1         0      2      0               label-content-name-mismatch,page-has-heading-one
+admin-login               dark   0         2        1         0      3      1               color-contrast,label-content-name-mismatch,page-has-heading-one
+admin-set-password        light  0         1        1         0      2      0               label-content-name-mismatch,page-has-heading-one
+admin-set-password        dark   0         2        1         0      3      1               color-contrast,label-content-name-mismatch,page-has-heading-one
+admin-two-factor          light  0         1        1         0      2      0               label-content-name-mismatch,page-has-heading-one
+admin-two-factor          dark   0         2        1         0      3      1               color-contrast,label-content-name-mismatch,page-has-heading-one
+admin-users               light  0         1        0         0      1      0               label-content-name-mismatch
+admin-users               dark   0         2        0         0      2      2               color-contrast,label-content-name-mismatch
+admin-user                light  0         1        0         1      2      0               empty-table-header,label-content-name-mismatch
+admin-user                dark   0         2        0         1      3      1               color-contrast,empty-table-header,label-content-name-mismatch
+admin-user-banned         light  0         1        0         0      1      0               label-content-name-mismatch
+admin-user-banned         dark   0         2        0         0      2      2               color-contrast,label-content-name-mismatch
+admin-admins              light  0         1        0         0      1      0               label-content-name-mismatch
+admin-admins              dark   0         2        0         0      2      1               color-contrast,label-content-name-mismatch
+admin-audit               light  0         1        0         0      1      0               label-content-name-mismatch
+admin-audit               dark   0         2        0         0      2      1               color-contrast,label-content-name-mismatch
+admin-analytics           light  0         1        0         0      1      0               label-content-name-mismatch
+admin-analytics           dark   0         1        0         0      1      0               label-content-name-mismatch
+admin-two-factor-setup    light  0         1        1         0      2      0               label-content-name-mismatch,page-has-heading-one
+admin-two-factor-setup    dark   0         1        1         0      2      0               label-content-name-mismatch,page-has-heading-one
+------------------------  -----  --------  -------  --------  -----  -----  --------------  ---------------------------------------------------------------
+TOTAL                            0         61       24        2      87     33              
+
+skipped: web-dashboard-menu-open: no mobile menu button
+skipped: admin-users-menu-open: no mobile menu button

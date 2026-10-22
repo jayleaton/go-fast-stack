@@ -1,0 +1,50 @@
+axe-core wcag2a,wcag2aa,wcag21a,wcag21aa,best-practice | label after | desktop 1280x860, en
+counts are violated rules per impact; contrast-nodes = elements failing color-contrast
+
+page                      theme  critical  serious  moderate  minor  rules  contrast-nodes  rule ids
+------------------------  -----  --------  -------  --------  -----  -----  --------------  --------
+web-welcome               light  0         0        0         0      0      0               
+web-welcome               dark   0         0        0         0      0      0               
+web-why                   light  0         0        0         0      0      0               
+web-why                   dark   0         0        0         0      0      0               
+web-login                 light  0         0        0         0      0      0               
+web-login                 dark   0         0        0         0      0      0               
+web-signup                light  0         0        0         0      0      0               
+web-signup                dark   0         0        0         0      0      0               
+web-forgot-password       light  0         0        0         0      0      0               
+web-forgot-password       dark   0         0        0         0      0      0               
+web-reset-password        light  0         0        0         0      0      0               
+web-reset-password        dark   0         0        0         0      0      0               
+web-verify-email          light  0         0        0         0      0      0               
+web-verify-email          dark   0         0        0         0      0      0               
+web-verify-email-success  light  0         0        0         0      0      0               
+web-verify-email-success  dark   0         0        0         0      0      0               
+web-login-error           light  0         0        0         0      0      0               
+web-login-error           dark   0         0        0         0      0      0               
+web-dashboard             light  0         0        0         0      0      0               
+web-dashboard             dark   0         0        0         0      0      0               
+web-account               light  0         0        0         0      0      0               
+web-account               dark   0         0        0         0      0      0               
+admin-login               light  0         0        0         0      0      0               
+admin-login               dark   0         0        0         0      0      0               
+admin-set-password        light  0         0        0         0      0      0               
+admin-set-password        dark   0         0        0         0      0      0               
+admin-two-factor          light  0         0        0         0      0      0               
+admin-two-factor          dark   0         0        0         0      0      0               
+admin-users               light  0         0        0         0      0      0               
+admin-users               dark   0         0        0         0      0      0               
+admin-user                light  0         0        0         0      0      0               
+admin-user                dark   0         0        0         0      0      0               
+admin-user-banned         light  0         0        0         0      0      0               
+admin-user-banned         dark   0         0        0         0      0      0               
+admin-admins              light  0         0        0         0      0      0               
+admin-admins              dark   0         0        0         0      0      0               
+admin-audit               light  0         0        0         0      0      0               
+admin-audit               dark   0         0        0         0      0      0               
+admin-analytics           light  0         0        0         0      0      0               
+admin-analytics           dark   0         0        0         0      0      0               
+admin-two-factor-setup    light  0         0        0         0      0      0               
+admin-two-factor-setup    dark   0         0        0         0      0      0               
+------------------------  -----  --------  -------  --------  -----  -----  --------------  --------
+TOTAL                            0         0        0         0      0      0               
+
