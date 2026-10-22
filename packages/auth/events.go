@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"runtime/debug"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -84,7 +85,14 @@ type eventSink struct {
 	mu      sync.Mutex
 	pending int           // queued or being delivered
 	idle    chan struct{} // closed while pending == 0
+
+	dropped atomic.Int64 // events refused because the queue was full (DroppedEvents)
 }
+
+// dropLogEvery bounds the drop warnings: the first drop and every 100th after
+// it are logged with the running total, so a burst stays visible without
+// flooding the log.
+const dropLogEvery = 100
 
 func newEventSink(h EventHandler, log *slog.Logger, email func(context.Context, string) string) *eventSink {
 	if h == nil {
@@ -112,7 +120,9 @@ func (s *eventSink) emit(ctx context.Context, ev Event) {
 		s.mu.Unlock()
 	default:
 		s.mu.Unlock()
-		s.log.WarnContext(ctx, "auth: event queue full, event dropped", "kind", ev.Kind, "userId", ev.UserID)
+		if n := s.dropped.Add(1); n == 1 || n%dropLogEvery == 0 {
+			s.log.WarnContext(ctx, "auth: event queue full, event dropped", "kind", ev.Kind, "userId", ev.UserID, "dropped_total", n)
+		}
 	}
 }
 
@@ -141,6 +151,14 @@ func (s *eventSink) deliver(ev Event) {
 	ctx, cancel := context.WithTimeout(context.Background(), eventDeliveryTimeout)
 	defer cancel()
 	s.handler(ctx, ev)
+}
+
+// droppedCount is the number of events dropped so far (0 without a sink).
+func (s *eventSink) droppedCount() int64 {
+	if s == nil {
+		return 0
+	}
+	return s.dropped.Load()
 }
 
 // drain waits until the queue is empty and the worker idle (or ctx ends). It
@@ -179,6 +197,12 @@ func (a *Auth) emit(ctx context.Context, ev Event) {
 	}
 	a.events.emit(ctx, ev)
 }
+
+// DroppedEvents is how many events this instance has dropped because its queue
+// (1024) was full: a slow or stuck Config.Events handler. It only grows; export
+// it as a counter metric, or alert when it moves. Each drop is also logged
+// (the first and every 100th, with the running total).
+func (a *Auth) DroppedEvents() int64 { return a.events.droppedCount() }
 
 // emitFailure reports a refused sign-in or second factor with the error code.
 // Rate-limited attempts are not reported: they never reached a credential

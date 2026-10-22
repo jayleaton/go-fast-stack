@@ -195,6 +195,7 @@ Turning `TwoFactor` off on an instance skips 2FA even for users who enrolled.
 - **Delivery:** one worker per instance delivers events in order.
   - Each call gets a fresh context (no request values, so no session token can reach the handler) that expires after 5 s.
   - The handler cannot block or fail auth: the queue holds 1024 events, a full queue drops new ones with a warning, and a panic is recovered and logged while the worker carries on.
+  - Drops are visible: `Auth.DroppedEvents()` (and `UserAdmin.DroppedEvents()`) count them for a metric or an alert, and the first drop and every 100th after it are logged at warn level with `dropped_total`.
   - Emitting never waits, even while `Shutdown` is draining or when the handler calls back into Auth.
 - **Best-effort:** events still queued when the process exits are lost. `Auth.Shutdown` waits for queued events (without blocking new ones), so call it on graceful shutdown, and in tests before asserting.
 - **User administration:** `a.Users()` reports to the instance's handler, and its `Shutdown` drains that queue. `NewUserAdmin(pool).WithEvents(h)` opts a standalone `UserAdmin` in. Call `WithEvents` once at startup (each call starts a worker), and call `UserAdmin.Shutdown` on graceful shutdown.

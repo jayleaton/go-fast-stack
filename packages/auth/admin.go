@@ -50,6 +50,10 @@ func (u *UserAdmin) WithEvents(h EventHandler) *UserAdmin {
 	return &c
 }
 
+// DroppedEvents is how many of this UserAdmin's events were dropped because
+// the queue was full (see Auth.DroppedEvents).
+func (u *UserAdmin) DroppedEvents() int64 { return u.sink.droppedCount() }
+
 // Shutdown waits for this UserAdmin's queued events to be delivered (or ctx).
 // Call it on graceful shutdown after the last admin action.
 func (u *UserAdmin) Shutdown(ctx context.Context) error {

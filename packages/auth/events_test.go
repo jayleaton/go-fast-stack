@@ -316,8 +316,16 @@ func TestEventHandlerCannotBreakAuth(t *testing.T) {
 		blocked.a.emit(context.Background(), Event{Kind: EventSignIn, UserID: user.ID})
 	}
 	wantStatus(t, blocked.signIn(user.Email, "password123"), http.StatusOK) // still instant
-	if !strings.Contains(blocked.logBuf.String(), "event queue full") {
-		t.Fatal("dropped events not logged")
+	if !strings.Contains(blocked.logBuf.String(), "event queue full") || !strings.Contains(blocked.logBuf.String(), "dropped_total=1\n") {
+		t.Fatalf("dropped events not logged with a total: %s", blocked.logBuf)
+	}
+	// The queue holds 1024 (plus one with the handler): the 50 extra emits and
+	// the sign-in are dropped and counted, give or take the sign-up's events.
+	if d := blocked.a.DroppedEvents(); d < 50 || d > 54 {
+		t.Fatalf("DroppedEvents = %d, want about 51", d)
+	}
+	if strings.Count(blocked.logBuf.String(), "event queue full") > 2 {
+		t.Fatal("every drop was logged; drops should be sampled")
 	}
 	short, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
