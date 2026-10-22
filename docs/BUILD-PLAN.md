@@ -93,3 +93,4 @@ Every page has a loading state (Datastar indicator), all text translated in ever
 - One workflow, `concurrency` cancel-in-progress per ref, path filters (Go vs mobile vs docs), Go module + build cache, `golangci-lint` with cache.
 - Checks: `go build ./...`, `templ generate` + `sqlc generate` diff check, `golangci-lint run`, `go test -race ./...` against a Postgres service container, mobile checks only when `apps/mobile-app/**` changes.
 - Merge queue ready (`merge_group` trigger). Target: warm PR run under 90 s.
+<!-- scratch: CI billing shape -->
