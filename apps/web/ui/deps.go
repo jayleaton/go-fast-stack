@@ -7,7 +7,6 @@ package ui
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"net/http"
 	"time"
@@ -15,45 +14,19 @@ import (
 	"github.com/jayleaton/ai-patterns-go/apps/web/internal/config"
 	"github.com/jayleaton/ai-patterns-go/apps/web/internal/services"
 	"github.com/jayleaton/ai-patterns-go/apps/web/internal/validate"
+	"github.com/jayleaton/ai-patterns-go/packages/auth"
 )
 
-// User is the account data the UI shows (the auth user, minus credentials).
-type User struct {
-	ID            string
-	Name          string
-	Email         string
-	EmailVerified bool
-	CreatedAt     time.Time
-}
+// The auth types, used as they are so *auth.Auth satisfies Auth directly.
+type (
+	User        = auth.User
+	Session     = auth.Session
+	SignUpInput = auth.SignUpInput
+	SignInInput = auth.SignInInput
+)
 
-// Session is the signed-in session. Mirrors auth.Session.
-type Session struct {
-	Token     string
-	UserID    string
-	ExpiresAt time.Time
-}
-
-// SignUpInput mirrors auth.SignUpInput.
-type SignUpInput struct {
-	Name     string
-	Email    string
-	Password string
-	// CallbackURL is where the verification link lands (an app path).
-	CallbackURL string
-}
-
-// SignInInput mirrors auth.SignInInput.
-type SignInInput struct {
-	Email    string
-	Password string
-	// CallbackURL is where a verification link sent on sign-in lands.
-	CallbackURL string
-}
-
-// Auth is the slice of packages/auth the HTML transport needs, with the same
-// method set as *auth.Auth. Types are UI-local until packages/auth is on main;
-// the server adapts *auth.Auth (field copy, and errors wrapped in the Err*
-// values below with the same names).
+// Auth is the slice of *auth.Auth the HTML transport calls; *auth.Auth
+// satisfies it. The session of a request is read with Deps.UserFrom.
 type Auth interface {
 	// SignUpEmail returns a zero Session when email verification is required.
 	SignUpEmail(ctx context.Context, in SignUpInput) (User, Session, error)
@@ -68,8 +41,6 @@ type Auth interface {
 	SendVerificationEmail(ctx context.Context, email, callbackURL string) error
 	SetSessionCookie(w http.ResponseWriter, s Session)
 	ClearSessionCookie(w http.ResponseWriter)
-	// UserFrom reads the session the auth middleware stored on the request.
-	UserFrom(ctx context.Context) (User, Session, bool)
 }
 
 // Users is the user service the dashboard calls; *services.UserService
@@ -79,40 +50,36 @@ type Users interface {
 	DeleteAllUserData(ctx context.Context, actor services.Actor) error
 }
 
-// Auth errors, named after the auth.Err* values they stand for. Match with
-// errors.Is; any other auth error shows errors.somethingWentWrong and is logged.
+// The real implementations plug in without adapters.
 var (
-	ErrInvalidEmail           = errors.New("invalid email")
-	ErrInvalidEmailOrPassword = errors.New("invalid email or password")
-	ErrPasswordTooShort       = errors.New("password too short")
-	ErrPasswordTooLong        = errors.New("password too long")
-	ErrUserAlreadyExists      = errors.New("user already exists")
-	ErrEmailNotVerified       = errors.New("email not verified")
-	ErrInvalidToken           = errors.New("invalid token")
-	ErrTokenExpired           = errors.New("token expired")
-	ErrTooManyRequests        = errors.New("too many requests")
+	_ Auth  = (*auth.Auth)(nil)
+	_ Users = (*services.UserService)(nil)
 )
 
-// errorKeys maps auth errors to message keys.
+// errorKeys maps auth errors to message keys. Any other auth error shows
+// errors.somethingWentWrong and is logged.
 var errorKeys = []struct {
 	err error
 	key string
 }{
-	{ErrInvalidEmail, "errors.emailInvalid"},
-	{ErrInvalidEmailOrPassword, "errors.invalidCredentials"},
-	{ErrPasswordTooShort, "errors.passwordTooShort"},
-	{ErrPasswordTooLong, "errors.passwordTooLong"},
-	{ErrUserAlreadyExists, "errors.emailTaken"},
-	{ErrEmailNotVerified, "pages.verifyEmail.description"},
-	{ErrInvalidToken, "pages.verifyEmail.invalidToken"},
-	{ErrTokenExpired, "pages.verifyEmail.invalidToken"},
-	{ErrTooManyRequests, "errors.tooManyRequests"},
+	{auth.ErrInvalidEmail, "errors.emailInvalid"},
+	{auth.ErrInvalidEmailOrPassword, "errors.invalidCredentials"},
+	{auth.ErrPasswordTooShort, "errors.passwordTooShort"},
+	{auth.ErrPasswordTooLong, "errors.passwordTooLong"},
+	{auth.ErrUserAlreadyExists, "errors.emailTaken"},
+	{auth.ErrEmailNotVerified, "pages.verifyEmail.description"},
+	{auth.ErrInvalidToken, "pages.verifyEmail.invalidToken"},
+	{auth.ErrTokenExpired, "pages.verifyEmail.invalidToken"},
+	{auth.ErrTooManyRequests, "errors.tooManyRequests"},
 }
 
 // Deps are the in-process dependencies of the UI.
 type Deps struct {
-	Auth     Auth
-	Users    Users
+	Auth  Auth
+	Users Users
+	// UserFrom reads the session auth.Middleware stored on the request;
+	// defaults to auth.UserFrom.
+	UserFrom func(ctx context.Context) (User, Session, bool)
 	Features config.Features
 	// SecureCookies marks UI cookies (locale) Secure; true behind HTTPS.
 	SecureCookies bool

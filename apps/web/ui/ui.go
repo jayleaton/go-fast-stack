@@ -19,11 +19,13 @@ import (
 	"github.com/jayleaton/ai-patterns-go/apps/web/ui/routes"
 	"github.com/jayleaton/ai-patterns-go/apps/web/ui/static"
 	"github.com/jayleaton/ai-patterns-go/apps/web/ui/view"
+	"github.com/jayleaton/ai-patterns-go/packages/auth"
 )
 
 // UI serves the HTML pages and their Datastar actions.
 type UI struct {
 	auth     Auth
+	userFrom func(ctx context.Context) (User, Session, bool)
 	users    Users
 	features config.Features
 	secure   bool
@@ -41,6 +43,7 @@ func New(d Deps) *UI {
 	}
 	u := &UI{
 		auth:     d.Auth,
+		userFrom: d.UserFrom,
 		users:    d.Users,
 		features: d.Features,
 		secure:   d.SecureCookies,
@@ -49,6 +52,9 @@ func New(d Deps) *UI {
 		interval: d.LiveInterval,
 		hub:      newHub(),
 		csrf:     http.NewCrossOriginProtection(),
+	}
+	if u.userFrom == nil {
+		u.userFrom = auth.UserFrom
 	}
 	if u.log == nil {
 		u.log = slog.Default()
@@ -63,7 +69,7 @@ func New(d Deps) *UI {
 }
 
 // Routes mounts every page, action and static asset on mux. The auth
-// middleware must wrap mux so Auth.UserFrom sees the session.
+// middleware must wrap mux so Deps.UserFrom sees the session.
 func (u *UI) Routes(mux *http.ServeMux) {
 	page := func(pattern string, h http.HandlerFunc) { mux.Handle(pattern, u.wrap(h)) }
 	// Actions also pass Go's cross-origin protection (Sec-Fetch-Site / Origin).
@@ -96,11 +102,18 @@ func (u *UI) Routes(mux *http.ServeMux) {
 	action("POST "+routes.Locale, u.setLocale)
 }
 
+// Handler returns a mux with Routes mounted, for server.Deps.UI.
+func (u *UI) Handler() http.Handler {
+	mux := http.NewServeMux()
+	u.Routes(mux)
+	return mux
+}
+
 // wrap puts the translator and layout state on the request context.
 func (u *UI) wrap(h http.HandlerFunc) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		loc := i18n.Negotiate(r)
-		_, _, authed := u.auth.UserFrom(r.Context())
+		_, _, authed := u.userFrom(r.Context())
 		ctx := i18n.WithTranslator(r.Context(), i18n.Translator{Locale: loc})
 		ctx = view.WithState(ctx, view.State{
 			Authenticated: authed,
@@ -181,8 +194,10 @@ func actor(u User) services.Actor {
 	return services.Actor{UserID: u.ID, Email: u.Email}
 }
 
+// userFromService converts the service's user row; both describe the
+// auth-owned "user" table.
 func userFromService(s services.User) User {
-	return User{ID: s.ID, Name: s.Name, Email: s.Email, EmailVerified: s.EmailVerified, CreatedAt: s.CreatedAt}
+	return User(s)
 }
 
 // safeNext keeps redirects on this site.

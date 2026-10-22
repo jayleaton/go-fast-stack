@@ -5,7 +5,7 @@ Ported from the original `apps/web-app` (same pages, same Tailwind classes, same
 
 | Package | What |
 |---|---|
-| `ui` | `ui.New(deps).Routes(mux)`, the `Auth`/`Users` interfaces, handlers, auth + dashboard pages |
+| `ui` | `ui.New(deps)` (`Routes(mux)` / `Handler()`), the `Auth`/`Users` interfaces, handlers, auth + dashboard pages |
 | `ui/view` | layout shell (header: logout, theme, language), shared inputs/buttons/alerts/skeletons |
 | `ui/welcome` | template welcome landing + `/why` (feature-flagged, deletable; see its README) |
 | `ui/i18n` | `messages/{en,ja}.json`, locale negotiation, `i18n.T(ctx, key)` |
@@ -37,41 +37,36 @@ go test -race ./apps/web/ui/...
 
 Watch mode while editing: `go tool templ generate -path apps/web/ui -watch` and `"$TAILWIND" ... --watch`.
 
-## Mounting (feat/foundation)
+## Mounting (server wiring)
 
 ```go
-mux := http.NewServeMux()
-ui.New(ui.Deps{
-    Auth:          uiAuth{a},           // adapter over *auth.Auth, below
-    Users:         userService,         // *services.UserService satisfies ui.Users as is
+ui := ui.New(ui.Deps{
+    Auth:          authService,        // *auth.Auth satisfies ui.Auth as is
+    Users:         userService,        // *services.UserService satisfies ui.Users as is
     Features:      cfg.Features,
     SecureCookies: cfg.IsProduction,
     Logger:        log,
-}).Routes(mux)
-handler := a.Middleware(mux) // the auth middleware must wrap the UI so Auth.UserFrom sees the session
+    // UserFrom defaults to auth.UserFrom (the session auth.Middleware loaded).
+})
+deps.UI = ui.Handler() // server.Deps.UI, mounted at "/" inside auth.Middleware
 ```
 
-`Routes` registers `GET /{$}` and the page/action paths in `ui/routes`, `GET /static/`, and `GET /favicon.ico`.
-POST actions are wrapped in `http.CrossOriginProtection` (stdlib); keep that if a global CSRF layer is added.
+`Routes(mux)` registers `GET /{$}`, the pages in `config.AppRoutes`, the UI actions in `ui/routes`, `GET /static/` and
+`GET /favicon.ico`; `Handler()` returns a mux with them. POST actions are wrapped in `http.CrossOriginProtection`
+(stdlib); keep that if a global CSRF layer is added. Compile-time assertions in `deps.go` keep both interfaces in step
+with `packages/auth` and the user service.
 
-### Auth adapter
-
-`ui.Auth` has `*auth.Auth`'s method set (including `SendVerificationEmail`) with UI-local types (`ui.User`,
-`ui.Session`, inputs with `CallbackURL`), because `packages/auth` is not on main yet. The adapter copies fields and
-**maps each `auth.Err*` to the `ui.Err*` value of the same name** (`ErrInvalidEmail`, `ErrInvalidEmailOrPassword`,
-`ErrPasswordTooShort`, `ErrPasswordTooLong`, `ErrUserAlreadyExists`, `ErrEmailNotVerified`, `ErrInvalidToken`,
-`ErrTokenExpired`, `ErrTooManyRequests`); anything else shows "Something went wrong" and is logged. `UserFrom` maps
-to `auth.UserFrom`. Once auth merges, the UI can take `auth` types directly and the adapter goes away.
+`ui.Auth` uses the auth types directly (`ui.User` = `auth.User`, ...) and the handlers map `auth.Err*` values to
+messages (`errorKeys`); unknown errors show "Something went wrong" and are logged. Sign-up and sign-in pass
+`CallbackURL: config.AppRoutes.VerifyEmailSuccess`; password reset passes `config.AppRoutes.ResetPassword` as
+`redirectTo`. Auth joins app paths with its `BaseURL`, so no origin is hardcoded here. The verify link may land after
+auth's own `GET /api/auth/verify-email` already set the cookie (the page then checks the session) or carry `?token=`
+(the page POSTs it to `VerifyEmail`, so link scanners doing GETs cannot spend it).
 
 `ui.Users` is the method set of `*services.UserService` (`UpdateUserSettings`, `DeleteAllUserData`). The settings form
 posts only the name: email changes belong to the auth flows, so the email is shown read-only. The form is validated
 with `validate.UpdateUserSettings` before the service call; validation and `KindInvalid` errors show
 `errors.invalidInput`.
-
-`redirectTo`/`callbackURL` are app paths (`/auth/reset-password`, `/auth/verify-email/success`); auth joins them with
-its `BaseURL`, so no origin is hardcoded here. The verify link may carry `?token=` (the page POSTs it to
-`VerifyEmail`, so link scanners doing GETs cannot burn it) or land after auth's own `GET /api/auth/verify-email`
-already set the cookie (the page then just checks the session).
 
 ## Patterns
 

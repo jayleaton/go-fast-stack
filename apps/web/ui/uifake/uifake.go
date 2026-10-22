@@ -16,6 +16,7 @@ import (
 	"github.com/jayleaton/ai-patterns-go/apps/web/internal/services"
 	"github.com/jayleaton/ai-patterns-go/apps/web/internal/validate"
 	"github.com/jayleaton/ai-patterns-go/apps/web/ui"
+	"github.com/jayleaton/ai-patterns-go/packages/auth"
 )
 
 // CookieName matches Better Auth's session cookie.
@@ -134,7 +135,7 @@ func (a Auth) SignUpEmail(_ context.Context, in ui.SignUpInput) (ui.User, ui.Ses
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if !strings.Contains(in.Email, "@") {
-		return ui.User{}, ui.Session{}, ui.ErrInvalidEmail
+		return ui.User{}, ui.Session{}, auth.ErrInvalidEmail
 	}
 	if err := checkPassword(in.Password); err != nil {
 		return ui.User{}, ui.Session{}, err
@@ -144,7 +145,7 @@ func (a Auth) SignUpEmail(_ context.Context, in ui.SignUpInput) (ui.User, ui.Ses
 		if s.RequireEmailVerification {
 			return ui.User{Name: in.Name, Email: in.Email}, ui.Session{}, nil
 		}
-		return ui.User{}, ui.Session{}, ui.ErrUserAlreadyExists
+		return ui.User{}, ui.Session{}, auth.ErrUserAlreadyExists
 	}
 	u := ui.User{ID: token(), Name: in.Name, Email: in.Email, CreatedAt: s.Now()}
 	s.accounts[u.ID] = &account{user: u, password: in.Password}
@@ -163,10 +164,10 @@ func (a Auth) SignInEmail(_ context.Context, in ui.SignInInput) (ui.User, ui.Ses
 	defer s.mu.Unlock()
 	acc := s.byEmailLocked(in.Email)
 	if acc == nil || acc.password != in.Password {
-		return ui.User{}, ui.Session{}, ui.ErrInvalidEmailOrPassword
+		return ui.User{}, ui.Session{}, auth.ErrInvalidEmailOrPassword
 	}
 	if s.RequireEmailVerification && !acc.user.EmailVerified {
-		return ui.User{}, ui.Session{}, ui.ErrEmailNotVerified
+		return ui.User{}, ui.Session{}, auth.ErrEmailNotVerified
 	}
 	return acc.user, s.newSessionLocked(acc.user.ID), nil
 }
@@ -197,7 +198,7 @@ func (a Auth) ResetPassword(_ context.Context, tok, newPassword string) error {
 	defer s.mu.Unlock()
 	id, ok := s.reset[tok]
 	if !ok || s.accounts[id] == nil {
-		return ui.ErrInvalidToken
+		return auth.ErrInvalidToken
 	}
 	if err := checkPassword(newPassword); err != nil {
 		return err
@@ -213,7 +214,7 @@ func (a Auth) VerifyEmail(_ context.Context, tok string) (ui.User, ui.Session, e
 	defer s.mu.Unlock()
 	id, ok := s.verify[tok]
 	if !ok || s.accounts[id] == nil {
-		return ui.User{}, ui.Session{}, ui.ErrInvalidToken
+		return ui.User{}, ui.Session{}, auth.ErrInvalidToken
 	}
 	delete(s.verify, tok)
 	acc := s.accounts[id]
@@ -258,6 +259,7 @@ type current struct {
 	session ui.Session
 }
 
+// UserFrom is the fake's ui.Deps.UserFrom.
 func (a Auth) UserFrom(ctx context.Context) (ui.User, ui.Session, bool) {
 	c, ok := ctx.Value(sessionKey{}).(current)
 	return c.user, c.session, ok
@@ -330,9 +332,9 @@ func (u Users) DeleteAllUserData(_ context.Context, actor services.Actor) error 
 func checkPassword(p string) error {
 	switch n := len([]rune(p)); {
 	case n < 8:
-		return ui.ErrPasswordTooShort
+		return auth.ErrPasswordTooShort
 	case n > 128:
-		return ui.ErrPasswordTooLong
+		return auth.ErrPasswordTooLong
 	}
 	return nil
 }

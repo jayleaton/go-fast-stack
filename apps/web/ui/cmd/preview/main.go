@@ -34,18 +34,19 @@ func main() {
 	}
 	store.AddUser("Demo User", "demo@example.com", "password123", true)
 
-	auth := uifake.Auth{S: store}
+	fakeAuth := uifake.Auth{S: store}
 	mux := http.NewServeMux()
 	ui.New(ui.Deps{
-		Auth:     auth,
+		Auth:     fakeAuth,
 		Users:    uifake.Users{S: store},
+		UserFrom: fakeAuth.UserFrom,
 		Features: config.Features{EmailVerification: *verify, TemplateWelcome: *welcome},
 		Logger:   log,
 	}).Routes(mux)
 
 	srv := &http.Server{
 		Addr:              *addr,
-		Handler:           auth.Middleware(mux),
+		Handler:           fakeAuth.Middleware(mux),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	log.Info("ui preview listening", "addr", *addr, "login", "demo@example.com / password123")

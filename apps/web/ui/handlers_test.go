@@ -29,16 +29,17 @@ func newEnv(t *testing.T, f config.Features) *env {
 	t.Helper()
 	store := uifake.NewStore()
 	user := store.AddUser("Demo User", "demo@example.com", "password123", true)
-	auth := uifake.Auth{S: store}
+	fakeAuth := uifake.Auth{S: store}
 	mux := http.NewServeMux()
 	ui.New(ui.Deps{
-		Auth:         auth,
+		Auth:         fakeAuth,
 		Users:        uifake.Users{S: store},
+		UserFrom:     fakeAuth.UserFrom,
 		Features:     f,
 		Logger:       slog.New(slog.NewTextHandler(io.Discard, nil)),
 		LiveInterval: time.Hour, // the stream test drives events, not ticks
 	}).Routes(mux)
-	return &env{t: t, store: store, h: auth.Middleware(mux), user: user}
+	return &env{t: t, store: store, h: fakeAuth.Middleware(mux), user: user}
 }
 
 type reqOpt func(*http.Request)

@@ -15,13 +15,14 @@ import (
 	"github.com/jayleaton/ai-patterns-go/apps/web/ui/i18n"
 	"github.com/jayleaton/ai-patterns-go/apps/web/ui/view"
 	"github.com/jayleaton/ai-patterns-go/apps/web/ui/welcome"
+	"github.com/jayleaton/ai-patterns-go/packages/auth"
 )
 
 // resendCooldown matches the original's five minutes between resends.
 const resendCooldown = 5 * time.Minute
 
 func (u *UI) home(w http.ResponseWriter, r *http.Request) {
-	if _, _, ok := u.auth.UserFrom(r.Context()); ok {
+	if _, _, ok := u.userFrom(r.Context()); ok {
 		http.Redirect(w, r, config.AppRoutes.Dashboard, http.StatusSeeOther)
 		return
 	}
@@ -54,7 +55,7 @@ func (u *UI) login(w http.ResponseWriter, r *http.Request) {
 	_, s, err := u.auth.SignInEmail(ctx, in)
 	if err != nil {
 		msg := u.errorMessage(ctx, err)
-		if errors.Is(err, ErrEmailNotVerified) {
+		if errors.Is(err, auth.ErrEmailNotVerified) {
 			// Like the original: send a fresh link and say so.
 			if err := u.auth.SendVerificationEmail(ctx, in.Email, config.AppRoutes.VerifyEmailSuccess); err != nil {
 				u.log.WarnContext(ctx, "ui: resend verification on login", "err", err)
@@ -132,13 +133,13 @@ func (u *UI) resetPassword(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := u.auth.ResetPassword(ctx, token, password); err != nil {
 		switch {
-		case errors.Is(err, ErrInvalidToken), errors.Is(err, ErrTokenExpired):
+		case errors.Is(err, auth.ErrInvalidToken), errors.Is(err, auth.ErrTokenExpired):
 			fail("pages.resetPassword.invalidResetLink")
-		case errors.Is(err, ErrPasswordTooShort):
+		case errors.Is(err, auth.ErrPasswordTooShort):
 			fail("pages.resetPassword.passwordTooShort")
-		case errors.Is(err, ErrPasswordTooLong):
+		case errors.Is(err, auth.ErrPasswordTooLong):
 			fail("errors.passwordTooLong")
-		case errors.Is(err, ErrTooManyRequests):
+		case errors.Is(err, auth.ErrTooManyRequests):
 			fail("errors.tooManyRequests")
 		default:
 			u.log.ErrorContext(ctx, "ui: reset password", "err", err)
@@ -187,20 +188,20 @@ func (u *UI) verifyEmail(w http.ResponseWriter, r *http.Request) {
 			if s.Token != "" {
 				u.auth.SetSessionCookie(w, s)
 			}
-		case errors.Is(err, ErrInvalidToken), errors.Is(err, ErrTokenExpired):
+		case errors.Is(err, auth.ErrInvalidToken), errors.Is(err, auth.ErrTokenExpired):
 			result, status = VerifyEmailFailed(i18n.T(ctx, "pages.verifyEmail.invalidToken")), http.StatusUnprocessableEntity
 		default:
 			u.log.ErrorContext(ctx, "ui: verify email", "err", err)
 			result, status = VerifyEmailFailed(i18n.T(ctx, "pages.verifyEmail.unexpectedErrorDuringVerification")), http.StatusInternalServerError
 		}
-	} else if _, _, ok := u.auth.UserFrom(ctx); !ok {
+	} else if _, _, ok := u.userFrom(ctx); !ok {
 		result = VerifyEmailFailed(i18n.T(ctx, "pages.verifyEmail.emailVerificationCompletedButLoginFailed"))
 	}
 	u.patch(w, r, status, VerifyEmailSuccessPage(token, result), result)
 }
 
 func (u *UI) dashboard(w http.ResponseWriter, r *http.Request) {
-	user, _, ok := u.auth.UserFrom(r.Context())
+	user, _, ok := u.userFrom(r.Context())
 	if !ok {
 		http.Redirect(w, r, config.AppRoutes.Login, http.StatusSeeOther)
 		return
@@ -213,7 +214,7 @@ func (u *UI) dashboard(w http.ResponseWriter, r *http.Request) {
 // dashboard that patches the clock every tick and the account card whenever
 // the user changes (from any tab or device served by this process).
 func (u *UI) dashboardLive(w http.ResponseWriter, r *http.Request) {
-	user, session, ok := u.auth.UserFrom(r.Context())
+	user, session, ok := u.userFrom(r.Context())
 	if !ok {
 		u.redirect(w, r, config.AppRoutes.Login)
 		return
@@ -252,7 +253,7 @@ func (u *UI) dashboardLive(w http.ResponseWriter, r *http.Request) {
 
 func (u *UI) updateSettings(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	user, _, ok := u.auth.UserFrom(ctx)
+	user, _, ok := u.userFrom(ctx)
 	if !ok {
 		u.redirect(w, r, config.AppRoutes.Login)
 		return
@@ -278,7 +279,7 @@ func (u *UI) updateSettings(w http.ResponseWriter, r *http.Request) {
 
 func (u *UI) deleteAccount(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	user, session, ok := u.auth.UserFrom(ctx)
+	user, session, ok := u.userFrom(ctx)
 	if !ok {
 		u.redirect(w, r, config.AppRoutes.Login)
 		return
@@ -299,7 +300,7 @@ func (u *UI) deleteAccount(w http.ResponseWriter, r *http.Request) {
 
 func (u *UI) logout(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	if _, s, ok := u.auth.UserFrom(ctx); ok {
+	if _, s, ok := u.userFrom(ctx); ok {
 		if err := u.auth.SignOut(ctx, s.Token); err != nil {
 			u.log.WarnContext(ctx, "ui: sign out", "err", err)
 		}
