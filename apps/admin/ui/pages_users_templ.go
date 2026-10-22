@@ -130,7 +130,7 @@ func UsersPage(d UsersData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "\" data-signals=\"{_searching: false}\" data-on:submit=\"$_searching = true\"><input type=\"hidden\" name=\"sortBy\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "\" data-signals=\"{_searching: false}\" data-on:submit=\"$_searching = true; el.submit()\"><input type=\"hidden\" name=\"sortBy\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

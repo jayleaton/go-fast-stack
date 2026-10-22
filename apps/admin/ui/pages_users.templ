@@ -54,7 +54,7 @@ templ UsersPage(d UsersData) {
 	@view.Layout(i18n.T(ctx, "pages.users.title")) {
 		<div class="container-balanced py-8">
 			@view.PageHeader(i18n.T(ctx, "pages.users.title"), i18n.T(ctx, "pages.users.subtitle"))
-			<form method="get" action={ templ.SafeURL(config.AppRoutes.Users) } class={ "grid grid-cols-1 items-end gap-3 p-4 sm:grid-cols-2 lg:grid-cols-6", view.CardClass } data-signals="{_searching: false}" data-on:submit="$_searching = true">
+			<form method="get" action={ templ.SafeURL(config.AppRoutes.Users) } class={ "grid grid-cols-1 items-end gap-3 p-4 sm:grid-cols-2 lg:grid-cols-6", view.CardClass } data-signals="{_searching: false}" data-on:submit="$_searching = true; el.submit()">
 				<input type="hidden" name="sortBy" value={ d.Filters.SortBy }/>
 				<input type="hidden" name="sortDirection" value={ d.Filters.SortDirection }/>
 				<div class="lg:col-span-2">
