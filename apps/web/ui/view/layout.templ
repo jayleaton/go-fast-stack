@@ -53,7 +53,7 @@ templ Layout(title string) {
 
 // LogoutButton signs out through Datastar; without JS the form posts normally.
 templ LogoutButton() {
-	<form method="post" action={ templ.SafeURL(routes.Logout) } data-on:submit={ PostForm(routes.Logout) } data-indicator:_logging-out>
+	<form class="flex" method="post" action={ templ.SafeURL(routes.Logout) } data-on:submit={ PostForm(routes.Logout) } data-indicator:_logging-out>
 		<button
 			type="submit"
 			aria-label={ i18n.T(ctx, "components.authStatus.logout") }
