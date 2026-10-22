@@ -63,7 +63,7 @@ messages (`errorKeys`); unknown errors show "Something went wrong" and are logge
 auth's own `GET /api/auth/verify-email` already set the cookie (the page then checks the session) or carry `?token=`
 (the page POSTs it to `VerifyEmail`, so link scanners doing GETs cannot spend it).
 
-`ui.Users` is the method set of `*services.UserService` (`UpdateUserSettings`, `DeleteAllUserData`). The settings form
+`ui.Users` is the method set of `*services.UserService` (`UpdateProfile`, `DeleteAccount`, ...). The settings form
 posts only the name: email changes belong to the auth flows, so the email is shown read-only. The form is validated
 with `validate.UpdateUserSettings` before the service call; validation and `KindInvalid` errors show
 `errors.invalidInput`.

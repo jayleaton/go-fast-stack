@@ -264,7 +264,7 @@ func (u *UI) updateSettings(w http.ResponseWriter, r *http.Request) {
 	err := in.Validate()
 	var saved services.User
 	if err == nil {
-		saved, err = u.users.UpdateUserSettings(ctx, actor(user), user.ID, in)
+		saved, err = u.users.UpdateProfile(ctx, actor(user), user.ID, in)
 	}
 	if err != nil {
 		st := SettingsState{Name: name, Error: u.serviceMessage(ctx, err)}
@@ -284,7 +284,7 @@ func (u *UI) deleteAccount(w http.ResponseWriter, r *http.Request) {
 		u.redirect(w, r, config.AppRoutes.Login)
 		return
 	}
-	if err := u.users.DeleteAllUserData(ctx, actor(user)); err != nil {
+	if err := u.users.DeleteAccount(ctx, actor(user), user.ID); err != nil {
 		msg := u.serviceMessage(ctx, err)
 		u.patch(w, r, http.StatusInternalServerError, DashboardPage(DashboardData{User: user, Tab: newTabID(), Settings: SettingsState{DeleteError: msg}}), view.ErrorAlert(deleteErrorID, msg))
 		return

@@ -294,7 +294,7 @@ type Users struct{ S *Store }
 
 var _ ui.Users = Users{}
 
-func (u Users) UpdateUserSettings(_ context.Context, actor services.Actor, userID string, in validate.UpdateUserSettings) (services.User, error) {
+func (u Users) UpdateProfile(_ context.Context, actor services.Actor, userID string, in validate.UpdateUserSettings) (services.User, error) {
 	if userID != actor.UserID {
 		return services.User{}, &services.Error{Kind: services.KindForbidden, Message: "Cannot update another user's settings"}
 	}
@@ -312,7 +312,10 @@ func (u Users) UpdateUserSettings(_ context.Context, actor services.Actor, userI
 	return services.User{ID: x.ID, Name: x.Name, Email: x.Email, EmailVerified: x.EmailVerified, CreatedAt: x.CreatedAt, UpdatedAt: s.Now()}, nil
 }
 
-func (u Users) DeleteAllUserData(_ context.Context, actor services.Actor) error {
+func (u Users) DeleteAccount(_ context.Context, actor services.Actor, userID string) error {
+	if userID != actor.UserID {
+		return services.ErrForbidden
+	}
 	s := u.S
 	s.mu.Lock()
 	defer s.mu.Unlock()
