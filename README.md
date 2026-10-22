@@ -153,6 +153,8 @@ Off by default. `previews: true` (needs `staging`) turns on Railway PR environme
 - The root `railway.json` (Config as Code) is gone; Railway stops reading those files on 2026-12-01. Services created by IaC never read `apps/admin/railway.json` either.
 - Railway bugs found on the way: [docs/railway-go-iac-issues.md](docs/railway-go-iac-issues.md).
 
+`/healthz` is only the deploy gate: Railway checks it until a new deployment goes live, never afterwards. It answers 503 when Doppler secrets go stale (`SECRETS_MAX_STALENESS`), so never wire it up as a liveness or restart probe, or a Doppler outage turns into a restart loop. Services restart only when the process exits (`ON_FAILURE`, 5 retries).
+
 Every service runs with `APP_ENV=production` (email verification on, `RESEND_API_KEY` required), `CLIENT_IP_HEADER=X-Real-IP` and `PORT=3000`. The server refuses to boot with a missing or invalid value and lists every problem.
 
 ## Secrets

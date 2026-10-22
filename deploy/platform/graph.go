@@ -178,7 +178,11 @@ func (c Config) service(env string, a app) railway.ServiceConfig {
 			"dockerfilePath": a.dockerfile,
 			"watchPatterns":  a.watch,
 		},
-		"preDeploy":          a.migrate,
+		"preDeploy": a.migrate,
+		// A deploy gate only: Railway checks it until the new deployment is
+		// live, never afterwards. Keep it that way: /healthz answers 503 when
+		// Doppler secrets go stale, and a liveness probe would turn a Doppler
+		// outage into a restart loop. Restarts happen only on process exit.
 		"healthcheck":        "/healthz",
 		"healthcheckTimeout": 60,
 		"replicas":           replicas,
