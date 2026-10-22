@@ -43,10 +43,10 @@ build: ## Build a static binary into bin/server
 	CGO_ENABLED=0 $(GO) build -trimpath -ldflags='-s -w' -o $(BIN) ./apps/web/cmd/server
 
 .PHONY: generate
-generate: ## Regenerate sqlc, go:generate (mocks) and templ (web + admin UIs)
+generate: ## Regenerate sqlc, go:generate (mocks) and templ (shared uikit + web + admin UIs)
 	$(TOOL) sqlc generate -f packages/database/sqlc.yaml
 	$(GO) generate ./...
-	@for ui in apps/web/ui apps/admin/ui; do [ -d $$ui ] && $(GO) tool templ generate -path $$ui || true; done
+	@for ui in packages/uikit apps/web/ui apps/admin/ui; do [ -d $$ui ] && $(GO) tool templ generate -path $$ui || true; done
 
 .PHONY: css
 css: ## Rebuild the web and admin app.css (Tailwind standalone CLI, pinned + checksum-verified)

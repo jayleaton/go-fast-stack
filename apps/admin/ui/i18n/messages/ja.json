@@ -12,7 +12,8 @@
     "password": "パスワード",
     "yes": "はい",
     "no": "いいえ",
-    "backToLogin": "サインインに戻る"
+    "backToLogin": "サインインに戻る",
+    "actions": "操作"
   },
   "components": {
     "languageSelector": {
@@ -29,12 +30,21 @@
       "users": "ユーザー",
       "admins": "管理者",
       "audit": "監査ログ",
-      "analytics": "分析"
+      "analytics": "分析",
+      "menu": "メニュー",
+      "skipToContent": "本文へスキップ"
     },
     "pager": {
       "previous": "前へ",
       "next": "次へ",
-      "showing": "{2}件中 {0}〜{1}件を表示"
+      "showing": "{2}件中 {0}〜{1}件を表示",
+      "label": "ページ送り"
+    },
+    "toast": {
+      "close": "閉じる"
+    },
+    "confirm": {
+      "cancel": "キャンセル"
     }
   },
   "pages": {
@@ -104,8 +114,11 @@
         "all": "すべて",
         "banned": "利用停止中",
         "active": "有効",
-        "anyRole": "すべてのロール"
-      }
+        "anyRole": "すべてのロール",
+        "clear": "フィルターをクリア",
+        "label": "ユーザーを絞り込む"
+      },
+      "emptyHint": "検索条件を変えるか、フィルターをクリアしてください。"
     },
     "user": {
       "title": "ユーザー",
@@ -139,7 +152,9 @@
           "week": "7日",
           "month": "30日",
           "permanent": "無期限"
-        }
+        },
+        "confirmTitle": "このユーザーを利用停止にしますか？",
+        "confirmMessage": "{0} はすべての端末からサインアウトされ、利用停止が終わるまでサインインできなくなります。"
       },
       "sessions": {
         "title": "有効なセッション",
@@ -148,7 +163,10 @@
         "ip": "IPアドレス",
         "userAgent": "ユーザーエージェント",
         "revoke": "無効にする",
-        "revokeAll": "すべてのセッションを無効にする"
+        "revokeAll": "すべてのセッションを無効にする",
+        "confirmRevokeAllTitle": "すべてのセッションを無効にしますか？",
+        "confirmRevokeAll": "{0} はすべての端末でサインアウトされ、もう一度サインインする必要があります。",
+        "table": "セッション一覧"
       }
     },
     "admins": {
@@ -177,7 +195,9 @@
         "disabled": "管理者を無効化し、すべてのセッションからサインアウトさせました。",
         "enabled": "管理者を有効化しました。再びサインインできます。",
         "removed": "管理者を削除しました。"
-      }
+      },
+      "confirmRemoveTitle": "この管理者を削除しますか？",
+      "list": "ダッシュボードの管理者"
     },
     "audit": {
       "title": "監査ログ",
@@ -233,7 +253,10 @@
         "stateMatches": "現在の状態に変更が反映されています。",
         "stateDiffers": "現在の状態に変更は反映されていません。",
         "undecidable": "現在の状態からは結果を判断できません。"
-      }
+      },
+      "filters": "監査ログを絞り込む",
+      "filteredByTarget": "1つの対象のエントリーのみを表示しています。",
+      "clearTarget": "すべての対象を表示"
     },
     "analytics": {
       "title": "分析",

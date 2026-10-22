@@ -1,50 +1,8 @@
-/* Tailwind v4 input for the admin UI (a copy of apps/web/ui/styles/input.css).
-   Build: see apps/admin/ui/README.md (output: apps/admin/ui/static/app.css). */
+/* Tailwind v4 input for the admin UI. Build: `make css` (see apps/admin/ui/README.md;
+   output: apps/admin/ui/static/app.css). Colors, radius, shadows and fonts are
+   the shared design tokens: re-theme in packages/uikit/theme.css. */
 @import 'tailwindcss' source(none);
+@import '../../../../packages/uikit/theme.css';
+@import '../../../../packages/uikit/base.css';
 @source "../**/*.templ";
 @source "../**/*.go";
-
-/* Dark mode follows the system unless the user picked a theme: the server puts
-   `dark` or `light` on <html> from the theme cookie, so there is no flash and
-   no script is needed for the system default. */
-@custom-variant dark {
-  &:where(.dark, .dark *) {
-    @slot;
-  }
-  @media (prefers-color-scheme: dark) {
-    &:where(html:not(.light), html:not(.light) *) {
-      @slot;
-    }
-  }
-}
-
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
-}
-
-html {
-  -webkit-text-size-adjust: 100%;
-  text-rendering: optimizeLegibility;
-}
-
-body {
-  @apply bg-white text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100 antialiased;
-}
-
-/* Layout helper */
-.container-balanced {
-  @apply mx-auto w-full max-w-6xl px-4 md:px-6;
-}
-
-/* Optional subtle hover elevation */
-@media (prefers-reduced-motion: no-preference) {
-  .hover-elevate {
-    transition: box-shadow 200ms, transform 200ms, background-color 200ms, color 200ms;
-  }
-  .hover-elevate:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.08);
-  }
-}

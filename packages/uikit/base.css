@@ -1,0 +1,110 @@
+/* Shared Tailwind v4 setup for every app UI. An app's styles/input.css
+   imports tailwindcss (source(none)), then theme.css, then this file, then
+   adds @source lines for its own templ and Go files (see apps/web/ui).
+   Values live in theme.css; this file maps them to utilities (bg-surface,
+   text-muted-foreground, border-input, rounded-card, shadow-card, ...) and
+   holds the base styles. You should not need to edit it to re-theme. */
+
+/* The shared components' classes. */
+@source "./*.templ";
+@source "./*.go";
+
+/* Theme: <html class="dark|light"> from the theme cookie wins; with neither,
+   the system preference applies. The server renders the class, so the first
+   paint is already right and no script runs before it. */
+:root {
+  color-scheme: light dark;
+}
+:root.light {
+  color-scheme: light;
+}
+:root.dark {
+  color-scheme: dark;
+}
+
+/* dark: for the few places tokens cannot cover (swapping icons). */
+@custom-variant dark {
+  &:where(.dark, .dark *) {
+    @slot;
+  }
+  @media (prefers-color-scheme: dark) {
+    &:where(html:not(.light), html:not(.light) *) {
+      @slot;
+    }
+  }
+}
+
+@theme inline {
+  --color-background: var(--ui-background);
+  --color-foreground: var(--ui-foreground);
+  --color-surface: var(--ui-surface);
+  --color-muted: var(--ui-muted);
+  --color-muted-foreground: var(--ui-muted-foreground);
+  --color-border: var(--ui-border);
+  --color-input: var(--ui-input);
+  --color-ring: var(--ui-ring);
+  --color-primary: var(--ui-primary);
+  --color-primary-foreground: var(--ui-primary-foreground);
+  --color-primary-hover: var(--ui-primary-hover);
+  --color-accent: var(--ui-accent);
+  --color-accent-foreground: var(--ui-accent-foreground);
+  --color-danger: var(--ui-danger);
+  --color-danger-foreground: var(--ui-danger-foreground);
+  --color-danger-soft: var(--ui-danger-soft);
+  --color-danger-soft-foreground: var(--ui-danger-soft-foreground);
+  --color-danger-border: var(--ui-danger-border);
+  --color-success: var(--ui-success);
+  --color-success-foreground: var(--ui-success-foreground);
+  --color-success-soft: var(--ui-success-soft);
+  --color-success-soft-foreground: var(--ui-success-soft-foreground);
+  --color-success-border: var(--ui-success-border);
+  --color-warning: var(--ui-warning);
+  --color-warning-foreground: var(--ui-warning-foreground);
+  --color-warning-soft: var(--ui-warning-soft);
+  --color-warning-soft-foreground: var(--ui-warning-soft-foreground);
+  --color-warning-border: var(--ui-warning-border);
+  --color-info-soft: var(--ui-info-soft);
+  --color-info-soft-foreground: var(--ui-info-soft-foreground);
+  --color-info-border: var(--ui-info-border);
+
+  --radius-control: var(--ui-radius-control);
+  --radius-card: var(--ui-radius-card);
+  --shadow-card: var(--ui-shadow-card);
+  --shadow-popover: var(--ui-shadow-popover);
+  --font-sans: var(--ui-font-sans);
+  --font-mono: var(--ui-font-mono);
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    @apply bg-background font-sans text-foreground antialiased;
+  }
+  /* One visible focus ring for everything focusable by keyboard. */
+  :focus-visible {
+    outline: 2px solid var(--ui-ring);
+    outline-offset: 2px;
+  }
+  ::selection {
+    background: var(--ui-accent);
+    color: var(--ui-accent-foreground);
+  }
+  dialog::backdrop {
+    background: rgb(2 6 23 / 0.55);
+  }
+}
+
+/* Honour reduced motion everywhere, including Tailwind's animate-*. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

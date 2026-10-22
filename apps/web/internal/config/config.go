@@ -24,9 +24,13 @@ const (
 	Production  Env = "production"
 )
 
+// DefaultAppName is the product name when APP_NAME is unset.
+const DefaultAppName = "My App"
+
 // Config is the validated environment.
 type Config struct {
 	Env             Env
+	AppName         string        // APP_NAME: the product name in the UI header and page titles
 	Addr            string        // listen address, always 0.0.0.0:PORT
 	PublicURL       *url.URL      // origin people reach the app on (emails, auth callbacks)
 	InternalURL     *url.URL      // origin the server uses to reach itself
@@ -51,6 +55,7 @@ func Load(getenv func(string) string) (Config, error) {
 
 	cfg := Config{
 		Env:       Env(get("APP_ENV", string(Development))),
+		AppName:   get("APP_NAME", DefaultAppName),
 		FromEmail: get("FROM_EMAIL", "noreply@example.com"),
 		// Only set behind a proxy that overwrites/appends it (Railway: X-Real-IP),
 		// or clients could pick their own rate-limit bucket.

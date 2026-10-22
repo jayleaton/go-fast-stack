@@ -4,19 +4,18 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/jayleaton/ai-patterns-go/apps/web/ui/i18n"
 	"github.com/jayleaton/ai-patterns-go/apps/web/internal/config"
+	"github.com/jayleaton/ai-patterns-go/apps/web/ui/i18n"
 	"github.com/jayleaton/ai-patterns-go/apps/web/ui/routes"
 	"github.com/jayleaton/ai-patterns-go/apps/web/ui/view"
+	"github.com/jayleaton/ai-patterns-go/packages/uikit"
 )
 
 const (
-	accountCardID    = "account-card"
-	liveBodyID       = "live-body"
-	liveNoticeID     = "live-notice"
+	accountCardID = "account-card"
+	liveBodyID    = "live-body"
+	liveNoticeID  = "live-notice"
 )
-
-const cardClass = "rounded-xl border border-neutral-300 bg-white shadow-sm dark:border-neutral-800 dark:bg-neutral-900/80"
 
 // DashboardData is everything the dashboard renders.
 type DashboardData struct {
@@ -27,127 +26,163 @@ type DashboardData struct {
 }
 
 templ DashboardPage(d DashboardData) {
-	@view.Layout(i18n.T(ctx, "pages.dashboard.title")) {
-		<div class="container-balanced py-8 md:py-20">
-			<div class="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-				<div>
-					<h1 class="text-2xl font-semibold text-neutral-900 dark:text-neutral-50">{ i18n.T(ctx, "pages.dashboard.title") }</h1>
-					<p class="text-sm text-neutral-600 dark:text-neutral-400">{ i18n.T(ctx, "pages.dashboard.subtitle") }</p>
-				</div>
-				<div class="flex items-center gap-2">
-					<a href={ templ.SafeURL(config.AppRoutes.Home) } class="rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800">
-						{ i18n.T(ctx, "common.home") }
-					</a>
-				</div>
-			</div>
-			<section class="grid grid-cols-1 gap-6 md:grid-cols-3">
+	@view.SectionLayout(i18n.T(ctx, "pages.dashboard.title"), view.SectionDashboard) {
+		<div class={ uikit.ContainerClass, "py-8 sm:py-12" }>
+			@uikit.PageHeader(i18n.T(ctx, "pages.dashboard.title"), i18n.T(ctx, "pages.dashboard.subtitle"))
+			<div class="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
 				@AccountCard(d.User)
-				<div class={ "col-span-1 p-5", cardClass }>
-					<h2 class="text-sm font-semibold text-neutral-800 dark:text-neutral-200">{ i18n.T(ctx, "pages.dashboard.quickActions.title") }</h2>
-					<div class="mt-4 flex flex-wrap gap-2">
-						<a href={ templ.SafeURL(config.AppRoutes.Account) } class="rounded-md border border-blue-300 bg-blue-50 px-3 py-2 text-sm text-blue-800 hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-900/30 dark:text-blue-200 dark:hover:bg-blue-900/50">
-							{ i18n.T(ctx, "pages.dashboard.quickActions.settings") }
-						</a>
-						<button type="button" class="rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-800 hover:bg-neutral-50 dark:border-neutral-800 dark:bg-neutral-800 dark:text-neutral-200">
-							{ i18n.T(ctx, "pages.dashboard.quickActions.profile") }
-						</button>
-						<button type="button" class="rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-800 hover:bg-neutral-50 dark:border-neutral-800 dark:bg-neutral-800 dark:text-neutral-200">
-							{ i18n.T(ctx, "pages.dashboard.quickActions.support") }
-						</button>
-					</div>
-				</div>
+				@quickActions()
 				@LiveCard(d.Tab)
-			</section>
-			<section class="mt-12 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-				<div class={ "p-6", cardClass }>
-					<h3 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{ i18n.T(ctx, "pages.dashboard.sections.analytics.title") }</h3>
-					<p class="mt-2 text-sm text-neutral-600 dark:text-neutral-300">{ i18n.T(ctx, "pages.dashboard.sections.analytics.description") }</p>
-					<div class="mt-4 h-24 rounded-lg bg-neutral-100 dark:bg-neutral-800"></div>
-				</div>
-				<div class={ "p-6", cardClass }>
-					<h3 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{ i18n.T(ctx, "pages.dashboard.sections.activity.title") }</h3>
-					<p class="mt-2 text-sm text-neutral-600 dark:text-neutral-300">{ i18n.T(ctx, "pages.dashboard.sections.activity.description") }</p>
-					<div class="mt-4 space-y-2">
-						<div class="h-4 rounded bg-neutral-100 dark:bg-neutral-800"></div>
-						<div class="h-4 w-3/4 rounded bg-neutral-100 dark:bg-neutral-800"></div>
-						<div class="h-4 w-1/2 rounded bg-neutral-100 dark:bg-neutral-800"></div>
+			</div>
+			<div class="mt-6 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+				@uikit.Card("p-5 sm:p-6", nil) {
+					@uikit.CardHeader(i18n.T(ctx, "pages.dashboard.sections.analytics.title"), i18n.T(ctx, "pages.dashboard.sections.analytics.description"))
+					<div class="mt-5 flex h-24 items-end gap-2" aria-hidden="true">
+						for _, h := range []string{"h-1/3", "h-1/2", "h-2/5", "h-3/4", "h-3/5", "h-full", "h-2/3"} {
+							<div class={ "flex-1 rounded-t bg-accent", h }></div>
+						}
 					</div>
-				</div>
-				<div class={ "p-6", cardClass }>
-					<h3 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{ i18n.T(ctx, "pages.dashboard.sections.settings.title") }</h3>
-					<p class="mt-2 text-sm text-neutral-600 dark:text-neutral-300">{ i18n.T(ctx, "pages.dashboard.sections.settings.description") }</p>
-					<div class="mt-4 flex gap-2">
-						<div class="h-8 w-16 rounded bg-neutral-100 dark:bg-neutral-800"></div>
-						<div class="h-8 w-20 rounded bg-neutral-100 dark:bg-neutral-800"></div>
+				}
+				@uikit.Card("p-5 sm:p-6", nil) {
+					@uikit.CardHeader(i18n.T(ctx, "pages.dashboard.sections.activity.title"), i18n.T(ctx, "pages.dashboard.sections.activity.description"))
+					<ul class="mt-5 space-y-3" aria-hidden="true">
+						for _, w := range []string{"w-3/4", "w-1/2", "w-2/3"} {
+							<li class="flex items-center gap-3">
+								<span class="size-2 shrink-0 rounded-full bg-primary"></span>
+								<span class={ "h-3 rounded-full bg-muted", w }></span>
+							</li>
+						}
+					</ul>
+				}
+				@uikit.Card("p-5 sm:p-6 md:col-span-2 lg:col-span-1", nil) {
+					@uikit.CardHeader(i18n.T(ctx, "pages.dashboard.sections.settings.title"), i18n.T(ctx, "pages.dashboard.sections.settings.description"))
+					<div class="mt-5 space-y-3" aria-hidden="true">
+						for _, on := range []bool{true, false} {
+							<div class="flex items-center justify-between gap-4">
+								<span class="h-3 w-1/2 rounded-full bg-muted"></span>
+								<span class={ "flex h-5 w-9 items-center rounded-full p-0.5", templ.KV("justify-end bg-primary", on), templ.KV("bg-muted", !on) }>
+									<span class="size-4 rounded-full bg-surface shadow-card"></span>
+								</span>
+							</div>
+						}
 					</div>
-				</div>
-			</section>
+				}
+			</div>
 		</div>
 	}
 }
 
-// AccountCard is components/dashboard/UserCard.tsx; the settings save and the
+// AccountCard is the signed-in user at a glance; the settings save and the
 // live stream patch it in place.
 templ AccountCard(u User) {
-	<div id={ accountCardID } class={ "col-span-1 p-5", cardClass }>
-		<h2 class="text-sm font-semibold text-neutral-800 dark:text-neutral-200">{ i18n.T(ctx, "pages.dashboard.account") }</h2>
-		<div class="mt-3 text-sm text-neutral-700 dark:text-neutral-300">
-			<div class="space-y-1">
-				<p><span class="text-neutral-500">{ i18n.T(ctx, "common.name") }:</span> <span data-testid="account-name">{ orDash(u.Name) }</span></p>
-				<p><span class="text-neutral-500">{ i18n.T(ctx, "common.email") }:</span> <span data-testid="account-email">{ orDash(u.Email) }</span></p>
-				<p><span class="text-neutral-500">{ i18n.T(ctx, "pages.dashboard.memberSince") }:</span> { memberSince(ctx, u.CreatedAt) }</p>
-				<div class="mt-3 inline-flex items-center gap-2 rounded-md border border-emerald-300 bg-emerald-50 px-2 py-1 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-900/30 dark:text-emerald-300">
-					<span class="h-2 w-2 rounded-full bg-emerald-500"></span>
-					{ i18n.T(ctx, "pages.dashboard.subscriptionActive") }
-				</div>
+	@uikit.Card("p-5 sm:p-6", templ.Attributes{"id": accountCardID}) {
+		@uikit.CardHeader(i18n.T(ctx, "pages.dashboard.account"), "") {
+			@uikit.Badge(uikit.Success, i18n.T(ctx, "pages.dashboard.subscriptionActive"), true)
+		}
+		<div class="mt-5 flex items-center gap-3">
+			@view.Avatar(u.Name, deref(u.Image), "size-11 text-sm")
+			<div class="min-w-0">
+				<p class="truncate font-medium" data-testid="account-name">{ orDash(u.Name) }</p>
+				<p class="truncate text-sm text-muted-foreground" data-testid="account-email">{ orDash(u.Email) }</p>
 			</div>
 		</div>
-	</div>
+		<dl class="mt-5 flex items-center justify-between gap-4 border-t border-border pt-4 text-sm">
+			<dt class="text-muted-foreground">{ i18n.T(ctx, "pages.dashboard.memberSince") }</dt>
+			<dd class="font-medium">{ memberSince(ctx, u.CreatedAt) }</dd>
+		</dl>
+	}
+}
+
+templ quickActions() {
+	@uikit.Card("p-5 sm:p-6", nil) {
+		@uikit.CardHeader(i18n.T(ctx, "pages.dashboard.quickActions.title"), "")
+		<ul class="mt-4 space-y-2">
+			<li>
+				@quickAction(config.AppRoutes.Account, i18n.T(ctx, "pages.dashboard.quickActions.settings")) {
+					<path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"></path>
+					<path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"></path>
+				}
+			</li>
+			<li>
+				@quickAction(config.AppRoutes.Account+"#"+profileCardID, i18n.T(ctx, "pages.dashboard.quickActions.profile")) {
+					<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+					<circle cx="12" cy="7" r="4"></circle>
+				}
+			</li>
+		</ul>
+	}
+}
+
+// quickAction is one row link; children are the icon's SVG paths.
+templ quickAction(href, label string) {
+	<a href={ templ.SafeURL(href) } class="group flex items-center gap-3 rounded-control border border-border px-3 py-2.5 text-sm font-medium hover:bg-muted motion-safe:transition-colors">
+		<span class="grid size-8 shrink-0 place-items-center rounded-control bg-accent text-accent-foreground" aria-hidden="true">
+			<svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+				{ children... }
+			</svg>
+		</span>
+		<span class="flex-1">{ label }</span>
+		<svg class="size-4 text-muted-foreground motion-safe:transition-transform group-hover:translate-x-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg>
+	</a>
 }
 
 // LiveCard opens the dashboard SSE stream on load. It shows a skeleton until
 // the first event patches #live-body.
 templ LiveCard(tab string) {
-	<div class={ "col-span-1 p-5", cardClass } data-init={ view.Get(routes.DashboardLive + "?" + url.Values{"tab": {tab}}.Encode()) }>
-		<h2 class="text-sm font-semibold text-neutral-800 dark:text-neutral-200">{ i18n.T(ctx, "pages.dashboard.live.title") }</h2>
-		<p class="mt-1 text-xs text-neutral-500 dark:text-neutral-400">{ i18n.T(ctx, "pages.dashboard.live.description") }</p>
-		<div id={ liveBodyID } class="mt-3">
-			@view.LineSkeleton()
+	@uikit.Card("p-5 sm:p-6 md:col-span-2 lg:col-span-1", templ.Attributes{"data-init": view.Get(routes.DashboardLive + "?" + url.Values{"tab": {tab}}.Encode())}) {
+		@uikit.CardHeader(i18n.T(ctx, "pages.dashboard.live.title"), i18n.T(ctx, "pages.dashboard.live.description"))
+		<div class="mt-4 flex flex-col gap-4">
+			<div id={ liveBodyID }>
+				@uikit.LineSkeleton()
+			</div>
+			<div id={ liveNoticeID } class="hidden"></div>
 		</div>
-		<div id={ liveNoticeID } class="hidden"></div>
-	</div>
+	}
 }
 
 // LiveBody is the fragment the stream patches every tick.
 templ LiveBody(now time.Time, s Session) {
-	<div id={ liveBodyID } class="mt-3 space-y-1 text-sm text-neutral-700 dark:text-neutral-300">
-		<p class="inline-flex items-center gap-2 text-xs text-emerald-700 dark:text-emerald-300">
-			<span class="h-2 w-2 animate-pulse rounded-full bg-emerald-500"></span>
+	<div id={ liveBodyID } class="space-y-3 text-sm">
+		<span class="inline-flex items-center gap-1.5 rounded-full border border-success-border bg-success-soft px-2 py-0.5 text-xs font-medium text-success-soft-foreground">
+			<span class="size-1.5 rounded-full bg-success motion-safe:animate-pulse" aria-hidden="true"></span>
 			{ i18n.T(ctx, "pages.dashboard.live.connected") }
-		</p>
-		<p><span class="text-neutral-500">{ i18n.T(ctx, "pages.dashboard.live.serverTime") }:</span> <span data-testid="live-clock" class="font-mono">{ now.UTC().Format("15:04:05") } UTC</span></p>
-		if !s.ExpiresAt.IsZero() {
-			<p><span class="text-neutral-500">{ i18n.T(ctx, "pages.dashboard.live.sessionExpires") }:</span> { i18n.From(ctx).DateTime(s.ExpiresAt.UTC()) }</p>
-		}
+		</span>
+		<dl class="divide-y divide-border">
+			<div class="flex items-center justify-between gap-4 py-2">
+				<dt class="text-muted-foreground">{ i18n.T(ctx, "pages.dashboard.live.serverTime") }</dt>
+				<dd data-testid="live-clock" class="font-mono tabular-nums">{ now.UTC().Format("15:04:05") } UTC</dd>
+			</div>
+			if !s.ExpiresAt.IsZero() {
+				<div class="flex items-center justify-between gap-4 py-2">
+					<dt class="text-muted-foreground">{ i18n.T(ctx, "pages.dashboard.live.sessionExpires") }</dt>
+					<dd class="text-right tabular-nums">{ i18n.From(ctx).DateTime(s.ExpiresAt.UTC()) }</dd>
+				</div>
+			}
+		</dl>
 	</div>
 }
 
 // LiveNotice tells this tab that another tab changed the account.
 templ LiveNotice() {
-	<div id={ liveNoticeID } role="status" class="mt-3 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-700 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-300">
-		{ i18n.T(ctx, "pages.dashboard.live.updatedElsewhere") }
-	</div>
+	@uikit.Alert(liveNoticeID, uikit.Info, i18n.T(ctx, "pages.dashboard.live.updatedElsewhere"))
 }
 
 // HomePage is "/" when the template welcome is turned off.
 templ HomePage() {
 	@view.Layout("") {
-		<div class="mx-auto flex min-h-screen max-w-lg flex-col justify-center px-6">
-			<h1 class="text-3xl font-semibold tracking-tight text-neutral-950 dark:text-white">{ i18n.T(ctx, "pages.home.title") }</h1>
-			<p class="mt-3 leading-relaxed text-neutral-600 dark:text-neutral-300">{ i18n.T(ctx, "pages.home.body") }</p>
-			<div class="mt-8 flex gap-3">
-				<a href={ templ.SafeURL(config.AppRoutes.Signup) } class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white">{ i18n.T(ctx, "pages.home.signUp") }</a>
-				<a href={ templ.SafeURL(config.AppRoutes.Login) } class="rounded-lg border border-neutral-300 px-4 py-2 text-sm font-medium dark:border-neutral-700">{ i18n.T(ctx, "pages.home.signIn") }</a>
+		<div class={ uikit.ContainerClass, "flex min-h-[calc(100dvh-4rem)] items-center py-16" }>
+			<div class="max-w-xl">
+				@uikit.Badge(uikit.Success, view.AppName(view.StateFrom(ctx)), true)
+				<h1 class="mt-5 text-3xl font-semibold tracking-tight text-balance sm:text-4xl">{ i18n.T(ctx, "pages.home.title") }</h1>
+				<p class="mt-4 text-base leading-relaxed text-muted-foreground text-pretty">{ i18n.T(ctx, "pages.home.body") }</p>
+				<div class="mt-8 flex flex-col gap-3 sm:flex-row">
+					@uikit.LinkButton(config.AppRoutes.Signup, uikit.ButtonProps{}) {
+						{ i18n.T(ctx, "pages.home.signUp") }
+					}
+					@uikit.LinkButton(config.AppRoutes.Login, uikit.ButtonProps{Variant: uikit.Secondary}) {
+						{ i18n.T(ctx, "pages.home.signIn") }
+					}
+				</div>
 			</div>
 		</div>
 	}

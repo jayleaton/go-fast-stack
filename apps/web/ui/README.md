@@ -1,12 +1,14 @@
 # apps/web/ui — HTML transport
 
 Server-rendered [templ](https://templ.guide) pages, [Datastar](https://data-star.dev) 1.x actions over SSE, Tailwind v4.
-Ported from the original `apps/web-app` (same pages, same Tailwind classes, same messages).
+Pages render through the shared component set in [`packages/uikit`](../../../packages/uikit/README.md) (shell, cards,
+fields, buttons, alerts, badges, skeletons) and its design tokens, so there are no palette classes or `dark:` variants
+here: re-theme in `packages/uikit/theme.css`.
 
 | Package | What |
 |---|---|
 | `ui` | `ui.New(deps)` (`Routes(mux)` / `Handler()`), the `Auth`/`Users` interfaces, handlers, auth, dashboard and Account pages |
-| `ui/view` | layout shell (header: logout, theme, language), shared inputs/buttons/alerts/skeletons |
+| `ui/view` | the layout (`Layout` for public pages, `SectionLayout(title, Section…)` to highlight the signed-in nav: `uikit.Page` + `uikit.AppShell` with Dashboard/Account, theme toggle, language menu, sign out), the layout state, and app-local components uikit lacks (`Avatar`, `CardFooter`, `AltLink`) |
 | `ui/welcome` | template welcome landing + `/why` (feature-flagged, deletable; see its README) |
 | `ui/i18n` | `messages/{en,ja}.json`, locale negotiation, `i18n.T(ctx, key)` |
 | `ui/routes` | the UI's own action endpoints (logout, locale, live stream, settings, delete, static); pages use `config.AppRoutes` |
@@ -95,15 +97,18 @@ locale; the Datastar bundle matches its pin) and `render_test.go` renders every 
 - **Server push**: `GET /dashboard/live` streams the clock and session expiry every second, and patches the account
   card whenever the user changes from any tab (notice shown only in the other tabs). Fan-out is an in-process hub;
   swap for Postgres `LISTEN/NOTIFY` when running more than one instance.
-- **Client JS**: only Datastar attributes. Local UI state uses `_`-prefixed signals (not sent to the server). The theme
-  toggle writes a `theme` cookie; the server renders `<html class="dark|light">`, and with no cookie the CSS follows
-  `prefers-color-scheme`, so there is no flash.
+- **Client JS**: only Datastar attributes. Local UI state uses `_`-prefixed signals (not sent to the server).
+- **Theme**: colors are uikit tokens defined with `light-dark()`. The theme toggle writes a `theme` cookie and the
+  server renders `<html class="dark|light">` from it; with no cookie the system preference applies. The first paint is
+  right without a pre-paint script.
+- **App name**: the header brand, `<title>`, auth pages and the welcome footer show `Deps.AppName` (`APP_NAME`, default
+  `config.DefaultAppName`), read in templates with `view.AppName(view.StateFrom(ctx))`.
 - **i18n**: messages are flat strings with no plurals or placeholders, so `i18n` is a map lookup (no library; add
   go-i18n when a message needs plural rules). Locale = `locale` cookie, then the highest-weighted supported
   `Accept-Language`, then `en`. Keys must be string literals: `TestUsedKeysExistInEveryLocale` scans the templates
   and fails when any locale is missing one, and the render tests fail on any key that renders as itself.
-  New keys vs the original (same structure, additions only): `common.home`, `components.themeToggle.*`,
-  `pages.home.*`, `pages.dashboard.{settingsForm,deleteAccount,live}.*`,
+  Keys beyond the original app's: `components.{themeToggle,nav,toast}.*`, `pages.home.*`,
+  `pages.{login,signup}.description`, `pages.dashboard.live.*`, `pages.account.*`,
   `errors.{emailTaken,invalidInput,passwordTooLong,tooManyRequests}`.
 
 ## Updating Datastar

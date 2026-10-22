@@ -1,13 +1,13 @@
 package view
 
 import (
-	"strings"
+	"context"
 
 	"github.com/jayleaton/ai-patterns-go/apps/admin/internal/config"
-
 	"github.com/jayleaton/ai-patterns-go/apps/admin/ui/i18n"
 	"github.com/jayleaton/ai-patterns-go/apps/admin/ui/routes"
 	"github.com/jayleaton/ai-patterns-go/apps/admin/ui/static"
+	"github.com/jayleaton/ai-patterns-go/packages/uikit"
 )
 
 // appName is the brand of the request (State.AppName or DefaultAppName).
@@ -17,6 +17,9 @@ func appName(s State) string {
 	}
 	return s.AppName
 }
+
+// AppName is appName for pages (the auth card's brand mark).
+func AppName(ctx context.Context) string { return appName(StateFrom(ctx)) }
 
 func pageTitle(title string, s State) string {
 	if title == "" {
@@ -39,165 +42,76 @@ var navItems = []navItem{
 	{SectionAnalytics, config.AppRoutes.Analytics, "components.nav.analytics"},
 }
 
-// Layout is the root shell: sticky header with the app name, the section nav
-// and signed-in admin (when signed in), logout, theme toggle and language
-// switcher.
+func nav(ctx context.Context) []uikit.NavItem {
+	s := StateFrom(ctx)
+	if !s.Authenticated {
+		return nil
+	}
+	out := make([]uikit.NavItem, 0, len(navItems))
+	for _, n := range navItems {
+		out = append(out, uikit.NavItem{Href: n.Href, Label: i18n.T(ctx, n.Key), Current: n.Section == s.Section})
+	}
+	return out
+}
+
+// Layout is the root shell: the document and the app shell with the app
+// name, the section nav and signed-in admin (when signed in), theme toggle,
+// language menu and sign out.
 templ Layout(title string) {
-	<!DOCTYPE html>
-	<html lang={ string(i18n.From(ctx).Locale) } dir="ltr" class={ StateFrom(ctx).Theme } if templ.GetNonce(ctx) != "" {
-		data-nonce={ templ.GetNonce(ctx) }
-	}>
-		<head>
-			<meta charset="utf-8"/>
-			<meta name="viewport" content="width=device-width, initial-scale=1"/>
-			<meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff"/>
-			<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0a0a0a"/>
-			<title>{ pageTitle(title, StateFrom(ctx)) }</title>
-			<link rel="icon" href={ static.URL(static.FaviconFile) }/>
-			<link rel="stylesheet" href={ static.URL(static.CSSFile) }/>
-			<script type="module" src={ static.URL(static.DatastarFile) } nonce={ templ.GetNonce(ctx) }></script>
-		</head>
-		<body class="bg-white text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100">
-			<div class="relative min-h-screen">
-				<header class="sticky top-0 z-50 border-b border-neutral-200/80 bg-white/80 backdrop-blur-md dark:border-neutral-800/80 dark:bg-neutral-950/80">
-					<div class="mx-auto flex w-full max-w-6xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3 md:px-6">
-						<a href={ templ.SafeURL(config.AppRoutes.Home) } class="text-base font-semibold tracking-tight text-neutral-950 dark:text-white">{ appName(StateFrom(ctx)) }</a>
-						if StateFrom(ctx).Authenticated {
-							@Nav()
-						}
-						<div class="ml-auto flex items-center gap-2">
-							if StateFrom(ctx).Authenticated {
-								<span data-testid="admin-email" class="hidden text-sm text-neutral-600 sm:inline dark:text-neutral-400">{ StateFrom(ctx).Email }</span>
-								@LogoutButton()
-							}
-							@ThemeToggle()
-							@LanguageSelector()
-						</div>
-					</div>
-				</header>
-				<main id="main-content" role="main">
-					{ children... }
-				</main>
-							</div>
-		</body>
-	</html>
-}
-
-// Nav links the dashboard sections and highlights the current one.
-templ Nav() {
-	<nav aria-label={ i18n.T(ctx, "components.nav.label") } class="flex flex-wrap items-center gap-1">
-		for _, n := range navItems {
-			<a
-				href={ templ.SafeURL(n.Href) }
-				if n.Section == StateFrom(ctx).Section {
-					aria-current="page"
-				}
-				class={ "rounded-md px-3 py-1.5 text-sm font-medium",
-					templ.KV("bg-neutral-100 text-neutral-950 dark:bg-neutral-800 dark:text-white", n.Section == StateFrom(ctx).Section),
-					templ.KV("text-neutral-600 hover:bg-neutral-50 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-900 dark:hover:text-neutral-100", n.Section != StateFrom(ctx).Section) }
-			>{ i18n.T(ctx, n.Key) }</a>
+	{{ s := StateFrom(ctx) }}
+	@uikit.Page(uikit.Document{
+		Lang:    string(i18n.From(ctx).Locale),
+		Title:   pageTitle(title, s),
+		Theme:   s.Theme,
+		CSS:     static.URL(static.CSSFile),
+		Script:  static.URL(static.DatastarFile),
+		Favicon: static.URL(static.FaviconFile),
+	}) {
+		@uikit.AppShell(uikit.Shell{
+			Brand:     appName(s),
+			BrandHref: config.AppRoutes.Home,
+			Nav:       nav(ctx),
+			NavLabel:  i18n.T(ctx, "components.nav.label"),
+			MenuLabel: i18n.T(ctx, "components.nav.menu"),
+			SkipLabel: i18n.T(ctx, "components.nav.skipToContent"),
+			Actions:   headerActions(),
+			MenuExtra: menuEmail(),
+		}) {
+			{ children... }
 		}
-	</nav>
+	}
 }
 
-// LogoutButton signs out through Datastar; without JS the form posts normally.
-templ LogoutButton() {
-	<form class="flex" method="post" action={ templ.SafeURL(routes.Logout) } data-on:submit={ PostForm(routes.Logout) } data-indicator:_logging-out>
-		<button
-			type="submit"
-			aria-label={ i18n.T(ctx, "components.authStatus.logout") }
-			title={ i18n.T(ctx, "components.authStatus.logout") }
-			data-attr:disabled="$_loggingOut"
-			class="h-9 w-9 rounded-md border border-neutral-200 bg-white text-neutral-700 shadow-sm hover:bg-neutral-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400 disabled:opacity-50 disabled:cursor-not-allowed dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-200 dark:hover:bg-neutral-800"
-		>
-			<svg class="mx-auto h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-				<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
-				<polyline points="16,17 21,12 16,7"></polyline>
-				<line x1="21" y1="12" x2="9" y2="12"></line>
-			</svg>
-		</button>
-	</form>
+templ headerActions() {
+	if StateFrom(ctx).Authenticated {
+		<span data-testid="admin-email" class="mr-1 hidden max-w-48 truncate text-sm text-muted-foreground lg:inline">{ StateFrom(ctx).Email }</span>
+	}
+	@uikit.ThemeToggle(i18n.T(ctx, "components.themeToggle.toggle"))
+	@LanguageSelector()
+	if StateFrom(ctx).Authenticated {
+		@uikit.SignOutButton(routes.Logout, i18n.T(ctx, "components.authStatus.logout"))
+	}
 }
 
-// ThemeToggle switches dark/light. Both icons render; CSS shows the one for
-// the effective theme, so it is correct before any script runs.
-templ ThemeToggle() {
-	<button
-		type="button"
-		data-on:click={ themeToggle }
-		aria-label={ i18n.T(ctx, "components.themeToggle.toggle") }
-		title={ i18n.T(ctx, "components.themeToggle.toggle") }
-		class={ headerButtonClass }
-	>
-		<svg class="mx-auto hidden h-5 w-5 dark:block" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-			<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
-		</svg>
-		<svg class="mx-auto h-5 w-5 dark:hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-			<circle cx="12" cy="12" r="4"></circle>
-			<path d="M12 2v2m0 16v2M2 12h2m16 0h2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path>
-		</svg>
-	</button>
+templ menuEmail() {
+	if StateFrom(ctx).Authenticated {
+		<span class="block truncate">{ StateFrom(ctx).Email }</span>
+	}
 }
 
-// LanguageSelector is the dropdown from components/language-selector.tsx.
-// Picking a locale posts a plain form; the server sets the cookie and sends
-// the browser back to the current page.
+// LanguageSelector posts the picked locale; the server sets the cookie and
+// sends the browser back to the current page.
 templ LanguageSelector() {
 	{{ t := i18n.From(ctx) }}
-	<div
-		class="relative"
-		data-signals="{_langOpen: false}"
-		data-on:click__outside="$_langOpen = false"
-		data-on:keydown__window="evt.key === 'Escape' && ($_langOpen = false)"
-	>
-		<button
-			type="button"
-			id="language-button"
-			data-on:click="$_langOpen = !$_langOpen"
-			aria-label={ t.T("components.languageSelector.language") }
-			aria-haspopup="listbox"
-			aria-expanded="false"
-			data-attr:aria-expanded="$_langOpen ? 'true' : 'false'"
-			aria-controls="language-menu"
-			class="inline-flex h-9 items-center gap-1.5 rounded-md border border-neutral-200 bg-white px-2.5 text-sm font-medium text-neutral-800 shadow-sm hover:bg-neutral-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
-		>
-			<span>{ strings.ToUpper(string(t.Locale)) }</span>
-			<svg class="h-3.5 w-3.5 text-neutral-500 transition-transform dark:text-neutral-400" data-class:rotate-180="$_langOpen" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
-			</svg>
-		</button>
-		<form method="post" action={ templ.SafeURL(routes.Locale) }>
-			<input type="hidden" name="next" value={ StateFrom(ctx).Path }/>
-			<ul
-				id="language-menu"
-				role="listbox"
-				aria-label={ t.T("components.languageSelector.language") }
-				data-class:hidden="!$_langOpen"
-				class="hidden absolute right-0 z-50 mt-1 min-w-[10.5rem] overflow-hidden rounded-md border border-neutral-200 bg-white py-1 shadow-lg dark:border-neutral-800 dark:bg-neutral-900"
-			>
-				for _, l := range i18n.Locales {
-					<li role="option" aria-selected={ boolString(l == t.Locale) }>
-						<button
-							type="submit"
-							name="locale"
-							value={ string(l) }
-							class={ "flex w-full items-center justify-between px-3 py-2 text-left text-sm disabled:opacity-50",
-								templ.KV("bg-neutral-100 font-medium text-neutral-950 dark:bg-neutral-800 dark:text-white", l == t.Locale),
-								templ.KV("text-neutral-700 hover:bg-neutral-50 dark:text-neutral-200 dark:hover:bg-neutral-800", l != t.Locale) }
-						>
-							<span>{ t.Label(l) }</span>
-							<span class="text-xs text-neutral-400 dark:text-neutral-500">{ strings.ToUpper(string(l)) }</span>
-						</button>
-					</li>
-				}
-			</ul>
-		</form>
-	</div>
-}
-
-func boolString(b bool) string {
-	if b {
-		return "true"
+	{{ opts := make([]uikit.LocaleOption, 0, len(i18n.Locales)) }}
+	for _, l := range i18n.Locales {
+		{{ opts = append(opts, uikit.LocaleOption{Value: string(l), Label: t.Label(l), Selected: l == t.Locale}) }}
 	}
-	return "false"
+	@uikit.LocaleMenu(uikit.Locales{
+		Action:  routes.Locale,
+		Next:    StateFrom(ctx).Path,
+		Label:   t.T("components.languageSelector.language"),
+		Current: string(t.Locale),
+		Options: opts,
+	})
 }

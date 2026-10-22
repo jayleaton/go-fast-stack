@@ -111,7 +111,7 @@
     "note": "掃除はこれだけです。書いておきたい場合は apps/web/ui/welcome の README を見てください。"
   },
   "footer": {
-    "brand": "スターターテンプレート",
+    "label": "フッター",
     "why": "このパターンの理由",
     "login": "サインイン",
     "signup": "サインアップ"

@@ -1,10 +1,10 @@
 package ui
 
 import (
-
-	"github.com/jayleaton/ai-patterns-go/apps/web/ui/i18n"
 	"github.com/jayleaton/ai-patterns-go/apps/web/internal/config"
+	"github.com/jayleaton/ai-patterns-go/apps/web/ui/i18n"
 	"github.com/jayleaton/ai-patterns-go/apps/web/ui/view"
+	"github.com/jayleaton/ai-patterns-go/packages/uikit"
 )
 
 // Patch target ids shared by pages and handlers.
@@ -24,161 +24,157 @@ type AuthForm struct {
 	Error string
 }
 
-templ LoginPage(f AuthForm) {
-	@view.Layout(i18n.T(ctx, "pages.login.title")) {
-		@view.AuthShell() {
-			<div>
-				<h2 class={ view.HeadingClass }>{ i18n.T(ctx, "pages.login.title") }</h2>
-			</div>
-			<form id="login-form" class="mt-8 space-y-6" method="post" action={ templ.SafeURL(config.AppRoutes.Login) } data-on:submit={ view.PostForm(config.AppRoutes.Login) } data-indicator:_loading>
-				@view.ErrorAlert(formErrorID, f.Error)
-				<div class="space-y-4">
-					@view.Input(view.Field{ID: "email", Type: "email", Label: i18n.T(ctx, "common.email"), Placeholder: i18n.T(ctx, "pages.login.emailPlaceholder"), Autocomplete: "email", Value: f.Email})
-					@view.Input(view.Field{ID: "password", Type: "password", Label: i18n.T(ctx, "common.password"), Placeholder: i18n.T(ctx, "pages.login.passwordPlaceholder"), Autocomplete: "current-password"})
-				</div>
-				<div>
-					@view.SubmitButton(i18n.T(ctx, "pages.login.loginButton"), i18n.T(ctx, "common.loading"), "_loading")
-				</div>
-				<div class="flex items-center justify-between">
-					<a href={ templ.SafeURL(config.AppRoutes.ForgotPassword) } class="text-sm font-medium text-blue-600 hover:text-blue-600/90 dark:text-blue-400 dark:hover:text-blue-300">
-						{ i18n.T(ctx, "pages.login.forgotPassword") }
-					</a>
-				</div>
-				<div class="text-center">
-					<a href={ templ.SafeURL(config.AppRoutes.Signup) } class={ view.TextLinkClass }>
-						{ i18n.T(ctx, "pages.login.dontHaveAccount") } { i18n.T(ctx, "pages.login.signUpInstead") }
-					</a>
-				</div>
-			</form>
+// authPage is the public layout around uikit.AuthLayout (which renders the h1).
+templ authPage(title, description string) {
+	@view.Layout(title) {
+		@uikit.AuthLayout(view.AppName(view.StateFrom(ctx)), title, description) {
+			{ children... }
 		}
 	}
 }
 
-templ SignupPage(f AuthForm) {
-	@view.Layout(i18n.T(ctx, "pages.signup.title")) {
-		@view.AuthShell() {
-			<div>
-				<h2 class={ view.HeadingClass }>{ i18n.T(ctx, "pages.signup.title") }</h2>
+// FormError is the form-level error slot every auth form patches.
+templ FormError(message string) {
+	@uikit.Alert(formErrorID, uikit.Error, message)
+}
+
+// authSubmit is the full-width submit button driven by the form's
+// data-indicator:_loading.
+templ authSubmit(label, loading string) {
+	@uikit.SubmitButton(uikit.Submit{Label: label, Loading: loading, Signal: "_loading", ButtonProps: uikit.ButtonProps{Full: true}})
+}
+
+templ LoginPage(f AuthForm) {
+	@authPage(i18n.T(ctx, "pages.login.title"), i18n.T(ctx, "pages.login.description")) {
+		<form id="login-form" class="space-y-5" method="post" action={ templ.SafeURL(config.AppRoutes.Login) } data-on:submit={ view.PostForm(config.AppRoutes.Login) } data-indicator:_loading>
+			@FormError(f.Error)
+			@uikit.Input(uikit.Field{ID: "email", Type: "email", Label: i18n.T(ctx, "common.email"), Placeholder: i18n.T(ctx, "pages.login.emailPlaceholder"), Autocomplete: "email", Value: f.Email})
+			<div class="space-y-2">
+				@uikit.Input(uikit.Field{ID: "password", Type: "password", Label: i18n.T(ctx, "common.password"), Placeholder: i18n.T(ctx, "pages.login.passwordPlaceholder"), Autocomplete: "current-password"})
+				<p class="text-right text-sm">
+					<a href={ templ.SafeURL(config.AppRoutes.ForgotPassword) } class={ uikit.LinkClass }>{ i18n.T(ctx, "pages.login.forgotPassword") }</a>
+				</p>
 			</div>
-			<form id="signup-form" class="mt-8 space-y-6" method="post" action={ templ.SafeURL(config.AppRoutes.Signup) } data-on:submit={ view.PostForm(config.AppRoutes.Signup) } data-indicator:_loading>
-				@view.ErrorAlert(formErrorID, f.Error)
-				<div class="space-y-4">
-					@view.Input(view.Field{ID: "name", Type: "text", Label: i18n.T(ctx, "common.name"), Placeholder: i18n.T(ctx, "pages.signup.namePlaceholder"), Autocomplete: "name", Value: f.Name})
-					@view.Input(view.Field{ID: "email", Type: "email", Label: i18n.T(ctx, "common.email"), Placeholder: i18n.T(ctx, "pages.signup.emailPlaceholder"), Autocomplete: "email", Value: f.Email})
-					@view.Input(view.Field{ID: "password", Type: "password", Label: i18n.T(ctx, "common.password"), Placeholder: i18n.T(ctx, "pages.signup.passwordPlaceholder"), Autocomplete: "new-password", MinLength: 8})
-				</div>
-				<div>
-					@view.SubmitButton(i18n.T(ctx, "pages.signup.signupButton"), i18n.T(ctx, "common.loading"), "_loading")
-				</div>
-				<div class="text-center">
-					<a href={ templ.SafeURL(config.AppRoutes.Login) } class={ view.TextLinkClass }>
-						{ i18n.T(ctx, "pages.signup.alreadyHaveAccount") } { i18n.T(ctx, "pages.signup.signInInstead") }
-					</a>
-				</div>
-			</form>
-		}
+			@authSubmit(i18n.T(ctx, "pages.login.loginButton"), i18n.T(ctx, "common.loading"))
+			<div class="border-t border-border pt-5">
+				@view.AltLink(i18n.T(ctx, "pages.login.dontHaveAccount"), i18n.T(ctx, "pages.login.signUpInstead"), config.AppRoutes.Signup)
+			</div>
+		</form>
+	}
+}
+
+templ SignupPage(f AuthForm) {
+	@authPage(i18n.T(ctx, "pages.signup.title"), i18n.T(ctx, "pages.signup.description")) {
+		<form id="signup-form" class="space-y-5" method="post" action={ templ.SafeURL(config.AppRoutes.Signup) } data-on:submit={ view.PostForm(config.AppRoutes.Signup) } data-indicator:_loading>
+			@FormError(f.Error)
+			@uikit.Input(uikit.Field{ID: "name", Label: i18n.T(ctx, "common.name"), Placeholder: i18n.T(ctx, "pages.signup.namePlaceholder"), Autocomplete: "name", Value: f.Name})
+			@uikit.Input(uikit.Field{ID: "email", Type: "email", Label: i18n.T(ctx, "common.email"), Placeholder: i18n.T(ctx, "pages.signup.emailPlaceholder"), Autocomplete: "email", Value: f.Email})
+			@uikit.Input(uikit.Field{ID: "password", Type: "password", Label: i18n.T(ctx, "common.password"), Placeholder: i18n.T(ctx, "pages.signup.passwordPlaceholder"), Autocomplete: "new-password", MinLength: 8, Hint: i18n.T(ctx, "pages.resetPassword.passwordRequirement")})
+			@authSubmit(i18n.T(ctx, "pages.signup.signupButton"), i18n.T(ctx, "common.loading"))
+			<div class="border-t border-border pt-5">
+				@view.AltLink(i18n.T(ctx, "pages.signup.alreadyHaveAccount"), i18n.T(ctx, "pages.signup.signInInstead"), config.AppRoutes.Login)
+			</div>
+		</form>
 	}
 }
 
 // ForgotPasswordPage shows the request form, or the "email sent" state when sent.
 templ ForgotPasswordPage(f AuthForm, sent bool) {
-	@view.Layout(i18n.T(ctx, "pages.forgotPassword.title")) {
-		@view.AuthShell() {
-			@view.AuthHeading(i18n.T(ctx, "pages.forgotPassword.title"), i18n.T(ctx, "pages.forgotPassword.description"))
-			if sent {
-				@ForgotPasswordSent()
-			} else {
-				<div id={ forgotPasswordID } class="mt-8">
-					<form class="space-y-6" method="post" action={ templ.SafeURL(config.AppRoutes.ForgotPassword) } data-on:submit={ view.PostForm(config.AppRoutes.ForgotPassword) } data-indicator:_loading>
-						@view.ErrorAlert(formErrorID, f.Error)
-						@view.Input(view.Field{ID: "email", Type: "email", Label: i18n.T(ctx, "pages.forgotPassword.emailLabel"), Placeholder: i18n.T(ctx, "pages.forgotPassword.emailPlaceholder"), Autocomplete: "email", Value: f.Email})
-						<div>
-							@view.SubmitButton(i18n.T(ctx, "pages.forgotPassword.sendResetLink"), i18n.T(ctx, "common.loading"), "_loading")
-						</div>
-						<div class="text-center">
-							<a href={ templ.SafeURL(config.AppRoutes.Login) } class={ view.TextLinkClass }>{ i18n.T(ctx, "pages.forgotPassword.backToLogin") }</a>
-						</div>
-					</form>
-				</div>
-			}
+	@authPage(i18n.T(ctx, "pages.forgotPassword.title"), i18n.T(ctx, "pages.forgotPassword.description")) {
+		if sent {
+			@ForgotPasswordSent()
+		} else {
+			<div id={ forgotPasswordID }>
+				<form class="space-y-5" method="post" action={ templ.SafeURL(config.AppRoutes.ForgotPassword) } data-on:submit={ view.PostForm(config.AppRoutes.ForgotPassword) } data-indicator:_loading>
+					@FormError(f.Error)
+					@uikit.Input(uikit.Field{ID: "email", Type: "email", Label: i18n.T(ctx, "pages.forgotPassword.emailLabel"), Placeholder: i18n.T(ctx, "pages.forgotPassword.emailPlaceholder"), Autocomplete: "email", Value: f.Email})
+					@authSubmit(i18n.T(ctx, "pages.forgotPassword.sendResetLink"), i18n.T(ctx, "common.loading"))
+					@view.AltLink("", i18n.T(ctx, "pages.forgotPassword.backToLogin"), config.AppRoutes.Login)
+				</form>
+			</div>
 		}
 	}
 }
 
 // ForgotPasswordSent replaces the forgot-password form after a request.
 templ ForgotPasswordSent() {
-	<div id={ forgotPasswordID } class="mt-8">
-		<div class="space-y-6">
-			<div role="status" class={ view.SuccessAlertClass }>{ i18n.T(ctx, "pages.forgotPassword.emailSent") }</div>
-			@view.InfoBox(i18n.T(ctx, "pages.forgotPassword.checkEmail"))
-			<div class="text-center">
-				<a href={ templ.SafeURL(config.AppRoutes.Login) } class={ view.TextLinkClass }>{ i18n.T(ctx, "pages.forgotPassword.backToLogin") }</a>
-			</div>
-		</div>
+	<div id={ forgotPasswordID } class="space-y-5">
+		@uikit.Alert("forgot-password-sent", uikit.Success, i18n.T(ctx, "pages.forgotPassword.emailSent"))
+		@uikit.Callout(uikit.Info, "", i18n.T(ctx, "pages.forgotPassword.checkEmail"))
+		@uikit.LinkButton(config.AppRoutes.Login, uikit.ButtonProps{Variant: uikit.Secondary, Full: true}) {
+			{ i18n.T(ctx, "pages.forgotPassword.backToLogin") }
+		}
 	</div>
 }
 
 // ResetPasswordPage renders the new-password form for a reset token.
 templ ResetPasswordPage(token string, f AuthForm, done bool) {
-	@view.Layout(i18n.T(ctx, "pages.resetPassword.title")) {
-		@view.AuthShell() {
-			@view.AuthHeading(i18n.T(ctx, "pages.resetPassword.title"), i18n.T(ctx, "pages.resetPassword.description"))
-			if done {
-				@ResetPasswordDone()
-			} else if token == "" {
-				<div id={ resetPasswordID } class="mt-8">
-					<div role="alert" class={ view.ErrorAlertClass }>{ i18n.T(ctx, "pages.resetPassword.invalidResetLink") }</div>
-					<div class="mt-6 text-center">
-						<a href={ templ.SafeURL(config.AppRoutes.ForgotPassword) } class={ view.TextLinkClass }>{ i18n.T(ctx, "pages.resetPassword.requestNewResetLink") }</a>
-					</div>
-				</div>
-			} else {
-				<div id={ resetPasswordID }>
-					<form class="mt-8 space-y-6" method="post" action={ templ.SafeURL(config.AppRoutes.ResetPassword) } data-on:submit={ view.PostForm(config.AppRoutes.ResetPassword) } data-indicator:_loading>
-						<input type="hidden" name="token" value={ token }/>
-						@view.ErrorAlert(formErrorID, f.Error)
-						<div class="space-y-4">
-							@view.Input(view.Field{ID: "password", Type: "password", Label: i18n.T(ctx, "pages.resetPassword.newPassword"), Placeholder: i18n.T(ctx, "pages.resetPassword.newPasswordPlaceholder"), Autocomplete: "new-password", MinLength: 8, Hint: i18n.T(ctx, "pages.resetPassword.passwordRequirement")})
-							@view.Input(view.Field{ID: "confirmPassword", Type: "password", Label: i18n.T(ctx, "pages.resetPassword.confirmPassword"), Placeholder: i18n.T(ctx, "pages.resetPassword.confirmPasswordPlaceholder"), Autocomplete: "new-password", MinLength: 8})
-						</div>
-						<div>
-							@view.SubmitButton(i18n.T(ctx, "pages.resetPassword.resetButton"), i18n.T(ctx, "pages.resetPassword.resettingPassword"), "_loading")
-						</div>
-						<div class="text-center">
-							<a href={ templ.SafeURL(config.AppRoutes.Login) } class={ view.TextLinkClass }>{ i18n.T(ctx, "pages.resetPassword.backToLogin") }</a>
-						</div>
-					</form>
-				</div>
-			}
+	@authPage(i18n.T(ctx, "pages.resetPassword.title"), i18n.T(ctx, "pages.resetPassword.description")) {
+		if done {
+			@ResetPasswordDone()
+		} else if token == "" {
+			<div id={ resetPasswordID } class="space-y-5">
+				@uikit.Alert("reset-password-invalid", uikit.Error, i18n.T(ctx, "pages.resetPassword.invalidResetLink"))
+				@uikit.LinkButton(config.AppRoutes.ForgotPassword, uikit.ButtonProps{Full: true}) {
+					{ i18n.T(ctx, "pages.resetPassword.requestNewResetLink") }
+				}
+				@view.AltLink("", i18n.T(ctx, "pages.resetPassword.backToLogin"), config.AppRoutes.Login)
+			</div>
+		} else {
+			<div id={ resetPasswordID }>
+				<form class="space-y-5" method="post" action={ templ.SafeURL(config.AppRoutes.ResetPassword) } data-on:submit={ view.PostForm(config.AppRoutes.ResetPassword) } data-indicator:_loading>
+					<input type="hidden" name="token" value={ token }/>
+					@FormError(f.Error)
+					@uikit.Input(uikit.Field{ID: "password", Type: "password", Label: i18n.T(ctx, "pages.resetPassword.newPassword"), Placeholder: i18n.T(ctx, "pages.resetPassword.newPasswordPlaceholder"), Autocomplete: "new-password", MinLength: 8, Hint: i18n.T(ctx, "pages.resetPassword.passwordRequirement")})
+					@uikit.Input(uikit.Field{ID: "confirmPassword", Type: "password", Label: i18n.T(ctx, "pages.resetPassword.confirmPassword"), Placeholder: i18n.T(ctx, "pages.resetPassword.confirmPasswordPlaceholder"), Autocomplete: "new-password", MinLength: 8})
+					@authSubmit(i18n.T(ctx, "pages.resetPassword.resetButton"), i18n.T(ctx, "pages.resetPassword.resettingPassword"))
+					@view.AltLink("", i18n.T(ctx, "pages.resetPassword.backToLogin"), config.AppRoutes.Login)
+				</form>
+			</div>
 		}
 	}
 }
 
+// resultBlock is the centered icon, heading and message of a finished auth
+// step; children are its actions.
+templ resultBlock(tone uikit.Tone, title, message string) {
+	<div class="text-center">
+		@uikit.StatusIcon(tone)
+		<h2 class="mt-4 text-lg font-semibold text-balance">{ title }</h2>
+		<p class="mt-2 text-sm text-muted-foreground text-pretty">{ message }</p>
+		<div class="mt-6">
+			{ children... }
+		</div>
+	</div>
+}
+
 // ResetPasswordDone replaces the reset form after the password changed.
 templ ResetPasswordDone() {
-	<div id={ resetPasswordID } class="mt-8 text-center">
-		@view.StatusIcon("success")
-		<h3 class="mt-6 text-lg font-medium text-neutral-900 dark:text-neutral-100">{ i18n.T(ctx, "pages.resetPassword.passwordResetSuccess") }</h3>
-		<p class="mt-2 text-sm text-neutral-600 dark:text-neutral-300">{ i18n.T(ctx, "pages.resetPassword.passwordUpdated") }</p>
-		<div class="mt-6">
-			<a href={ templ.SafeURL(config.AppRoutes.Login) } class={ view.SuccessButtonClass }>{ i18n.T(ctx, "pages.resetPassword.signInWithNewPassword") }</a>
-		</div>
+	<div id={ resetPasswordID }>
+		@resultBlock(uikit.Success, i18n.T(ctx, "pages.resetPassword.passwordResetSuccess"), i18n.T(ctx, "pages.resetPassword.passwordUpdated")) {
+			@uikit.LinkButton(config.AppRoutes.Login, uikit.ButtonProps{Full: true}) {
+				{ i18n.T(ctx, "pages.resetPassword.signInWithNewPassword") }
+			}
+		}
 	</div>
 }
 
 // VerifyEmailPage is "check your email" after signup, with a resend button.
 templ VerifyEmailPage(email string, resend ResendState) {
-	@view.Layout(i18n.T(ctx, "pages.verifyEmail.title")) {
-		@view.AuthShell() {
-			<div class="text-center">
-				@view.StatusIcon("warning")
-				<h2 class={ view.HeadingClass }>{ i18n.T(ctx, "pages.verifyEmail.checkEmailTitle") }</h2>
-				<p class={ view.SubheadingClass }>{ i18n.T(ctx, "pages.verifyEmail.emailSentTo") }</p>
-				<p class="text-center text-sm font-medium text-neutral-900 dark:text-neutral-100">{ email }</p>
+	@authPage(i18n.T(ctx, "pages.verifyEmail.checkEmailTitle"), "") {
+		<div class="space-y-5">
+			<div class="flex items-center gap-3 rounded-control border border-border bg-muted px-4 py-3">
+				<span class="grid size-9 shrink-0 place-items-center rounded-full bg-accent text-accent-foreground" aria-hidden="true">
+					<svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"></rect><path d="m3 7 9 6 9-6"></path></svg>
+				</span>
+				<div class="min-w-0 text-sm">
+					<p class="text-muted-foreground">{ i18n.T(ctx, "pages.verifyEmail.emailSentTo") }</p>
+					<p class="truncate font-medium" data-testid="verify-email-address">{ email }</p>
+				</div>
 			</div>
-			@view.InfoBox(i18n.T(ctx, "pages.verifyEmail.clickLinkInstructions"))
+			@uikit.Callout(uikit.Info, "", i18n.T(ctx, "pages.verifyEmail.clickLinkInstructions"))
 			@ResendBlock(email, resend)
-		}
+		</div>
 	}
 }
 
@@ -193,13 +189,9 @@ type ResendState struct {
 // ResendBlock is the patch target for the resend button. The cooldown runs in
 // Datastar signals: an interval decrements it and the label follows.
 templ ResendBlock(email string, s ResendState) {
-	<div id={ resendID } class="mt-8 space-y-6" data-signals={ cooldownSignals(s.CooldownSeconds) }>
-		if s.Error != "" {
-			<div role="alert" class={ view.ErrorAlertClass }>{ s.Error }</div>
-		}
-		if s.Message != "" {
-			<div role="status" class={ view.SuccessAlertClass }>{ s.Message }</div>
-		}
+	<div id={ resendID } class="space-y-5" data-signals={ cooldownSignals(s.CooldownSeconds) }>
+		@uikit.Alert("resend-error", uikit.Error, s.Error)
+		@uikit.Alert("resend-status", uikit.Success, s.Message)
 		if s.CooldownSeconds > 0 {
 			<div class="hidden" data-on-interval__duration.1s="$_cooldown > 0 && ($_cooldown = $_cooldown - 1)"></div>
 		}
@@ -207,22 +199,24 @@ templ ResendBlock(email string, s ResendState) {
 			<input type="hidden" name="email" value={ email }/>
 			<button
 				type="submit"
-				class={ view.PrimaryButtonClass }
+				class={ uikit.ButtonClass(uikit.Secondary, uikit.Medium, true) }
 				if s.CooldownSeconds > 0 {
 					disabled
 				}
 				data-attr:disabled="$_sending || $_cooldown > 0"
 			>
-				<span class="hidden" data-class:hidden="!$_sending">{ i18n.T(ctx, "pages.verifyEmail.sending") }</span>
+				<span class="hidden items-center gap-2" data-class:hidden="!$_sending" data-class:inline-flex="$_sending">
+					@uikit.Spinner("size-4")
+					{ i18n.T(ctx, "pages.verifyEmail.sending") }
+				</span>
 				<span
+					class="tabular-nums"
 					data-show="!$_sending"
 					data-text={ cooldownLabel(i18n.T(ctx, "pages.verifyEmail.resendIn"), i18n.T(ctx, "pages.verifyEmail.resendVerificationEmail")) }
 				>{ i18n.T(ctx, "pages.verifyEmail.resendVerificationEmail") }</span>
 			</button>
 		</form>
-		<div class="text-center">
-			<a href={ templ.SafeURL(config.AppRoutes.Login) } class={ view.TextLinkClass }>{ i18n.T(ctx, "pages.verifyEmail.backToLogin") }</a>
-		</div>
+		@view.AltLink("", i18n.T(ctx, "pages.verifyEmail.backToLogin"), config.AppRoutes.Login)
 	</div>
 }
 
@@ -231,23 +225,20 @@ templ ResendBlock(email string, s ResendState) {
 // confirms with a POST, which verifies and streams the result in. The token
 // and the link's callbackURL travel only as hidden form fields.
 templ VerifyEmailSuccessPage(token, next string, result templ.Component) {
-	@view.Layout(i18n.T(ctx, "pages.verifyEmail.title")) {
-		@view.AuthShell() {
-			if result != nil {
-				@result
-			} else if token == "" {
-				@VerifyEmailFailed(i18n.T(ctx, "pages.verifyEmail.invalidToken"))
-			} else {
-				<div id={ verifyResultID } class="text-center">
-					<h2 class={ view.HeadingClass }>{ i18n.T(ctx, "pages.verifyEmail.confirmTitle") }</h2>
-					<p class={ view.SubheadingClass }>{ i18n.T(ctx, "pages.verifyEmail.confirmDescription") }</p>
-					<form class="mt-6" method="post" action={ templ.SafeURL(config.AppRoutes.VerifyEmailSuccess) } data-on:submit={ view.PostForm(config.AppRoutes.VerifyEmailSuccess) } data-indicator:_verifying>
-						<input type="hidden" name="token" value={ token }/>
-						<input type="hidden" name="callbackURL" value={ next }/>
-						@view.SubmitButton(i18n.T(ctx, "pages.verifyEmail.confirmButton"), i18n.T(ctx, "pages.verifyEmail.verifyingEmail"), "_verifying")
-					</form>
-				</div>
-			}
+	@authPage(i18n.T(ctx, "pages.verifyEmail.title"), "") {
+		if result != nil {
+			@result
+		} else if token == "" {
+			@VerifyEmailFailed(i18n.T(ctx, "pages.verifyEmail.invalidToken"))
+		} else {
+			<div id={ verifyResultID } class="space-y-5">
+				<p class="text-center text-sm text-muted-foreground text-pretty">{ i18n.T(ctx, "pages.verifyEmail.confirmDescription") }</p>
+				<form method="post" action={ templ.SafeURL(config.AppRoutes.VerifyEmailSuccess) } data-on:submit={ view.PostForm(config.AppRoutes.VerifyEmailSuccess) } data-indicator:_verifying>
+					<input type="hidden" name="token" value={ token }/>
+					<input type="hidden" name="callbackURL" value={ next }/>
+					@uikit.SubmitButton(uikit.Submit{Label: i18n.T(ctx, "pages.verifyEmail.confirmButton"), Loading: i18n.T(ctx, "pages.verifyEmail.verifyingEmail"), Signal: "_verifying", ButtonProps: uikit.ButtonProps{Full: true}})
+				</form>
+			</div>
 		}
 	}
 }
@@ -255,23 +246,21 @@ templ VerifyEmailSuccessPage(token, next string, result templ.Component) {
 // VerifyEmailSucceeded continues to next (a safe relative path, or a
 // callback auth trusts such as the mobile app's deep link) after a moment.
 templ VerifyEmailSucceeded(next string) {
-	<div id={ verifyResultID } class="text-center" data-init={ "setTimeout(() => " + view.Assign(next) + ", 1500)" }>
-		@view.StatusIcon("success")
-		<h2 class={ view.HeadingClass }>{ i18n.T(ctx, "pages.verifyEmail.emailVerifiedSuccessfully") }</h2>
-		<p class={ view.SubheadingClass }>{ i18n.T(ctx, "pages.verifyEmail.accountVerifiedRedirect") }</p>
-		<div class="mt-6">
-			<a href={ templ.SafeURL(next) } class={ view.SuccessButtonClass }>{ i18n.T(ctx, "pages.verifyEmail.continueToDashboard") }</a>
-		</div>
+	<div id={ verifyResultID } data-init={ "setTimeout(() => " + view.Assign(next) + ", 1500)" }>
+		@resultBlock(uikit.Success, i18n.T(ctx, "pages.verifyEmail.emailVerifiedSuccessfully"), i18n.T(ctx, "pages.verifyEmail.accountVerifiedRedirect")) {
+			@uikit.LinkButton(next, uikit.ButtonProps{Full: true}) {
+				{ i18n.T(ctx, "pages.verifyEmail.continueToDashboard") }
+			}
+		}
 	</div>
 }
 
 templ VerifyEmailFailed(message string) {
-	<div id={ verifyResultID } class="text-center">
-		@view.StatusIcon("error")
-		<h2 class={ view.HeadingClass }>{ i18n.T(ctx, "pages.verifyEmail.verificationFailed") }</h2>
-		<p class={ view.SubheadingClass }>{ message }</p>
-		<div class="mt-6">
-			<a href={ templ.SafeURL(config.AppRoutes.Login) } class={ view.PrimaryButtonClass }>{ i18n.T(ctx, "pages.verifyEmail.backToLogin") }</a>
-		</div>
+	<div id={ verifyResultID }>
+		@resultBlock(uikit.Error, i18n.T(ctx, "pages.verifyEmail.verificationFailed"), message) {
+			@uikit.LinkButton(config.AppRoutes.Login, uikit.ButtonProps{Variant: uikit.Secondary, Full: true}) {
+				{ i18n.T(ctx, "pages.verifyEmail.backToLogin") }
+			}
+		}
 	</div>
 }

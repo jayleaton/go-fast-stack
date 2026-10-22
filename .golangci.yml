@@ -143,6 +143,25 @@ linters:
               desc: admin transports use their own ports; the adapters over packages/auth live in apps/admin/internal/server
             - pkg: github.com/jayleaton/ai-patterns-go/packages/secrets
               desc: secrets never reach templates, SSE or JSON; cmd/admin reveals them where clients are built
+        # packages/uikit is the component set both UIs share: rendering only.
+        # It takes translated strings and plain values, so either app (or
+        # both) can be deleted and it never reaches data, auth or secrets.
+        uikit:
+          files:
+            - "**/packages/uikit/**"
+          deny:
+            - pkg: github.com/jayleaton/ai-patterns-go/apps
+              desc: packages/uikit is shared by both apps; pass it translated strings and values, never import an app
+            - pkg: github.com/jayleaton/ai-patterns-go/packages/database
+              desc: packages/uikit renders values; data comes from the app's services
+            - pkg: github.com/jayleaton/ai-patterns-go/packages/auth
+              desc: packages/uikit renders values; auth stays behind the app's ports
+            - pkg: github.com/jayleaton/ai-patterns-go/packages/secrets
+              desc: secrets never reach templates
+            - pkg: github.com/jackc/pgx
+              desc: packages/uikit never talks to Postgres
+            - pkg: github.com/starfederation/datastar-go
+              desc: packages/uikit renders HTML; SSE belongs to the app UIs
         # The browser UI never talks to or renders the JSON API: both
         # transports call services in-process, side by side.
         ui-not-api:

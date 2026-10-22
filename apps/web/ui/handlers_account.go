@@ -11,7 +11,6 @@ import (
 	"github.com/jayleaton/ai-patterns-go/apps/web/internal/services"
 	"github.com/jayleaton/ai-patterns-go/apps/web/internal/validate"
 	"github.com/jayleaton/ai-patterns-go/apps/web/ui/i18n"
-	"github.com/jayleaton/ai-patterns-go/apps/web/ui/view"
 )
 
 // signedIn returns the caller, or sends the browser to the login page.
@@ -198,7 +197,7 @@ func (u *UI) deleteAccount(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	if err := u.users.DeleteAccount(ctx, actor(user, session), user.ID); err != nil {
 		msg := u.serviceMessage(ctx, err)
-		u.accountResult(w, r, user, session, msg, view.ErrorAlert(deleteErrorID, msg))
+		u.accountResult(w, r, user, session, msg, StatusAlert(deleteErrorID, Status{Error: msg}))
 		return
 	}
 	// Sessions go with the user row; sign out anyway in case they do not cascade.

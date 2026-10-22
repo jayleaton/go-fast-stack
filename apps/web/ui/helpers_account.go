@@ -3,7 +3,6 @@ package ui
 import (
 	"context"
 	"strings"
-	"unicode"
 
 	"github.com/jayleaton/ai-patterns-go/apps/web/internal/services"
 	"github.com/jayleaton/ai-patterns-go/apps/web/ui/i18n"
@@ -14,21 +13,6 @@ func deref(s *string) string {
 		return ""
 	}
 	return *s
-}
-
-// initials is the avatar fallback: the first letter of up to two words.
-func initials(name string) string {
-	var out []rune
-	for _, w := range strings.Fields(name) {
-		out = append(out, unicode.ToUpper([]rune(w)[0]))
-		if len(out) == 2 {
-			break
-		}
-	}
-	if len(out) == 0 {
-		return "?"
-	}
-	return string(out)
 }
 
 func hasOtherSessions(sessions []services.Session) bool {
@@ -52,6 +36,18 @@ var (
 		{"Mac OS X", "macOS"}, {"CrOS", "ChromeOS"}, {"Linux", "Linux"},
 	}
 )
+
+// mobileDevice reports whether a session's user agent is a phone or tablet
+// (the sessions list picks its icon by it).
+func mobileDevice(ua *string) bool {
+	agent := deref(ua)
+	for _, token := range []string{"iPhone", "iPad", "Android", "Mobile", "Expo", "okhttp"} {
+		if strings.Contains(agent, token) {
+			return true
+		}
+	}
+	return false
+}
 
 // deviceLabel names a session's device ("Chrome on macOS") from its user agent.
 func deviceLabel(ctx context.Context, ua *string) string {

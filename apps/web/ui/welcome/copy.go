@@ -41,7 +41,8 @@ type Copy struct {
 		Note                 string
 	} `json:"remove"`
 	Footer struct {
-		Brand, Why, Login, Signup string
+		// Label names the footer nav landmark.
+		Label, Why, Login, Signup string
 	} `json:"footer"`
 	Why struct {
 		Eyebrow, Title, Subtitle, IntroTitle, IntroBody string

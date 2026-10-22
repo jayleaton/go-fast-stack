@@ -5,6 +5,7 @@ import (
 	"github.com/jayleaton/ai-patterns-go/apps/admin/ui/i18n"
 	"github.com/jayleaton/ai-patterns-go/apps/admin/ui/routes"
 	"github.com/jayleaton/ai-patterns-go/apps/admin/ui/view"
+	"github.com/jayleaton/ai-patterns-go/packages/uikit"
 )
 
 // Patch target ids shared by pages and handlers.
@@ -44,19 +45,14 @@ type SetupState struct {
 
 templ LoginPage(f AuthForm) {
 	@view.Layout(i18n.T(ctx, "pages.login.title")) {
-		@view.AuthShell() {
-			@view.AuthHeading(i18n.T(ctx, "pages.login.title"), i18n.T(ctx, "pages.login.description"))
-			<form id="login-form" class="mt-8 space-y-6" method="post" action={ templ.SafeURL(config.AppRoutes.Login) } data-on:submit={ view.PostForm(config.AppRoutes.Login) } data-indicator:_loading>
-				@view.ErrorAlert(formErrorID, f.Error)
-				<div class="space-y-4">
-					@view.Input(view.Field{ID: "email", Type: "email", Label: i18n.T(ctx, "common.email"), Placeholder: i18n.T(ctx, "pages.login.emailPlaceholder"), Autocomplete: "email", Value: f.Email})
-					@view.Input(view.Field{ID: "password", Type: "password", Label: i18n.T(ctx, "common.password"), Placeholder: i18n.T(ctx, "pages.login.passwordPlaceholder"), Autocomplete: "current-password"})
-				</div>
-				<div>
-					@view.SubmitButton(i18n.T(ctx, "pages.login.loginButton"), i18n.T(ctx, "common.loading"), "_loading")
-				</div>
-				<p class="text-center text-xs text-neutral-500 dark:text-neutral-400">{ i18n.T(ctx, "pages.login.inviteOnly") }</p>
+		@uikit.AuthLayout(view.AppName(ctx), i18n.T(ctx, "pages.login.title"), i18n.T(ctx, "pages.login.description")) {
+			<form id="login-form" class="space-y-5" method="post" action={ templ.SafeURL(config.AppRoutes.Login) } data-on:submit={ uikit.PostForm(config.AppRoutes.Login) } data-indicator:_loading>
+				@uikit.Alert(formErrorID, uikit.Error, f.Error)
+				@uikit.Input(uikit.Field{ID: "email", Type: "email", Label: i18n.T(ctx, "common.email"), Placeholder: i18n.T(ctx, "pages.login.emailPlaceholder"), Autocomplete: "email", Value: f.Email})
+				@uikit.Input(uikit.Field{ID: "password", Type: "password", Label: i18n.T(ctx, "common.password"), Placeholder: i18n.T(ctx, "pages.login.passwordPlaceholder"), Autocomplete: "current-password"})
+				@uikit.SubmitButton(uikit.Submit{Label: i18n.T(ctx, "pages.login.loginButton"), Loading: i18n.T(ctx, "common.loading"), Signal: "_loading", ButtonProps: uikit.ButtonProps{Full: true}})
 			</form>
+			<p class="mt-6 border-t border-border pt-5 text-center text-xs text-muted-foreground text-pretty">{ i18n.T(ctx, "pages.login.inviteOnly") }</p>
 		}
 	}
 }
@@ -64,30 +60,30 @@ templ LoginPage(f AuthForm) {
 // SetPasswordPage is where invite links land (?token=).
 templ SetPasswordPage(token string, f AuthForm) {
 	@view.Layout(i18n.T(ctx, "pages.setPassword.title")) {
-		@view.AuthShell() {
-			@view.AuthHeading(i18n.T(ctx, "pages.setPassword.title"), i18n.T(ctx, "pages.setPassword.description"))
+		@uikit.AuthLayout(view.AppName(ctx), i18n.T(ctx, "pages.setPassword.title"), i18n.T(ctx, "pages.setPassword.description")) {
 			if token == "" {
-				<div class="mt-8">
-					<div role="alert" class={ view.ErrorAlertClass }>{ i18n.T(ctx, "pages.setPassword.invalidLink") }</div>
-					<div class="mt-6 text-center">
-						<a href={ templ.SafeURL(config.AppRoutes.Login) } class={ view.TextLinkClass }>{ i18n.T(ctx, "common.backToLogin") }</a>
-					</div>
+				<div role="alert">
+					@uikit.Callout(uikit.Error, "", i18n.T(ctx, "pages.setPassword.invalidLink"))
 				</div>
+				@backToLogin()
 			} else {
-				<form class="mt-8 space-y-6" method="post" action={ templ.SafeURL(config.AppRoutes.SetPassword) } data-on:submit={ view.PostForm(config.AppRoutes.SetPassword) } data-indicator:_loading>
+				<form class="space-y-5" method="post" action={ templ.SafeURL(config.AppRoutes.SetPassword) } data-on:submit={ uikit.PostForm(config.AppRoutes.SetPassword) } data-indicator:_loading>
 					<input type="hidden" name="token" value={ token }/>
-					@view.ErrorAlert(formErrorID, f.Error)
-					<div class="space-y-4">
-						@view.Input(view.Field{ID: "password", Type: "password", Label: i18n.T(ctx, "pages.setPassword.newPassword"), Placeholder: i18n.T(ctx, "pages.setPassword.newPasswordPlaceholder"), Autocomplete: "new-password", MinLength: 8, Hint: i18n.T(ctx, "pages.setPassword.passwordRequirement")})
-						@view.Input(view.Field{ID: "confirmPassword", Type: "password", Label: i18n.T(ctx, "pages.setPassword.confirmPassword"), Placeholder: i18n.T(ctx, "pages.setPassword.confirmPasswordPlaceholder"), Autocomplete: "new-password", MinLength: 8})
-					</div>
-					<div>
-						@view.SubmitButton(i18n.T(ctx, "pages.setPassword.submit"), i18n.T(ctx, "pages.setPassword.saving"), "_loading")
-					</div>
+					@uikit.Alert(formErrorID, uikit.Error, f.Error)
+					@uikit.Input(uikit.Field{ID: "password", Type: "password", Label: i18n.T(ctx, "pages.setPassword.newPassword"), Placeholder: i18n.T(ctx, "pages.setPassword.newPasswordPlaceholder"), Autocomplete: "new-password", MinLength: 8, Hint: i18n.T(ctx, "pages.setPassword.passwordRequirement")})
+					@uikit.Input(uikit.Field{ID: "confirmPassword", Type: "password", Label: i18n.T(ctx, "pages.setPassword.confirmPassword"), Placeholder: i18n.T(ctx, "pages.setPassword.confirmPasswordPlaceholder"), Autocomplete: "new-password", MinLength: 8})
+					@uikit.SubmitButton(uikit.Submit{Label: i18n.T(ctx, "pages.setPassword.submit"), Loading: i18n.T(ctx, "pages.setPassword.saving"), Signal: "_loading", ButtonProps: uikit.ButtonProps{Full: true}})
 				</form>
 			}
 		}
 	}
+}
+
+// backToLogin is the centered link back to the sign-in page.
+templ backToLogin() {
+	<p class="mt-6 text-center text-sm">
+		<a href={ templ.SafeURL(config.AppRoutes.Login) } class={ uikit.LinkClass }>{ i18n.T(ctx, "common.backToLogin") }</a>
+	</p>
 }
 
 // TwoFactorPage is the second sign-in step. The backup-code toggle is a real
@@ -95,54 +91,44 @@ templ SetPasswordPage(token string, f AuthForm) {
 // swaps the label and keyboard.
 templ TwoFactorPage(f TwoFactorForm) {
 	@view.Layout(i18n.T(ctx, "pages.twoFactor.title")) {
-		@view.AuthShell() {
-			@view.AuthHeading(i18n.T(ctx, "pages.twoFactor.title"), i18n.T(ctx, "pages.twoFactor.description"))
-			<form class="mt-8 space-y-6" method="post" action={ templ.SafeURL(config.AppRoutes.TwoFactor) } data-on:submit={ view.PostForm(config.AppRoutes.TwoFactor) } data-indicator:_loading data-signals={ backupSignals(f.Backup) }>
+		@uikit.AuthLayout(view.AppName(ctx), i18n.T(ctx, "pages.twoFactor.title"), i18n.T(ctx, "pages.twoFactor.description")) {
+			<form class="space-y-5" method="post" action={ templ.SafeURL(config.AppRoutes.TwoFactor) } data-on:submit={ uikit.PostForm(config.AppRoutes.TwoFactor) } data-indicator:_loading data-signals={ backupSignals(f.Backup) }>
 				@TwoFactorError(f)
 				<div>
-					<label for="code" class={ view.LabelClass }>
+					<label for="code" class={ uikit.LabelClass }>
 						<span class={ templ.KV("hidden", f.Backup) } data-class:hidden="$_backup">{ i18n.T(ctx, "pages.twoFactor.codeLabel") }</span>
 						<span class={ templ.KV("hidden", !f.Backup) } data-class:hidden="!$_backup">{ i18n.T(ctx, "pages.twoFactor.backupCodeLabel") }</span>
 					</label>
-					<input id="code" name="code" type="text" required autocomplete="one-time-code" inputmode={ codeInputmode(f.Backup) } data-attr:inputmode="$_backup ? 'text' : 'numeric'" class={ view.InputClass } placeholder="123456"/>
+					<input id="code" name="code" type="text" required autocomplete="one-time-code" inputmode={ codeInputmode(f.Backup) } data-attr:inputmode="$_backup ? 'text' : 'numeric'" class={ uikit.InputClass, "mt-1.5 h-11 text-center font-mono text-lg tracking-[0.3em] placeholder:tracking-[0.3em]" } placeholder="123456"/>
 				</div>
-				<div class="space-y-3 text-sm text-neutral-700 dark:text-neutral-300">
-					<label class="flex items-center gap-2">
-						<input type="checkbox" name="method" value={ MethodBackupCode } checked?={ f.Backup } data-on:change="$_backup = el.checked" class="h-4 w-4 rounded border-neutral-300 dark:border-neutral-700"/>
-						{ i18n.T(ctx, "pages.twoFactor.useBackupCode") }
-					</label>
-					<label class="flex items-center gap-2">
-						<input type="checkbox" name="trustDevice" value="true" checked?={ f.Trust } class="h-4 w-4 rounded border-neutral-300 dark:border-neutral-700"/>
-						{ i18n.T(ctx, "pages.twoFactor.trustDevice") }
-					</label>
+				<div class="space-y-3">
+					@uikit.CheckboxField(uikit.Checkbox{ID: "method", Name: "method", Value: MethodBackupCode, Label: i18n.T(ctx, "pages.twoFactor.useBackupCode"), Checked: f.Backup, Attrs: templ.Attributes{"data-on:change": "$_backup = el.checked"}})
+					@uikit.CheckboxField(uikit.Checkbox{ID: "trustDevice", Name: "trustDevice", Value: "true", Label: i18n.T(ctx, "pages.twoFactor.trustDevice"), Checked: f.Trust})
 				</div>
-				<div>
-					@view.SubmitButton(i18n.T(ctx, "pages.twoFactor.verify"), i18n.T(ctx, "pages.twoFactor.verifying"), "_loading")
-				</div>
-				<div class="text-center">
-					<a href={ templ.SafeURL(config.AppRoutes.Login) } class={ view.TextLinkClass }>{ i18n.T(ctx, "common.backToLogin") }</a>
-				</div>
+				@uikit.SubmitButton(uikit.Submit{Label: i18n.T(ctx, "pages.twoFactor.verify"), Loading: i18n.T(ctx, "pages.twoFactor.verifying"), Signal: "_loading", ButtonProps: uikit.ButtonProps{Full: true}})
 			</form>
+			@backToLogin()
 		}
 	}
 }
 
-// TwoFactorError is the patch target for second-step errors.
+// TwoFactorError is the patch target for second-step errors. An expired
+// challenge links back to sign in.
 templ TwoFactorError(f TwoFactorForm) {
 	if f.Expired {
-		<div id={ formErrorID } role="alert" class={ view.ErrorAlertClass }>
-			{ f.Error }
-			<a href={ templ.SafeURL(config.AppRoutes.Login) } class="ml-1 font-medium underline">{ i18n.T(ctx, "common.backToLogin") }</a>
+		<div id={ formErrorID } role="alert">
+			@uikit.Callout(uikit.Error, "", f.Error) {
+				<p><a href={ templ.SafeURL(config.AppRoutes.Login) } class="font-medium underline underline-offset-4">{ i18n.T(ctx, "common.backToLogin") }</a></p>
+			}
 		</div>
 	} else {
-		@view.ErrorAlert(formErrorID, f.Error)
+		@uikit.Alert(formErrorID, uikit.Error, f.Error)
 	}
 }
 
 templ TwoFactorSetupPage(s SetupState) {
 	@view.Layout(i18n.T(ctx, "pages.twoFactorSetup.title")) {
-		@view.AuthShell() {
-			@view.AuthHeading(i18n.T(ctx, "pages.twoFactorSetup.title"), "")
+		@uikit.AuthLayout(view.AppName(ctx), i18n.T(ctx, "pages.twoFactorSetup.title"), "") {
 			@SetupBody(s)
 		}
 	}
@@ -150,11 +136,11 @@ templ TwoFactorSetupPage(s SetupState) {
 
 // SetupBody is the patch target of every enrolment step.
 templ SetupBody(s SetupState) {
-	<div id={ twoFactorSetupID } class="mt-8 space-y-6">
+	<div id={ twoFactorSetupID } class="space-y-5">
 		if s.Done || (s.SignedIn && s.Enabled) {
 			<div class="text-center">
-				@view.StatusIcon("success")
-				<p role="status" class="mt-4 text-sm text-neutral-700 dark:text-neutral-300">
+				@uikit.StatusIcon(uikit.Success)
+				<p role="status" class="mt-4 text-sm text-foreground">
 					if s.Done {
 						{ i18n.T(ctx, "pages.twoFactorSetup.done") }
 					} else {
@@ -162,70 +148,78 @@ templ SetupBody(s SetupState) {
 					}
 				</p>
 				<div class="mt-6">
-					<a href={ templ.SafeURL(config.AppRoutes.Users) } class={ view.SuccessButtonClass }>{ i18n.T(ctx, "common.continue") }</a>
+					@uikit.LinkButton(config.AppRoutes.Users, uikit.ButtonProps{Full: true}) {
+						{ i18n.T(ctx, "common.continue") }
+					}
 				</div>
 			</div>
 		} else if s.Expired {
-			<div role="alert" class={ view.ErrorAlertClass }>{ firstNonEmpty(s.Error, i18n.T(ctx, "errors.challengeExpired")) }</div>
-			<div class="text-center">
-				<a href={ templ.SafeURL(config.AppRoutes.Login) } class={ view.TextLinkClass }>{ i18n.T(ctx, "common.backToLogin") }</a>
+			<div role="alert">
+				@uikit.Callout(uikit.Error, "", firstNonEmpty(s.Error, i18n.T(ctx, "errors.challengeExpired")))
 			</div>
+			@backToLogin()
 		} else if s.Setup != nil {
+			if s.Required {
+				@uikit.Callout(uikit.Warning, "", i18n.T(ctx, "pages.twoFactorSetup.required"))
+			}
 			@setupSecret(*s.Setup)
-			<form class="space-y-4" method="post" action={ templ.SafeURL(config.AppRoutes.TwoFactorSetup) } data-on:submit={ view.PostForm(config.AppRoutes.TwoFactorSetup) } data-indicator:_verifying>
+			<form class="space-y-5 border-t border-border pt-5" method="post" action={ templ.SafeURL(config.AppRoutes.TwoFactorSetup) } data-on:submit={ uikit.PostForm(config.AppRoutes.TwoFactorSetup) } data-indicator:_verifying>
 				<input type="hidden" name="secret" value={ s.Setup.Secret }/>
 				<input type="hidden" name="uri" value={ s.Setup.URI }/>
-				@view.ErrorAlert(formErrorID, s.Error)
-				@view.Input(view.Field{ID: "code", Type: "text", Label: i18n.T(ctx, "pages.twoFactorSetup.codeLabel"), Placeholder: "123456", Autocomplete: "one-time-code", Inputmode: "numeric"})
-				@view.SubmitButton(i18n.T(ctx, "pages.twoFactorSetup.confirm"), i18n.T(ctx, "pages.twoFactor.verifying"), "_verifying")
+				@uikit.Alert(formErrorID, uikit.Error, s.Error)
+				@uikit.Input(uikit.Field{ID: "code", Label: i18n.T(ctx, "pages.twoFactorSetup.codeLabel"), Placeholder: "123456", Autocomplete: "one-time-code", Inputmode: "numeric"})
+				@uikit.SubmitButton(uikit.Submit{Label: i18n.T(ctx, "pages.twoFactorSetup.confirm"), Loading: i18n.T(ctx, "pages.twoFactor.verifying"), Signal: "_verifying", ButtonProps: uikit.ButtonProps{Full: true}})
 			</form>
 		} else {
 			if s.Required {
-				<div role="status" class="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300">{ i18n.T(ctx, "pages.twoFactorSetup.required") }</div>
+				@uikit.Callout(uikit.Warning, "", i18n.T(ctx, "pages.twoFactorSetup.required"))
 			}
-			<p class="text-sm text-neutral-600 dark:text-neutral-300">{ i18n.T(ctx, "pages.twoFactorSetup.description") }</p>
-			<form class="space-y-4" method="post" action={ templ.SafeURL(routes.EnableTwoFactor) } data-on:submit={ view.PostForm(routes.EnableTwoFactor) } data-indicator:_enabling>
-				@view.ErrorAlert(formErrorID, s.Error)
-				@view.Input(view.Field{ID: "password", Type: "password", Label: i18n.T(ctx, "pages.twoFactorSetup.passwordLabel"), Autocomplete: "current-password"})
-				@view.SubmitButton(i18n.T(ctx, "pages.twoFactorSetup.start"), i18n.T(ctx, "common.loading"), "_enabling")
+			<p class="text-sm text-muted-foreground text-pretty">{ i18n.T(ctx, "pages.twoFactorSetup.description") }</p>
+			<form class="space-y-5" method="post" action={ templ.SafeURL(routes.EnableTwoFactor) } data-on:submit={ uikit.PostForm(routes.EnableTwoFactor) } data-indicator:_enabling>
+				@uikit.Alert(formErrorID, uikit.Error, s.Error)
+				@uikit.Input(uikit.Field{ID: "password", Type: "password", Label: i18n.T(ctx, "pages.twoFactorSetup.passwordLabel"), Autocomplete: "current-password"})
+				@uikit.SubmitButton(uikit.Submit{Label: i18n.T(ctx, "pages.twoFactorSetup.start"), Loading: i18n.T(ctx, "common.loading"), Signal: "_enabling", ButtonProps: uikit.ButtonProps{Full: true}})
 			</form>
 		}
 	</div>
 }
 
-// setupSecret shows how to add the account to an authenticator app.
+// setupSecret shows how to add the account to an authenticator app: the QR
+// code, the open-in-app link, the key to type in, and the backup codes.
 templ setupSecret(t TOTPSetup) {
-	<div class="space-y-4 text-sm text-neutral-700 dark:text-neutral-300">
-		<p>{ i18n.T(ctx, "pages.twoFactorSetup.scan") }</p>
+	<div class="space-y-5 text-sm">
+		<p class="text-muted-foreground text-pretty">{ i18n.T(ctx, "pages.twoFactorSetup.scan") }</p>
 		if q, ok := totpQR(t.URI); ok {
 			@qrCode(q)
 		}
 		if href := otpLink(t.URI); href != "" {
-			<p><a href={ templ.SafeURL(href) } class={ view.TextLinkClass }>{ i18n.T(ctx, "pages.twoFactorSetup.openApp") }</a></p>
+			<p class="text-center">
+				@uikit.LinkButton(href, uikit.ButtonProps{Variant: uikit.Secondary, Size: uikit.Small}) {
+					{ i18n.T(ctx, "pages.twoFactorSetup.openApp") }
+				}
+			</p>
 		}
 		<div>
-			<p class="text-xs text-neutral-500 dark:text-neutral-400">{ i18n.T(ctx, "pages.twoFactorSetup.manualEntry") }</p>
-			<p data-testid="totp-secret" class="mt-1 rounded-md bg-neutral-100 px-3 py-2 font-mono text-base tracking-wider break-all dark:bg-neutral-800">{ groupSecret(t.Secret) }</p>
+			<p class="text-xs font-medium text-muted-foreground">{ i18n.T(ctx, "pages.twoFactorSetup.manualEntry") }</p>
+			<p data-testid="totp-secret" class="mt-1.5 select-all rounded-control border border-border bg-muted px-3 py-2.5 text-center font-mono text-base tracking-wider break-all text-foreground">{ groupSecret(t.Secret) }</p>
 		</div>
 		if len(t.BackupCodes) > 0 {
-			<div class="rounded-md border border-amber-300 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950/40">
-				<p class="font-medium text-amber-800 dark:text-amber-300">{ i18n.T(ctx, "pages.twoFactorSetup.backupCodes") }</p>
-				<p class="mt-1 text-xs text-amber-800 dark:text-amber-300">{ i18n.T(ctx, "pages.twoFactorSetup.backupCodesHint") }</p>
-				<ul class="mt-3 grid grid-cols-2 gap-1 font-mono text-sm">
+			@uikit.Callout(uikit.Warning, i18n.T(ctx, "pages.twoFactorSetup.backupCodes"), i18n.T(ctx, "pages.twoFactorSetup.backupCodesHint")) {
+				<ul class="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 font-mono text-sm">
 					for _, c := range t.BackupCodes {
 						<li>{ c }</li>
 					}
 				</ul>
-			</div>
+			}
 		}
 	</div>
 }
 
-// qrCode is the TOTP QR code as an inline SVG. The white background keeps it
-// scannable in dark mode.
+// qrCode is the TOTP QR code as an inline SVG. The white background (on
+// purpose, not a theme token) keeps it scannable in dark mode.
 templ qrCode(q QRCode) {
-	<div class="flex justify-center">
-		<svg xmlns="http://www.w3.org/2000/svg" data-testid="totp-qr" viewBox={ q.ViewBox() } width="192" height="192" class="h-48 w-48 rounded-md" shape-rendering="crispEdges" role="img" aria-label={ i18n.T(ctx, "pages.twoFactorSetup.qrLabel") }>
+	<div class="mx-auto w-fit rounded-card border border-border bg-white p-3 shadow-card">
+		<svg xmlns="http://www.w3.org/2000/svg" data-testid="totp-qr" viewBox={ q.ViewBox() } width="192" height="192" class="block size-48" shape-rendering="crispEdges" role="img" aria-label={ i18n.T(ctx, "pages.twoFactorSetup.qrLabel") }>
 			<rect width="100%" height="100%" fill="#fff"></rect>
 			<path d={ q.Path } fill="#000"></path>
 		</svg>

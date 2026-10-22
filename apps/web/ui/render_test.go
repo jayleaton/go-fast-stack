@@ -103,3 +103,21 @@ func TestWelcomeCopyMatches(t *testing.T) {
 		t.Fatalf("landing list items differ: en %d, ja %d", strings.Count(en, "<li"), strings.Count(ja, "<li"))
 	}
 }
+
+// TestSessionAndAccountFallbacks pins the labels shown when data is partial:
+// a user agent with only a browser or only a system, none at all, and a user
+// without a name or email.
+func TestSessionAndAccountFallbacks(t *testing.T) {
+	firefox, linux := "Mozilla/5.0 Gecko/20100101 Firefox/131.0", "X11; Linux x86_64"
+	sessions := []services.Session{{ID: "a", UserAgent: &firefox}, {ID: "b", UserAgent: &linux}, {ID: "c"}}
+	html := renderIn(t, i18n.En, view.State{Authenticated: true}, SessionsCard(sessions, Status{}))
+	for _, want := range []string{">Firefox<", ">Linux<", templ.EscapeString(i18n.Translator{Locale: i18n.En}.T("pages.account.sessions.unknownDevice"))} {
+		if !strings.Contains(html, want) {
+			t.Errorf("sessions card lacks %q", want)
+		}
+	}
+	card := renderIn(t, i18n.En, view.State{Authenticated: true}, AccountCard(User{}))
+	if strings.Count(card, "—") < 3 {
+		t.Errorf("account card without data should show dashes:\n%s", card)
+	}
+}

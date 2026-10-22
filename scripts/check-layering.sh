@@ -54,6 +54,13 @@ cases=(
   "apps/web/internal/api|$mod/packages/secrets/reveal"
   "apps/web/internal/services|$mod/packages/secrets/reveal"
   "apps/web/ui|$mod/apps/web/internal/api"
+  # The shared component set renders values only, for either app.
+  "packages/uikit|$mod/apps/web/ui/view"
+  "packages/uikit|$mod/apps/admin/ui/view"
+  "packages/uikit|$mod/packages/database"
+  "packages/uikit|$mod/packages/auth"
+  "packages/uikit|$mod/packages/secrets"
+  "packages/uikit|github.com/jackc/pgx/v5"
   "apps/admin/ui|$mod/apps/admin/internal/api"
 )
 

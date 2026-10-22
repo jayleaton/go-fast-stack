@@ -11,7 +11,6 @@ import (
 
 	"github.com/jayleaton/ai-patterns-go/apps/web/internal/config"
 	"github.com/jayleaton/ai-patterns-go/apps/web/ui/i18n"
-	"github.com/jayleaton/ai-patterns-go/apps/web/ui/view"
 	"github.com/jayleaton/ai-patterns-go/apps/web/ui/welcome"
 	"github.com/jayleaton/ai-patterns-go/packages/auth"
 )
@@ -60,7 +59,7 @@ func (u *UI) login(w http.ResponseWriter, r *http.Request) {
 				msg = i18n.T(ctx, "pages.verifyEmail.checkEmail")
 			}
 		}
-		u.patch(w, r, http.StatusUnprocessableEntity, LoginPage(AuthForm{Email: in.Email, Error: msg}), view.ErrorAlert(formErrorID, msg))
+		u.patch(w, r, http.StatusUnprocessableEntity, LoginPage(AuthForm{Email: in.Email, Error: msg}), FormError(msg))
 		return
 	}
 	u.auth.SetSessionCookie(w, s)
@@ -82,7 +81,7 @@ func (u *UI) signup(w http.ResponseWriter, r *http.Request) {
 	_, s, err := u.auth.SignUpEmail(ctx, in)
 	if err != nil {
 		msg := u.errorMessage(ctx, err)
-		u.patch(w, r, http.StatusUnprocessableEntity, SignupPage(AuthForm{Name: in.Name, Email: in.Email, Error: msg}), view.ErrorAlert(formErrorID, msg))
+		u.patch(w, r, http.StatusUnprocessableEntity, SignupPage(AuthForm{Name: in.Name, Email: in.Email, Error: msg}), FormError(msg))
 		return
 	}
 	if u.features.EmailVerification || s.Token == "" {
@@ -103,7 +102,7 @@ func (u *UI) forgotPassword(w http.ResponseWriter, r *http.Request) {
 	if err := u.auth.RequestPasswordReset(ctx, email, config.AppRoutes.ResetPassword); err != nil {
 		u.log.ErrorContext(ctx, "ui: request password reset", "err", err)
 		msg := i18n.T(ctx, "common.error")
-		u.patch(w, r, http.StatusUnprocessableEntity, ForgotPasswordPage(AuthForm{Email: email, Error: msg}, false), view.ErrorAlert(formErrorID, msg))
+		u.patch(w, r, http.StatusUnprocessableEntity, ForgotPasswordPage(AuthForm{Email: email, Error: msg}, false), FormError(msg))
 		return
 	}
 	u.patch(w, r, http.StatusOK, ForgotPasswordPage(AuthForm{}, true), ForgotPasswordSent())
@@ -120,7 +119,7 @@ func (u *UI) resetPassword(w http.ResponseWriter, r *http.Request) {
 	password := r.PostFormValue("password")
 	fail := func(key string) {
 		msg := i18n.T(ctx, key)
-		u.patch(w, r, http.StatusUnprocessableEntity, ResetPasswordPage(token, AuthForm{Error: msg}, false), view.ErrorAlert(formErrorID, msg))
+		u.patch(w, r, http.StatusUnprocessableEntity, ResetPasswordPage(token, AuthForm{Error: msg}, false), FormError(msg))
 	}
 	if token == "" {
 		fail("pages.resetPassword.invalidResetLink")

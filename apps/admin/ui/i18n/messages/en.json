@@ -12,7 +12,8 @@
     "password": "Password",
     "yes": "Yes",
     "no": "No",
-    "backToLogin": "Back to sign in"
+    "backToLogin": "Back to sign in",
+    "actions": "Actions"
   },
   "components": {
     "languageSelector": {
@@ -29,12 +30,21 @@
       "users": "Users",
       "admins": "Admins",
       "audit": "Audit log",
-      "analytics": "Analytics"
+      "analytics": "Analytics",
+      "menu": "Menu",
+      "skipToContent": "Skip to content"
     },
     "pager": {
       "previous": "Previous",
       "next": "Next",
-      "showing": "Showing {0}–{1} of {2}"
+      "showing": "Showing {0}–{1} of {2}",
+      "label": "Pagination"
+    },
+    "toast": {
+      "close": "Dismiss"
+    },
+    "confirm": {
+      "cancel": "Cancel"
     }
   },
   "pages": {
@@ -104,8 +114,11 @@
         "all": "All",
         "banned": "Banned",
         "active": "Active",
-        "anyRole": "Any role"
-      }
+        "anyRole": "Any role",
+        "clear": "Clear filters",
+        "label": "Filter users"
+      },
+      "emptyHint": "Try a different search, or clear the filters."
     },
     "user": {
       "title": "User",
@@ -139,7 +152,9 @@
           "week": "7 days",
           "month": "30 days",
           "permanent": "Permanent"
-        }
+        },
+        "confirmTitle": "Ban this user?",
+        "confirmMessage": "{0} is signed out everywhere and cannot sign in until the ban ends."
       },
       "sessions": {
         "title": "Active sessions",
@@ -148,7 +163,10 @@
         "ip": "IP address",
         "userAgent": "User agent",
         "revoke": "Revoke",
-        "revokeAll": "Revoke all sessions"
+        "revokeAll": "Revoke all sessions",
+        "confirmRevokeAllTitle": "Revoke all sessions?",
+        "confirmRevokeAll": "{0} is signed out on every device and has to sign in again.",
+        "table": "Session list"
       }
     },
     "admins": {
@@ -177,7 +195,9 @@
         "disabled": "Admin disabled and signed out everywhere.",
         "enabled": "Admin enabled. They can sign in again.",
         "removed": "Admin removed."
-      }
+      },
+      "confirmRemoveTitle": "Remove this admin?",
+      "list": "Dashboard admins"
     },
     "audit": {
       "title": "Audit log",
@@ -233,7 +253,10 @@
         "stateMatches": "The current state shows the change.",
         "stateDiffers": "The current state does not show the change.",
         "undecidable": "The outcome cannot be told from the current state."
-      }
+      },
+      "filters": "Filter the audit log",
+      "filteredByTarget": "Showing entries for one target only.",
+      "clearTarget": "Show all targets"
     },
     "analytics": {
       "title": "Analytics",

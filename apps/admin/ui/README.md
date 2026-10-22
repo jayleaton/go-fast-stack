@@ -1,13 +1,16 @@
 # apps/admin/ui — admin HTML transport
 
 Server-rendered [templ](https://templ.guide) pages, [Datastar](https://data-star.dev) 1.x actions over SSE, Tailwind v4.
-A self-contained copy of `apps/web/ui`'s patterns (same look, forms, i18n and asset pinning); it imports nothing from
-`apps/web`, `packages/auth`, `packages/database*` or pgx.
+A self-contained copy of `apps/web/ui`'s patterns (forms, i18n and asset pinning); it imports nothing from
+`apps/web`, `packages/auth`, `packages/database*` or pgx. Both apps share their look through `packages/uikit`
+(components and design tokens): pages use its semantic utilities (`bg-surface`, `text-muted-foreground`, ...), never
+palette classes or `dark:` variants, so re-theming is `packages/uikit/theme.css` alone (the TOTP QR code keeps a
+white background on purpose).
 
 | Package | What |
 |---|---|
 | `ui` | `ui.New(deps)` (`Routes(mux)` / `Handler()`), the ports (`Auth` in `deps.go`; `Users`, `Admins`, `Audit`, `Analytics` in `services.go`), handlers, pages |
-| `ui/view` | layout (app name, section nav, signed-in admin, logout, theme, language), inputs/selects/badges/alerts/pagination |
+| `ui/view` | layout: `uikit.Page` + `uikit.AppShell` with the app name, section nav, signed-in admin, sign out, theme and language; pages build the rest from `packages/uikit` (`AuthLayout`, `PageHeader`, `Card`, fields, `Alert`, `Badge`, `TableWrap`, `Pagination`, `ConfirmForm`, ...) |
 | `ui/i18n` | `messages/{en,ja}.json`, locale negotiation, `i18n.T(ctx, key)` and `i18n.Tf(ctx, key, args...)` |
 | `ui/routes` | the UI's own action endpoints (logout, locale, 2FA enable, user actions, invite, admin disable/enable/remove, static); pages use `config.AppRoutes` |
 | `ui/static` | embedded `app.css` (generated), pinned `datastar-1.0.4.js`, favicon |
@@ -55,8 +58,10 @@ the adapter must see the request (for example through the context its middleware
 - **Admin management**: each row of the Admins page shows its state (active, invite pending, disabled) and the
   actions another admin may take: disable (active or pending), enable (disabled), remove (any). The signed-in
   admin's row shows a "you" badge and no actions; the service still refuses self and last-active-admin changes
-  (`ErrAdminSelf`, `ErrLastAdmin`). Remove asks first with `view.ConfirmPostForm` (`confirm(...) && @post`),
-  so a plain post skips the prompt. Actions patch `#admins-table` and `#admins-status`.
+  (`ErrAdminSelf`, `ErrLastAdmin`). Remove asks first in an accessible `<dialog>` (`uikit.ConfirmForm`): with JS
+  the trigger opens it and its confirm button posts through Datastar; without JS the trigger posts the form
+  directly. Banning a user and revoking all their sessions ask the same way. Actions patch `#admins-table` and
+  `#admins-status`.
 - **TOTP QR code**: the 2FA setup page (both the signed-out `SetupRequired` step and signed-in enrolment) draws
   the otpauth URI as an inline SVG on the server (`qr.go`, `github.com/boombuler/barcode/qr`): one `<path>` of the
   dark modules with a 4-module quiet zone on a white background, so it scans in dark mode. No QR service and no
@@ -65,6 +70,7 @@ the adapter must see the request (for example through the context its middleware
 - **Loading states**: `data-indicator:_x` on every post form drives the button label and `disabled`; the GET filter
   forms (users, audit) flip a `_searching`/`_filtering` signal on submit.
 - **Lists**: the query string drives search, filters, sort and paging (`validate.DecodeQuery`), so they work without JS.
+  Tables sit in `uikit.TableWrap` (they scroll inside it on small screens); an empty list shows `uikit.EmptyState`.
 - **Auth state**: pages without a session 303 to login; actions redirect over SSE. A service `ErrTwoFactorRequired`
   sends the admin to `/two-factor/setup`. Signed-in pages are `Cache-Control: no-store`.
 - **Audit log**: `actionKeys` in `helpers.go` labels every `services.Action*` (table and filter); unknown actions

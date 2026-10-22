@@ -111,7 +111,7 @@
     "note": "That is the whole cleanup. Read the README inside apps/web/ui/welcome if you want it written down."
   },
   "footer": {
-    "brand": "Starter template",
+    "label": "Footer",
     "why": "Why these patterns",
     "login": "Sign in",
     "signup": "Sign up"

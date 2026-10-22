@@ -122,7 +122,7 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		Auth:    authn,
 		Users:   api.NewUsers(users, server.CallerFrom),
 		UI: ui.New(ui.Deps{
-			Auth: authn, Users: users, Features: cfg.Features,
+			Auth: authn, Users: users, Features: cfg.Features, AppName: cfg.AppName,
 			SecureCookies: cfg.PublicURL.Scheme == "https", Logger: log,
 		}).Handler(),
 	})

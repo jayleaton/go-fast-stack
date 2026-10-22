@@ -25,8 +25,8 @@ func TestLoadDevelopmentDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Env != Development || cfg.Addr != "0.0.0.0:3000" {
-		t.Fatalf("env=%s addr=%s", cfg.Env, cfg.Addr)
+	if cfg.Env != Development || cfg.Addr != "0.0.0.0:3000" || cfg.AppName != DefaultAppName {
+		t.Fatalf("env=%s addr=%s app=%q", cfg.Env, cfg.Addr, cfg.AppName)
 	}
 	if cfg.PublicURL.String() != "http://dev-box:3000" || cfg.InternalURL.String() != "http://dev-box:3000" {
 		t.Fatalf("public=%s internal=%s", cfg.PublicURL, cfg.InternalURL)

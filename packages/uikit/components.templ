@@ -1,0 +1,424 @@
+package uikit
+
+import "strconv"
+
+// Button renders a <button> (type "button" unless p.Type) around children.
+templ Button(p ButtonProps) {
+	<button type={ p.typ("button") } class={ p.class() } { p.Attrs... }>
+		{ children... }
+	</button>
+}
+
+// LinkButton is a link that looks like a button.
+templ LinkButton(href string, p ButtonProps) {
+	<a href={ templ.SafeURL(href) } class={ p.class() } { p.Attrs... }>
+		{ children... }
+	</a>
+}
+
+// SubmitButton is a submit button that swaps its label for a spinner and
+// s.Loading while the form's Datastar indicator is on.
+templ SubmitButton(s Submit) {
+	<button type={ s.typ("submit") } class={ s.class() } data-attr:disabled={ "$" + s.Signal } { s.Attrs... }>
+		<span data-show={ "!$" + s.Signal }>{ s.Label }</span>
+		<span class="hidden items-center gap-2" data-class:hidden={ "!$" + s.Signal } data-class:inline-flex={ "$" + s.Signal }>
+			@Spinner("size-4")
+			{ s.Loading }
+		</span>
+	</button>
+}
+
+// Spinner is a small rotating ring; class sets its size.
+templ Spinner(class string) {
+	<svg class={ "animate-spin", class } viewBox="0 0 24 24" fill="none" aria-hidden="true">
+		<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+		<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+	</svg>
+}
+
+// Input renders a labelled input with its hint and error.
+templ Input(f Field) {
+	<div>
+		<label for={ f.ID } class={ LabelClass }>{ f.Label }</label>
+		<input
+			id={ f.ID }
+			name={ f.name() }
+			type={ f.typ() }
+			if f.Autocomplete != "" {
+				autocomplete={ f.Autocomplete }
+			}
+			if !f.Optional {
+				required
+			}
+			if f.ReadOnly {
+				readonly
+			}
+			if f.Inputmode != "" {
+				inputmode={ f.Inputmode }
+			}
+			if f.MinLength > 0 {
+				minlength={ strconv.Itoa(f.MinLength) }
+			}
+			if f.MaxLength > 0 {
+				maxlength={ strconv.Itoa(f.MaxLength) }
+			}
+			if f.Placeholder != "" {
+				placeholder={ f.Placeholder }
+			}
+			if f.describedBy() != "" {
+				aria-describedby={ f.describedBy() }
+			}
+			if f.Error != "" {
+				aria-invalid="true"
+			}
+			value={ f.Value }
+			class={ InputClass, "mt-1.5 h-10" }
+			{ f.Attrs... }
+		/>
+		@fieldNotes(f)
+	</div>
+}
+
+// Textarea is Input as a <textarea>.
+templ Textarea(f Field) {
+	<div>
+		<label for={ f.ID } class={ LabelClass }>{ f.Label }</label>
+		<textarea
+			id={ f.ID }
+			name={ f.name() }
+			rows={ strconv.Itoa(max(f.Rows, 3)) }
+			if !f.Optional {
+				required
+			}
+			if f.MaxLength > 0 {
+				maxlength={ strconv.Itoa(f.MaxLength) }
+			}
+			if f.Placeholder != "" {
+				placeholder={ f.Placeholder }
+			}
+			if f.describedBy() != "" {
+				aria-describedby={ f.describedBy() }
+			}
+			if f.Error != "" {
+				aria-invalid="true"
+			}
+			class={ InputClass, "mt-1.5" }
+			{ f.Attrs... }
+		>{ f.Value }</textarea>
+		@fieldNotes(f)
+	</div>
+}
+
+templ fieldNotes(f Field) {
+	if f.Hint != "" {
+		<p id={ f.ID + "-hint" } class={ HintClass }>{ f.Hint }</p>
+	}
+	if f.Error != "" {
+		<p id={ f.ID + "-error" } class="mt-1.5 text-xs font-medium text-danger-soft-foreground">{ f.Error }</p>
+	}
+}
+
+// Select renders a labelled <select>.
+templ Select(s SelectField) {
+	<div>
+		<label for={ s.ID } class={ LabelClass }>{ s.Label }</label>
+		<select
+			id={ s.ID }
+			name={ s.ID }
+			if s.Hint != "" {
+				aria-describedby={ s.ID + "-hint" }
+			}
+			class={ InputClass, "mt-1.5 h-10 pr-8" }
+			{ s.Attrs... }
+		>
+			for _, o := range s.Options {
+				<option value={ o.Value } selected?={ o.Value == s.Selected }>{ o.Label }</option>
+			}
+		</select>
+		if s.Hint != "" {
+			<p id={ s.ID + "-hint" } class={ HintClass }>{ s.Hint }</p>
+		}
+	</div>
+}
+
+// CheckboxField renders a checkbox with its label to the right.
+templ CheckboxField(c Checkbox) {
+	<div class="flex items-start gap-3">
+		<input
+			type="checkbox"
+			id={ c.ID }
+			name={ c.Name }
+			value={ c.Value }
+			checked?={ c.Checked }
+			if c.Hint != "" {
+				aria-describedby={ c.ID + "-hint" }
+			}
+			class={ CheckboxClass, "mt-0.5" }
+			{ c.Attrs... }
+		/>
+		<div>
+			<label for={ c.ID } class="text-sm font-medium text-foreground">{ c.Label }</label>
+			if c.Hint != "" {
+				<p id={ c.ID + "-hint" } class="text-xs text-muted-foreground">{ c.Hint }</p>
+			}
+		</div>
+	</div>
+}
+
+// Alert is a patch target: handlers replace it by id with a message, or with
+// an empty (hidden) slot to clear it. Error and warning tones are announced
+// as alerts, the others as status.
+templ Alert(id string, tone Tone, message string) {
+	if message == "" {
+		<div id={ id } class="hidden"></div>
+	} else {
+		<div id={ id } role={ role(tone) } class={ "flex items-start gap-3 rounded-control border px-4 py-3 text-sm", toneClass(tone) }>
+			@toneIcon(tone, "mt-0.5 size-4 shrink-0")
+			<p class="min-w-0 flex-1">{ message }</p>
+		</div>
+	}
+}
+
+// Callout is a static note with an optional title (not a patch target).
+templ Callout(tone Tone, title, message string) {
+	<div class={ "flex items-start gap-3 rounded-control border p-4 text-sm", toneClass(tone) }>
+		@toneIcon(tone, "mt-0.5 size-5 shrink-0")
+		<div class="min-w-0 flex-1 space-y-1">
+			if title != "" {
+				<p class="font-semibold">{ title }</p>
+			}
+			<p>{ message }</p>
+			{ children... }
+		</div>
+	</div>
+}
+
+// Toast is a dismissible, floating confirmation. Render it into a
+// ToastRegion (patched by id) so it stacks in the corner.
+templ Toast(tone Tone, message, closeLabel string) {
+	<div role={ role(tone) } data-toast class={ "pointer-events-auto flex w-full items-start gap-3 rounded-card border p-4 text-sm shadow-popover", toneClass(tone) }>
+		@toneIcon(tone, "mt-0.5 size-4 shrink-0")
+		<p class="min-w-0 flex-1">{ message }</p>
+		<button type="button" aria-label={ closeLabel } class="-m-1 rounded p-1 opacity-75 hover:opacity-100" data-on:click="el.closest('[data-toast]').remove()">
+			<svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg>
+		</button>
+	</div>
+}
+
+// ToastRegion is the fixed corner where toasts appear; patch children into it
+// by id.
+templ ToastRegion(id string) {
+	<div id={ id } aria-live="polite" class="pointer-events-none fixed inset-x-4 bottom-4 z-50 flex flex-col items-end gap-2 sm:left-auto sm:right-6 sm:w-96">
+		{ children... }
+	</div>
+}
+
+templ toneIcon(t Tone, class string) {
+	switch t {
+		case Success:
+			<svg class={ class } viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm3.86-9.86a.75.75 0 0 0-1.22-.88l-3.24 4.5-1.8-1.8a.75.75 0 1 0-1.06 1.06l2.42 2.42a.75.75 0 0 0 1.14-.09l3.76-5.21Z" clip-rule="evenodd"></path></svg>
+		case Error, Warning:
+			<svg class={ class } viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M8.48 2.67a1.75 1.75 0 0 1 3.04 0l6.28 11.07A1.75 1.75 0 0 1 16.28 16.4H3.72a1.75 1.75 0 0 1-1.52-2.66L8.48 2.67ZM10 6.5a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 10 6.5Zm0 7.75a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clip-rule="evenodd"></path></svg>
+		default:
+			<svg class={ class } viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0Zm-7-4a1 1 0 1 1-2 0 1 1 0 0 1 2 0ZM9 9a.75.75 0 0 0 0 1.5h.25v3a.75.75 0 0 0 1.5 0v-3.75A.75.75 0 0 0 10 9H9Z" clip-rule="evenodd"></path></svg>
+	}
+}
+
+// Badge is a small pill; dot adds a status dot before the label.
+templ Badge(tone Tone, label string, dot bool) {
+	<span class={ "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-medium", toneClass(tone) }>
+		if dot {
+			<span class={ "size-1.5 rounded-full", dotClass(tone) } aria-hidden="true"></span>
+		}
+		{ label }
+	</span>
+}
+
+// StatusIcon is the round badge above an auth page's message. Neutral or
+// Info tones show a spinner (in progress).
+templ StatusIcon(tone Tone) {
+	<div class={ "mx-auto grid size-12 place-items-center rounded-full border", toneClass(tone) }>
+		switch tone {
+			case Success:
+				<svg class="size-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"></path></svg>
+			case Error, Warning:
+				<svg class="size-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v4m0 4h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path></svg>
+			default:
+				@Spinner("size-6")
+		}
+	</div>
+}
+
+// Card is a surface panel; class adds padding/layout, attrs pass id and data-*.
+templ Card(class string, attrs templ.Attributes) {
+	<section class={ CardClass, class } { attrs... }>
+		{ children... }
+	</section>
+}
+
+// CardHeader is a card's title row; children render on the right (actions).
+templ CardHeader(title, description string) {
+	<div class="flex flex-wrap items-start justify-between gap-3">
+		<div class="min-w-0">
+			<h2 class="text-base font-semibold">{ title }</h2>
+			if description != "" {
+				<p class="mt-1 text-sm text-muted-foreground">{ description }</p>
+			}
+		</div>
+		{ children... }
+	</div>
+}
+
+// PageHeader is a page's title row; children render on the right (actions).
+templ PageHeader(title, subtitle string) {
+	<div class="mb-8 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+		<div class="min-w-0">
+			<h1 class="text-2xl font-semibold tracking-tight sm:text-3xl">{ title }</h1>
+			if subtitle != "" {
+				<p class="mt-1.5 text-sm text-muted-foreground text-pretty">{ subtitle }</p>
+			}
+		</div>
+		<div class="flex flex-wrap items-center gap-2">
+			{ children... }
+		</div>
+	</div>
+}
+
+// TableWrap scrolls a wide table inside a card on small screens.
+templ TableWrap(label string) {
+	<div class="relative overflow-x-auto rounded-card border border-border bg-surface shadow-card" role="region" aria-label={ label } tabindex="0">
+		{ children... }
+	</div>
+}
+
+// EmptyState fills a list with nothing in it; children are its action.
+templ EmptyState(title, description string) {
+	<div class="flex flex-col items-center justify-center rounded-card border border-dashed border-border px-6 py-12 text-center">
+		<div class="mb-3 grid size-10 place-items-center rounded-full bg-muted text-muted-foreground" aria-hidden="true">
+			<svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h18M3 12h18M3 17h10"></path></svg>
+		</div>
+		<p class="text-sm font-semibold">{ title }</p>
+		if description != "" {
+			<p class="mt-1 max-w-sm text-sm text-muted-foreground">{ description }</p>
+		}
+		<div class="mt-4 empty:hidden">
+			{ children... }
+		</div>
+	</div>
+}
+
+// Skeleton is one pulsing placeholder block; class sets its size.
+templ Skeleton(class string) {
+	<div class={ "animate-pulse rounded-control bg-muted", class } aria-hidden="true"></div>
+}
+
+// LineSkeleton is two lines of placeholder for card content that streams in.
+templ LineSkeleton() {
+	<div class="space-y-2" aria-hidden="true">
+		@Skeleton("h-4 w-3/4")
+		@Skeleton("h-4 w-1/2")
+	</div>
+}
+
+// PageSkeleton is a placeholder for a whole page section.
+templ PageSkeleton() {
+	<div class={ ContainerClass, "py-10" } aria-hidden="true">
+		@Skeleton("h-8 w-48")
+		@Skeleton("mt-6 h-12 w-3/4")
+		@Skeleton("mt-4 h-28 w-full")
+	</div>
+}
+
+// ConfirmForm is a post form whose trigger asks first in a modal dialog.
+// children are the form's hidden inputs; label is the trigger's content.
+templ ConfirmForm(c Confirm, label string) {
+	<form
+		method="post"
+		action={ templ.SafeURL(c.Action) }
+		data-on:submit={ PostForm(c.Action) }
+		{ indicator(c.Signal)... }
+	>
+		{ children... }
+		<button
+			type="submit"
+			class={ c.Trigger.class() }
+			data-on:click__prevent={ openDialog(dialogID(c)) }
+			aria-haspopup="dialog"
+			if c.Signal != "" {
+				data-attr:disabled={ "$" + c.Signal }
+			}
+			{ c.Trigger.Attrs... }
+		>{ label }</button>
+		<dialog
+			id={ dialogID(c) }
+			aria-labelledby={ dialogID(c) + "-title" }
+			aria-describedby={ dialogID(c) + "-message" }
+			class="m-auto w-[min(28rem,calc(100vw-2rem))] rounded-card border border-border bg-surface p-0 text-foreground shadow-popover"
+		>
+			<div class="p-6">
+				<h2 id={ dialogID(c) + "-title" } class="text-base font-semibold">{ c.Title }</h2>
+				<p id={ dialogID(c) + "-message" } class="mt-2 text-sm text-muted-foreground">{ c.Message }</p>
+			</div>
+			<div class="flex flex-col-reverse gap-2 border-t border-border bg-muted/50 px-6 py-4 sm:flex-row sm:justify-end">
+				<button type="button" class={ ButtonClass(Secondary, Medium, false) } data-on:click="el.closest('dialog').close()" autofocus>{ c.CancelLabel }</button>
+				<button type="submit" class={ ButtonClass(c.Variant, Medium, false) } data-on:click="el.closest('dialog').close()">{ c.ConfirmLabel }</button>
+			</div>
+		</dialog>
+	</form>
+}
+
+// Pagination renders a Pager.
+templ Pagination(p Pager) {
+	<nav aria-label={ p.Label } class="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm text-muted-foreground">
+		<p data-testid="pager-summary">{ p.Summary }</p>
+		<div class="flex gap-2">
+			@pagerLink(p.PrevURL, p.PrevLabel)
+			@pagerLink(p.NextURL, p.NextLabel)
+		</div>
+	</nav>
+}
+
+templ pagerLink(href, label string) {
+	if href == "" {
+		<span aria-disabled="true" class={ ButtonClass(Secondary, Small, false) }>{ label }</span>
+	} else {
+		<a href={ templ.SafeURL(href) } class={ ButtonClass(Secondary, Small, false) }>{ label }</a>
+	}
+}
+
+// StatGrid shows figures as tiles.
+templ StatGrid(stats []Stat) {
+	<dl class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+		for _, s := range stats {
+			<div class={ CardClass, "p-5" }>
+				<dt class="text-sm font-medium text-muted-foreground">{ s.Label }</dt>
+				<dd
+					class="mt-2 text-3xl font-semibold tracking-tight tabular-nums"
+					if s.TestID != "" {
+						data-testid={ s.TestID }
+					}
+				>{ s.Value }</dd>
+				if s.Hint != "" {
+					<dd class="mt-1 text-xs text-muted-foreground">{ s.Hint }</dd>
+				}
+			</div>
+		}
+	</dl>
+}
+
+// DetailList is a <dl> of label/value rows; fill it with Detail.
+templ DetailList() {
+	<dl class="divide-y divide-border text-sm">
+		{ children... }
+	</dl>
+}
+
+// Detail is one row of a DetailList; children are the value.
+templ Detail(label string) {
+	<div class="grid grid-cols-1 gap-1 py-3 sm:grid-cols-3 sm:gap-4">
+		<dt class="text-muted-foreground">{ label }</dt>
+		<dd class="min-w-0 break-words sm:col-span-2">
+			{ children... }
+		</dd>
+	</div>
+}

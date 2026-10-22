@@ -17,7 +17,7 @@
     "password": "Password",
     "yes": "Yes",
     "no": "No",
-    "home": "Home"
+    "metaDescription": "A Go, templ, Datastar, Tailwind and PostgreSQL app."
   },
   "components": {
     "languageSelector": {
@@ -36,6 +36,16 @@
       "toggle": "Toggle theme",
       "toLight": "Switch to light mode",
       "toDark": "Switch to dark mode"
+    },
+    "nav": {
+      "label": "Main",
+      "dashboard": "Dashboard",
+      "account": "Account",
+      "menu": "Menu",
+      "skipToContent": "Skip to content"
+    },
+    "toast": {
+      "close": "Dismiss"
     }
   },
   "pages": {
@@ -48,8 +58,7 @@
       "quickActions": {
         "title": "Quick Actions",
         "settings": "Settings",
-        "profile": "Profile",
-        "support": "Support"
+        "profile": "Profile"
       },
       "sections": {
         "analytics": {
@@ -76,6 +85,7 @@
     },
     "login": {
       "title": "Sign in to your account",
+      "description": "Welcome back. Enter your details to continue.",
       "loginButton": "Sign in",
       "forgotPassword": "Forgot Password?",
       "dontHaveAccount": "Don't have an account?",
@@ -85,6 +95,7 @@
     },
     "signup": {
       "title": "Create your account",
+      "description": "Get started with your email address. It only takes a minute.",
       "signupButton": "Sign up",
       "alreadyHaveAccount": "Already have an account?",
       "signInInstead": "Sign in instead",
@@ -145,7 +156,6 @@
       "accountVerifiedRedirect": "Your account has been verified. You're now logged in and will be redirected shortly.",
       "continueToDashboard": "Continue to dashboard",
       "invalidUser": "This link belongs to a different account. Sign out, then open the link again.",
-      "confirmTitle": "Confirm your email",
       "confirmDescription": "Confirm that this is your email address to finish verifying it.",
       "confirmButton": "Verify email"
     },
@@ -158,7 +168,6 @@
     "account": {
       "title": "Account",
       "subtitle": "Manage your profile, sign-in details and devices.",
-      "backToDashboard": "Back to dashboard",
       "emailChanged": "Your email address is now {email}.",
       "profile": {
         "title": "Profile",

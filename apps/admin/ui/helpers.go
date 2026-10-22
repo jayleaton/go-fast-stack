@@ -13,7 +13,7 @@ import (
 	"github.com/jayleaton/ai-patterns-go/apps/admin/internal/config"
 	"github.com/jayleaton/ai-patterns-go/apps/admin/internal/services"
 	"github.com/jayleaton/ai-patterns-go/apps/admin/ui/i18n"
-	"github.com/jayleaton/ai-patterns-go/apps/admin/ui/view"
+	"github.com/jayleaton/ai-patterns-go/packages/uikit"
 )
 
 func orDash(s string) string {
@@ -141,9 +141,16 @@ func sortMark(l SortLink) string {
 	return " ↑"
 }
 
+// Pager is the position of a list page: rows From-To of Total, with the
+// previous and next page links (empty: no such page).
+type Pager struct {
+	From, To, Total  int
+	PrevURL, NextURL string
+}
+
 // pager builds the pagination row of a page of count rows starting at offset.
-func pager[N int | int64](offset, limit, count int, total N, link func(offset int) string) view.Pager {
-	p := view.Pager{Total: int(total)}
+func pager[N int | int64](offset, limit, count int, total N, link func(offset int) string) Pager {
+	p := Pager{Total: int(total)}
 	if count > 0 {
 		p.From, p.To = offset+1, offset+count
 	}
@@ -156,40 +163,64 @@ func pager[N int | int64](offset, limit, count int, total N, link func(offset in
 	return p
 }
 
-func pagerSummary(ctx context.Context, p view.Pager) string {
-	return i18n.Tf(ctx, "components.pager.showing", strconv.Itoa(p.From), strconv.Itoa(p.To), strconv.Itoa(p.Total))
+// pagination is p as the translated uikit pagination row.
+func pagination(ctx context.Context, p Pager) uikit.Pager {
+	return uikit.Pager{
+		Summary:   i18n.Tf(ctx, "components.pager.showing", strconv.Itoa(p.From), strconv.Itoa(p.To), strconv.Itoa(p.Total)),
+		PrevURL:   p.PrevURL,
+		NextURL:   p.NextURL,
+		PrevLabel: i18n.T(ctx, "components.pager.previous"),
+		NextLabel: i18n.T(ctx, "components.pager.next"),
+		Label:     i18n.T(ctx, "components.pager.label"),
+	}
 }
 
-func searchFieldOptions(ctx context.Context) []view.Option {
-	return []view.Option{
+// filtered reports whether the users list is narrowed by a search or filter.
+func (f UserFilters) filtered() bool {
+	return f.Search != "" || f.Banned != "" || f.Role != ""
+}
+
+// sortOrder is the aria-sort value of a column heading ("" when unsorted).
+func sortOrder(l SortLink) string {
+	switch {
+	case !l.Active:
+		return ""
+	case l.Desc:
+		return "descending"
+	}
+	return "ascending"
+}
+
+func searchFieldOptions(ctx context.Context) []uikit.Option {
+	return []uikit.Option{
 		{Value: "email", Label: i18n.T(ctx, "common.email")},
 		{Value: "name", Label: i18n.T(ctx, "common.name")},
 	}
 }
 
-func bannedOptions(ctx context.Context) []view.Option {
-	return []view.Option{
+func bannedOptions(ctx context.Context) []uikit.Option {
+	return []uikit.Option{
 		{Value: "", Label: i18n.T(ctx, "pages.users.filters.all")},
 		{Value: "true", Label: i18n.T(ctx, "pages.users.filters.banned")},
 		{Value: "false", Label: i18n.T(ctx, "pages.users.filters.active")},
 	}
 }
 
-func roleOptions() []view.Option {
-	out := make([]view.Option, len(services.Roles))
+func roleOptions() []uikit.Option {
+	out := make([]uikit.Option, len(services.Roles))
 	for i, r := range services.Roles {
-		out[i] = view.Option{Value: r, Label: r}
+		out[i] = uikit.Option{Value: r, Label: r}
 	}
 	return out
 }
 
-func roleFilterOptions(ctx context.Context) []view.Option {
-	return append([]view.Option{{Value: "", Label: i18n.T(ctx, "pages.users.filters.anyRole")}}, roleOptions()...)
+func roleFilterOptions(ctx context.Context) []uikit.Option {
+	return append([]uikit.Option{{Value: "", Label: i18n.T(ctx, "pages.users.filters.anyRole")}}, roleOptions()...)
 }
 
 // banExpiryOptions are the ban lengths in seconds; "0" is permanent.
-func banExpiryOptions(ctx context.Context) []view.Option {
-	return []view.Option{
+func banExpiryOptions(ctx context.Context) []uikit.Option {
+	return []uikit.Option{
 		{Value: "3600", Label: i18n.T(ctx, "pages.user.ban.expiry.hour")},
 		{Value: "86400", Label: i18n.T(ctx, "pages.user.ban.expiry.day")},
 		{Value: "604800", Label: i18n.T(ctx, "pages.user.ban.expiry.week")},
@@ -204,6 +235,14 @@ func banExpires(ctx context.Context, u services.User) string {
 		return i18n.T(ctx, "pages.user.ban.permanent")
 	}
 	return dateTime(ctx, *u.BanExpires)
+}
+
+// banLabel is the ban button: ban, or update the ban of a banned user.
+func banLabel(ctx context.Context, u services.User) string {
+	if u.Banned {
+		return i18n.T(ctx, "pages.user.ban.update")
+	}
+	return i18n.T(ctx, "pages.user.ban.submit")
 }
 
 // actionKeys label the audit actions; unknown actions show raw.
@@ -240,10 +279,10 @@ func actionLabel(ctx context.Context, action string) string {
 	return action
 }
 
-func actionOptions(ctx context.Context) []view.Option {
-	out := []view.Option{{Value: "", Label: i18n.T(ctx, "pages.audit.allActions")}}
+func actionOptions(ctx context.Context) []uikit.Option {
+	out := []uikit.Option{{Value: "", Label: i18n.T(ctx, "pages.audit.allActions")}}
 	for _, a := range actionKeys {
-		out = append(out, view.Option{Value: a.action, Label: i18n.T(ctx, a.key)})
+		out = append(out, uikit.Option{Value: a.action, Label: i18n.T(ctx, a.key)})
 	}
 	return out
 }
@@ -310,19 +349,23 @@ var twoFactorReasonKeys = map[string]string{
 
 // AuditStatus is an entry's outcome as the audit log shows it (translated).
 type AuditStatus struct {
-	Tone, Label string
-	Hint        string // what the status means, where it needs saying
-	Reason      string // why it failed, or how it was reconciled
-	Reconciled  bool
+	Tone       uikit.Tone
+	Label      string
+	Hint       string // what the status means, where it needs saying
+	Reason     string // why it failed, or how it was reconciled
+	Reconciled bool
 }
 
 // auditStatusKeys label the audit statuses with a badge tone; unknown
 // statuses show raw.
-var auditStatusKeys = map[string]struct{ tone, key string }{
-	services.StatusSucceeded: {"green", "pages.audit.statuses.succeeded"},
-	services.StatusFailed:    {"red", "pages.audit.statuses.failed"},
-	services.StatusPending:   {"amber", "pages.audit.statuses.pending"},
-	services.StatusUnknown:   {"neutral", "pages.audit.statuses.unknown"},
+var auditStatusKeys = map[string]struct {
+	tone uikit.Tone
+	key  string
+}{
+	services.StatusSucceeded: {uikit.Success, "pages.audit.statuses.succeeded"},
+	services.StatusFailed:    {uikit.Error, "pages.audit.statuses.failed"},
+	services.StatusPending:   {uikit.Warning, "pages.audit.statuses.pending"},
+	services.StatusUnknown:   {uikit.Neutral, "pages.audit.statuses.unknown"},
 }
 
 // reconciledReasonKeys translate the reconciler's reasons, which follow from
@@ -336,7 +379,7 @@ var reconciledReasonKeys = map[string]string{
 // auditStatus is the badge, hint and reason of an entry. A pending entry's
 // outcome was never recorded: the change may or may not have been applied.
 func auditStatus(ctx context.Context, e services.AuditEntry) AuditStatus {
-	s := AuditStatus{Tone: "neutral", Label: orDash(e.Status), Reason: auditReason(ctx, e.Reason), Reconciled: e.Reconciled}
+	s := AuditStatus{Tone: uikit.Neutral, Label: orDash(e.Status), Reason: auditReason(ctx, e.Reason), Reconciled: e.Reconciled}
 	if k, ok := auditStatusKeys[e.Status]; ok {
 		s.Tone, s.Label = k.tone, i18n.T(ctx, k.key)
 	}
@@ -376,6 +419,28 @@ func details(d map[string]string) []string {
 		out[i] = k + ": " + d[k]
 	}
 	return out
+}
+
+// statusTone is the alert tone of an action outcome.
+func statusTone(s Status) uikit.Tone {
+	if s.Error {
+		return uikit.Error
+	}
+	return uikit.Success
+}
+
+// analyticsStats are the overview's figures as stat tiles, in reading order.
+func analyticsStats(ctx context.Context, o services.Overview) []uikit.Stat {
+	stat := func(key, id string, v int64) uikit.Stat {
+		return uikit.Stat{Label: i18n.T(ctx, key), Value: strconv.FormatInt(v, 10), TestID: id}
+	}
+	return []uikit.Stat{
+		stat("pages.analytics.totalUsers", "stat-total-users", o.TotalUsers),
+		stat("pages.analytics.newUsers7d", "stat-new-users", o.NewUsers7d),
+		stat("pages.analytics.verifiedUsers", "stat-verified-users", o.VerifiedUsers),
+		stat("pages.analytics.bannedUsers", "stat-banned-users", o.BannedUsers),
+		stat("pages.analytics.activeSessions", "stat-active-sessions", o.ActiveSessions),
+	}
 }
 
 // otpLink is the otpauth:// URI as a link target; anything else (a value a
