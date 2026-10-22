@@ -78,10 +78,21 @@ Tests live only at these boundaries, so they pin the architecture instead of wor
 | repository | `packages/database` | integration tests of every repository method | real Postgres via `dbtest.New(t, dbtest.App)` only (each test gets its own cloned database: `t.Parallel()`) | 80 % |
 | auth | `packages/auth` | its own suite | real Postgres | 80 % |
 | secrets | `packages/secrets` | manager and providers: rotation, outage/staleness, validation, no values in logs | fake providers over `httptest`, `testing/synctest` for the clock (no sleeps), never mocks | 90 % |
+| admin service / route handler / ui handler | `apps/admin/internal/services`, `apps/admin/internal/api`, `apps/admin/ui/**` | the same as the web rows above | the same (admin mocks, `apitest.AsAdmin(a)`) | 90 % / 85 % / 80 % |
+| admin repository | `packages/database/adminrepo` | integration tests of every repository method | real Postgres: `dbtest.App` (app database) or the admin template (admin database) | 80 % |
 
-The allowlist in `scripts/check-test-boundaries.sh` names three files that have no boundary above them: `config/config_test.go` (env validation at boot) and `server/{server,auth}_test.go` (wiring: mounts, middleware order, CSRF, and the adapters over real `packages/auth` + Postgres). Do not add to it; if a test does not fit a boundary, test the behaviour through the boundary above it. Service tests may not import pgx, `packages/database` (services re-export `User`, `ErrRecordNotFound`, ...), `packages/auth` or `api`; handler tests may not import pgx, `packages/database`, `packages/auth` or `services/mocks` (mock the service, never what is underneath it); repository tests may not import mocks; production code may not import mocks or `apitest`.
+The allowlist in `scripts/check-test-boundaries.sh` names the files that have no boundary above them, once per app: `config/config_test.go` (env validation at boot) and `server/{server,auth}_test.go` (wiring: mounts, middleware order, CSRF, and the adapters over real `packages/auth` + Postgres). Do not add to it; if a test does not fit a boundary, test the behaviour through the boundary above it. Service tests may not import pgx, `packages/database` (services re-export `User`, `ErrRecordNotFound`, ...), `packages/auth` or `api`; handler tests may not import pgx, `packages/database`, `packages/auth` or `services/mocks` (mock the service, never what is underneath it); repository tests may not import mocks; production code may not import mocks or `apitest`.
 
 Mocks are generated, never written: `//go:generate go tool mockgen -source=<file>.go -destination=mocks/<file>.go -package=mocks` next to the interfaces, `make generate`, commit the output (CI fails on a stale mock). `mockgen` is a `tool` in the root `go.mod` so it always matches the `go.uber.org/mock` version the mocks import.
+
+## Admin app
+
+`apps/admin` is optional and copies the web app's layers exactly: `packages/database/adminrepo` (sqlc) and adapters over `packages/auth` → `apps/admin/internal/services` → `apps/admin/internal/api` (`/api/admin/v1`) and `apps/admin/ui`, wired in `apps/admin/internal/server` and `apps/admin/cmd/admin` (`admin serve | migrate | invite <email>`). Config, routes and validators are its own (`apps/admin/internal/{config,validate}`).
+
+- **Two databases.** The admin database (`ADMIN_DATABASE_URL`) holds a second `packages/auth` instance (admins: `goose_auth`, cookie prefix `admin`) and `admin_audit_log` (`goose_admin`). The app database (`DATABASE_URL`) holds the users it administers, reached through `auth.UserAdmin` (packages/auth owns those tables, ban rules and session revocation) and read-only `adminrepo.Stats`.
+- **Isolation is enforced.** `apps/web/**` never imports `apps/admin` or `adminrepo`; `apps/admin/**` never imports `apps/web` (copy patterns, not code, so either app can be deleted); admin transports never import `packages/auth` either: they declare UI-owned ports and `server` adapts auth to them. `make lint-layering` proves every rule both ways.
+- **Every admin is equal**; `services.Policy` (any admin, 2FA when `ADMIN_REQUIRE_2FA`) is checked first in every service method, and every mutating method writes the audit log after the action succeeds (a failed write is a 500, never swallowed). The CLI acts as `services.SystemActor`.
+- New admin feature: same steps as "How to add a service", in `apps/admin`, with the audit entry in the service and an action constant (`services.Action*`) translated in the UI.
 
 ## How to add a service
 
@@ -123,6 +134,7 @@ Copy the user account flow; it is the reference for every service and repository
 - `packages/secrets`: live secrets: `Manager` (polling, validation, last-good cache, staleness, change hooks) and providers (`Env`, `Doppler`; Infisical/1Password stubs behind build tags). Self-contained; never reads the env.
 - `packages/auth`: Better Auth–style auth: its own migrations, queries, endpoints (Better Auth paths and response shapes, not the envelope), sessions, mailers. Self-contained: it never imports `apps/` or `packages/database` (depguard).
 - `apps/mobile-app`: the Expo app, which talks to the JSON API with bearer tokens.
+- `apps/admin`: the optional admin dashboard (see "Admin app"); `packages/database/adminrepo`: its data layer (audit log, stats; migrations, queries and sqlc output under it).
 - Root: `Makefile`, `docker-compose.yml`, `Dockerfile`, `railway.json`, `.golangci.yml`, `tools/` (pinned dev tools, run via `go tool -modfile=tools/go.mod`).
 
 ## Taste

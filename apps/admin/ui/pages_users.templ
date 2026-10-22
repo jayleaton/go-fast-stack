@@ -1,0 +1,279 @@
+package ui
+
+import (
+	"github.com/jayleaton/ai-patterns-go/apps/admin/internal/config"
+	"github.com/jayleaton/ai-patterns-go/apps/admin/internal/services"
+	"github.com/jayleaton/ai-patterns-go/apps/admin/ui/i18n"
+	"github.com/jayleaton/ai-patterns-go/apps/admin/ui/routes"
+	"github.com/jayleaton/ai-patterns-go/apps/admin/ui/view"
+)
+
+// Patch target ids of the user page.
+const (
+	userStatusID   = "user-status"
+	userProfileID  = "user-profile"
+	userBanID      = "user-ban"
+	userSessionsID = "user-sessions"
+)
+
+// UsersData is the users list page.
+type UsersData struct {
+	Filters UserFilters
+	Sort    SortLinks
+	Users   []services.User
+	Pager   view.Pager
+	Error   string
+}
+
+// SortLinks are the sortable column headings.
+type SortLinks struct {
+	Created, Email, Name SortLink
+}
+
+// SortLink is one heading: where it goes and whether it is the current sort.
+type SortLink struct {
+	URL          string
+	Active, Desc bool
+}
+
+// UserData is one user's page.
+type UserData struct {
+	Detail services.UserDetail
+	// Missing: the user could not be loaded; only Status renders.
+	Missing bool
+	Status  Status
+}
+
+// Status is the outcome alert of the last action (already translated).
+type Status struct {
+	Message string
+	Error   bool
+}
+
+templ UsersPage(d UsersData) {
+	@view.Layout(i18n.T(ctx, "pages.users.title")) {
+		<div class="container-balanced py-8">
+			@view.PageHeader(i18n.T(ctx, "pages.users.title"), i18n.T(ctx, "pages.users.subtitle"))
+			<form method="get" action={ templ.SafeURL(config.AppRoutes.Users) } class={ "grid grid-cols-1 items-end gap-3 p-4 sm:grid-cols-2 lg:grid-cols-6", view.CardClass } data-signals="{_searching: false}" data-on:submit="$_searching = true; el.submit()">
+				<input type="hidden" name="sortBy" value={ d.Filters.SortBy }/>
+				<input type="hidden" name="sortDirection" value={ d.Filters.SortDirection }/>
+				<div class="lg:col-span-2">
+					@view.Input(view.Field{ID: "search", Type: "search", Label: i18n.T(ctx, "pages.users.filters.search"), Placeholder: i18n.T(ctx, "pages.users.filters.searchPlaceholder"), Value: d.Filters.Search, Optional: true})
+				</div>
+				@view.Select("searchField", i18n.T(ctx, "pages.users.filters.searchField"), searchFieldOptions(ctx), d.Filters.SearchField)
+				@view.Select("banned", i18n.T(ctx, "pages.users.filters.status"), bannedOptions(ctx), d.Filters.Banned)
+				@view.Select("role", i18n.T(ctx, "pages.users.role"), roleFilterOptions(ctx), d.Filters.Role)
+				<button type="submit" class={ view.InlineButtonClass } data-attr:disabled="$_searching">
+					<span data-show="!$_searching">{ i18n.T(ctx, "pages.users.filters.apply") }</span>
+					<span style="display: none" data-show="$_searching">{ i18n.T(ctx, "common.loading") }</span>
+				</button>
+			</form>
+			<div class="mt-6">
+				if d.Error != "" {
+					<div role="alert" class={ view.ErrorAlertClass }>{ d.Error }</div>
+				} else {
+					<div class={ "overflow-x-auto", view.CardClass }>
+						<table class={ view.TableClass }>
+							<thead>
+								<tr>
+									<th class={ view.ThClass }>@sortHeading(d.Sort.Email, i18n.T(ctx, "common.email"))</th>
+									<th class={ view.ThClass }>@sortHeading(d.Sort.Name, i18n.T(ctx, "common.name"))</th>
+									<th class={ view.ThClass }>{ i18n.T(ctx, "pages.users.role") }</th>
+									<th class={ view.ThClass }>{ i18n.T(ctx, "pages.users.verified") }</th>
+									<th class={ view.ThClass }>{ i18n.T(ctx, "pages.users.filters.status") }</th>
+									<th class={ view.ThClass }>@sortHeading(d.Sort.Created, i18n.T(ctx, "pages.users.created"))</th>
+								</tr>
+							</thead>
+							<tbody class="divide-y divide-neutral-100 dark:divide-neutral-800">
+								for _, usr := range d.Users {
+									<tr>
+										<td class={ view.TdClass }><a href={ templ.SafeURL(config.UserPage(usr.ID)) } class={ view.TextLinkClass }>{ usr.Email }</a></td>
+										<td class={ view.TdClass }>{ orDash(usr.Name) }</td>
+										<td class={ view.TdClass }>{ orDash(usr.Role) }</td>
+										<td class={ view.TdClass }>{ yesNo(ctx, usr.EmailVerified) }</td>
+										<td class={ view.TdClass }>
+											if usr.Banned {
+												@view.Badge("red", i18n.T(ctx, "pages.users.bannedBadge"))
+												<span class="ml-1 text-xs text-neutral-500">{ banExpires(ctx, usr) }</span>
+											} else {
+												@view.Badge("green", i18n.T(ctx, "pages.users.activeBadge"))
+											}
+										</td>
+										<td class={ view.TdClass }>{ date(ctx, usr.CreatedAt) }</td>
+									</tr>
+								}
+								if len(d.Users) == 0 {
+									<tr><td colspan="6" class="px-3 py-6 text-center text-sm text-neutral-500">{ i18n.T(ctx, "pages.users.empty") }</td></tr>
+								}
+							</tbody>
+						</table>
+					</div>
+					@view.Pagination(d.Pager, pagerSummary(ctx, d.Pager))
+				}
+			</div>
+		</div>
+	}
+}
+
+templ sortHeading(l SortLink, label string) {
+	<a href={ templ.SafeURL(l.URL) } class="hover:text-neutral-900 dark:hover:text-neutral-100">{ label }{ sortMark(l) }</a>
+}
+
+templ UserPage(d UserData) {
+	@view.Layout(i18n.T(ctx, "pages.user.title")) {
+		<div class="container-balanced py-8">
+			<div class="mb-4">
+				<a href={ templ.SafeURL(config.AppRoutes.Users) } class={ view.TextLinkClass + " text-sm" }>{ i18n.T(ctx, "pages.user.back") }</a>
+			</div>
+			@view.PageHeader(i18n.T(ctx, "pages.user.title"), d.Detail.User.Email)
+			<div class="mb-6">
+				@UserStatus(d.Status)
+			</div>
+			if !d.Missing {
+				<div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+					@UserProfile(d.Detail.User)
+					@UserBan(d.Detail.User)
+				</div>
+				<div class="mt-6">
+					@UserSessions(d.Detail.User.ID, d.Detail.Sessions)
+				</div>
+			}
+		</div>
+	}
+}
+
+// UserStatus is the patch target for action outcomes.
+templ UserStatus(s Status) {
+	if s.Error {
+		@view.Alert(userStatusID, "alert", view.ErrorAlertClass+" text-sm", s.Message)
+	} else {
+		@view.Alert(userStatusID, "status", view.SuccessAlertClass+" text-sm", s.Message)
+	}
+}
+
+templ profileRow(label, value string) {
+	<div class="flex justify-between gap-4 py-1.5">
+		<dt class="text-neutral-500 dark:text-neutral-400">{ label }</dt>
+		<dd class="text-right break-all text-neutral-900 dark:text-neutral-100">{ value }</dd>
+	</div>
+}
+
+// UserProfile is the profile card with the role form.
+templ UserProfile(usr services.User) {
+	<div id={ userProfileID } class={ "p-5", view.CardClass }>
+		<h2 class="text-sm font-semibold text-neutral-800 dark:text-neutral-200">{ i18n.T(ctx, "pages.user.profile") }</h2>
+		<dl class="mt-3 divide-y divide-neutral-100 text-sm dark:divide-neutral-800">
+			@profileRow(i18n.T(ctx, "pages.user.id"), usr.ID)
+			@profileRow(i18n.T(ctx, "common.name"), orDash(usr.Name))
+			@profileRow(i18n.T(ctx, "common.email"), usr.Email)
+			@profileRow(i18n.T(ctx, "pages.users.verified"), yesNo(ctx, usr.EmailVerified))
+			@profileRow(i18n.T(ctx, "pages.users.role"), orDash(usr.Role))
+			@profileRow(i18n.T(ctx, "pages.user.twoFactor"), yesNo(ctx, usr.TwoFactorEnabled))
+			@profileRow(i18n.T(ctx, "pages.user.hasPassword"), yesNo(ctx, usr.HasPassword))
+			@profileRow(i18n.T(ctx, "pages.users.created"), dateTime(ctx, usr.CreatedAt))
+			@profileRow(i18n.T(ctx, "pages.user.updated"), dateTime(ctx, usr.UpdatedAt))
+		</dl>
+		<form class="mt-4 flex items-end gap-3" method="post" action={ templ.SafeURL(routes.User(routes.UserRole, usr.ID)) } data-on:submit={ view.PostForm(routes.User(routes.UserRole, usr.ID)) } data-indicator:_setting-role>
+			<div class="flex-1">
+				@view.Select("role", i18n.T(ctx, "pages.user.setRole"), roleOptions(), usr.Role)
+			</div>
+			<button type="submit" class={ view.InlineButtonClass } data-attr:disabled="$_settingRole">
+				<span data-show="!$_settingRole">{ i18n.T(ctx, "common.save") }</span>
+				<span style="display: none" data-show="$_settingRole">{ i18n.T(ctx, "common.saving") }</span>
+			</button>
+		</form>
+	</div>
+}
+
+// UserBan shows the ban state with the ban form, and unban when banned.
+templ UserBan(usr services.User) {
+	<div id={ userBanID } class={ "p-5", view.CardClass }>
+		<h2 class="text-sm font-semibold text-neutral-800 dark:text-neutral-200">{ i18n.T(ctx, "pages.user.ban.title") }</h2>
+		if usr.Banned {
+			<div class="mt-3 space-y-1 text-sm">
+				@view.Badge("red", i18n.T(ctx, "pages.users.bannedBadge"))
+				<dl class="mt-2 divide-y divide-neutral-100 dark:divide-neutral-800">
+					@profileRow(i18n.T(ctx, "pages.user.ban.reason"), orDash(deref(usr.BanReason)))
+					@profileRow(i18n.T(ctx, "pages.user.ban.expires"), banExpires(ctx, usr))
+				</dl>
+			</div>
+			<form class="mt-4" method="post" action={ templ.SafeURL(routes.User(routes.UserUnban, usr.ID)) } data-on:submit={ view.PostForm(routes.User(routes.UserUnban, usr.ID)) } data-indicator:_unbanning>
+				<button type="submit" class={ view.SecondaryButtonClass } data-attr:disabled="$_unbanning">
+					<span data-show="!$_unbanning">{ i18n.T(ctx, "pages.user.ban.unban") }</span>
+					<span style="display: none" data-show="$_unbanning">{ i18n.T(ctx, "common.loading") }</span>
+				</button>
+			</form>
+		} else {
+			<p class="mt-3 text-sm text-neutral-600 dark:text-neutral-300">{ i18n.T(ctx, "pages.user.ban.notBanned") }</p>
+		}
+		<form class="mt-4 space-y-3" method="post" action={ templ.SafeURL(routes.User(routes.UserBan, usr.ID)) } data-on:submit={ view.PostForm(routes.User(routes.UserBan, usr.ID)) } data-indicator:_banning>
+			<div>
+				<label for="banReason" class={ view.LabelClass }>{ i18n.T(ctx, "pages.user.ban.reason") }</label>
+				<textarea id="banReason" name="banReason" required maxlength="500" rows="2" class={ view.InputClass } placeholder={ i18n.T(ctx, "pages.user.ban.reasonPlaceholder") }></textarea>
+			</div>
+			@view.Select("banExpiresIn", i18n.T(ctx, "pages.user.ban.expires"), banExpiryOptions(ctx), "86400")
+			<button type="submit" class={ view.DangerButtonClass } data-attr:disabled="$_banning">
+				<span data-show="!$_banning">
+					if usr.Banned {
+						{ i18n.T(ctx, "pages.user.ban.update") }
+					} else {
+						{ i18n.T(ctx, "pages.user.ban.submit") }
+					}
+				</span>
+				<span style="display: none" data-show="$_banning">{ i18n.T(ctx, "common.loading") }</span>
+			</button>
+		</form>
+	</div>
+}
+
+// UserSessions lists the active sessions, each with a revoke button.
+templ UserSessions(userID string, sessions []services.Session) {
+	<div id={ userSessionsID } class={ "p-5", view.CardClass }>
+		<div class="flex flex-wrap items-center justify-between gap-3">
+			<h2 class="text-sm font-semibold text-neutral-800 dark:text-neutral-200">{ i18n.T(ctx, "pages.user.sessions.title") }</h2>
+			if len(sessions) > 0 {
+				<form method="post" action={ templ.SafeURL(routes.User(routes.UserSessions, userID)) } data-on:submit={ view.PostForm(routes.User(routes.UserSessions, userID)) } data-indicator:_revoking-all>
+					<button type="submit" class={ view.DangerButtonClass } data-attr:disabled="$_revokingAll">
+						<span data-show="!$_revokingAll">{ i18n.T(ctx, "pages.user.sessions.revokeAll") }</span>
+						<span style="display: none" data-show="$_revokingAll">{ i18n.T(ctx, "common.loading") }</span>
+					</button>
+				</form>
+			}
+		</div>
+		if len(sessions) == 0 {
+			<p class="mt-3 text-sm text-neutral-500">{ i18n.T(ctx, "pages.user.sessions.empty") }</p>
+		} else {
+			<div class="mt-3 overflow-x-auto">
+				<table class={ view.TableClass }>
+					<thead>
+						<tr>
+							<th class={ view.ThClass }>{ i18n.T(ctx, "pages.users.created") }</th>
+							<th class={ view.ThClass }>{ i18n.T(ctx, "pages.user.sessions.expires") }</th>
+							<th class={ view.ThClass }>{ i18n.T(ctx, "pages.user.sessions.ip") }</th>
+							<th class={ view.ThClass }>{ i18n.T(ctx, "pages.user.sessions.userAgent") }</th>
+							<th class={ view.ThClass }></th>
+						</tr>
+					</thead>
+					<tbody class="divide-y divide-neutral-100 dark:divide-neutral-800">
+						for _, s := range sessions {
+							<tr>
+								<td class={ view.TdClass }>{ dateTime(ctx, s.CreatedAt) }</td>
+								<td class={ view.TdClass }>{ dateTime(ctx, s.ExpiresAt) }</td>
+								<td class={ view.TdClass }>{ orDash(deref(s.IPAddress)) }</td>
+								<td class="max-w-xs truncate px-3 py-2 text-neutral-700 dark:text-neutral-300" title={ deref(s.UserAgent) }>{ orDash(deref(s.UserAgent)) }</td>
+								<td class={ view.TdClass }>
+									<form method="post" action={ templ.SafeURL(routes.Session(userID, s.ID)) } data-on:submit={ view.PostForm(routes.Session(userID, s.ID)) } data-indicator:_revoking>
+										<button type="submit" class={ view.SecondaryButtonClass } data-attr:disabled="$_revoking">
+											<span data-show="!$_revoking">{ i18n.T(ctx, "pages.user.sessions.revoke") }</span>
+											<span style="display: none" data-show="$_revoking">{ i18n.T(ctx, "common.loading") }</span>
+										</button>
+									</form>
+								</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			</div>
+		}
+	</div>
+}

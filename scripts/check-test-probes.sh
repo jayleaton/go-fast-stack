@@ -30,6 +30,8 @@ planted=(
   apps/web/internal/validate/zz_probe_test.go
   packages/database/dbtest/zz_probe_test.go
   packages/secrets/zz_probe/zz_probe_test.go
+  apps/admin/internal/validate/zz_probe_test.go
+  packages/database/adminrepo/model/zz_probe_test.go
 )
 for f in "${planted[@]}"; do
   d=$(dirname "$f")
@@ -61,23 +63,27 @@ else
 fi
 rm -f "$nested"
 
-# Coverage.
-probe=apps/web/internal/services/zz_probe.go
+# Coverage: ~200 uncovered statements sink each app's services floor.
 profile=.cache/probe.out
 mkdir -p .cache
-paths+=("$probe" "$profile")
-{
-  printf 'package services\n\nfunc zzCoverageProbe(x int) int {\n'
-  for i in $(seq 200); do printf '\tx += %d\n' "$i"; done
-  printf '\treturn x\n}\n'
-} > "$probe"
-if ! log=$(go test -race -coverprofile="$profile" ./apps/web/internal/services/ 2>&1); then
-  fail "go test on the coverage probe failed"; echo "$log"
-elif out=$(./scripts/check-coverage.sh "$profile" "$mod/apps/web/internal/services"); then
-  fail "201 uncovered statements did not fail the services floor: $out"
-else
-  pass "201 uncovered statements fail the services floor: ${out#FAIL  }"
-fi
+paths+=("$profile")
+for svc in apps/web/internal/services apps/admin/internal/services; do
+  probe=$svc/zz_probe.go
+  paths+=("$probe")
+  {
+    printf 'package services\n\nfunc zzCoverageProbe(x int) int {\n'
+    for i in $(seq 200); do printf '\tx += %d\n' "$i"; done
+    printf '\treturn x\n}\n'
+  } > "$probe"
+  if ! log=$(go test -race -coverprofile="$profile" "./$svc/" 2>&1); then
+    fail "go test on the coverage probe failed ($svc)"; echo "$log"
+  elif out=$(./scripts/check-coverage.sh "$profile" "$mod/$svc"); then
+    fail "201 uncovered statements did not fail the $svc floor: $out"
+  else
+    pass "201 uncovered statements fail the $svc floor: ${out#FAIL  }"
+  fi
+  rm -f "$probe"
+done
 
 # The UI floor (apps/web/ui is ~3800 statements; 300 uncovered drop it ~3 points).
 uiprobe=apps/web/ui/zz_probe.go

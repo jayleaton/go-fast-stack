@@ -8,6 +8,7 @@ linters:
     - bodyclose
     - copyloopvar
     - depguard
+    - forbidigo
     - errorlint
     - intrange
     - misspell
@@ -19,8 +20,20 @@ linters:
     - usestdlibvars
     - wastedassign
   settings:
-    # Layering: packages/database -> services -> transports (api, ui).
-    # See AGENTS.md "Architecture".
+    # User administration lives in packages/auth (it owns the tables), so
+    # depguard cannot keep it from apps/web by import path: forbid the entry
+    # points instead. Only apps/admin (and auth's own tests) may call them.
+    forbidigo:
+      analyze-types: true
+      forbid:
+        - pattern: ^auth\.NewUserAdmin$
+          pkg: ^github\.com/jayleaton/ai-patterns-go/packages/auth$
+          msg: user administration (ban, roles, any user's sessions) is for apps/admin only
+        - pattern: ^auth\.Auth\.Users$
+          pkg: ^github\.com/jayleaton/ai-patterns-go/packages/auth$
+          msg: user administration (ban, roles, any user's sessions) is for apps/admin only
+    # Layering: packages/database -> services -> transports (api, ui), for
+    # apps/web and apps/admin alike. See AGENTS.md "Architecture".
     depguard:
       rules:
         transports:
@@ -80,6 +93,63 @@ linters:
               desc: packages/secrets is self-contained
             - pkg: go.uber.org/mock
               desc: secrets tests use fake providers over httptest, never mocks
+        # apps/admin is a separate, optional, higher-privilege app. Neither app
+        # imports the other, and only apps/admin reaches adminrepo.
+        # See AGENTS.md "Admin app".
+        web-isolation:
+          files:
+            - "**/apps/web/**"
+          deny:
+            - pkg: github.com/jayleaton/ai-patterns-go/apps/admin
+              desc: apps/web never imports the admin app
+            - pkg: github.com/jayleaton/ai-patterns-go/packages/database/adminrepo
+              desc: higher-privilege admin data access (audit log, cross-user stats) is for apps/admin only
+        database-isolation:
+          files:
+            - "**/packages/database/**"
+            - "!**/packages/database/adminrepo/**"
+          deny:
+            - pkg: github.com/jayleaton/ai-patterns-go/packages/database/adminrepo
+              desc: the app's repositories never use the admin data layer
+        admin-isolation:
+          files:
+            - "**/apps/admin/**"
+          deny:
+            - pkg: github.com/jayleaton/ai-patterns-go/apps/web
+              desc: apps/admin copies the web app's patterns, never its code (it must stay deletable)
+        admin-transports:
+          files:
+            - "**/apps/admin/internal/api/**"
+            - "**/apps/admin/ui/**"
+          deny:
+            - pkg: github.com/jackc/pgx
+              desc: admin transports call services; only packages/database talks to Postgres
+            - pkg: github.com/jayleaton/ai-patterns-go/packages/database
+              desc: admin transports call services (services.AuditEntry etc.), never adminrepo or sqlc
+            - pkg: github.com/jayleaton/ai-patterns-go/packages/auth
+              desc: admin transports use their own ports; the adapters over packages/auth live in apps/admin/internal/server
+        admin-services:
+          files:
+            - "**/apps/admin/internal/services/**"
+          deny:
+            - pkg: net/http
+              desc: services are transport-agnostic; return *services.Error and let the transport map it
+            - pkg: github.com/a-h/templ
+              desc: rendering belongs to apps/admin/ui
+            - pkg: github.com/starfederation/datastar-go
+              desc: SSE belongs to apps/admin/ui
+            - pkg: github.com/jackc/pgx
+              desc: services use repositories from packages/database/adminrepo
+            - pkg: github.com/jayleaton/ai-patterns-go/packages/database/adminrepo/adminsql
+              desc: services use repositories, not sqlc output
+            - pkg: github.com/jayleaton/ai-patterns-go/packages/database/adminrepo/appsql
+              desc: services use repositories, not sqlc output
+            - pkg: github.com/jayleaton/ai-patterns-go/packages/auth
+              desc: services reach auth through ports; adapters live in apps/admin/internal/server
+            - pkg: github.com/jayleaton/ai-patterns-go/apps/admin/internal/api
+              desc: services never import a transport
+            - pkg: github.com/jayleaton/ai-patterns-go/apps/admin/ui
+              desc: services never import a transport
         # Test boundaries: each layer is tested with the layer below mocked or
         # real, never skipped. See AGENTS.md "Test boundaries".
         service-tests:
@@ -117,6 +187,41 @@ linters:
               desc: repository tests run against real Postgres (dbtest), never mocks
             - pkg: github.com/jayleaton/ai-patterns-go/apps
               desc: repository tests run against real Postgres (dbtest) and never import apps
+        admin-service-tests:
+          files:
+            - "**/apps/admin/internal/services/*_test.go"
+          deny:
+            - pkg: github.com/jackc/pgx
+              desc: service tests use the generated port mocks in services/mocks only
+            - pkg: github.com/jayleaton/ai-patterns-go/packages/database
+              desc: service tests use the generated port mocks in services/mocks only (services re-export the model types)
+            - pkg: github.com/jayleaton/ai-patterns-go/packages/auth
+              desc: service tests use the generated port mocks in services/mocks only
+            - pkg: github.com/jayleaton/ai-patterns-go/apps/admin/internal/api
+              desc: service tests use the generated port mocks in services/mocks only
+        admin-handler-tests:
+          files: # "/**/" needs a subdirectory, so list the package dir too
+            - "**/apps/admin/internal/api/*_test.go"
+            - "**/apps/admin/internal/api/**/*_test.go"
+            - "**/apps/admin/ui/*_test.go"
+            - "**/apps/admin/ui/**/*_test.go"
+          deny:
+            - pkg: github.com/jackc/pgx
+              desc: handler tests mock the service and the session, never the database
+            - pkg: github.com/jayleaton/ai-patterns-go/packages/database
+              desc: handler tests mock the service and the session, never the database
+            - pkg: github.com/jayleaton/ai-patterns-go/apps/admin/internal/services/mocks
+              desc: those are port mocks; handler tests mock the SERVICE, never what is underneath it
+            - pkg: github.com/jayleaton/ai-patterns-go/packages/auth
+              desc: handler tests mock the session; real auth is tested in packages/auth and server
+        adminrepo-tests:
+          files:
+            - "**/packages/database/adminrepo/*_test.go"
+          deny:
+            - pkg: go.uber.org/mock
+              desc: repository tests run against real Postgres (dbtest), never mocks
+            - pkg: github.com/jayleaton/ai-patterns-go/apps
+              desc: repository tests run against real Postgres (dbtest) and never import apps
         no-test-helpers:
           files:
             - $all
@@ -132,6 +237,14 @@ linters:
               desc: mocks are for tests; production code never imports them
             - pkg: github.com/jayleaton/ai-patterns-go/apps/web/internal/api/mocks
               desc: mocks are for tests; production code never imports them
+            - pkg: github.com/jayleaton/ai-patterns-go/apps/admin/internal/api/apitest
+              desc: test helpers are for tests; production code never imports them
+            - pkg: github.com/jayleaton/ai-patterns-go/apps/admin/internal/services/mocks
+              desc: mocks are for tests; production code never imports them
+            - pkg: github.com/jayleaton/ai-patterns-go/apps/admin/internal/api/mocks
+              desc: mocks are for tests; production code never imports them
+            - pkg: github.com/jayleaton/ai-patterns-go/apps/admin/ui/mocks
+              desc: mocks are for tests; production code never imports them
   exclusions:
     generated: lax
     presets:
@@ -139,6 +252,8 @@ linters:
     rules:
       - path: _test\.go
         linters: [noctx]
+      - path: (apps/admin|packages/auth)/
+        linters: [forbidigo]
 
 formatters:
   enable:

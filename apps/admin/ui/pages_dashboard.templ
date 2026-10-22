@@ -1,0 +1,215 @@
+package ui
+
+import (
+	"strconv"
+
+	"github.com/jayleaton/ai-patterns-go/apps/admin/internal/config"
+	"github.com/jayleaton/ai-patterns-go/apps/admin/internal/services"
+	"github.com/jayleaton/ai-patterns-go/apps/admin/ui/i18n"
+	"github.com/jayleaton/ai-patterns-go/apps/admin/ui/routes"
+	"github.com/jayleaton/ai-patterns-go/apps/admin/ui/view"
+)
+
+// Patch target ids of the admins page.
+const (
+	adminsTableID = "admins-table"
+	inviteCardID  = "invite-card"
+	inviteErrorID = "invite-error"
+)
+
+// AdminsData is the admins page.
+type AdminsData struct {
+	Admins []services.Admin
+	Invite InviteState
+	Error  string
+}
+
+// InviteState is the invite form after a submit (messages translated).
+type InviteState struct {
+	Email, Name string
+	Sent        string
+	Error       string
+}
+
+// AuditData is the audit log page.
+type AuditData struct {
+	Filters AuditFilters
+	Entries []services.AuditEntry
+	Pager   view.Pager
+	Error   string
+}
+
+// AnalyticsData is the analytics placeholder page.
+type AnalyticsData struct {
+	Overview services.Overview
+	Error    string
+}
+
+templ AdminsPage(d AdminsData) {
+	@view.Layout(i18n.T(ctx, "pages.admins.title")) {
+		<div class="container-balanced py-8">
+			@view.PageHeader(i18n.T(ctx, "pages.admins.title"), i18n.T(ctx, "pages.admins.subtitle"))
+			<div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
+				<div class="lg:col-span-2">
+					if d.Error != "" {
+						<div role="alert" class={ view.ErrorAlertClass }>{ d.Error }</div>
+					} else {
+						@AdminsTable(d.Admins)
+					}
+				</div>
+				@InviteCard(d.Invite)
+			</div>
+		</div>
+	}
+}
+
+// AdminsTable lists every admin, pending invites included.
+templ AdminsTable(admins []services.Admin) {
+	<div id={ adminsTableID } class={ "overflow-x-auto", view.CardClass }>
+		<table class={ view.TableClass }>
+			<thead>
+				<tr>
+					<th class={ view.ThClass }>{ i18n.T(ctx, "common.email") }</th>
+					<th class={ view.ThClass }>{ i18n.T(ctx, "common.name") }</th>
+					<th class={ view.ThClass }>{ i18n.T(ctx, "pages.users.created") }</th>
+					<th class={ view.ThClass }>{ i18n.T(ctx, "pages.user.twoFactor") }</th>
+					<th class={ view.ThClass }>{ i18n.T(ctx, "pages.users.filters.status") }</th>
+				</tr>
+			</thead>
+			<tbody class="divide-y divide-neutral-100 dark:divide-neutral-800">
+				for _, a := range admins {
+					<tr>
+						<td class={ view.TdClass }>{ a.Email }</td>
+						<td class={ view.TdClass }>{ orDash(a.Name) }</td>
+						<td class={ view.TdClass }>{ date(ctx, a.CreatedAt) }</td>
+						<td class={ view.TdClass }>
+							if a.TwoFactorEnabled {
+								@view.Badge("green", i18n.T(ctx, "pages.admins.twoFactorOn"))
+							} else {
+								@view.Badge("neutral", i18n.T(ctx, "pages.admins.twoFactorOff"))
+							}
+						</td>
+						<td class={ view.TdClass }>
+							if a.HasPassword {
+								@view.Badge("green", i18n.T(ctx, "pages.admins.active"))
+							} else {
+								@view.Badge("amber", i18n.T(ctx, "pages.admins.pending"))
+							}
+						</td>
+					</tr>
+				}
+			</tbody>
+		</table>
+	</div>
+}
+
+// InviteCard is the invite form; actions patch it whole (cleared on success).
+templ InviteCard(s InviteState) {
+	<div id={ inviteCardID } class={ "p-5", view.CardClass }>
+		<h2 class="text-sm font-semibold text-neutral-800 dark:text-neutral-200">{ i18n.T(ctx, "pages.admins.invite.title") }</h2>
+		<p class="mt-1 text-xs text-neutral-500 dark:text-neutral-400">{ i18n.T(ctx, "pages.admins.invite.description") }</p>
+		<form class="mt-4 space-y-4" method="post" action={ templ.SafeURL(routes.AdminInvite) } data-on:submit={ view.PostForm(routes.AdminInvite) } data-indicator:_inviting>
+			@view.ErrorAlert(inviteErrorID, s.Error)
+			if s.Sent != "" {
+				<div role="status" class={ view.SuccessAlertClass + " text-sm" }>{ s.Sent }</div>
+			}
+			@view.Input(view.Field{ID: "email", Type: "email", Label: i18n.T(ctx, "common.email"), Placeholder: "name@example.com", Autocomplete: "off", Value: s.Email})
+			@view.Input(view.Field{ID: "name", Type: "text", Label: i18n.T(ctx, "pages.admins.invite.name"), Autocomplete: "off", Value: s.Name, Optional: true})
+			@view.SubmitButton(i18n.T(ctx, "pages.admins.invite.submit"), i18n.T(ctx, "pages.admins.invite.sending"), "_inviting")
+		</form>
+	</div>
+}
+
+templ AuditPage(d AuditData) {
+	@view.Layout(i18n.T(ctx, "pages.audit.title")) {
+		<div class="container-balanced py-8">
+			@view.PageHeader(i18n.T(ctx, "pages.audit.title"), i18n.T(ctx, "pages.audit.subtitle"))
+			<form method="get" action={ templ.SafeURL(config.AppRoutes.Audit) } class={ "flex flex-wrap items-end gap-3 p-4", view.CardClass } data-signals="{_filtering: false}" data-on:submit="$_filtering = true; el.submit()">
+				if d.Filters.TargetID != "" {
+					<input type="hidden" name="targetId" value={ d.Filters.TargetID }/>
+				}
+				<div class="min-w-[14rem]">
+					@view.Select("action", i18n.T(ctx, "pages.audit.action"), actionOptions(ctx), d.Filters.Action)
+				</div>
+				<button type="submit" class={ view.InlineButtonClass } data-attr:disabled="$_filtering">
+					<span data-show="!$_filtering">{ i18n.T(ctx, "pages.users.filters.apply") }</span>
+					<span style="display: none" data-show="$_filtering">{ i18n.T(ctx, "common.loading") }</span>
+				</button>
+			</form>
+			<div class="mt-6">
+				if d.Error != "" {
+					<div role="alert" class={ view.ErrorAlertClass }>{ d.Error }</div>
+				} else {
+					<div class={ "overflow-x-auto", view.CardClass }>
+						<table class={ view.TableClass }>
+							<thead>
+								<tr>
+									<th class={ view.ThClass }>{ i18n.T(ctx, "pages.audit.time") }</th>
+									<th class={ view.ThClass }>{ i18n.T(ctx, "pages.audit.actor") }</th>
+									<th class={ view.ThClass }>{ i18n.T(ctx, "pages.audit.action") }</th>
+									<th class={ view.ThClass }>{ i18n.T(ctx, "pages.audit.target") }</th>
+									<th class={ view.ThClass }>{ i18n.T(ctx, "pages.audit.details") }</th>
+								</tr>
+							</thead>
+							<tbody class="divide-y divide-neutral-100 dark:divide-neutral-800">
+								for _, e := range d.Entries {
+									<tr>
+										<td class={ view.TdClass }>{ dateTime(ctx, e.CreatedAt) }</td>
+										<td class={ view.TdClass }>{ orDash(e.ActorEmail) }</td>
+										<td class={ view.TdClass }><span title={ e.Action }>{ actionLabel(ctx, e.Action) }</span></td>
+										<td class={ view.TdClass }>
+											if href, label := auditTarget(e); href != "" {
+												<a href={ templ.SafeURL(href) } class={ view.TextLinkClass }>{ label }</a>
+											} else {
+												{ orDash(label) }
+											}
+										</td>
+										<td class="px-3 py-2 text-xs text-neutral-600 dark:text-neutral-400">
+											for _, line := range details(e.Details) {
+												<div class="font-mono">{ line }</div>
+											}
+										</td>
+									</tr>
+								}
+								if len(d.Entries) == 0 {
+									<tr><td colspan="5" class="px-3 py-6 text-center text-sm text-neutral-500">{ i18n.T(ctx, "pages.audit.empty") }</td></tr>
+								}
+							</tbody>
+						</table>
+					</div>
+					@view.Pagination(d.Pager, pagerSummary(ctx, d.Pager))
+				}
+			</div>
+		</div>
+	}
+}
+
+templ statCard(label string, value int64) {
+	<div class={ "p-5", view.CardClass }>
+		<p class="text-sm text-neutral-500 dark:text-neutral-400">{ label }</p>
+		<p class="mt-2 text-3xl font-semibold text-neutral-900 dark:text-neutral-50">{ strconv.FormatInt(value, 10) }</p>
+	</div>
+}
+
+templ AnalyticsPage(d AnalyticsData) {
+	@view.Layout(i18n.T(ctx, "pages.analytics.title")) {
+		<div class="container-balanced py-8">
+			@view.PageHeader(i18n.T(ctx, "pages.analytics.title"), i18n.T(ctx, "pages.analytics.subtitle"))
+			@view.InfoBox(i18n.T(ctx, "pages.analytics.placeholder"))
+			<div class="mt-6">
+				if d.Error != "" {
+					<div role="alert" class={ view.ErrorAlertClass }>{ d.Error }</div>
+				} else {
+					<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+						@statCard(i18n.T(ctx, "pages.analytics.totalUsers"), d.Overview.TotalUsers)
+						@statCard(i18n.T(ctx, "pages.analytics.verifiedUsers"), d.Overview.VerifiedUsers)
+						@statCard(i18n.T(ctx, "pages.analytics.bannedUsers"), d.Overview.BannedUsers)
+						@statCard(i18n.T(ctx, "pages.analytics.newUsers7d"), d.Overview.NewUsers7d)
+						@statCard(i18n.T(ctx, "pages.analytics.activeSessions"), d.Overview.ActiveSessions)
+					</div>
+					<p class="mt-4 text-xs text-neutral-500 dark:text-neutral-400">{ i18n.T(ctx, "pages.analytics.generatedAt") } { dateTime(ctx, d.Overview.GeneratedAt) }</p>
+				}
+			</div>
+		</div>
+	}
+}

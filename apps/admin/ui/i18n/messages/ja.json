@@ -1,0 +1,220 @@
+{
+  "common": {
+    "language": "言語",
+    "english": "英語",
+    "japanese": "日本語",
+    "loading": "読み込み中...",
+    "continue": "続行",
+    "save": "保存",
+    "saving": "保存中...",
+    "name": "名前",
+    "email": "メール",
+    "password": "パスワード",
+    "yes": "はい",
+    "no": "いいえ",
+    "backToLogin": "サインインに戻る"
+  },
+  "components": {
+    "languageSelector": {
+      "language": "言語"
+    },
+    "authStatus": {
+      "logout": "サインアウト"
+    },
+    "themeToggle": {
+      "toggle": "テーマを切り替え"
+    },
+    "nav": {
+      "label": "ダッシュボード",
+      "users": "ユーザー",
+      "admins": "管理者",
+      "audit": "監査ログ",
+      "analytics": "分析"
+    },
+    "pager": {
+      "previous": "前へ",
+      "next": "次へ",
+      "showing": "{2}件中 {0}〜{1}件を表示"
+    }
+  },
+  "pages": {
+    "login": {
+      "title": "ダッシュボードにサインイン",
+      "description": "管理者専用です。招待されたメールアドレスを使用してください。",
+      "loginButton": "サインイン",
+      "emailPlaceholder": "メールアドレスを入力",
+      "passwordPlaceholder": "パスワードを入力",
+      "inviteOnly": "利用には招待が必要です。既存の管理者に招待を依頼してください。"
+    },
+    "setPassword": {
+      "title": "パスワードを設定",
+      "description": "パスワードを設定して招待の受け入れを完了してください。",
+      "invalidLink": "このリンクは無効か、有効期限が切れています。管理者に招待の再送を依頼してください。",
+      "passwordMismatch": "パスワードが一致しません",
+      "newPassword": "新しいパスワード",
+      "newPasswordPlaceholder": "新しいパスワードを入力",
+      "passwordRequirement": "パスワードは8文字以上である必要があります",
+      "confirmPassword": "パスワードの確認",
+      "confirmPasswordPlaceholder": "新しいパスワードを再入力",
+      "submit": "パスワードを設定",
+      "saving": "パスワードを設定中..."
+    },
+    "twoFactor": {
+      "title": "二要素認証",
+      "description": "認証アプリに表示されている6桁のコードを入力してください。",
+      "codeLabel": "認証コード",
+      "backupCodeLabel": "バックアップコード",
+      "useBackupCode": "代わりにバックアップコードを使用する",
+      "trustDevice": "このデバイスを30日間信頼する",
+      "verify": "確認",
+      "verifying": "確認中..."
+    },
+    "twoFactorSetup": {
+      "title": "二要素認証の設定",
+      "description": "認証アプリを使って、サインインに2つ目のステップを追加します。開始するには現在のパスワードを入力してください。",
+      "required": "このダッシュボードでは二要素認証が必須です。続行するには設定してください。",
+      "passwordLabel": "現在のパスワード",
+      "start": "設定を開始",
+      "scan": "このアカウントを認証アプリに追加し、表示されたコードを入力してください。",
+      "openApp": "認証アプリで開く",
+      "manualEntry": "または、このキーを手動で入力してください:",
+      "backupCodes": "バックアップコード",
+      "backupCodesHint": "これらのコードは一度しか表示されません。安全な場所に保管してください。デバイスを紛失した場合、各コードで1回サインインできます。",
+      "codeLabel": "アプリに表示されたコード",
+      "confirm": "二要素認証を有効にする",
+      "done": "二要素認証が有効になりました。",
+      "alreadyOn": "このアカウントでは二要素認証が有効です。"
+    },
+    "users": {
+      "title": "ユーザー",
+      "subtitle": "アプリにアカウントを持つすべてのユーザー。",
+      "role": "ロール",
+      "verified": "確認済み",
+      "created": "作成日",
+      "bannedBadge": "利用停止中",
+      "activeBadge": "有効",
+      "empty": "条件に一致するユーザーはいません。",
+      "filters": {
+        "search": "検索",
+        "searchPlaceholder": "ユーザーを検索",
+        "searchField": "検索対象",
+        "status": "状態",
+        "apply": "適用",
+        "all": "すべて",
+        "banned": "利用停止中",
+        "active": "有効",
+        "anyRole": "すべてのロール"
+      }
+    },
+    "user": {
+      "title": "ユーザー",
+      "back": "← ユーザー一覧",
+      "profile": "プロフィール",
+      "id": "ID",
+      "twoFactor": "二要素認証",
+      "hasPassword": "パスワード設定済み",
+      "updated": "更新日",
+      "setRole": "ロール",
+      "status": {
+        "banned": "ユーザーを利用停止にし、すべての端末からサインアウトさせました。",
+        "unbanned": "利用停止を解除しました。",
+        "roleSet": "ロールを更新しました。",
+        "sessionsRevoked": "すべてのセッションを無効にしました。",
+        "sessionRevoked": "セッションを無効にしました。"
+      },
+      "ban": {
+        "title": "利用停止",
+        "notBanned": "このユーザーは利用停止されていません。利用停止にするとすべての端末からサインアウトされます。",
+        "reason": "理由",
+        "reasonPlaceholder": "利用停止の理由を入力",
+        "expires": "期限",
+        "permanent": "なし（無期限）",
+        "submit": "利用停止にする",
+        "update": "利用停止を更新",
+        "unban": "利用停止を解除",
+        "expiry": {
+          "hour": "1時間",
+          "day": "1日",
+          "week": "7日",
+          "month": "30日",
+          "permanent": "無期限"
+        }
+      },
+      "sessions": {
+        "title": "有効なセッション",
+        "empty": "有効なセッションはありません。",
+        "expires": "有効期限",
+        "ip": "IPアドレス",
+        "userAgent": "ユーザーエージェント",
+        "revoke": "無効にする",
+        "revokeAll": "すべてのセッションを無効にする"
+      }
+    },
+    "admins": {
+      "title": "管理者",
+      "subtitle": "このダッシュボードを利用できるメンバー。",
+      "twoFactorOn": "有効",
+      "twoFactorOff": "無効",
+      "active": "有効",
+      "pending": "招待中",
+      "inviteSent": "{0} に招待を送信しました",
+      "invite": {
+        "title": "管理者を招待",
+        "description": "パスワード設定用のリンクがメールで届きます。",
+        "name": "名前（任意）",
+        "submit": "招待を送信",
+        "sending": "送信中..."
+      }
+    },
+    "audit": {
+      "title": "監査ログ",
+      "subtitle": "管理者のすべての操作（新しい順）。",
+      "action": "操作",
+      "allActions": "すべての操作",
+      "time": "日時",
+      "actor": "管理者",
+      "target": "対象",
+      "details": "詳細",
+      "empty": "まだ記録はありません。",
+      "actions": {
+        "userBan": "ユーザーを利用停止",
+        "userUnban": "利用停止を解除",
+        "userSetRole": "ロールを変更",
+        "userRevokeSession": "セッションを無効化",
+        "userRevokeSessions": "全セッションを無効化",
+        "adminInvite": "管理者を招待",
+        "adminBootstrap": "最初の管理者を作成"
+      }
+    },
+    "analytics": {
+      "title": "分析",
+      "subtitle": "アプリの主要な数値。",
+      "placeholder": "このページは仮のものです。数値はアプリのデータベースを集計しただけのもので、services.Analytics ポートを通して提供されています。このページを変えずに、ポートの実装を本格的な分析基盤（PostHog やデータウェアハウスなど）に差し替えてください。",
+      "totalUsers": "総ユーザー数",
+      "verifiedUsers": "確認済みユーザー",
+      "bannedUsers": "利用停止中のユーザー",
+      "newUsers7d": "過去7日間の新規ユーザー",
+      "activeSessions": "有効なセッション",
+      "generatedAt": "集計日時"
+    }
+  },
+  "errors": {
+    "invalidCredentials": "無効な認証情報",
+    "invalidCode": "コードが正しくありません。もう一度お試しください。",
+    "invalidToken": "このリンクは無効か、有効期限が切れています。管理者に招待の再送を依頼してください。",
+    "passwordPolicy": "パスワードは8文字以上である必要があります",
+    "invalidPassword": "パスワードが正しくありません",
+    "challengeExpired": "サインインの有効期限が切れました。もう一度サインインしてください。",
+    "tooManyRequests": "試行回数が多すぎます。しばらく待ってから再度お試しください。",
+    "userNotFound": "ユーザーが見つかりません",
+    "sessionNotFound": "そのセッションはすでに存在しません。",
+    "invalidRole": "不明なロールです",
+    "roleUnchanged": "このユーザーはすでにこのロールです。",
+    "userNotBanned": "このユーザーは利用停止されていません。",
+    "adminExists": "この人はすでに管理者です。",
+    "twoFactorRequired": "二要素認証が必要です。",
+    "forbidden": "この操作は許可されていません。",
+    "invalidInput": "入力内容を確認して、もう一度お試しください。",
+    "somethingWentWrong": "問題が発生しました。もう一度お試しください。"
+  }
+}
