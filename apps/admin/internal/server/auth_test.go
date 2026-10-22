@@ -2,16 +2,23 @@ package server
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha1" //nolint:gosec // TOTP (RFC 6238) is HMAC-SHA-1
+	"encoding/base32"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -108,13 +115,15 @@ func newWired(t *testing.T) *wired {
 
 	auditLog := adminrepo.NewAuditLog(adminPool)
 	var p services.Policy
-	adminSvc := services.NewAdminService(NewAdminAccounts(admins), auditLog, p)
+	adminStore := adminrepo.NewAdmins(adminPool)
+	adminSvc := services.NewAdminService(NewAdminAccounts(admins, adminStore), auditLog, p)
 	callers := NewCallers(admins)
 	h := New(Deps{
-		Config: config.Config{TrustedOrigins: []string{adminOrigin}},
-		Log:    log,
-		DBs:    map[string]Pinger{"app": appPool, "admin": adminPool},
-		Auth:   admins,
+		Config:     config.Config{TrustedOrigins: []string{adminOrigin}},
+		Log:        log,
+		DBs:        map[string]Pinger{"app": appPool, "admin": adminPool},
+		Auth:       admins,
+		AuthEvents: NewAuthEvents(services.NewAuthEventService(adminStore, auditLog), log),
 		API: []Router{
 			api.NewUsers(services.NewUserService(NewUserDirectory(auth.NewUserAdmin(appPool)), auditLog, p), callers.API),
 			api.NewAdmins(adminSvc, callers.API),
@@ -133,6 +142,55 @@ func (w *wired) appSignedIn(token string) bool {
 	req.Header.Set("Authorization", "Bearer "+token)
 	rec := serve(w.app.Middleware(w.app.Handler()), req)
 	return rec.Code == http.StatusOK && strings.TrimSpace(rec.Body.String()) != "null"
+}
+
+// raw sends one JSON request to the admin app with optional headers.
+func (w *wired) raw(method, path, body string, headers ...string) *httptest.ResponseRecorder {
+	w.t.Helper()
+	req := httptest.NewRequest(method, adminOrigin+path, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	for i := 0; i+1 < len(headers); i += 2 {
+		req.Header.Set(headers[i], headers[i+1])
+	}
+	return serve(w.admin, req)
+}
+
+// auditActions lists the audit log's actions (newest first) about target,
+// with their details.
+func (w *wired) auditActions(bearer, target string) []string {
+	w.t.Helper()
+	var page struct{ Data services.AuditPage }
+	w.do("GET", config.APIRoutes.Audit+"?limit=100&targetId="+url.QueryEscape(target), "", bearer, 200, &page)
+	var out []string
+	for _, e := range page.Data.Entries {
+		keys := make([]string, 0, len(e.Details))
+		for k := range e.Details {
+			keys = append(keys, k)
+		}
+		slices.Sort(keys)
+		line := e.Action
+		for _, k := range keys {
+			line += " " + k + "=" + e.Details[k]
+		}
+		out = append(out, line)
+	}
+	return out
+}
+
+// totp is RFC 6238 (SHA-1, 30 s, 6 digits) for step offset steps from now.
+func totp(t *testing.T, secret string, offset int64) string {
+	t.Helper()
+	key, err := base32.StdEncoding.WithPadding(base32.NoPadding).DecodeString(strings.ToUpper(strings.TrimRight(secret, "=")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var msg [8]byte
+	binary.BigEndian.PutUint64(msg[:], uint64(time.Now().Unix()/30+offset)) //nolint:gosec // positive
+	mac := hmac.New(sha1.New, key)
+	mac.Write(msg[:])
+	sum := mac.Sum(nil)
+	o := sum[len(sum)-1] & 0xf
+	return fmt.Sprintf("%06d", (binary.BigEndian.Uint32(sum[o:])&0x7fffffff)%1_000_000)
 }
 
 // do sends one request to the admin app and decodes the body into out (if set).
@@ -295,4 +353,102 @@ func TestAdminIsolation(t *testing.T) {
 		t.Fatalf("invited = %+v", invited.Data)
 	}
 	w.do("POST", config.APIRoutes.AdminInvites, `{"email":"root@example.com"}`, root, 409, nil)
+}
+
+// TestAdminManagement: disabling an admin kills their sessions and refuses
+// their sign-in until they are enabled; removing deletes them; nobody acts on
+// themselves; every step is audited. The bootstrap admin's first invite is
+// not reported as a resend.
+func TestAdminManagement(t *testing.T) {
+	t.Parallel()
+	w := newWired(t)
+	root := w.inviteAdmin("root@example.com", "admin-password-1")
+
+	var admins struct{ Data []services.Admin }
+	w.do("GET", config.APIRoutes.Admins, "", root, 200, &admins)
+	rootID := admins.Data[0].ID
+	if got := w.auditActions(root, rootID); !slices.Contains(got, "admin.invite") || slices.Contains(got, "admin.invite resent=true") {
+		t.Fatalf("bootstrap admin's first invite: %v", got)
+	}
+
+	var eve struct{ Data services.Admin }
+	w.do("POST", config.APIRoutes.AdminInvites, `{"email":"eve@example.com"}`, root, 200, &eve)
+	_ = w.admins.Shutdown(context.Background()) // flush the invite email
+	link, _ := url.Parse(w.mail.link(t, "eve@example.com"))
+	var set struct{ Token string }
+	w.do("POST", "/api/auth/set-password", `{"token":"`+link.Path[strings.LastIndex(link.Path, "/")+1:]+`","newPassword":"eve-password-1"}`, "", 200, &set)
+	eveToken := set.Token
+
+	w.do("POST", config.AdminPath(rootID, "/disable"), "", root, 400, nil) // yourself
+	w.do("DELETE", config.AdminPath(rootID, ""), "", root, 400, nil)
+	w.do("POST", config.AdminPath("missing", "/disable"), "", root, 404, nil)
+
+	w.do("POST", config.AdminPath(eve.Data.ID, "/disable"), "", root, 200, nil)
+	w.do("GET", config.APIRoutes.Users, "", eveToken, 401, nil) // sessions revoked
+	if rec := w.raw("POST", "/api/auth/sign-in/email", `{"email":"eve@example.com","password":"eve-password-1"}`); rec.Code == 200 {
+		t.Fatalf("disabled admin signed in: %s", rec.Body)
+	}
+	w.do("POST", config.AdminPath(eve.Data.ID, "/disable"), "", root, 400, nil) // already disabled
+	w.do("POST", config.AdminPath(eve.Data.ID, "/enable"), "", root, 200, nil)
+	if rec := w.raw("POST", "/api/auth/sign-in/email", `{"email":"eve@example.com","password":"eve-password-1"}`); rec.Code != 200 {
+		t.Fatalf("enabled admin sign-in: %d %s", rec.Code, rec.Body)
+	}
+	w.do("DELETE", config.AdminPath(eve.Data.ID, ""), "", root, 200, nil)
+	w.do("GET", config.APIRoutes.Admins, "", root, 200, &admins)
+	if len(admins.Data) != 1 {
+		t.Fatalf("admins after remove = %+v", admins.Data)
+	}
+
+	want := []string{"admin.remove", "admin.sign_in method=password", "admin.enable", "admin.disable", "admin.sign_in method=set_password", "admin.invite"}
+	if got := w.auditActions(root, eve.Data.ID); !slices.Equal(got, want) {
+		t.Fatalf("eve's audit trail = %v\nwant %v", got, want)
+	}
+}
+
+// TestAuthEvents: JSON sign-in, failed and successful 2FA and sign-out are
+// audited for the admin they belong to.
+func TestAuthEvents(t *testing.T) {
+	t.Parallel()
+	w := newWired(t)
+	root := w.inviteAdmin("root@example.com", "admin-password-1")
+	var admins struct{ Data []services.Admin }
+	w.do("GET", config.APIRoutes.Admins, "", root, 200, &admins)
+	rootID := admins.Data[0].ID
+
+	ctx := context.Background()
+	setup, err := w.admins.EnableTwoFactor(ctx, rootID, "admin-password-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := w.admins.ConfirmTwoFactor(ctx, rootID, totp(t, setup.Secret, 0)); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := w.raw("POST", "/api/auth/sign-in/email", `{"email":"root@example.com","password":"admin-password-1"}`)
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), "twoFactorRedirect") {
+		t.Fatalf("sign-in with 2FA: %d %s", rec.Code, rec.Body)
+	}
+	var challenge string
+	for _, c := range rec.Result().Cookies() {
+		if strings.HasSuffix(c.Name, "two_factor") {
+			challenge = c.Name + "=" + c.Value
+		}
+	}
+	if rec := w.raw("POST", "/api/auth/two-factor/verify-totp", `{"code":"000000"}`, "Cookie", challenge, "Origin", adminOrigin); rec.Code == 200 {
+		t.Fatalf("wrong code accepted: %s", rec.Body)
+	}
+	rec = w.raw("POST", "/api/auth/two-factor/verify-totp", `{"code":"`+totp(t, setup.Secret, 1)+`"}`, "Cookie", challenge, "Origin", adminOrigin)
+	var signedIn struct{ Token string }
+	if err := json.Unmarshal(rec.Body.Bytes(), &signedIn); rec.Code != 200 || err != nil || signedIn.Token == "" {
+		t.Fatalf("verify-totp: %d %s", rec.Code, rec.Body)
+	}
+	if rec := w.raw("POST", "/api/auth/sign-out", "", "Authorization", "Bearer "+signedIn.Token, "Origin", adminOrigin); rec.Code != 200 {
+		t.Fatalf("sign-out: %d %s", rec.Code, rec.Body)
+	}
+
+	got := w.auditActions(root, rootID)
+	want := []string{"admin.sign_out", "admin.sign_in method=two_factor", "admin.two_factor_failed failures=1", "admin.sign_in method=set_password"}
+	if len(got) < len(want) || !slices.Equal(got[:len(want)], want) {
+		t.Fatalf("root's audit trail = %v\nwant it to start with %v", got, want)
+	}
 }

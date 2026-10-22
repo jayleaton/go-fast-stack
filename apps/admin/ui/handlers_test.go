@@ -412,13 +412,22 @@ func TestTwoFactor(t *testing.T) {
 	assertPage(t, e.do("POST", config.AppRoutes.TwoFactor, url.Values{"code": {"1"}, "method": {"backup_code"}}), http.StatusUnprocessableEntity, "That code is not valid", `value="backup_code" checked`)
 }
 
+// qrSVG and qrFinder pin the inline QR code: the SVG element, and the top
+// row of the top-left finder pattern (7 dark modules after the 4-module quiet
+// zone) at the start of its one path.
+const (
+	qrSVG    = `data-testid="totp-qr"`
+	qrFinder = `<path d="M4 4h7v1h-7z`
+)
+
 var totp = ui.TOTPSetup{Secret: "JBSWY3DPEHPK3PXP", URI: "otpauth://totp/Acme:root?secret=JBSWY3DPEHPK3PXP", BackupCodes: []string{"aaaa-1111", "bbbb-2222"}}
 
 func TestTwoFactorSetupSignedOut(t *testing.T) {
 	e := newEnv(t)
 	e.auth.EXPECT().StartTwoFactorSetup(gomock.Any()).Return(totp, nil)
 	assertPage(t, e.do("GET", config.AppRoutes.TwoFactorSetup, nil), http.StatusOK,
-		"JBSW Y3DP EHPK 3PXP", `href="otpauth://totp/Acme:root?secret=JBSWY3DPEHPK3PXP"`, "aaaa-1111", "bbbb-2222", "shown only once", `name="code"`)
+		"JBSW Y3DP EHPK 3PXP", `href="otpauth://totp/Acme:root?secret=JBSWY3DPEHPK3PXP"`, "aaaa-1111", "bbbb-2222", "shown only once", `name="code"`,
+		qrSVG, `aria-label="QR code for your authenticator app"`, qrFinder)
 
 	e.auth.EXPECT().StartTwoFactorSetup(gomock.Any()).Return(ui.TOTPSetup{}, ui.ErrChallengeExpired)
 	assertPage(t, e.do("GET", config.AppRoutes.TwoFactorSetup, nil, lang("ja")), http.StatusOK, "サインインの有効期限が切れました", `href="/login"`)
@@ -437,7 +446,7 @@ func TestTwoFactorSetupSignedOut(t *testing.T) {
 	// Without JS the page comes back with the secret (from the form), not the backup codes.
 	e.auth.EXPECT().VerifyTwoFactor(gomock.Any(), gomock.Any()).Return(ui.Session{}, "", ui.ErrInvalidCode)
 	rec := e.do("POST", config.AppRoutes.TwoFactorSetup, code)
-	assertPage(t, rec, http.StatusUnprocessableEntity, "That code is not valid", "JBSW Y3DP EHPK 3PXP")
+	assertPage(t, rec, http.StatusUnprocessableEntity, "That code is not valid", "JBSW Y3DP EHPK 3PXP", qrSVG, qrFinder)
 	if strings.Contains(rec.Body.String(), "aaaa-1111") {
 		t.Error("backup codes shown twice")
 	}
@@ -450,6 +459,10 @@ func TestTwoFactorSetupSignedOut(t *testing.T) {
 	if strings.Contains(rec.Body.String(), `href="javascript`) {
 		t.Error("untrusted uri linked")
 	}
+	if strings.Contains(rec.Body.String(), qrSVG) {
+		t.Error("untrusted uri encoded as a QR code")
+	}
+	assertPage(t, rec, http.StatusUnprocessableEntity, `data-testid="totp-secret"`)
 }
 
 func TestTwoFactorSetupSignedIn(t *testing.T) {
@@ -463,9 +476,9 @@ func TestTwoFactorSetupSignedIn(t *testing.T) {
 	e.auth.EXPECT().EnableTwoFactor(gomock.Any(), "a1", "wrong").Return(ui.TOTPSetup{}, ui.ErrInvalidPassword)
 	assertSSE(t, e.do("POST", routes.EnableTwoFactor, url.Values{"password": {"wrong"}}, datastar, noTwoFAActor), `id="form-error"`, "Incorrect password")
 	e.auth.EXPECT().EnableTwoFactor(gomock.Any(), "a1", "pw").Return(totp, nil)
-	assertSSE(t, e.do("POST", routes.EnableTwoFactor, url.Values{"password": {"pw"}}, datastar, noTwoFAActor), `id="two-factor-setup"`, "JBSW Y3DP EHPK 3PXP", "aaaa-1111")
+	assertSSE(t, e.do("POST", routes.EnableTwoFactor, url.Values{"password": {"pw"}}, datastar, noTwoFAActor), `id="two-factor-setup"`, "JBSW Y3DP EHPK 3PXP", "aaaa-1111", qrSVG, qrFinder)
 	e.auth.EXPECT().EnableTwoFactor(gomock.Any(), "a1", "pw").Return(totp, nil)
-	assertPage(t, e.do("POST", routes.EnableTwoFactor, url.Values{"password": {"pw"}}, noTwoFAActor), http.StatusOK, "aaaa-1111")
+	assertPage(t, e.do("POST", routes.EnableTwoFactor, url.Values{"password": {"pw"}}, noTwoFAActor, lang("ja")), http.StatusOK, "aaaa-1111", qrSVG, qrFinder, `aria-label="認証アプリ用のQRコード"`)
 	assertRedirectScript(t, e.do("POST", routes.EnableTwoFactor, url.Values{"password": {"pw"}}, datastar), config.AppRoutes.Login)
 
 	code := url.Values{"code": {"111222"}, "secret": {totp.Secret}, "uri": {totp.URI}}
@@ -622,6 +635,166 @@ func TestInviteAdmin(t *testing.T) {
 	if strings.Contains(rec.Body.String(), `id="admins-table"`) {
 		t.Error("patched a table it could not load")
 	}
+}
+
+func TestAdminsPageRowActions(t *testing.T) {
+	e := newEnv(t)
+	e.admins.EXPECT().ListAdmins(gomock.Any(), actor).Return([]services.Admin{
+		{ID: "a1", Email: "root@example.com", HasPassword: true, TwoFactorEnabled: true},
+		{ID: "a2", Email: "active@example.com", HasPassword: true},
+		{ID: "a3", Email: "pending@example.com"},
+		{ID: "a4", Email: "off@example.com", HasPassword: true, Disabled: true},
+	}, nil).Times(2)
+	rec := e.do("GET", config.AppRoutes.Admins, nil, signedIn)
+	assertPage(t, rec, http.StatusOK, `id="admins-status"`, "Invite pending", "Disabled", ">You<",
+		`action="/admins/a2/disable"`, `action="/admins/a2/remove"`,
+		`action="/admins/a3/disable"`, `action="/admins/a3/remove"`,
+		`action="/admins/a4/enable"`, `action="/admins/a4/remove"`,
+		// Remove asks first with JS; the plain form posts as is.
+		`data-on:submit="confirm(&#34;Remove active@example.com? They lose access to the dashboard right away. This cannot be undone.&#34;) &amp;&amp; @post(&#39;/admins/a2/remove&#39;, {contentType: &#39;form&#39;})"`,
+		"data-indicator:_disabling", "data-indicator:_enabling", "data-indicator:_removing")
+	body := rec.Body.String()
+	for _, absent := range []string{"/admins/a1/", `action="/admins/a2/enable"`, `action="/admins/a3/enable"`, `action="/admins/a4/disable"`} {
+		if strings.Contains(body, absent) {
+			t.Errorf("admins page has %q", absent)
+		}
+	}
+	assertPage(t, e.do("GET", config.AppRoutes.Admins, nil, signedIn, lang("ja")), http.StatusOK,
+		"無効化済み", "招待中", ">あなた<", ">無効化<", ">有効化<", ">削除<", "active@example.com を削除しますか？")
+}
+
+type adminAction struct {
+	name   string
+	path   func(id string) string
+	expect func(e *env, id string) *gomock.Call // the service call
+	done   string
+}
+
+func adminActions() []adminAction {
+	return []adminAction{
+		{"disable", func(id string) string { return routes.Admin(routes.AdminDisable, id) }, func(e *env, id string) *gomock.Call {
+			return e.admins.EXPECT().DisableAdmin(gomock.Any(), actor, id)
+		}, "Admin disabled and signed out everywhere."},
+		{"enable", func(id string) string { return routes.Admin(routes.AdminEnable, id) }, func(e *env, id string) *gomock.Call {
+			return e.admins.EXPECT().EnableAdmin(gomock.Any(), actor, id)
+		}, "Admin enabled. They can sign in again."},
+		{"remove", func(id string) string { return routes.Admin(routes.AdminRemove, id) }, func(e *env, id string) *gomock.Call {
+			return e.admins.EXPECT().RemoveAdmin(gomock.Any(), actor, id)
+		}, "Admin removed."},
+	}
+}
+
+func TestAdminActions(t *testing.T) {
+	refreshed := []services.Admin{
+		{ID: "a1", Email: "root@example.com", HasPassword: true},
+		{ID: "a2", Email: "other@example.com", HasPassword: true, Disabled: true},
+	}
+	for _, a := range adminActions() {
+		t.Run(a.name, func(t *testing.T) {
+			e := newEnv(t)
+			path := a.path("a2")
+			// no session
+			assertRedirectScript(t, e.do("POST", path, url.Values{}, datastar), config.AppRoutes.Login)
+			assertSeeOther(t, e.do("POST", path, url.Values{}), config.AppRoutes.Login)
+
+			// happy path: refreshed table + status (Datastar), 303 (plain)
+			a.expect(e, "a2").Return(nil).Times(2)
+			e.admins.EXPECT().ListAdmins(gomock.Any(), actor).Return(refreshed, nil)
+			rec := e.do("POST", path, url.Values{}, datastar, signedIn)
+			assertSSE(t, rec, `id="admins-table"`, `id="admins-status"`, `role="status"`, a.done, "other@example.com", `action="/admins/a2/enable"`)
+			if strings.Contains(rec.Body.String(), "/admins/a1/") {
+				t.Error("refreshed table offers actions on the signed-in admin")
+			}
+			assertSeeOther(t, e.do("POST", path, url.Values{}, signedIn), config.AppRoutes.Admins)
+
+			// every service error is translated
+			for _, c := range []struct {
+				err    error
+				en, ja string
+			}{
+				{services.ErrAdminNotFound, "Admin not found.", "管理者が見つかりません。"},
+				{services.ErrAdminSelf, "You cannot disable or remove yourself.", "自分自身を無効化または削除することはできません。"},
+				{services.ErrLastAdmin, "The last active admin cannot be disabled or removed.", "最後の有効な管理者は無効化または削除できません。"},
+				{services.ErrAdminDisabled, "This admin is already disabled.", "この管理者はすでに無効化されています。"},
+				{services.ErrAdminNotDisabled, "This admin is not disabled.", "この管理者は無効化されていません。"},
+				{services.ErrForbidden, "You are not allowed to do that.", "この操作は許可されていません。"},
+			} {
+				a.expect(e, "a2").Return(c.err).Times(2)
+				assertSSE(t, e.do("POST", path, url.Values{}, datastar, signedIn), `id="admins-status"`, `role="alert"`, c.en)
+				assertSSE(t, e.do("POST", path, url.Values{}, datastar, signedIn, lang("ja")), c.ja)
+			}
+
+			// the signed-in admin's own row: the service refuses
+			a.expect(e, "a1").Return(services.ErrAdminSelf)
+			assertSSE(t, e.do("POST", a.path("a1"), url.Values{}, datastar, signedIn), "You cannot disable or remove yourself.")
+
+			// plain post error: the full page with the alert and the table
+			a.expect(e, "a2").Return(errBoom)
+			e.admins.EXPECT().ListAdmins(gomock.Any(), actor).Return(refreshed, nil)
+			assertPage(t, e.do("POST", path, url.Values{}, signedIn), http.StatusUnprocessableEntity, "Something went wrong", `id="admins-table"`, "other@example.com")
+			a.expect(e, "a2").Return(services.ErrLastAdmin)
+			e.admins.EXPECT().ListAdmins(gomock.Any(), actor).Return(nil, errBoom)
+			assertPage(t, e.do("POST", path, url.Values{}, signedIn, lang("ja")), http.StatusUnprocessableEntity, "最後の有効な管理者")
+
+			// 2FA required: off to enrolment
+			a.expect(e, "a2").Return(services.ErrTwoFactorRequired).Times(2)
+			assertRedirectScript(t, e.do("POST", path, url.Values{}, datastar, signedIn), config.AppRoutes.TwoFactorSetup)
+			assertSeeOther(t, e.do("POST", path, url.Values{}, signedIn), config.AppRoutes.TwoFactorSetup)
+
+			// reload after success failed: the status still shows
+			a.expect(e, "a2").Return(nil)
+			e.admins.EXPECT().ListAdmins(gomock.Any(), actor).Return(nil, errBoom)
+			rec = e.do("POST", path, url.Values{}, datastar, signedIn)
+			assertSSE(t, rec, `id="admins-status"`, a.done)
+			if strings.Contains(rec.Body.String(), `id="admins-table"`) {
+				t.Error("patched a table it could not load")
+			}
+		})
+	}
+}
+
+func TestAdminActionsRejectCrossOrigin(t *testing.T) {
+	e := newEnv(t)
+	for _, a := range adminActions() {
+		rec := e.do("POST", a.path("a2"), url.Values{}, signedIn, func(r *http.Request) { r.Header.Set("Sec-Fetch-Site", "cross-site") })
+		if rec.Code != http.StatusForbidden {
+			t.Errorf("%s: cross-site post %d", a.name, rec.Code)
+		}
+	}
+}
+
+func TestAuditAdminActions(t *testing.T) {
+	e := newEnv(t)
+	entry := func(action string, d map[string]string) services.AuditEntry {
+		return services.AuditEntry{Action: action, ActorEmail: "root@example.com", TargetType: services.TargetAdmin, TargetID: "a2", TargetLabel: "other@example.com", Details: d, CreatedAt: created}
+	}
+	page := services.AuditPage{Entries: []services.AuditEntry{
+		entry(services.ActionAdminDisable, nil),
+		entry(services.ActionAdminEnable, nil),
+		entry(services.ActionAdminRemove, nil),
+		entry(services.ActionAdminSignIn, map[string]string{"method": services.SignInPassword}),
+		entry(services.ActionAdminSignIn, map[string]string{"method": services.SignInTwoFactor}),
+		entry(services.ActionAdminSignIn, map[string]string{"method": services.SignInSetPassword}),
+		entry(services.ActionAdminSignIn, map[string]string{"method": "passkey"}),
+		entry(services.ActionAdminSignOut, nil),
+		entry(services.ActionAdminTwoFactorFailed, map[string]string{"failures": "3"}),
+		entry("admin.something_new", map[string]string{"k": "v"}),
+	}, Total: 10, Limit: 25}
+	e.audit.EXPECT().List(gomock.Any(), actor, gomock.Any()).Return(page, nil).Times(2)
+	assertPage(t, e.do("GET", config.AppRoutes.Audit, nil, signedIn), http.StatusOK,
+		">Disabled admin<", ">Enabled admin<", ">Removed admin<", ">Signed in<", ">Signed out<", ">Failed two-factor code<",
+		"Method: password<", "Method: password + two-factor<", "Method: set-password link<", "Method: passkey<",
+		"Failed attempts in a row: 3<", ">admin.something_new<", "k: v<",
+		`<option value="admin.disable">Disabled admin</option>`, `<option value="admin.sign_in">Signed in</option>`,
+		`<option value="admin.two_factor_failed">Failed two-factor code</option>`)
+	assertPage(t, e.do("GET", config.AppRoutes.Audit, nil, signedIn, lang("ja")), http.StatusOK,
+		">管理者を無効化<", ">管理者を有効化<", ">管理者を削除<", ">サインイン<", ">サインアウト<", ">二要素認証コードの誤り<",
+		"方法: パスワード<", "方法: パスワード + 二要素認証<", "方法: パスワード設定リンク<", "連続失敗回数: 3<",
+		`<option value="admin.sign_out">サインアウト</option>`)
+
+	// The filter passes the new actions through.
+	e.audit.EXPECT().List(gomock.Any(), actor, validate.ListAuditLog{Action: services.ActionAdminSignIn, Limit: 25}).Return(services.AuditPage{Limit: 25}, nil)
+	assertPage(t, e.do("GET", config.AppRoutes.Audit+"?action=admin.sign_in", nil, signedIn), http.StatusOK, `<option value="admin.sign_in" selected>`)
 }
 
 // --- shell ---

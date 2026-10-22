@@ -3,14 +3,17 @@ package ui
 import (
 	"context"
 	"errors"
+	"image/color"
 	"io"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/a-h/templ"
 	templruntime "github.com/a-h/templ/runtime"
+	"github.com/boombuler/barcode/qr"
 
 	"github.com/jayleaton/ai-patterns-go/apps/admin/internal/services"
 	"github.com/jayleaton/ai-patterns-go/apps/admin/ui/i18n"
@@ -63,6 +66,7 @@ func renderCases() []renderCase {
 		{"two factor backup", false, TwoFactorPage(TwoFactorForm{Backup: true, Trust: true, Error: "x"}), "pages.twoFactor.backupCodeLabel"},
 		{"two factor expired", false, TwoFactorPage(TwoFactorForm{Expired: true, Error: "x"}), "common.backToLogin"},
 		{"setup challenge", false, TwoFactorSetupPage(SetupState{Required: true, Setup: setup}), "pages.twoFactorSetup.backupCodesHint"},
+		{"setup no qr", false, TwoFactorSetupPage(SetupState{Required: true, Setup: &TOTPSetup{Secret: "ABCDEFGH", URI: "not-otpauth"}}), "pages.twoFactorSetup.manualEntry"},
 		{"setup expired", false, TwoFactorSetupPage(SetupState{Expired: true}), "errors.challengeExpired"},
 		{"setup password", true, TwoFactorSetupPage(SetupState{SignedIn: true}), "pages.twoFactorSetup.start"},
 		{"setup password required", true, TwoFactorSetupPage(SetupState{SignedIn: true, Required: true}), "pages.twoFactorSetup.required"},
@@ -76,9 +80,18 @@ func renderCases() []renderCase {
 		{"user not banned", true, UserPage(UserData{Detail: services.UserDetail{User: usr}, Status: Status{Message: "ok"}}), "pages.user.ban.notBanned"},
 		{"user missing", true, UserPage(UserData{Missing: true, Status: Status{Error: true, Message: "x"}}), "pages.user.back"},
 		{"admins", true, AdminsPage(AdminsData{Admins: []services.Admin{{Email: "a@b.c", HasPassword: true, TwoFactorEnabled: true}, {Email: "p@b.c"}}}), "pages.admins.pending"},
+		{"admins actions", true, AdminsPage(AdminsData{SelfID: "a1", Admins: []services.Admin{{ID: "a1", Email: "a@b.c", HasPassword: true}, {ID: "a2", Email: "d@b.c", HasPassword: true, Disabled: true}, {ID: "a3", Email: "e@b.c", HasPassword: true}}}), "pages.admins.disabled"},
+		{"admins self", true, AdminsPage(AdminsData{SelfID: "a1", Admins: []services.Admin{{ID: "a1", Email: "a@b.c", HasPassword: true}}}), "pages.admins.you"},
+		{"admins status", true, AdminsPage(AdminsData{Status: Status{Message: "ok"}}), "pages.admins.actions"},
+		{"admins status error", true, AdminsPage(AdminsData{Status: Status{Error: true, Message: "x"}}), "pages.admins.title"},
 		{"admins sent", true, AdminsPage(AdminsData{Invite: InviteState{Sent: "sent"}}), "pages.admins.invite.title"},
 		{"admins error", true, AdminsPage(AdminsData{Error: "x"}), "pages.admins.invite.submit"},
 		{"audit", true, AuditPage(AuditData{Entries: []services.AuditEntry{{Action: services.ActionAdminInvite, TargetType: services.TargetAdmin, TargetLabel: "a@b.c", CreatedAt: at}}, Pager: pager}), "pages.audit.actions.adminInvite"},
+		{"audit admin actions", true, AuditPage(AuditData{Entries: []services.AuditEntry{
+			{Action: services.ActionAdminSignIn, TargetType: services.TargetAdmin, Details: map[string]string{"method": services.SignInTwoFactor}, CreatedAt: at},
+			{Action: services.ActionAdminTwoFactorFailed, TargetType: services.TargetAdmin, Details: map[string]string{"failures": "2"}, CreatedAt: at},
+			{Action: services.ActionAdminRemove, TargetType: services.TargetAdmin, CreatedAt: at},
+		}}), "pages.audit.methods.twoFactor"},
 		{"audit empty", true, AuditPage(AuditData{Filters: AuditFilters{TargetID: "u1"}}), "pages.audit.empty"},
 		{"audit error", true, AuditPage(AuditData{Error: "x"}), "pages.audit.title"},
 		{"analytics", true, AnalyticsPage(AnalyticsData{Overview: services.Overview{TotalUsers: 3, GeneratedAt: at}}), "pages.analytics.placeholder"},
@@ -131,6 +144,7 @@ func TestFormsHaveLoadingIndicators(t *testing.T) {
 		LoginPage(AuthForm{}), SetPasswordPage("t", AuthForm{}), TwoFactorPage(TwoFactorForm{}),
 		TwoFactorSetupPage(SetupState{SignedIn: true}), TwoFactorSetupPage(SetupState{Setup: &TOTPSetup{}}),
 		UserPage(UserData{Detail: detail}), AdminsPage(AdminsData{}),
+		AdminsPage(AdminsData{SelfID: "a1", Admins: []services.Admin{{ID: "a1"}, {ID: "a2", HasPassword: true}, {ID: "a3", Disabled: true}, {ID: "a4"}}}),
 	} {
 		html := renderIn(t, i18n.En, view.State{Authenticated: true}, c)
 		forms := strings.Count(html, `method="post"`) - 2 // the logout and locale forms in the header
@@ -202,5 +216,74 @@ func TestSection(t *testing.T) {
 		if got := section(path); got != want {
 			t.Errorf("section(%q) = %q, want %q", path, got, want)
 		}
+	}
+}
+
+// qrRun is one rectangle of a QR path: "M{x} {y}h{w}v1h-{w}z".
+var qrRun = regexp.MustCompile(`M(\d+) (\d+)h(\d+)v1h-(\d+)z`)
+
+// TestTOTPQR redraws the SVG path module by module and compares it with the
+// encoder's matrix, quiet zone included.
+func TestTOTPQR(t *testing.T) {
+	uri := "otpauth://totp/Acme:root%40example.com?secret=JBSWY3DPEHPK3PXP&issuer=Acme"
+	q, ok := totpQR(uri)
+	if !ok {
+		t.Fatal("no QR code for a valid otpauth URI")
+	}
+	want, err := qr.Encode(uri, qr.M, qr.Auto)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := want.Bounds().Dx()
+	if q.Size != n+2*qrQuietZone || q.ViewBox() != "0 0 "+strconv.Itoa(q.Size)+" "+strconv.Itoa(q.Size) {
+		t.Fatalf("size %d, viewBox %q, want %d modules + quiet zone", q.Size, q.ViewBox(), n)
+	}
+	// Only runs, so nothing of the URI (the secret) is in the page twice.
+	if strings.Join(qrRun.FindAllString(q.Path, -1), "") != q.Path {
+		t.Fatalf("path has segments that are not runs: %.80q", q.Path)
+	}
+	got := map[[2]int]bool{}
+	runs := qrRun.FindAllStringSubmatch(q.Path, -1)
+	for _, m := range runs {
+		x, _ := strconv.Atoi(m[1])
+		y, _ := strconv.Atoi(m[2])
+		w, _ := strconv.Atoi(m[3])
+		if m[3] != m[4] || w < 1 {
+			t.Fatalf("bad run %q", m[0])
+		}
+		for i := range w {
+			got[[2]int{x + i, y}] = true
+		}
+	}
+	dark := 0
+	for y := range q.Size {
+		for x := range q.Size {
+			mx, my := x-qrQuietZone, y-qrQuietZone
+			inside := mx >= 0 && my >= 0 && mx < n && my < n
+			isDark := inside && color.GrayModel.Convert(want.At(mx, my)).(color.Gray).Y < 128
+			if isDark {
+				dark++
+			}
+			if got[[2]int{x, y}] != isDark {
+				t.Fatalf("module (%d,%d): path %v, encoder %v", x, y, got[[2]int{x, y}], isDark)
+			}
+		}
+	}
+	if dark == 0 || len(got) != dark {
+		t.Fatalf("%d dark modules drawn, %d expected", len(got), dark)
+	}
+
+	for _, bad := range []string{"", "javascript:alert(1)", "https://example.com", "otpauth://totp/x?secret=" + strings.Repeat("A", 5000)} {
+		if q, ok := totpQR(bad); ok || q.Path != "" {
+			t.Errorf("totpQR(%.40q) = ok", bad)
+		}
+	}
+}
+
+func TestConfirmPostFormEscapes(t *testing.T) {
+	got := view.ConfirmPostForm(`Remove o"brien's </script> & co?`, "/admins/x'y/remove")
+	want := `confirm("Remove o\"brien's \u003c/script\u003e \u0026 co?") && @post('/admins/x\'y/remove', {contentType: 'form'})`
+	if got != want {
+		t.Fatalf("got  %s\nwant %s", got, want)
 	}
 }

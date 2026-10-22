@@ -56,6 +56,21 @@ func (mr *MockAdminAccountsMockRecorder) AdminByEmail(ctx, email any) *gomock.Ca
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AdminByEmail", reflect.TypeOf((*MockAdminAccounts)(nil).AdminByEmail), ctx, email)
 }
 
+// AdminByID mocks base method.
+func (m *MockAdminAccounts) AdminByID(ctx context.Context, id string) (services.Admin, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AdminByID", ctx, id)
+	ret0, _ := ret[0].(services.Admin)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// AdminByID indicates an expected call of AdminByID.
+func (mr *MockAdminAccountsMockRecorder) AdminByID(ctx, id any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AdminByID", reflect.TypeOf((*MockAdminAccounts)(nil).AdminByID), ctx, id)
+}
+
 // CreateAdmin mocks base method.
 func (m *MockAdminAccounts) CreateAdmin(ctx context.Context, email, name string) (services.Admin, error) {
 	m.ctrl.T.Helper()
@@ -71,6 +86,34 @@ func (mr *MockAdminAccountsMockRecorder) CreateAdmin(ctx, email, name any) *gomo
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateAdmin", reflect.TypeOf((*MockAdminAccounts)(nil).CreateAdmin), ctx, email, name)
 }
 
+// DisableAdmin mocks base method.
+func (m *MockAdminAccounts) DisableAdmin(ctx context.Context, id string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DisableAdmin", ctx, id)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DisableAdmin indicates an expected call of DisableAdmin.
+func (mr *MockAdminAccountsMockRecorder) DisableAdmin(ctx, id any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DisableAdmin", reflect.TypeOf((*MockAdminAccounts)(nil).DisableAdmin), ctx, id)
+}
+
+// EnableAdmin mocks base method.
+func (m *MockAdminAccounts) EnableAdmin(ctx context.Context, id string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "EnableAdmin", ctx, id)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// EnableAdmin indicates an expected call of EnableAdmin.
+func (mr *MockAdminAccountsMockRecorder) EnableAdmin(ctx, id any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "EnableAdmin", reflect.TypeOf((*MockAdminAccounts)(nil).EnableAdmin), ctx, id)
+}
+
 // ListAdmins mocks base method.
 func (m *MockAdminAccounts) ListAdmins(ctx context.Context) ([]services.Admin, error) {
 	m.ctrl.T.Helper()
@@ -84,6 +127,20 @@ func (m *MockAdminAccounts) ListAdmins(ctx context.Context) ([]services.Admin, e
 func (mr *MockAdminAccountsMockRecorder) ListAdmins(ctx any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListAdmins", reflect.TypeOf((*MockAdminAccounts)(nil).ListAdmins), ctx)
+}
+
+// RemoveAdmin mocks base method.
+func (m *MockAdminAccounts) RemoveAdmin(ctx context.Context, id string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RemoveAdmin", ctx, id)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// RemoveAdmin indicates an expected call of RemoveAdmin.
+func (mr *MockAdminAccountsMockRecorder) RemoveAdmin(ctx, id any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RemoveAdmin", reflect.TypeOf((*MockAdminAccounts)(nil).RemoveAdmin), ctx, id)
 }
 
 // SendSetPasswordLink mocks base method.

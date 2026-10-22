@@ -42,6 +42,34 @@ func (m *MockAdminService) EXPECT() *MockAdminServiceMockRecorder {
 	return m.recorder
 }
 
+// DisableAdmin mocks base method.
+func (m *MockAdminService) DisableAdmin(ctx context.Context, actor services.Actor, adminID string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DisableAdmin", ctx, actor, adminID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DisableAdmin indicates an expected call of DisableAdmin.
+func (mr *MockAdminServiceMockRecorder) DisableAdmin(ctx, actor, adminID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DisableAdmin", reflect.TypeOf((*MockAdminService)(nil).DisableAdmin), ctx, actor, adminID)
+}
+
+// EnableAdmin mocks base method.
+func (m *MockAdminService) EnableAdmin(ctx context.Context, actor services.Actor, adminID string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "EnableAdmin", ctx, actor, adminID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// EnableAdmin indicates an expected call of EnableAdmin.
+func (mr *MockAdminServiceMockRecorder) EnableAdmin(ctx, actor, adminID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "EnableAdmin", reflect.TypeOf((*MockAdminService)(nil).EnableAdmin), ctx, actor, adminID)
+}
+
 // InviteAdmin mocks base method.
 func (m *MockAdminService) InviteAdmin(ctx context.Context, actor services.Actor, in validate.CreateAdminInvite) (services.Admin, error) {
 	m.ctrl.T.Helper()
@@ -70,4 +98,18 @@ func (m *MockAdminService) ListAdmins(ctx context.Context, actor services.Actor)
 func (mr *MockAdminServiceMockRecorder) ListAdmins(ctx, actor any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListAdmins", reflect.TypeOf((*MockAdminService)(nil).ListAdmins), ctx, actor)
+}
+
+// RemoveAdmin mocks base method.
+func (m *MockAdminService) RemoveAdmin(ctx context.Context, actor services.Actor, adminID string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RemoveAdmin", ctx, actor, adminID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// RemoveAdmin indicates an expected call of RemoveAdmin.
+func (mr *MockAdminServiceMockRecorder) RemoveAdmin(ctx, actor, adminID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RemoveAdmin", reflect.TypeOf((*MockAdminService)(nil).RemoveAdmin), ctx, actor, adminID)
 }

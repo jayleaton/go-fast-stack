@@ -214,6 +214,20 @@ var actionKeys = []struct{ action, key string }{
 	{services.ActionUserRevokeSessions, "pages.audit.actions.userRevokeSessions"},
 	{services.ActionAdminInvite, "pages.audit.actions.adminInvite"},
 	{services.ActionAdminBootstrap, "pages.audit.actions.adminBootstrap"},
+	{services.ActionAdminDisable, "pages.audit.actions.adminDisable"},
+	{services.ActionAdminEnable, "pages.audit.actions.adminEnable"},
+	{services.ActionAdminRemove, "pages.audit.actions.adminRemove"},
+	{services.ActionAdminSignIn, "pages.audit.actions.adminSignIn"},
+	{services.ActionAdminSignOut, "pages.audit.actions.adminSignOut"},
+	{services.ActionAdminTwoFactorFailed, "pages.audit.actions.adminTwoFactorFailed"},
+}
+
+// signInMethodKeys label the "method" detail of ActionAdminSignIn; unknown
+// methods show raw.
+var signInMethodKeys = map[string]string{
+	services.SignInPassword:    "pages.audit.methods.password",
+	services.SignInTwoFactor:   "pages.audit.methods.twoFactor",
+	services.SignInSetPassword: "pages.audit.methods.setPassword",
 }
 
 func actionLabel(ctx context.Context, action string) string {
@@ -262,6 +276,23 @@ func auditTarget(e services.AuditEntry) (href, label string) {
 		href = config.UserPage(e.TargetID)
 	}
 	return href, label
+}
+
+// auditDetails are the detail lines of an entry: the sign-in method and the
+// 2FA failure count translated, anything else as details does.
+func auditDetails(ctx context.Context, e services.AuditEntry) []string {
+	if len(e.Details) == 1 {
+		if m, ok := e.Details["method"]; ok && e.Action == services.ActionAdminSignIn {
+			if key, known := signInMethodKeys[m]; known {
+				m = i18n.T(ctx, key)
+			}
+			return []string{i18n.Tf(ctx, "pages.audit.signInMethod", m)}
+		}
+		if n, ok := e.Details["failures"]; ok && e.Action == services.ActionAdminTwoFactorFailed {
+			return []string{i18n.Tf(ctx, "pages.audit.failures", n)}
+		}
+	}
+	return details(e.Details)
 }
 
 // details renders an entry's details as "key: value" pairs, sorted by key.

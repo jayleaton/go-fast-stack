@@ -4,6 +4,7 @@ go 1.26.8
 
 require (
 	github.com/a-h/templ v0.3.1070
+	github.com/boombuler/barcode v1.1.0
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/pressly/goose/v3 v3.29.0
 	github.com/starfederation/datastar-go v1.2.2

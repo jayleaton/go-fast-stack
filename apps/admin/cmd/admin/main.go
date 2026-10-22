@@ -102,7 +102,7 @@ func migrate(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	if err := in.Validate(); err != nil {
 		return fmt.Errorf("ADMIN_BOOTSTRAP_EMAIL: %w", err)
 	}
-	svc := services.NewAdminService(server.NewAdminAccounts(admins), adminrepo.NewAuditLog(adminPool), policy(cfg))
+	svc := services.NewAdminService(server.NewAdminAccounts(admins, adminrepo.NewAdmins(adminPool)), adminrepo.NewAuditLog(adminPool), policy(cfg))
 	a, created, err := svc.Bootstrap(ctx, services.SystemActor("bootstrap"), in)
 	if err != nil {
 		return err
@@ -129,7 +129,7 @@ func invite(ctx context.Context, cfg config.Config, log *slog.Logger, email stri
 	if err := in.Validate(); err != nil {
 		return err
 	}
-	svc := services.NewAdminService(server.NewAdminAccounts(admins), adminrepo.NewAuditLog(adminPool), policy(cfg))
+	svc := services.NewAdminService(server.NewAdminAccounts(admins, adminrepo.NewAdmins(adminPool)), adminrepo.NewAuditLog(adminPool), policy(cfg))
 	a, err := svc.InviteAdmin(ctx, services.SystemActor("cli"), in)
 	if err != nil {
 		return err
@@ -161,16 +161,18 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	auditLog := adminrepo.NewAuditLog(adminPool)
 	p := policy(cfg)
 	users := services.NewUserService(server.NewUserDirectory(auth.NewUserAdmin(appPool)), auditLog, p)
-	adminSvc := services.NewAdminService(server.NewAdminAccounts(admins), auditLog, p)
+	adminSvc := services.NewAdminService(server.NewAdminAccounts(admins, adminrepo.NewAdmins(adminPool)), auditLog, p)
 	auditSvc := services.NewAuditService(auditLog, p)
 	analytics := services.NewAnalyticsService(adminrepo.NewStats(appPool), p)
 	callers := server.NewCallers(admins)
+	events := server.NewAuthEvents(services.NewAuthEventService(adminrepo.NewAdmins(adminPool), auditLog), log)
 
 	handler := server.New(server.Deps{
-		Config: cfg,
-		Log:    log,
-		DBs:    map[string]server.Pinger{"app": appPool, "admin": adminPool},
-		Auth:   admins,
+		Config:     cfg,
+		Log:        log,
+		DBs:        map[string]server.Pinger{"app": appPool, "admin": adminPool},
+		Auth:       admins,
+		AuthEvents: events,
 		API: []server.Router{
 			api.NewUsers(users, callers.API),
 			api.NewAdmins(adminSvc, callers.API),
@@ -178,7 +180,7 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 			api.NewAnalytics(analytics, callers.API),
 		},
 		UI: ui.New(ui.Deps{
-			Auth: server.NewUIAuth(admins), Users: users, Admins: adminSvc, Audit: auditSvc, Analytics: analytics,
+			Auth: server.NewUIAuth(admins, events), Users: users, Admins: adminSvc, Audit: auditSvc, Analytics: analytics,
 			UserFrom: callers.UI, RequireTwoFactor: cfg.RequireTwoFactor, AppName: cfg.AppName,
 			SecureCookies: cfg.PublicURL.Scheme == "https", Logger: log,
 		}).Handler(),

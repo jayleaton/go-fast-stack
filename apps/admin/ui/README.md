@@ -9,7 +9,7 @@ A self-contained copy of `apps/web/ui`'s patterns (same look, forms, i18n and as
 | `ui` | `ui.New(deps)` (`Routes(mux)` / `Handler()`), the ports (`Auth` in `deps.go`; `Users`, `Admins`, `Audit`, `Analytics` in `services.go`), handlers, pages |
 | `ui/view` | layout (app name, section nav, signed-in admin, logout, theme, language), inputs/selects/badges/alerts/pagination |
 | `ui/i18n` | `messages/{en,ja}.json`, locale negotiation, `i18n.T(ctx, key)` and `i18n.Tf(ctx, key, args...)` |
-| `ui/routes` | the UI's own action endpoints (logout, locale, 2FA enable, user actions, invite, static); pages use `config.AppRoutes` |
+| `ui/routes` | the UI's own action endpoints (logout, locale, 2FA enable, user actions, invite, admin disable/enable/remove, static); pages use `config.AppRoutes` |
 | `ui/static` | embedded `app.css` (generated), pinned `datastar-1.0.4.js`, favicon |
 | `ui/mocks` | mockgen output for the ports (tests only) |
 
@@ -52,11 +52,23 @@ the adapter must see the request (for example through the context its middleware
   requests get SSE (patched fragments by id, or a redirect); plain posts get the full page or a 303. Same handler:
   `u.patch` / `u.redirect`. User actions patch `#user-profile`, `#user-ban`, `#user-sessions` and `#user-status`
   from a fresh `GetUser`; the invite patches `#admins-table` and `#invite-card`.
+- **Admin management**: each row of the Admins page shows its state (active, invite pending, disabled) and the
+  actions another admin may take: disable (active or pending), enable (disabled), remove (any). The signed-in
+  admin's row shows a "you" badge and no actions; the service still refuses self and last-active-admin changes
+  (`ErrAdminSelf`, `ErrLastAdmin`). Remove asks first with `view.ConfirmPostForm` (`confirm(...) && @post`),
+  so a plain post skips the prompt. Actions patch `#admins-table` and `#admins-status`.
+- **TOTP QR code**: the 2FA setup page (both the signed-out `SetupRequired` step and signed-in enrolment) draws
+  the otpauth URI as an inline SVG on the server (`qr.go`, `github.com/boombuler/barcode/qr`): one `<path>` of the
+  dark modules with a 4-module quiet zone on a white background, so it scans in dark mode. No QR service and no
+  image URL ever sees the secret, and it is never logged. Anything that is not an `otpauth://` URI (or fails to
+  encode) gets no QR code; the manual key and the "open in app" link stay.
 - **Loading states**: `data-indicator:_x` on every post form drives the button label and `disabled`; the GET filter
   forms (users, audit) flip a `_searching`/`_filtering` signal on submit.
 - **Lists**: the query string drives search, filters, sort and paging (`validate.DecodeQuery`), so they work without JS.
 - **Auth state**: pages without a session 303 to login; actions redirect over SSE. A service `ErrTwoFactorRequired`
   sends the admin to `/two-factor/setup`. Signed-in pages are `Cache-Control: no-store`.
+- **Audit log**: `actionKeys` in `helpers.go` labels every `services.Action*` (table and filter); unknown actions
+  show raw. `auditDetails` translates the sign-in method and the 2FA failure count.
 - **Errors**: one table (`errorKeys` in `ui.go`) maps `ui.Err*` and `services.Err*` to messages; validation errors
   show `errors.invalidInput`; anything else is logged and shows `errors.somethingWentWrong`.
 - **i18n**: like the web copy, except that messages may carry ordered placeholders (`{0}`), filled by `Tf`, because

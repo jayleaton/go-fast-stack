@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/jayleaton/ai-patterns-go/apps/admin/internal/api/apitest"
+	"github.com/jayleaton/ai-patterns-go/apps/admin/internal/config"
 	"github.com/jayleaton/ai-patterns-go/apps/admin/internal/services"
 	"github.com/jayleaton/ai-patterns-go/apps/admin/internal/validate"
 )
@@ -13,6 +14,10 @@ var (
 	linus = services.Admin{ID: "a2", Name: "Linus T", Email: "linus@example.com"} // a pending invite
 
 	emailRule = "must be a valid email address"
+
+	adminNotFound = svcErr{services.ErrAdminNotFound, 404, "Admin not found"}
+	adminSelf     = svcErr{services.ErrAdminSelf, 400, "You cannot disable or remove yourself"}
+	lastAdmin     = svcErr{services.ErrLastAdmin, 409, "The last active admin cannot be disabled or removed"}
 )
 
 var adminRoutes = map[string]route{
@@ -40,6 +45,29 @@ var adminRoutes = map[string]route{
 				t.Errorf("data = %s", res.Data)
 			}
 		},
+	},
+	"POST admin disable": {
+		method: "POST", path: config.AdminPath("admin 2", "/disable"),
+		errs: []svcErr{adminNotFound, adminSelf, lastAdmin, {services.ErrAdminDisabled, 400, "This admin is already disabled"}},
+		expect: func(m svcs, err error) { // the path id arrives unescaped
+			m.admins.DisableAdmin(anyCtx, actor, "admin 2").Return(err)
+		},
+		check: wantSuccess,
+	},
+	"POST admin enable": {
+		method: "POST", path: config.AdminPath("a2", "/enable"),
+		errs: []svcErr{adminNotFound, {services.ErrAdminNotDisabled, 400, "This admin is not disabled"}},
+		expect: func(m svcs, err error) {
+			m.admins.EnableAdmin(anyCtx, actor, "a2").Return(err)
+		},
+		check: wantSuccess,
+	},
+	"DELETE admin": {
+		method: "DELETE", path: config.AdminPath("a2", ""), errs: []svcErr{adminNotFound, adminSelf, lastAdmin},
+		expect: func(m svcs, err error) {
+			m.admins.RemoveAdmin(anyCtx, actor, "a2").Return(err)
+		},
+		check: wantSuccess,
 	},
 }
 

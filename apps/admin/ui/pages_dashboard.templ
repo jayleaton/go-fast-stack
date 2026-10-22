@@ -12,15 +12,20 @@ import (
 
 // Patch target ids of the admins page.
 const (
-	adminsTableID = "admins-table"
-	inviteCardID  = "invite-card"
-	inviteErrorID = "invite-error"
+	adminsTableID  = "admins-table"
+	adminsStatusID = "admins-status"
+	inviteCardID   = "invite-card"
+	inviteErrorID  = "invite-error"
 )
 
 // AdminsData is the admins page.
 type AdminsData struct {
 	Admins []services.Admin
+	// SelfID is the signed-in admin: their row has no actions.
+	SelfID string
 	Invite InviteState
+	// Status is the outcome of the last admin action (plain posts).
+	Status Status
 	Error  string
 }
 
@@ -50,11 +55,12 @@ templ AdminsPage(d AdminsData) {
 		<div class="container-balanced py-8">
 			@view.PageHeader(i18n.T(ctx, "pages.admins.title"), i18n.T(ctx, "pages.admins.subtitle"))
 			<div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
-				<div class="lg:col-span-2">
+				<div class="space-y-4 lg:col-span-2">
+					@AdminsStatus(d.Status)
 					if d.Error != "" {
 						<div role="alert" class={ view.ErrorAlertClass }>{ d.Error }</div>
 					} else {
-						@AdminsTable(d.Admins)
+						@AdminsTable(d.Admins, d.SelfID)
 					}
 				</div>
 				@InviteCard(d.Invite)
@@ -63,8 +69,18 @@ templ AdminsPage(d AdminsData) {
 	}
 }
 
-// AdminsTable lists every admin, pending invites included.
-templ AdminsTable(admins []services.Admin) {
+// AdminsStatus is the patch target for admin action outcomes.
+templ AdminsStatus(s Status) {
+	if s.Error {
+		@view.Alert(adminsStatusID, "alert", view.ErrorAlertClass+" text-sm", s.Message)
+	} else {
+		@view.Alert(adminsStatusID, "status", view.SuccessAlertClass+" text-sm", s.Message)
+	}
+}
+
+// AdminsTable lists every admin, pending invites included, with the actions
+// another admin may take on each row; selfID's row gets none.
+templ AdminsTable(admins []services.Admin, selfID string) {
 	<div id={ adminsTableID } class={ "overflow-x-auto", view.CardClass }>
 		<table class={ view.TableClass }>
 			<thead>
@@ -74,6 +90,7 @@ templ AdminsTable(admins []services.Admin) {
 					<th class={ view.ThClass }>{ i18n.T(ctx, "pages.users.created") }</th>
 					<th class={ view.ThClass }>{ i18n.T(ctx, "pages.user.twoFactor") }</th>
 					<th class={ view.ThClass }>{ i18n.T(ctx, "pages.users.filters.status") }</th>
+					<th class={ view.ThClass }>{ i18n.T(ctx, "pages.admins.actions") }</th>
 				</tr>
 			</thead>
 			<tbody class="divide-y divide-neutral-100 dark:divide-neutral-800">
@@ -90,16 +107,54 @@ templ AdminsTable(admins []services.Admin) {
 							}
 						</td>
 						<td class={ view.TdClass }>
-							if a.HasPassword {
-								@view.Badge("green", i18n.T(ctx, "pages.admins.active"))
+							switch {
+								case a.Disabled:
+									@view.Badge("red", i18n.T(ctx, "pages.admins.disabled"))
+								case a.HasPassword:
+									@view.Badge("green", i18n.T(ctx, "pages.admins.active"))
+								default:
+									@view.Badge("amber", i18n.T(ctx, "pages.admins.pending"))
+							}
+						</td>
+						<td class={ view.TdClass }>
+							if a.ID == selfID {
+								@view.Badge("neutral", i18n.T(ctx, "pages.admins.you"))
 							} else {
-								@view.Badge("amber", i18n.T(ctx, "pages.admins.pending"))
+								@adminActions(a)
 							}
 						</td>
 					</tr>
 				}
 			</tbody>
 		</table>
+	</div>
+}
+
+// adminActions are one row's buttons: disable or enable, and remove (after
+// a confirm with JS).
+templ adminActions(a services.Admin) {
+	<div class="flex gap-2">
+		if a.Disabled {
+			<form method="post" action={ templ.SafeURL(routes.Admin(routes.AdminEnable, a.ID)) } data-on:submit={ view.PostForm(routes.Admin(routes.AdminEnable, a.ID)) } data-indicator:_enabling>
+				<button type="submit" class={ view.SecondaryButtonClass } data-attr:disabled="$_enabling">
+					<span data-show="!$_enabling">{ i18n.T(ctx, "pages.admins.enable") }</span>
+					<span style="display: none" data-show="$_enabling">{ i18n.T(ctx, "common.loading") }</span>
+				</button>
+			</form>
+		} else {
+			<form method="post" action={ templ.SafeURL(routes.Admin(routes.AdminDisable, a.ID)) } data-on:submit={ view.PostForm(routes.Admin(routes.AdminDisable, a.ID)) } data-indicator:_disabling>
+				<button type="submit" class={ view.SecondaryButtonClass } data-attr:disabled="$_disabling">
+					<span data-show="!$_disabling">{ i18n.T(ctx, "pages.admins.disable") }</span>
+					<span style="display: none" data-show="$_disabling">{ i18n.T(ctx, "common.loading") }</span>
+				</button>
+			</form>
+		}
+		<form method="post" action={ templ.SafeURL(routes.Admin(routes.AdminRemove, a.ID)) } data-on:submit={ view.ConfirmPostForm(i18n.Tf(ctx, "pages.admins.confirmRemove", a.Email), routes.Admin(routes.AdminRemove, a.ID)) } data-indicator:_removing>
+			<button type="submit" class={ view.DangerButtonClass } data-attr:disabled="$_removing">
+				<span data-show="!$_removing">{ i18n.T(ctx, "pages.admins.remove") }</span>
+				<span style="display: none" data-show="$_removing">{ i18n.T(ctx, "common.loading") }</span>
+			</button>
+		</form>
 	</div>
 }
 
@@ -165,7 +220,7 @@ templ AuditPage(d AuditData) {
 											}
 										</td>
 										<td class="px-3 py-2 text-xs text-neutral-600 dark:text-neutral-400">
-											for _, line := range details(e.Details) {
+											for _, line := range auditDetails(ctx, e) {
 												<div class="font-mono">{ line }</div>
 											}
 										</td>

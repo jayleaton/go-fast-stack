@@ -95,6 +95,9 @@ func (u *UI) Routes(mux *http.ServeMux) {
 	action("POST "+routes.UserSession, u.revokeSession)
 	page("GET "+p.Admins, u.adminsPage)
 	action("POST "+routes.AdminInvite, u.inviteAdmin)
+	action("POST "+routes.AdminDisable, u.disableAdmin)
+	action("POST "+routes.AdminEnable, u.enableAdmin)
+	action("POST "+routes.AdminRemove, u.removeAdmin)
 	page("GET "+p.Audit, u.auditPage)
 	page("GET "+p.Analytics, u.analyticsPage)
 
@@ -245,6 +248,11 @@ var errorKeys = []struct {
 	{services.ErrRoleUnchanged, "errors.roleUnchanged"},
 	{services.ErrUserNotBanned, "errors.userNotBanned"},
 	{services.ErrAdminExists, "errors.adminExists"},
+	{services.ErrAdminNotFound, "errors.adminNotFound"},
+	{services.ErrAdminSelf, "errors.adminSelf"},
+	{services.ErrLastAdmin, "errors.lastAdmin"},
+	{services.ErrAdminDisabled, "errors.adminDisabled"},
+	{services.ErrAdminNotDisabled, "errors.adminNotDisabled"},
 	{services.ErrTwoFactorRequired, "errors.twoFactorRequired"},
 	{services.ErrForbidden, "errors.forbidden"},
 }

@@ -197,6 +197,9 @@ templ SetupBody(s SetupState) {
 templ setupSecret(t TOTPSetup) {
 	<div class="space-y-4 text-sm text-neutral-700 dark:text-neutral-300">
 		<p>{ i18n.T(ctx, "pages.twoFactorSetup.scan") }</p>
+		if q, ok := totpQR(t.URI); ok {
+			@qrCode(q)
+		}
 		if href := otpLink(t.URI); href != "" {
 			<p><a href={ templ.SafeURL(href) } class={ view.TextLinkClass }>{ i18n.T(ctx, "pages.twoFactorSetup.openApp") }</a></p>
 		}
@@ -215,5 +218,16 @@ templ setupSecret(t TOTPSetup) {
 				</ul>
 			</div>
 		}
+	</div>
+}
+
+// qrCode is the TOTP QR code as an inline SVG. The white background keeps it
+// scannable in dark mode.
+templ qrCode(q QRCode) {
+	<div class="flex justify-center">
+		<svg xmlns="http://www.w3.org/2000/svg" data-testid="totp-qr" viewBox={ q.ViewBox() } width="192" height="192" class="h-48 w-48 rounded-md" shape-rendering="crispEdges" role="img" aria-label={ i18n.T(ctx, "pages.twoFactorSetup.qrLabel") }>
+			<rect width="100%" height="100%" fill="#fff"></rect>
+			<path d={ q.Path } fill="#000"></path>
+		</svg>
 	</div>
 }
