@@ -29,7 +29,7 @@ func (s *Stats) Overview(ctx context.Context) (model.Overview, error) {
 		return model.Overview{}, err
 	}
 	return model.Overview{
-		TotalUsers: r.TotalUsers, VerifiedUsers: r.VerifiedUsers, NewUsers7d: r.NewUsers7d,
+		TotalUsers: r.TotalUsers, VerifiedUsers: r.VerifiedUsers, BannedUsers: r.BannedUsers, NewUsers7d: r.NewUsers7d,
 		ActiveSessions: r.ActiveSessions, GeneratedAt: s.now().UTC(),
 	}, nil
 }

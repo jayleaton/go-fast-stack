@@ -14,6 +14,8 @@ const userOverview = `-- name: UserOverview :one
 SELECT
     count(*)                                                     AS total_users,
     count(*) FILTER (WHERE "emailVerified")                      AS verified_users,
+    -- A ban whose "banExpires" has passed no longer counts (auth lifts it on use).
+    count(*) FILTER (WHERE "banned" AND ("banExpires" IS NULL OR "banExpires" > now())) AS banned_users,
     count(*) FILTER (WHERE "createdAt" > now() - interval '7 days') AS new_users_7d,
     (SELECT count(*) FROM "session" WHERE "expiresAt" > now())   AS active_sessions
 FROM "user"
@@ -22,6 +24,7 @@ FROM "user"
 type UserOverviewRow struct {
 	TotalUsers     int64
 	VerifiedUsers  int64
+	BannedUsers    int64
 	NewUsers7d     int64
 	ActiveSessions int64
 }
@@ -33,6 +36,7 @@ func (q *Queries) UserOverview(ctx context.Context) (UserOverviewRow, error) {
 	err := row.Scan(
 		&i.TotalUsers,
 		&i.VerifiedUsers,
+		&i.BannedUsers,
 		&i.NewUsers7d,
 		&i.ActiveSessions,
 	)

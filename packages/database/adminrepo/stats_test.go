@@ -26,6 +26,11 @@ func TestStatsOverview(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// u2 banned for good, u3's ban already expired.
+	_, err = pool.Exec(ctx, `UPDATE "user" SET banned = true, "banExpires" = CASE id WHEN 'u3' THEN now() - interval '1 hour' END WHERE id IN ('u2', 'u3')`)
+	if err != nil {
+		t.Fatal(err)
+	}
 	_, err = pool.Exec(ctx, `INSERT INTO "session" (id, token, "userId", "expiresAt") VALUES
 		('s1', 't1', 'u1', now() + interval '1 day'),
 		('s2', 't2', 'u3', now() + interval '1 day'),
@@ -35,7 +40,7 @@ func TestStatsOverview(t *testing.T) {
 	}
 
 	o, err := stats.Overview(ctx)
-	if err != nil || o.TotalUsers != 3 || o.VerifiedUsers != 2 || o.NewUsers7d != 2 || o.ActiveSessions != 2 {
+	if err != nil || o.TotalUsers != 3 || o.VerifiedUsers != 2 || o.BannedUsers != 1 || o.NewUsers7d != 2 || o.ActiveSessions != 2 {
 		t.Fatalf("overview = %+v, %v", o, err)
 	}
 }
