@@ -106,3 +106,4 @@ docker: ## Build the production image
 .PHONY: actionlint
 actionlint: ## Lint GitHub workflows
 	$(GO) tool -modfile=tools/actionlint/go.mod actionlint
+# scratch: CI concurrency race repro (do not merge)
