@@ -63,6 +63,7 @@ The most common defect is a change that works on the path you tested and is miss
 - Run the narrowest thing first: `go test ./apps/web/internal/services/...`.
 - Behaviour changes ship with tests at the boundaries below, and only there.
 - A test that needs a sleep or timeout to pass is wrong.
+- Test memory: `auth.New` hashes passwords with cheap argon2 settings inside test binaries (`testing.Testing()`), so suites that sign users up stay small under `-race`; only `TestPasswordHashDefaults` exercises production cost. A full cold `make test` peaks around 2 GB, almost all of it compiling, so don't lower `-p`. If a test or compile dies with `signal: killed`, check the cgroup's `memory.events`: `oom_kill 0` means something outside the repo sent the kill (another job on a shared machine), not a memory limit.
 - User-visible UI changes get one pass in a real browser, over the LAN or Tailscale URL when origins matter.
 
 ## Test boundaries (mandatory)

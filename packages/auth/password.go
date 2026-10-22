@@ -28,6 +28,22 @@ type argonParams struct {
 // defaultArgonParams follow RFC 9106's second recommended option (64 MiB, t=3).
 var defaultArgonParams = argonParams{Memory: 64 * 1024, Time: 3, Threads: 4, SaltLen: 16, KeyLen: 32}
 
+// testArgonParams replace the defaults in test binaries (see argonParamsFor).
+// At production cost every package whose tests sign users up spent ~1 GB and
+// seconds per test binary under -race. Each hash records its own parameters,
+// so hashes made either way verify either way.
+var testArgonParams = argonParams{Memory: 64, Time: 1, Threads: 1, SaltLen: 16, KeyLen: 32}
+
+// argonParamsFor returns the parameters New uses: the cheap test ones only
+// inside a `go test` binary (testing.Testing), which a production binary
+// never is.
+func argonParamsFor(inTestBinary bool) argonParams {
+	if inTestBinary {
+		return testArgonParams
+	}
+	return defaultArgonParams
+}
+
 var errMalformedHash = errors.New("auth: malformed password hash")
 
 // hashPassword returns a PHC-format argon2id hash:
