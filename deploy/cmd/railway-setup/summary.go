@@ -129,12 +129,26 @@ func (s *setup) deploymentStatus(ctx context.Context, svc, env string) (string, 
 	return status, err
 }
 
+// latestDeployment reads the newest deployment. A read is retried twice:
+// Railway's API sometimes answers a body the CLI cannot decode.
 func (s *setup) latestDeployment(ctx context.Context, svc, env string) (id, status string, err error) {
 	var deps []struct {
 		ID     string `json:"id"`
 		Status string `json:"status"`
 	}
-	if err := s.rw.json(ctx, &deps, "deployment", "list", "--service", svc, "--environment", env); err != nil {
+	for attempt := range 3 {
+		if attempt > 0 {
+			select {
+			case <-ctx.Done():
+				return "", "", ctx.Err()
+			case <-time.After(10 * time.Second):
+			}
+		}
+		if err = s.rw.json(ctx, &deps, "deployment", "list", "--service", svc, "--environment", env); err == nil {
+			break
+		}
+	}
+	if err != nil {
 		return "", "", err
 	}
 	if len(deps) == 0 {
