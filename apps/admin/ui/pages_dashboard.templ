@@ -246,7 +246,7 @@ templ AuditPage(d AuditData) {
 // auditStatusCell is an entry's outcome: the badge, then what a pending
 // entry means, the reconciled marker and the reason.
 templ auditStatusCell(s AuditStatus) {
-	<div class="flex max-w-xs flex-col items-start gap-1">
+	<div class="flex w-64 max-w-xs flex-col items-start gap-1 whitespace-normal">
 		<div class="flex flex-wrap items-center gap-1">
 			@view.Badge(s.Tone, s.Label)
 			if s.Reconciled {
