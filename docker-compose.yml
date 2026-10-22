@@ -1,0 +1,55 @@
+# Local sandbox only. Ports bind to 127.0.0.1; set POSTGRES_PORT / PGWEB_PORT /
+# TEST_POSTGRES_PORT in .env when the defaults are taken.
+name: ${COMPOSE_PROJECT_NAME:-ai-patterns-go}
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: app
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d app"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+  pgweb:
+    image: sosedoff/pgweb:0.17.0
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${PGWEB_PORT:-5050}:8081"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGWEB_DATABASE_URL: postgres://postgres:postgres@postgres:5432/app?sslmode=disable
+    command: ["pgweb", "--bind=0.0.0.0", "--listen=8081"]
+
+  # Throwaway server for `make test`: tmpfs storage, durability off. Tests
+  # create their own databases on it, so it never needs a volume.
+  postgres-test:
+    image: postgres:18-alpine
+    profiles: [test]
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    command: ["postgres", "-c", "fsync=off", "-c", "synchronous_commit=off", "-c", "full_page_writes=off", "-c", "max_connections=200"]
+    ports:
+      - "127.0.0.1:${TEST_POSTGRES_PORT:-54329}:5432"
+    tmpfs:
+      - /var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 1s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  postgres_data:
