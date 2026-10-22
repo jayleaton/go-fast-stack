@@ -4,6 +4,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/jayleaton/ai-patterns-go/apps/web/internal/api"
@@ -33,7 +34,7 @@ func logRequests(log *slog.Logger, next http.Handler) http.Handler {
 			level = slog.LevelDebug
 		}
 		log.Log(r.Context(), level, "request",
-			"method", r.Method, "path", r.URL.Path, "status", rec.status,
+			"method", r.Method, "path", logPath(r.URL.Path), "status", rec.status,
 			"ms", float64(time.Since(start).Microseconds())/1000)
 	})
 }
@@ -45,10 +46,24 @@ func recoverPanics(log *slog.Logger, next http.Handler) http.Handler {
 				if err, ok := v.(error); ok && errors.Is(err, http.ErrAbortHandler) {
 					panic(v)
 				}
-				log.ErrorContext(r.Context(), "panic", "method", r.Method, "path", r.URL.Path, "panic", v)
+				log.ErrorContext(r.Context(), "panic", "method", r.Method, "path", logPath(r.URL.Path), "panic", v)
 				api.WriteError(w, http.StatusInternalServerError, "Internal server error", nil)
 			}
 		}()
 		next.ServeHTTP(w, r)
 	})
+}
+
+// tokenPaths carry a single-use credential in the path (emailed reset and
+// set-password links). Logs keep the route, never the token: anyone reading
+// them could otherwise use the link first.
+var tokenPaths = []string{"/api/auth/reset-password/"}
+
+func logPath(path string) string {
+	for _, p := range tokenPaths {
+		if strings.HasPrefix(path, p) && len(path) > len(p) {
+			return p + "{token}"
+		}
+	}
+	return path
 }

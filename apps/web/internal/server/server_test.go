@@ -105,3 +105,16 @@ func crossSite(origin string) *http.Request {
 	req.Header.Set("Sec-Fetch-Site", "cross-site")
 	return req
 }
+
+// Emailed reset links carry a credential in the path; logs keep the route only.
+func TestRequestLogsDropTokens(t *testing.T) {
+	var logs strings.Builder
+	h := New(Deps{
+		Log: slog.New(slog.NewTextHandler(&logs, nil)), DB: pinger{}, Auth: noAuth{},
+		Users: api.NewUsers(nil, CallerFrom),
+	})
+	serve(h, httptest.NewRequest(http.MethodGet, "/api/auth/reset-password/s3cret-token", nil))
+	if strings.Contains(logs.String(), "s3cret-token") || !strings.Contains(logs.String(), "/api/auth/reset-password/{token}") {
+		t.Fatalf("log = %s", logs.String())
+	}
+}
