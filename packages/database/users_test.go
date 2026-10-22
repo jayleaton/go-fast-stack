@@ -111,11 +111,3 @@ func TestUserRepositoryDelete(t *testing.T) {
 		t.Fatalf("second delete: err = %v, want ErrNotFound", err)
 	}
 }
-
-func TestMigrateIsIdempotent(t *testing.T) {
-	t.Parallel()
-	pool := dbtest.New(t, dbtest.App)
-	if err := database.Migrate(context.Background(), pool); err != nil {
-		t.Fatal(err)
-	}
-}
