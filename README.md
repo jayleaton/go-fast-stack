@@ -52,9 +52,19 @@ Each checkout gets its own compose project and database ports, derived from its 
 | `make lint-layering` / `make lint-tests` | prove the layering, test-location and coverage rules still reject planted violations |
 | `make ci` | everything CI runs |
 | `make generate` | sqlc, mocks (`go generate`) and templ code generation |
+| `make css` | rebuild both apps' `app.css` (pinned Tailwind standalone CLI) |
 | `make build` / `make docker` | static binary / production image |
 | `make db-up` / `make db-down` | start / stop the local databases |
 | `make env` | print this checkout's compose project, ports and `DATABASE_URL` |
+
+## Look and feel
+
+Both apps render through one component set, [packages/uikit](packages/uikit/README.md) (app shell with a responsive
+nav, buttons, fields, cards, alerts, badges, tables, confirm dialogs, empty and loading states), styled by design
+tokens with a light and a dark value each. **Re-theme by editing [packages/uikit/theme.css](packages/uikit/theme.css)
+and running `make css`.** Pages follow the system theme until someone uses the toggle (a `theme` cookie the server
+renders as `<html class>`, so there is no flash). The product name in the header and titles is `APP_NAME` (default
+"My App"); the admin app's is `ADMIN_APP_NAME` (default "Admin").
 
 ## Stack
 

@@ -9,7 +9,7 @@ Use these words when talking about this repo, in code review, commits and agent 
 | developer | the person who cloned the template and directs agents | |
 | user | a person signed in to the app (row in `"user"`) | |
 | app | a product surface: the **web app** (`apps/web`) or the **mobile app** (`apps/mobile-app`) | `apps/` |
-| package | shared Go code under `packages/` (`database`, `auth`, `secrets`) | `packages/` |
+| package | shared Go code under `packages/` (`database`, `auth`, `secrets`, `uikit`) | `packages/` |
 | migration | a goose SQL file; auth and app migrations are tracked separately (`goose_auth`, `goose_app`) | `packages/*/migrations/` |
 | query | a sqlc-annotated SQL statement; `make generate` turns it into Go | `packages/database/queries/` |
 | repository | data access over sqlc implementing a service's port; returns `model` types and `model.ErrNotFound` | `packages/database/*.go` |
@@ -40,6 +40,8 @@ Use these words when talking about this repo, in code review, commits and agent 
 | pool swap | `database.Pool.Swap`: a rotated `DATABASE_URL` opens and probes a new pool, switches atomically and drains the old one | `packages/database/pool.go` |
 | max staleness | how long the last good snapshot may be served while the provider fails before `/healthz` reports 503 | `SECRETS_MAX_STALENESS` |
 | sandbox database | the Docker Postgres from `make db-up`; the only database you may break | `docker-compose.yml` |
+| uikit | the templ component set and design tokens both UIs share; `theme.css` holds every color as `light-dark(<light>, <dark>)` | `packages/uikit/` |
+| theme | light, dark or system: the `theme` cookie, rendered by the server as `<html class>`; no class follows `prefers-color-scheme` | `packages/uikit/` |
 | Datastar | the SSE-first hypermedia library the UI uses (core only, no Pro) | `apps/web/ui/` |
 | admin app | the optional dashboard for the people running the app (`apps/admin`), its own binary, database and auth instance | `apps/admin/` |
 | admin | a person who can sign in to the admin app (row in the admin database's `"user"`); never a row in the app's `"user"` | admin database |
