@@ -1,3 +1,4 @@
+// Scratch: CI measurement (web-only change).
 package ui
 
 import (
