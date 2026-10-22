@@ -32,6 +32,8 @@ linters:
               desc: transports call services; only packages/database talks to Postgres
             - pkg: github.com/jayleaton/ai-patterns-go/packages/database
               desc: transports call services (use services.User etc.), never repositories or sqlc
+            - pkg: github.com/jayleaton/ai-patterns-go/packages/secrets
+              desc: secrets reach consumers through config.Secrets accessors wired in cmd/server, never the store itself
         services:
           files:
             - "**/apps/web/internal/services/**"
@@ -50,6 +52,8 @@ linters:
               desc: services never import a transport
             - pkg: github.com/jayleaton/ai-patterns-go/apps/web/ui
               desc: services never import a transport
+            - pkg: github.com/jayleaton/ai-patterns-go/packages/secrets
+              desc: services declare a port for what a secret enables (a client); cmd/server wires it from config.Secrets
         database:
           files:
             - "**/packages/database/**"
@@ -64,6 +68,18 @@ linters:
               desc: packages/auth is self-contained and never imports apps
             - pkg: github.com/jayleaton/ai-patterns-go/packages/database
               desc: packages/auth owns its tables and queries; it never uses the app's repositories
+        secrets:
+          files:
+            - "**/packages/secrets/**"
+          deny:
+            - pkg: github.com/jayleaton/ai-patterns-go/apps
+              desc: packages/secrets is self-contained; apps/web/internal/config builds it
+            - pkg: github.com/jayleaton/ai-patterns-go/packages/database
+              desc: packages/secrets is self-contained
+            - pkg: github.com/jayleaton/ai-patterns-go/packages/auth
+              desc: packages/secrets is self-contained
+            - pkg: go.uber.org/mock
+              desc: secrets tests use fake providers over httptest, never mocks
         # Test boundaries: each layer is tested with the layer below mocked or
         # real, never skipped. See AGENTS.md "Test boundaries".
         service-tests:

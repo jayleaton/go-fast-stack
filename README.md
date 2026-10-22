@@ -63,7 +63,49 @@ Go stdlib `net/http` · `templ` + Datastar + Tailwind (standalone CLI) · `pgx` 
 
 ## Deploy (Railway)
 
-`railway.json` builds the `Dockerfile`, runs `/server migrate` as the pre-deploy command, and health-checks `/healthz`. Set `APP_ENV=production`, `PUBLIC_URL`, `DATABASE_URL`, `AUTH_SECRET` (32+ chars), `RESEND_API_KEY` and `FROM_EMAIL`, plus `CLIENT_IP_HEADER=X-Real-IP` so auth rate limits see the client instead of Railway's proxy. Production turns on email verification. The server refuses to boot with a missing or invalid value and lists every problem.
+`railway.json` builds the `Dockerfile`, runs `/server migrate` as the pre-deploy command, and health-checks `/healthz`. Set `APP_ENV=production`, `PUBLIC_URL`, `DATABASE_URL`, `AUTH_SECRET` (32+ chars), `RESEND_API_KEY` and `FROM_EMAIL`, plus `CLIENT_IP_HEADER=X-Real-IP` so auth rate limits see the client instead of Railway's proxy. Production turns on email verification. The server refuses to boot with a missing or invalid value and lists every problem. To rotate `RESEND_API_KEY` without a redeploy, serve it from Doppler instead (next section).
+
+## Secrets
+
+Secrets that can change while the server runs come from one place, `SECRETS_PROVIDER`, through [`packages/secrets`](packages/secrets): a manager that fetches the whole set for this service and environment, validates it, and hands each consumer its value. Everything else stays a plain env var read once at boot.
+
+| `SECRETS_PROVIDER` | What it is | Live rotation |
+|---|---|---|
+| `env` (default) | values from the process env (`.env`, Railway variables), read once at boot | no: changing a value means a redeploy |
+| `doppler` | polls one [Doppler](https://www.doppler.com) config with a read-only service token, over plain `net/http` | yes, within `SECRETS_REFRESH_INTERVAL` |
+
+**What rotates live (v1).**
+
+| Secret | Source | Rotates without redeploy | Why not (yet) |
+|---|---|---|---|
+| `RESEND_API_KEY` | `SECRETS_PROVIDER` | yes, with `doppler`: the mailer rebuilds its Resend client on change | |
+| `DATABASE_URL` | env | no | a new password needs a new `pgx` pool that authenticates and passes a probe before an atomic swap and a drain of the old pool; Railway Postgres credentials change through a redeploy anyway |
+| `AUTH_SECRET` | env | no | it signs session cookies and verification/reset tokens: replacing it in place signs everyone out and breaks links already sent. Rotation needs a keyring (new key signs, old keys still verify during an overlap) |
+| `DOPPLER_TOKEN` | env (sealed) | no | it is the credential that reaches the provider; update the Railway variable (redeploy), then revoke the old token |
+
+**Doppler setup for a team.**
+
+1. Create a Doppler workspace and a project (e.g. `myapp`). Each environment (`dev`, `stg`, `prd`) is a config; add `RESEND_API_KEY` to each. The Developer plan is free for three people and service tokens are free.
+2. Per Railway environment, create a **read-only service token** for that environment's config (project → config → Access → Generate). One token per service per environment, so staging can't read production and a future admin service gets its own config.
+3. In Railway, on the web service of each environment, set `SECRETS_PROVIDER=doppler` and `DOPPLER_TOKEN=<that token>` (sealed). Keep `DATABASE_URL`, `AUTH_SECRET` and the rest as Railway variables. Drop `RESEND_API_KEY` from Railway: with `doppler` the env copy is ignored.
+4. Deploy. The log shows `secrets: loaded provider=doppler`. From now on, changing `RESEND_API_KEY` in Doppler reaches every replica within one interval (60 s ± 10 %): `secrets: rotated changed=[RESEND_API_KEY]`, then `mailer: resend client built resend_api_key=fp:…`. Revoke the old Resend key once every replica logged the new fingerprint.
+5. Leave Doppler's Railway sync off for live keys: it writes Railway variables and redeploys, which is the `env` path.
+
+**When the provider misbehaves.** No valid first snapshot means the server does not boot (the deploy fails; the previous one keeps serving). Once running, a failed or invalid fetch (malformed body, missing `RESEND_API_KEY` in production) never replaces the last good values; the manager retries with backoff (5 s doubling, capped at min(5 min, max staleness ÷ 3), honouring `Retry-After`). After `SECRETS_MAX_STALENESS` without a good fetch, `/healthz` answers 503 `secrets stale` and every failed poll logs an error. Clients already built keep their last good key. `/healthz` is a readiness check: don't wire it to a liveness probe that restarts the process, because a fresh process can't load secrets during the outage either.
+
+**Logs never contain values.** A secret prints as `[redacted]` everywhere (fmt, slog, JSON). Logs name changed keys and show a fingerprint (an HMAC under a random per-process key: it shows a change within one process, nothing more).
+
+**Local development.** Keep `SECRETS_PROVIDER=env` and `.env`, or run `doppler run -- make dev` to inject a dev config as env at startup. To try live rotation locally, put a dev-config service token in `.env` with `SECRETS_PROVIDER=doppler`.
+
+| Variable | Default | |
+|---|---|---|
+| `SECRETS_PROVIDER` | `env` | `env` or `doppler` |
+| `DOPPLER_TOKEN` | | required with `doppler`: read-only service token for this service's config |
+| `DOPPLER_API_URL` | `https://api.doppler.com` | https in production; point it at a fake for tests |
+| `SECRETS_REFRESH_INTERVAL` | `60s` | at least `10s` (Doppler Developer allows 120 reads/min per workspace) |
+| `SECRETS_MAX_STALENESS` | `15m` | at least twice the interval |
+
+Infisical and 1Password adapters are stubs with an implementation plan (`packages/secrets/infisical.go`, `onepassword.go`, outside the default build).
 
 ## Working on it
 

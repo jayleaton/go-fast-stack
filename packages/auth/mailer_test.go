@@ -198,3 +198,36 @@ func TestNewDevMailerNilLogger(t *testing.T) {
 		t.Fatal("expected default logger")
 	}
 }
+
+func TestSwapMailerUsesTheLatestMailer(t *testing.T) {
+	var keys []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		keys = append(keys, r.Header.Get("Authorization"))
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+	resend := func(key string) *ResendMailer {
+		return &ResendMailer{APIKey: key, From: "a@example.test", Endpoint: srv.URL, HTTPClient: srv.Client()}
+	}
+
+	var logs bytes.Buffer
+	m := NewSwapMailer(NewDevMailer(slog.New(slog.NewTextHandler(&logs, nil))))
+	ctx := context.Background()
+	if err := m.SendVerificationEmail(ctx, "u@example.test", "https://app.example.test/v"); err != nil {
+		t.Fatal(err)
+	}
+	m.Swap(resend("re_old"))
+	if err := m.SendPasswordResetEmail(ctx, "u@example.test", "https://app.example.test/r"); err != nil {
+		t.Fatal(err)
+	}
+	m.Swap(resend("re_new")) // the key rotated
+	if err := m.SendEmailChangeNotice(ctx, "u@example.test", "n@example.test"); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.SendSetPasswordEmail(ctx, "u@example.test", "https://app.example.test/s"); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(logs.String(), "verification email") || strings.Join(keys, ",") != "Bearer re_old,Bearer re_new,Bearer re_new" {
+		t.Fatalf("dev log %q, resend keys %v", logs.String(), keys)
+	}
+}

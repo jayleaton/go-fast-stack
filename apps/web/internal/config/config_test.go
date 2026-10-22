@@ -3,6 +3,8 @@ package config
 import (
 	"strings"
 	"testing"
+
+	"github.com/jayleaton/ai-patterns-go/packages/secrets"
 )
 
 func env(kv map[string]string) func(string) string {
@@ -48,5 +50,63 @@ func TestProductionFeatures(t *testing.T) {
 	f := FeaturesFor(Production)
 	if !f.EmailVerification || f.MobileDevOrigins {
 		t.Fatalf("production features = %+v", f)
+	}
+}
+
+func TestLoadSecretsProvider(t *testing.T) {
+	base := map[string]string{"PUBLIC_URL": "http://dev-box:3000", "DATABASE_URL": "postgres://x", "AUTH_SECRET": strings.Repeat("s", 32)}
+	with := func(kv map[string]string) map[string]string {
+		m := map[string]string{}
+		for k, v := range base {
+			m[k] = v
+		}
+		for k, v := range kv {
+			m[k] = v
+		}
+		return m
+	}
+
+	// Default env provider: RESEND_API_KEY from the env, read once.
+	cfg, err := Load(env(with(map[string]string{"RESEND_API_KEY": "re_env"})))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Secrets.Provider() != SecretsEnv {
+		t.Fatalf("provider = %s", cfg.Secrets.Provider())
+	}
+	if err := cfg.Secrets.Start(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	defer cfg.Secrets.Stop()
+	var got string
+	cfg.Secrets.OnResendAPIKey(func(v secrets.Secret) error { got = v.Reveal(); return nil })
+	if got != "re_env" || cfg.Secrets.Healthy() != nil || cfg.Secrets.Status().Keys != 1 {
+		t.Fatalf("resend key = %q, status = %+v", got, cfg.Secrets.Status())
+	}
+
+	cfg, err = Load(env(with(map[string]string{"SECRETS_PROVIDER": "doppler", "DOPPLER_TOKEN": "dp.st.x", "SECRETS_REFRESH_INTERVAL": "30s"})))
+	if err != nil || cfg.Secrets.Provider() != SecretsDoppler {
+		t.Fatalf("doppler: %v", err)
+	}
+
+	for _, tt := range []struct {
+		kv   map[string]string
+		want string
+	}{
+		{map[string]string{"SECRETS_PROVIDER": "vault"}, "SECRETS_PROVIDER must be env or doppler"},
+		{map[string]string{"SECRETS_PROVIDER": "doppler"}, "DOPPLER_TOKEN is required"},
+		{map[string]string{"SECRETS_PROVIDER": "doppler", "DOPPLER_TOKEN": "t", "DOPPLER_API_URL": "ftp://user:hunter2@x"}, "DOPPLER_API_URL must be an http(s) origin"},
+		{map[string]string{"APP_ENV": "production", "PUBLIC_URL": "https://a.example", "SECRETS_PROVIDER": "doppler", "DOPPLER_TOKEN": "t", "DOPPLER_API_URL": "http://fake:8080"}, "must use https in production"},
+		{map[string]string{"SECRETS_REFRESH_INTERVAL": "soon"}, "SECRETS_REFRESH_INTERVAL must be a positive duration"},
+		{map[string]string{"SECRETS_REFRESH_INTERVAL": "1s"}, "SECRETS_REFRESH_INTERVAL must be at least 10s"},
+		{map[string]string{"SECRETS_MAX_STALENESS": "90s"}, "SECRETS_MAX_STALENESS must be at least twice"},
+	} {
+		_, err := Load(env(with(tt.kv)))
+		if err == nil || !strings.Contains(err.Error(), tt.want) {
+			t.Errorf("%v: err = %v, want %q", tt.kv, err, tt.want)
+		}
+		if err != nil && strings.Contains(err.Error(), "hunter2") {
+			t.Errorf("error echoes credentials: %v", err)
+		}
 	}
 }

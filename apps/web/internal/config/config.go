@@ -1,5 +1,7 @@
 // Package config loads environment config, validated once at boot, plus the
-// routes config and feature toggles. Nothing else reads os.Getenv.
+// routes config and feature toggles. Nothing else reads os.Getenv. Secrets
+// that rotate while the server runs come through Secrets (packages/secrets),
+// which Load builds from SECRETS_PROVIDER.
 package config
 
 import (
@@ -28,7 +30,7 @@ type Config struct {
 	TrustedOrigins []string // PublicURL plus TRUSTED_ORIGINS
 	DatabaseURL    string
 	AuthSecret     string
-	ResendAPIKey   string // empty outside production: email links are logged
+	Secrets        Secrets // live secrets (RESEND_API_KEY) from SECRETS_PROVIDER; started by serve
 	FromEmail      string
 	ClientIPHeader string // header the trusted proxy sets to the client IP (auth rate limits); empty uses the TCP peer
 	Features       Features
@@ -46,11 +48,10 @@ func Load(getenv func(string) string) (Config, error) {
 	}
 
 	cfg := Config{
-		Env:          Env(get("APP_ENV", string(Development))),
-		DatabaseURL:  get("DATABASE_URL", ""),
-		AuthSecret:   get("AUTH_SECRET", ""),
-		ResendAPIKey: get("RESEND_API_KEY", ""),
-		FromEmail:    get("FROM_EMAIL", "noreply@example.com"),
+		Env:         Env(get("APP_ENV", string(Development))),
+		DatabaseURL: get("DATABASE_URL", ""),
+		AuthSecret:  get("AUTH_SECRET", ""),
+		FromEmail:   get("FROM_EMAIL", "noreply@example.com"),
 		// Only set behind a proxy that overwrites/appends it (Railway: X-Real-IP),
 		// or clients could pick their own rate-limit bucket.
 		ClientIPHeader: get("CLIENT_IP_HEADER", ""),
@@ -87,9 +88,7 @@ func Load(getenv func(string) string) (Config, error) {
 	if len(cfg.AuthSecret) < 32 {
 		errs = append(errs, errors.New("AUTH_SECRET must be at least 32 characters (openssl rand -base64 32)"))
 	}
-	if cfg.Env == Production && cfg.ResendAPIKey == "" {
-		errs = append(errs, errors.New("RESEND_API_KEY is required in production"))
-	}
+	cfg.Secrets = loadSecrets(cfg.Env, get, &errs)
 
 	cfg.Features = FeaturesFor(cfg.Env)
 	if len(errs) > 0 {

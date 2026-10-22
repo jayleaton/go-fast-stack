@@ -16,6 +16,10 @@ import (
 
 type pinger struct{ err error }
 
+type secretsHealth struct{ err error }
+
+func (s secretsHealth) Healthy() error { return s.err }
+
 func (p pinger) Ping(context.Context) error { return p.err }
 
 // noAuth stands in for *auth.Auth: nobody is signed in and the auth
@@ -31,13 +35,18 @@ func (noAuth) Handler() http.Handler {
 }
 
 func newHandler(db Pinger, ui http.Handler) http.Handler {
+	return newHandlerWith(db, nil, ui)
+}
+
+func newHandlerWith(db Pinger, sec SecretsHealth, ui http.Handler) http.Handler {
 	return New(Deps{
-		Config: config.Config{TrustedOrigins: []string{"http://dev-box:3000"}},
-		Log:    slog.New(slog.NewTextHandler(io.Discard, nil)),
-		DB:     db,
-		Auth:   noAuth{},
-		Users:  api.NewUsers(nil, CallerFrom), // nobody is signed in, so no request reaches the service
-		UI:     ui,
+		Secrets: sec,
+		Config:  config.Config{TrustedOrigins: []string{"http://dev-box:3000"}},
+		Log:     slog.New(slog.NewTextHandler(io.Discard, nil)),
+		DB:      db,
+		Auth:    noAuth{},
+		Users:   api.NewUsers(nil, CallerFrom), // nobody is signed in, so no request reaches the service
+		UI:      ui,
 	})
 }
 
@@ -50,8 +59,13 @@ func serve(h http.Handler, req *http.Request) *httptest.ResponseRecorder {
 func TestHealthz(t *testing.T) {
 	ok := serve(newHandler(pinger{}, nil), httptest.NewRequest(http.MethodGet, "/healthz", nil))
 	down := serve(newHandler(pinger{errors.New("down")}, nil), httptest.NewRequest(http.MethodGet, "/healthz", nil))
-	if ok.Code != 200 || down.Code != 503 {
-		t.Fatalf("healthz ok=%d down=%d", ok.Code, down.Code)
+	fresh := serve(newHandlerWith(pinger{}, secretsHealth{}, nil), httptest.NewRequest(http.MethodGet, "/healthz", nil))
+	stale := serve(newHandlerWith(pinger{}, secretsHealth{errors.New("stale")}, nil), httptest.NewRequest(http.MethodGet, "/healthz", nil))
+	if ok.Code != 200 || down.Code != 503 || fresh.Code != 200 || stale.Code != 503 {
+		t.Fatalf("healthz ok=%d down=%d fresh=%d stale=%d", ok.Code, down.Code, fresh.Code, stale.Code)
+	}
+	if !strings.Contains(stale.Body.String(), "secrets stale") {
+		t.Fatalf("stale body = %s", stale.Body.String())
 	}
 }
 

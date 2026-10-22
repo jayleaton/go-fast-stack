@@ -22,6 +22,9 @@ cases=(
   "apps/web/internal/services|$mod/packages/database/sqlc"
   "packages/auth|$mod/packages/database"
   "apps/web/internal/api|go.uber.org/mock/gomock"
+  "apps/web/internal/services|$mod/packages/secrets"
+  "apps/web/internal/api|$mod/packages/secrets"
+  "packages/secrets|$mod/packages/auth"
 )
 
 # Test files. boundary dir | forbidden import
@@ -32,6 +35,7 @@ test_cases=(
   "apps/web/internal/api|github.com/jackc/pgx/v5"
   "apps/web/internal/api|$mod/apps/web/internal/services/mocks"
   "packages/database|go.uber.org/mock/gomock"
+  "packages/secrets|go.uber.org/mock/gomock"
 )
 
 paths=()

@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"log/slog"
+	"sync/atomic"
 )
 
 // DevMailer is a Mailer for development: instead of sending emails it logs
@@ -15,6 +16,7 @@ type DevMailer struct {
 var (
 	_ Mailer = (*DevMailer)(nil)
 	_ Mailer = (*ResendMailer)(nil)
+	_ Mailer = (*SwapMailer)(nil)
 )
 
 // NewDevMailer returns a DevMailer that writes to logger, or to slog.Default()
@@ -56,4 +58,44 @@ func (m *DevMailer) logger() *slog.Logger {
 		return slog.Default()
 	}
 	return m.Logger
+}
+
+// SwapMailer is a Mailer whose implementation can be replaced while the
+// server runs: when RESEND_API_KEY rotates, the wiring builds a new
+// ResendMailer and swaps it in. Emails already being sent finish on the old
+// one. Safe for concurrent use.
+type SwapMailer struct {
+	cur atomic.Pointer[mailerBox]
+}
+
+type mailerBox struct{ Mailer }
+
+// NewSwapMailer returns a SwapMailer that starts with initial.
+func NewSwapMailer(initial Mailer) *SwapMailer {
+	m := &SwapMailer{}
+	m.Swap(initial)
+	return m
+}
+
+// Swap makes next handle every email sent from now on.
+func (m *SwapMailer) Swap(next Mailer) { m.cur.Store(&mailerBox{next}) }
+
+// SendVerificationEmail delegates to the current Mailer.
+func (m *SwapMailer) SendVerificationEmail(ctx context.Context, to, url string) error {
+	return m.cur.Load().SendVerificationEmail(ctx, to, url)
+}
+
+// SendPasswordResetEmail delegates to the current Mailer.
+func (m *SwapMailer) SendPasswordResetEmail(ctx context.Context, to, url string) error {
+	return m.cur.Load().SendPasswordResetEmail(ctx, to, url)
+}
+
+// SendEmailChangeNotice delegates to the current Mailer.
+func (m *SwapMailer) SendEmailChangeNotice(ctx context.Context, to, newEmail string) error {
+	return m.cur.Load().SendEmailChangeNotice(ctx, to, newEmail)
+}
+
+// SendSetPasswordEmail delegates to the current Mailer.
+func (m *SwapMailer) SendSetPasswordEmail(ctx context.Context, to, url string) error {
+	return m.cur.Load().SendSetPasswordEmail(ctx, to, url)
 }
