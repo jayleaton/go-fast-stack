@@ -99,18 +99,22 @@ jobs:
               - 'apps/mobile-app/**'
               # The mobile route test reads the Go route table.
               - 'apps/web/internal/config/routes.go'
-              - '.github/workflows/**'
-              - '.github/actions/**'
+              # How CI runs it.
+              - '.github/workflows/ci.yml'
+              - '.github/actions/check/**'
+              - 'scripts/ci-check.sh'
       - uses: dorny/paths-filter@v4
         if: github.event_name == 'pull_request'
         id: deploy-pr
         with:
-          filters: |
+          filters: &deploy-filter |
             deploy:
               - 'deploy/**'
               - '.golangci.yml'
-              - '.github/workflows/**'
-              - '.github/actions/**'
+              - 'tools/**' # the golangci-lint pin
+              - '.github/workflows/ci.yml'
+              - '.github/actions/check/**'
+              - 'scripts/ci-check.sh'
 
       # Depth 2: a PR checkout is the merge commit (HEAD^1 = base, HEAD^2 = head).
       - uses: actions/checkout@v7
@@ -138,6 +142,11 @@ jobs:
         id: mobile-push
         with:
           filters: *mobile-filter
+      - uses: dorny/paths-filter@v4
+        if: github.event_name == 'push'
+        id: deploy-push
+        with:
+          filters: *deploy-filter
 
       - name: Scope
         id: scope
@@ -145,12 +154,14 @@ jobs:
           EVENT: ${{ github.event_name }}
           GO_PR: ${{ steps.go-pr.outputs.go }}
           MOBILE: ${{ steps.mobile-pr.outputs.mobile || steps.mobile-push.outputs.mobile }}
-          DEPLOY: ${{ steps.deploy-pr.outputs.deploy }}
+          DEPLOY: ${{ steps.deploy-pr.outputs.deploy || steps.deploy-push.outputs.deploy }}
           SKIP: ${{ steps.reuse.outputs.skip }}
         run: |
           go=true mobile=$MOBILE deploy=$DEPLOY
-          if [ "$EVENT" = pull_request ]; then go=$GO_PR; else deploy=true; fi
-          if [ "$EVENT" = merge_group ] || [ "$EVENT" = workflow_dispatch ]; then mobile=true; fi
+          # PRs and pushes check mobile/ and deploy/ only when they (or how CI
+          # runs them) changed; the merge queue, manual and scheduled runs always.
+          if [ "$EVENT" = pull_request ]; then go=$GO_PR; fi
+          case $EVENT in merge_group | workflow_dispatch | schedule) mobile=true deploy=true ;; esac
           if [ "$SKIP" = true ]; then go=false mobile=false deploy=false; fi
           save=false
           case $EVENT in workflow_dispatch | schedule) save=true ;; push) [ "$GITHUB_REF" = refs/heads/main ] && save=true ;; esac
