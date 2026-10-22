@@ -29,6 +29,7 @@ fi
 planted=(
   apps/web/internal/validate/zz_probe_test.go
   packages/database/dbtest/zz_probe_test.go
+  packages/secrets/zz_probe/zz_probe_test.go
 )
 for f in "${planted[@]}"; do
   d=$(dirname "$f")

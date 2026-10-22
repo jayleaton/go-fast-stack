@@ -9,7 +9,7 @@ Use these words when talking about this repo, in code review, commits and agent 
 | developer | the person who cloned the template and directs agents | |
 | user | a person signed in to the app (row in `"user"`) | |
 | app | a product surface: the **web app** (`apps/web`) or the **mobile app** (`apps/mobile-app`) | `apps/` |
-| package | shared Go code under `packages/` (`database`, `auth`) | `packages/` |
+| package | shared Go code under `packages/` (`database`, `auth`, `secrets`) | `packages/` |
 | migration | a goose SQL file; auth and app migrations are tracked separately (`goose_auth`, `goose_app`) | `packages/*/migrations/` |
 | query | a sqlc-annotated SQL statement; `make generate` turns it into Go | `packages/database/queries/` |
 | repository | data access over sqlc implementing a service's port; returns `model` types and `model.ErrNotFound` | `packages/database/*.go` |
@@ -32,5 +32,9 @@ Use these words when talking about this repo, in code review, commits and agent 
 | feature toggles | `config.Features`: email verification, template welcome, Expo dev origins | `apps/web/internal/config/features.go` |
 | session | a row in `"session"`; the signed `better-auth.session_token` cookie (web) or `Authorization: Bearer <token>` (mobile) points at it | `packages/auth/` |
 | dev mailer | logs auth email links instead of sending them (no `RESEND_API_KEY`) | `packages/auth/mailer.go` |
+| live secret | a secret served by the secrets provider that rotates without a redeploy (`RESEND_API_KEY`); consumers reach it through a typed accessor on `config.Secrets` | `apps/web/internal/config/secrets.go` |
+| secrets provider | where live secrets come from (`SECRETS_PROVIDER`): `env` (read once at boot) or `doppler` (polled) | `packages/secrets/` |
+| snapshot | the whole set of secrets one fetch returned; validated before it replaces the last good one | `packages/secrets/` |
+| max staleness | how long the last good snapshot may be served while the provider fails before `/healthz` reports 503 | `SECRETS_MAX_STALENESS` |
 | sandbox database | the Docker Postgres from `make db-up`; the only database you may break | `docker-compose.yml` |
 | Datastar | the SSE-first hypermedia library the UI uses (core only, no Pro) | `apps/web/ui/` |

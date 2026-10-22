@@ -26,7 +26,7 @@ The template's value is its layers. Do not route around them.
 - JSON responses always use the envelope `{"data": T|null, "error": string|null}` (plus `details` on validation errors). Use `api.Public` / `api.Authenticated`. A handler is about five lines: decode, call the service, return.
 - Input validation lives in `apps/web/internal/validate`, one type per input with CRUD names (`UpdateUserSettings`). Decode with `validate.Decode[T]`. Never validate inline.
 - Routes and toggles live in `apps/web/internal/config`: `AppRoutes`, `APIRoutes`, and `Features` (email verification off in dev, on in production; `TemplateWelcome`). Never write a path literal or branch on the environment anywhere else.
-- Env is read once, in `config.Load`, and validated at boot. Nothing else calls `os.Getenv`.
+- Env is read once, in `config.Load`, and validated at boot. Nothing else calls `os.Getenv`. Secrets that must rotate without a redeploy are the one exception to "read once": `config.Load` builds a `packages/secrets` manager from `SECRETS_PROVIDER`, and consumers get those values only through typed accessors on `config.Secrets` (`OnResendAPIKey`), wired in `cmd/server`. Services and transports never import `packages/secrets` (depguard); they get the client a secret enables through a port.
 - `packages/auth` owns the `user`, `session`, `account` and `verification` tables (Better Auth names). App migrations may add tables that reference `"user"(id)`, and repositories may update non-credential user columns (`name`, `image`). Auth migrations run before app migrations (`goose_auth`, then `goose_app`).
 - `apps/web/internal/server` and `cmd/server` are the only places that wire packages together.
 
@@ -76,6 +76,7 @@ Tests live only at these boundaries, so they pin the architecture instead of wor
 | ui handler | `apps/web/ui/**` (a tree: also the i18n key guard, render tests and the Datastar hash pin) | same shape as route handlers | generated mocks of the `ui` interfaces + mock session | set when the Account UI lands |
 | repository | `packages/database` | integration tests of every repository method | real Postgres via `dbtest.New(t, dbtest.App)` only (each test gets its own cloned database: `t.Parallel()`) | 80 % |
 | auth | `packages/auth` | its own suite | real Postgres | 80 % |
+| secrets | `packages/secrets` | manager and providers: rotation, outage/staleness, validation, no values in logs | fake providers over `httptest`, `testing/synctest` for the clock (no sleeps), never mocks | 90 % |
 
 The allowlist in `scripts/check-test-boundaries.sh` names three files that have no boundary above them: `config/config_test.go` (env validation at boot) and `server/{server,auth}_test.go` (wiring: mounts, middleware order, CSRF, and the adapters over real `packages/auth` + Postgres). Do not add to it; if a test does not fit a boundary, test the behaviour through the boundary above it. Service tests may not import pgx, `packages/database` (services re-export `User`, `ErrRecordNotFound`, ...), `packages/auth` or `api`; handler tests may not import pgx, `packages/database`, `packages/auth` or `services/mocks` (mock the service, never what is underneath it); repository tests may not import mocks; production code may not import mocks or `apitest`.
 
@@ -94,6 +95,13 @@ Copy the user account flow; it is the reference for every service and repository
 7. **Tests**, at the boundaries only: `services/widgets_test.go` (mocks of the ports), `api/widgets_test.go` (mock service + `apitest`, the four cases per route), `packages/database/widgets_test.go` (real Postgres). `make generate lint test` must pass, including the coverage floors.
 8. **Every layer.** Walk "Hit every layer" above: the UI, the mobile app, docs.
 
+## Adding a secret
+
+1. **Can it rotate live?** Only if its consumer can rebuild in place: an API key for an outbound client, yes. A database password needs a probed pool swap; a signing key needs a keyring with overlap. If not, it is a plain env var in `config.Load` (and README "Secrets" says why it isn't live).
+2. **Live secret.** Add the name to `liveSecrets` in `apps/web/internal/config/secrets.go` and a typed accessor next to `OnResendAPIKey`; list it in `Options.Required` for the environments that need it. `config.Load` must still fail at boot with the env provider when it is missing.
+3. **Consumer.** In `cmd/server`, register the hook: build the new client and swap it in atomically (see `auth.SwapMailer`); on a zero value fall back or keep the old client; return an error to keep the previous client (the manager retries it after each later fetch). A hook must not call back into the manager (`OnChange`, `Refresh`, `Stop`). Log `v.Fingerprint()`, never the value. Never cache the value elsewhere.
+4. **Tests and docs.** Cover the swap at the consumer's boundary (like `TestSwapMailerUsesTheLatestMailer`), add the name to `.env.example` and README "Secrets", and add it to every Doppler config.
+
 ## Pull requests
 
 - Never open a PR unless the developer asks.
@@ -111,6 +119,7 @@ Copy the user account flow; it is the reference for every service and repository
 - `apps/web/internal/services`: business rules and the ports they need; `services/mocks` (generated) for service tests. `apps/web/internal/validate`: input types.
 - `apps/web/ui`: templ pages, Datastar handlers, i18n, static assets.
 - `packages/database`: pool, `migrations/` (goose, embedded), `queries/` (sqlc input), `sqlc/` (generated, never edit), repositories, `model/`, `dbtest/`.
+- `packages/secrets`: live secrets: `Manager` (polling, validation, last-good cache, staleness, change hooks) and providers (`Env`, `Doppler`; Infisical/1Password stubs behind build tags). Self-contained; never reads the env.
 - `packages/auth`: Better Auth–style auth: its own migrations, queries, endpoints (Better Auth paths and response shapes, not the envelope), sessions, mailers. Self-contained: it never imports `apps/` or `packages/database` (depguard).
 - `apps/mobile-app`: the Expo app, which talks to the JSON API with bearer tokens.
 - Root: `Makefile`, `docker-compose.yml`, `Dockerfile`, `railway.json`, `.golangci.yml`, `tools/` (pinned dev tools, run via `go tool -modfile=tools/go.mod`).

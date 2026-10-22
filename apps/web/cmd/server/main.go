@@ -25,6 +25,7 @@ import (
 	"github.com/jayleaton/ai-patterns-go/apps/web/ui"
 	"github.com/jayleaton/ai-patterns-go/packages/auth"
 	"github.com/jayleaton/ai-patterns-go/packages/database"
+	"github.com/jayleaton/ai-patterns-go/packages/secrets"
 )
 
 // migrations run in order: auth owns "user", app tables reference it.
@@ -84,6 +85,12 @@ func migrate(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 }
 
 func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
+	// First: no valid secrets snapshot, no server (the deploy fails visibly).
+	if err := cfg.Secrets.Start(ctx); err != nil {
+		return err
+	}
+	defer cfg.Secrets.Stop()
+
 	pool, err := database.Open(ctx, cfg.DatabaseURL)
 	if err != nil {
 		return err
@@ -97,11 +104,12 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 
 	users := services.NewUserService(database.NewUserRepository(pool), server.NewAccountCredentials(authn))
 	handler := server.New(server.Deps{
-		Config: cfg,
-		Log:    log,
-		DB:     pool,
-		Auth:   authn,
-		Users:  api.NewUsers(users, server.CallerFrom),
+		Config:  cfg,
+		Log:     log,
+		DB:      pool,
+		Secrets: cfg.Secrets,
+		Auth:    authn,
+		Users:   api.NewUsers(users, server.CallerFrom),
 		UI: ui.New(ui.Deps{
 			Auth: authn, Users: users, Features: cfg.Features,
 			SecureCookies: cfg.PublicURL.Scheme == "https", Logger: log,
@@ -140,14 +148,21 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 }
 
 // newAuth configures packages/auth from config: Resend when RESEND_API_KEY is
-// set (required in production), otherwise email links are logged.
+// set (required in production), otherwise email links are logged. The key is
+// a live secret: each rotation rebuilds the Resend client in place.
 func newAuth(cfg config.Config, pool *pgxpool.Pool, log *slog.Logger) (*auth.Auth, error) {
-	var mailer auth.Mailer = auth.NewDevMailer(log)
-	if cfg.ResendAPIKey != "" {
-		mailer = auth.NewResendMailer(cfg.ResendAPIKey, cfg.FromEmail)
-	} else {
-		log.Warn("RESEND_API_KEY not set: auth email links are logged, not sent")
-	}
+	dev := auth.NewDevMailer(log)
+	mailer := auth.NewSwapMailer(dev)
+	cfg.Secrets.OnResendAPIKey(func(key secrets.Secret) error {
+		if key.IsZero() {
+			mailer.Swap(dev)
+			log.Warn("RESEND_API_KEY not set: auth email links are logged, not sent")
+			return nil
+		}
+		mailer.Swap(auth.NewResendMailer(key.Reveal(), cfg.FromEmail))
+		log.Info("mailer: resend client built", "secrets_provider", cfg.Secrets.Provider(), "resend_api_key", key.Fingerprint())
+		return nil
+	})
 	return auth.New(auth.Config{
 		Secret:                   cfg.AuthSecret,
 		BaseURL:                  cfg.PublicURL.String(),

@@ -15,6 +15,7 @@ floors=(
   "$mod/packages/database|80"
   "$mod/packages/auth|80" # measured 89.7% when set
   "$mod/apps/web/ui|70"     # handler + render tests; measured 72.7% when set
+  "$mod/packages/secrets|90" # measured 98.3% when set
 )
 
 profile=${1:?usage: $0 <coverprofile> [<import path>]}

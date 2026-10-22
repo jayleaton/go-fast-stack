@@ -11,6 +11,7 @@ boundaries=(
   apps/web/ui/**             # ui handler tests (same shape as api), plus the i18n key guard, render tests and the static/Datastar hash pin
   packages/database          # repository integration tests: real Postgres
   packages/auth              # auth's own self-contained suite
+  packages/secrets           # secrets manager + providers: fake providers over httptest, synctest clock
 )
 
 # Single files with no boundary above them.
