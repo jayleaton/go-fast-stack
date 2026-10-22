@@ -189,19 +189,24 @@ func TestNoUnescapedOutput(t *testing.T) {
 
 func TestCrawlExposesNothing(t *testing.T) {
 	t.Parallel()
+	// One parallel subtest per state and method, each with one handler (and
+	// mock controller) built for the method it serves: notOnGET needs no
+	// shared state, and a handler per state keeps setup off the CPU budget.
 	for _, failing := range []bool{false, true} {
 		for _, signedIn := range []bool{false, true} {
-			for _, c := range crawlTargets {
-				method, _, _ := strings.Cut(c.pattern, " ")
-				t.Run(state(failing, "failing", "ok")+"/"+state(signedIn, "signed-in", "anonymous")+"/"+c.pattern, func(t *testing.T) {
+			for _, method := range []string{http.MethodGet, http.MethodPost} {
+				t.Run(strings.Join([]string{state(failing, "failing", "ok"), state(signedIn, "signed-in", "anonymous"), method}, "/"), func(t *testing.T) {
 					t.Parallel()
-					// One handler (and mock controller) per subtest, built for
-					// the one method it serves: notOnGET needs no shared state.
 					h := crawlUI(t, method, failing, signedIn)
-					for _, path := range c.paths {
-						for _, ds := range []bool{false, true} {
-							name := strings.Join([]string{method, path, state(failing, "failing", "ok"), state(signedIn, "signed-in", "anonymous"), state(ds, "datastar", "plain")}, " ")
-							checkResponse(t, name, method, path, crawl(h, method, path, ds))
+					for _, c := range crawlTargets {
+						if m, _, _ := strings.Cut(c.pattern, " "); m != method {
+							continue
+						}
+						for _, path := range c.paths {
+							for _, ds := range []bool{false, true} {
+								name := strings.Join([]string{method, path, state(failing, "failing", "ok"), state(signedIn, "signed-in", "anonymous"), state(ds, "datastar", "plain")}, " ")
+								checkResponse(t, name, method, path, crawl(h, method, path, ds))
+							}
 						}
 					}
 				})

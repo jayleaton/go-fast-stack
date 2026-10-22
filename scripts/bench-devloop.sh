@@ -10,13 +10,18 @@
 # temp dir; your own caches are never touched). Tests that use Postgres, and
 # cold start, need TEST_DATABASE_URL (`make bench-devloop` starts the test
 # database) and psql. BENCH_ONLY=build,generate,lint,probes,tests picks
-# sections. Appends the report to $GITHUB_STEP_SUMMARY when set.
+# sections, BENCH_PKGS the packages to test (default ./...). BENCH_BASE=<git ref> adds an A/B of the CI test run (go test
+# -race -coverprofile ./..., warm) on this machine: base and HEAD alternate for
+# BENCH_ROUNDS rounds (default 3) and the medians are compared, which cancels
+# the machine-to-machine noise of separate CI runs.
+# Appends the report to $GITHUB_STEP_SUMMARY when set.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 GO=${GO:-go}
 cold=${BENCH_COLD:-}
 only=,${BENCH_ONLY:-build,generate,lint,probes,tests},
+read -r -a pkgs <<<"${BENCH_PKGS:-./...}"
 want() { [[ $only == *",$1,"* ]]; }
 mkdir -p .cache
 tmp=$(mktemp -d "$PWD/.cache/bench-devloop.XXXXXX") # not /tmp: often RAM, and cold caches are GBs
@@ -25,8 +30,10 @@ cleanup() {
   for p in "${pids[@]}"; do kill "$p" 2>/dev/null || true; done
   for d in "${dbs[@]}"; do psql -q "$TEST_DATABASE_URL" -c "DROP DATABASE IF EXISTS $d WITH (FORCE)" >/dev/null 2>&1 || true; done
   if [ -n "$edited" ]; then cp "$tmp/edited.orig" "$edited"; fi
+  if [ -d "$tmp/base" ]; then git worktree remove --force "$tmp/base" 2>/dev/null || true; fi
   chmod -R u+w "$tmp" 2>/dev/null || true
   rm -rf "$tmp"
+  git worktree prune 2>/dev/null || true
 }
 trap cleanup EXIT
 
@@ -199,7 +206,7 @@ fi
 
 # ---- tests ----
 if want tests; then
-say "### Tests (go test ./..., -count=1)"
+say "### Tests (go test ${pkgs[*]}, -count=1)"
 say ""
 [ -n "${TEST_DATABASE_URL:-}" ] || say "TEST_DATABASE_URL is not set: database tests skip."
 "$GO" build -o "$tmp/testbudget" ./scripts/testbudget
@@ -208,7 +215,7 @@ gotest() {
   local name=$1 s
   shift
   s=$(now)
-  "$GO" test -count=1 -json "$@" ./... >"$tmp/$name.json" 2>"$log" || {
+  "$GO" test -count=1 -json "$@" "${pkgs[@]}" >"$tmp/$name.json" 2>"$log" || {
     "$tmp/testbudget" -pkg 0 -test 0 -top 0 <"$tmp/$name.json" >&2 || true
     cat "$log" >&2
     return 1
@@ -231,6 +238,47 @@ say "Per package (test binary wall time, warm):"
 say ""
 "$tmp/testbudget" table "-race -cover=$tmp/race.json" "plain=$tmp/plain.json" | tee -a "$report"
 say ""
+fi
+
+# ---- A/B ----
+if [ -n "${BENCH_BASE:-}" ] && want tests; then
+  rounds=${BENCH_ROUNDS:-3}
+  git worktree add -q --detach "$tmp/base" "$BENCH_BASE"
+  say "### A/B on this machine: $BENCH_BASE ($(git -C "$tmp/base" rev-parse --short HEAD)) vs HEAD ($(git rev-parse --short HEAD))"
+  say ""
+  say "go test -race -coverprofile ${pkgs[*]} (as CI), warm, $rounds alternating rounds; wall time per round and the median."
+  say ""
+  # abrun <dir> <out.json>: prints the run's wall time in ms.
+  abrun() {
+    local s
+    s=$(now)
+    (cd "$1" && "$GO" test -count=1 -json -race -coverprofile="$tmp/ab-cover.out" "${pkgs[@]}" >"$2" 2>"$log") || {
+      "$tmp/testbudget" -pkg 0 -test 0 -top 0 <"$2" >&2 || true
+      cat "$log" >&2
+      return 1
+    }
+    echo $(($(now) - s))
+  }
+  abrun "$tmp/base" "$tmp/ab-prime-base.json" >/dev/null # compile both into the cache
+  abrun . "$tmp/ab-prime-head.json" >/dev/null
+  base_ms=() head_ms=() base_json=() head_json=()
+  for i in $(seq 1 "$rounds"); do
+    base_ms+=("$(abrun "$tmp/base" "$tmp/ab-base-$i.json")") && base_json+=("$tmp/ab-base-$i.json")
+    head_ms+=("$(abrun . "$tmp/ab-head-$i.json")") && head_json+=("$tmp/ab-head-$i.json")
+  done
+  med() { printf '%s\n' "$@" | sort -n | awk '{ a[NR] = $1 } END { print a[int((NR + 1) / 2)] }'; }
+  list() { for m in "$@"; do secs "$m"; printf ' '; done; }
+  bm=$(med "${base_ms[@]}") hm=$(med "${head_ms[@]}")
+  say "| tree | rounds | median |"
+  say "|---|---|--:|"
+  say "| base | $(list "${base_ms[@]}")| $(secs "$bm") |"
+  say "| HEAD | $(list "${head_ms[@]}")| $(secs "$hm") |"
+  say "| change | | $(awk -v b="$bm" -v h="$hm" 'BEGIN { printf "%+.0f%%", 100 * (h - b) / b }') |"
+  say ""
+  say "Per package (median test binary wall time):"
+  say ""
+  "$tmp/testbudget" table "base=$(IFS=,; echo "${base_json[*]}")" "HEAD=$(IFS=,; echo "${head_json[*]}")" | tee -a "$report"
+  say ""
 fi
 
 if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then cat "$report" >>"$GITHUB_STEP_SUMMARY"; fi

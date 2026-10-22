@@ -13,9 +13,11 @@
 // not a flake: see AGENTS.md "Fast tests" before raising a budget.
 //
 // The table subcommand renders saved -json runs as markdown for
-// `make bench-devloop`:
+// `make bench-devloop`, one column per run (a comma-separated list of
+// repeated runs gives each package's median):
 //
 //	testbudget table race=race.json norace=norace.json
+//	testbudget table base=b1.json,b2.json,b3.json head=h1.json,h2.json,h3.json
 package main
 
 import (
@@ -189,35 +191,46 @@ func table(out io.Writer, args []string) int {
 	var order []string
 	seen := map[string]bool{}
 	for _, a := range args {
-		name, file, ok := strings.Cut(a, "=")
+		name, files, ok := strings.Cut(a, "=")
 		if !ok {
-			fmt.Fprintln(os.Stderr, "usage: testbudget table name=file.json ...")
+			fmt.Fprintln(os.Stderr, "usage: testbudget table name=file.json[,file.json...] ...")
 			return 2
 		}
-		f, err := os.Open(file)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			return 1
+		// Several files (repeated runs): each package's and test's median.
+		pkgRuns, testRuns := map[string][]time.Duration{}, map[string][]time.Duration{}
+		for file := range strings.SplitSeq(files, ",") {
+			f, err := os.Open(file)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				return 1
+			}
+			sc := bufio.NewScanner(f)
+			sc.Buffer(make([]byte, 0, 1<<20), 1<<26)
+			for sc.Scan() {
+				var e event
+				if json.Unmarshal(sc.Bytes(), &e) != nil || (e.Action != "pass" && e.Action != "fail") {
+					continue
+				}
+				if e.Test == "" {
+					pkgRuns[e.Package] = append(pkgRuns[e.Package], seconds(e.Elapsed))
+					if !seen[e.Package] {
+						seen[e.Package] = true
+						order = append(order, e.Package)
+					}
+				} else {
+					k := e.Package + " " + e.Test
+					testRuns[k] = append(testRuns[k], seconds(e.Elapsed))
+				}
+			}
+			_ = f.Close()
 		}
 		c := col{name: name, pkgs: map[string]time.Duration{}}
-		sc := bufio.NewScanner(f)
-		sc.Buffer(make([]byte, 0, 1<<20), 1<<26)
-		for sc.Scan() {
-			var e event
-			if json.Unmarshal(sc.Bytes(), &e) != nil || (e.Action != "pass" && e.Action != "fail") {
-				continue
-			}
-			if e.Test == "" {
-				c.pkgs[e.Package] = seconds(e.Elapsed)
-				if !seen[e.Package] {
-					seen[e.Package] = true
-					order = append(order, e.Package)
-				}
-			} else {
-				c.tests = append(c.tests, result{e.Package + " " + e.Test, seconds(e.Elapsed)})
-			}
+		for p, ds := range pkgRuns {
+			c.pkgs[p] = median(ds)
 		}
-		_ = f.Close()
+		for t, ds := range testRuns {
+			c.tests = append(c.tests, result{t, median(ds)})
+		}
 		cols = append(cols, c)
 	}
 	if len(cols) == 0 {
@@ -257,6 +270,11 @@ func table(out io.Writer, args []string) int {
 		fmt.Fprintf(out, "| %s | %.2fs |\n", strings.TrimPrefix(t.name, mod), t.elapsed.Seconds())
 	}
 	return 0
+}
+
+func median(ds []time.Duration) time.Duration {
+	slices.Sort(ds)
+	return ds[len(ds)/2]
 }
 
 // commonPrefix is the module path shared by the packages ("" if fewer than two).

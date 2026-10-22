@@ -179,21 +179,23 @@ func TestNoUnescapedOutput(t *testing.T) {
 
 func TestCrawlExposesNothing(t *testing.T) {
 	t.Parallel()
+	// One parallel subtest per state, each with its own crawler (handler and
+	// mock controller) that requests the routes one at a time.
 	for _, failing := range []bool{false, true} {
 		for _, signedIn := range []bool{false, true} {
-			for _, c := range crawlTargets {
-				t.Run(strings.Join([]string{c.pattern, state(failing, "failing", "ok"), state(signedIn, "signed-in", "anonymous")}, " "), func(t *testing.T) {
-					t.Parallel()
-					cr := crawlUI(t, failing, signedIn)
+			t.Run(state(failing, "failing", "ok")+"/"+state(signedIn, "signed-in", "anonymous"), func(t *testing.T) {
+				t.Parallel()
+				cr := crawlUI(t, failing, signedIn)
+				for _, c := range crawlTargets {
 					method, _, _ := strings.Cut(c.pattern, " ")
 					for _, path := range c.paths {
 						for _, ds := range []bool{false, true} {
-							name := strings.Join([]string{method, path, state(ds, "datastar", "plain")}, " ")
+							name := strings.Join([]string{method, path, state(failing, "failing", "ok"), state(signedIn, "signed-in", "anonymous"), state(ds, "datastar", "plain")}, " ")
 							checkResponse(t, name, method, path, cr.crawl(method, path, ds))
 						}
 					}
-				})
-			}
+				}
+			})
 		}
 	}
 }
