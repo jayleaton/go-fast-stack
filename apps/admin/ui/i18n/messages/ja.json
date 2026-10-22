@@ -205,7 +205,13 @@
         "adminTwoFactorFailed": "二要素認証コードの誤り"
       },
       "signInMethod": "方法: {0}",
-      "failures": "連続失敗回数: {0}",
+      "reason": "理由: {0}",
+      "reasons": {
+        "invalidCode": "コードの誤り",
+        "invalidBackupCode": "バックアップコードの誤り",
+        "locked": "誤りが多すぎるためロック中",
+        "tooManyRequests": "試行回数の超過"
+      },
       "methods": {
         "password": "パスワード",
         "twoFactor": "パスワード + 二要素認証",

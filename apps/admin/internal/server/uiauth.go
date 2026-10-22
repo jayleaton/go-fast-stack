@@ -6,63 +6,44 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/jayleaton/ai-patterns-go/apps/admin/internal/services"
 	"github.com/jayleaton/ai-patterns-go/apps/admin/ui"
 	"github.com/jayleaton/ai-patterns-go/packages/auth"
 )
 
 // UIAuth adapts the admin *auth.Auth to ui.Auth: it converts types and
-// translates auth errors into the ui.Err* values. Sign-ins, sign-outs and
-// second-factor checks also go through AuthEvents, so the UI path is audited
-// like the JSON one.
+// translates auth errors into the ui.Err* values. Auditing needs nothing
+// here: the auth instance reports every sign-in, sign-out and failed 2FA code
+// to its Config.Events (NewAuditEvents), whichever path it came through.
 type UIAuth struct {
-	auth   *auth.Auth
-	events *AuthEvents // nil: not audited
+	auth *auth.Auth
 }
 
 var _ ui.Auth = UIAuth{}
 
 // NewUIAuth returns the adapter over the admin auth instance.
-func NewUIAuth(a *auth.Auth, events *AuthEvents) UIAuth {
-	return UIAuth{auth: a, events: events}
+func NewUIAuth(a *auth.Auth) UIAuth {
+	return UIAuth{auth: a}
 }
 
 func (a UIAuth) SignIn(ctx context.Context, email, password string) (ui.Session, error) {
-	u, s, err := a.auth.SignInEmail(ctx, auth.SignInInput{Email: email, Password: password})
-	if err == nil {
-		a.events.signedIn(ctx, u, services.SignInPassword)
-	}
+	_, s, err := a.auth.SignInEmail(ctx, auth.SignInInput{Email: email, Password: password})
 	return uiSession(s), uiAuthErr(err)
 }
 
 func (a UIAuth) SignOut(ctx context.Context, sessionToken string) error {
-	u, _, _ := auth.UserFrom(ctx)
-	err := a.auth.SignOut(ctx, sessionToken)
-	if err == nil {
-		a.events.signedOut(ctx, u)
-	}
-	return uiAuthErr(err)
+	return uiAuthErr(a.auth.SignOut(ctx, sessionToken))
 }
 
 func (a UIAuth) CompleteSetPassword(ctx context.Context, token, newPassword string) (ui.Session, error) {
-	u, s, err := a.auth.CompleteSetPassword(ctx, token, newPassword)
-	if err == nil {
-		a.events.signedIn(ctx, u, services.SignInSetPassword)
-	}
+	_, s, err := a.auth.CompleteSetPassword(ctx, token, newPassword)
 	return uiSession(s), uiAuthErr(err)
 }
 
 func (a UIAuth) VerifyTwoFactor(ctx context.Context, in ui.VerifyTwoFactorInput) (ui.Session, string, error) {
-	var res auth.TwoFactorResult
-	var err error
-	a.events.verify(ctx, func() bool {
-		res, err = a.auth.VerifyTwoFactor(ctx, auth.VerifyTwoFactorInput{Code: in.Code, Method: in.Method, TrustDevice: in.TrustDevice})
-		return err != nil
-	})
+	res, err := a.auth.VerifyTwoFactor(ctx, auth.VerifyTwoFactorInput{Code: in.Code, Method: in.Method, TrustDevice: in.TrustDevice})
 	if err != nil {
 		return ui.Session{}, "", uiAuthErr(err)
 	}
-	a.events.signedIn(ctx, res.User, services.SignInTwoFactor)
 	return uiSession(res.Session), res.TrustToken, nil
 }
 
@@ -77,12 +58,7 @@ func (a UIAuth) EnableTwoFactor(ctx context.Context, adminID, password string) (
 }
 
 func (a UIAuth) ConfirmTwoFactor(ctx context.Context, adminID, code string) error {
-	var err error
-	a.events.verify(ctx, func() bool {
-		err = a.auth.ConfirmTwoFactor(ctx, adminID, code)
-		return err != nil
-	})
-	return uiAuthErr(err)
+	return uiAuthErr(a.auth.ConfirmTwoFactor(ctx, adminID, code))
 }
 
 func (a UIAuth) SetSessionCookie(w http.ResponseWriter, s ui.Session) {

@@ -777,19 +777,20 @@ func TestAuditAdminActions(t *testing.T) {
 		entry(services.ActionAdminSignIn, map[string]string{"method": services.SignInSetPassword}),
 		entry(services.ActionAdminSignIn, map[string]string{"method": "passkey"}),
 		entry(services.ActionAdminSignOut, nil),
-		entry(services.ActionAdminTwoFactorFailed, map[string]string{"failures": "3"}),
+		entry(services.ActionAdminTwoFactorFailed, map[string]string{"reason": "INVALID_CODE"}),
+		entry(services.ActionAdminTwoFactorFailed, map[string]string{"reason": "SOMETHING_NEW"}),
 		entry("admin.something_new", map[string]string{"k": "v"}),
-	}, Total: 10, Limit: 25}
+	}, Total: 11, Limit: 25}
 	e.audit.EXPECT().List(gomock.Any(), actor, gomock.Any()).Return(page, nil).Times(2)
 	assertPage(t, e.do("GET", config.AppRoutes.Audit, nil, signedIn), http.StatusOK,
 		">Disabled admin<", ">Enabled admin<", ">Removed admin<", ">Signed in<", ">Signed out<", ">Failed two-factor code<",
 		"Method: password<", "Method: password + two-factor<", "Method: set-password link<", "Method: passkey<",
-		"Failed attempts in a row: 3<", ">admin.something_new<", "k: v<",
+		"Reason: wrong code<", "Reason: SOMETHING_NEW<", ">admin.something_new<", "k: v<",
 		`<option value="admin.disable">Disabled admin</option>`, `<option value="admin.sign_in">Signed in</option>`,
 		`<option value="admin.two_factor_failed">Failed two-factor code</option>`)
 	assertPage(t, e.do("GET", config.AppRoutes.Audit, nil, signedIn, lang("ja")), http.StatusOK,
 		">管理者を無効化<", ">管理者を有効化<", ">管理者を削除<", ">サインイン<", ">サインアウト<", ">二要素認証コードの誤り<",
-		"方法: パスワード<", "方法: パスワード + 二要素認証<", "方法: パスワード設定リンク<", "連続失敗回数: 3<",
+		"方法: パスワード<", "方法: パスワード + 二要素認証<", "方法: パスワード設定リンク<", "理由: コードの誤り<",
 		`<option value="admin.sign_out">サインアウト</option>`)
 
 	// The filter passes the new actions through.

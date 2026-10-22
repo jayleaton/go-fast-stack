@@ -46,6 +46,15 @@ Ports of Better Auth's `twoFactor` and `admin` plugins and an invite flow; the f
 
 Security notes for this part: TOTP secrets are AES-256-GCM encrypted (user id as associated data) and backup codes are stored as keyed hashes bound to the user, under data keys stored wrapped by `AUTH_SECRET`, so a database dump alone yields neither, and rotating `AUTH_SECRET` rewraps the data keys instead of invalidating enrolments. Trusted-device cookies are not rotated on use (Better Auth rotates them); disable 2FA, reset the password or revoke other sessions to forget them. The per-challenge attempt limit uses the configured `RateLimiter` (in-memory by default); the per-user lockout is in the database.
 
+## Events
+
+`Config.Events` receives typed events after the fact:
+- sign-ins and refused sign-ins, 2FA results;
+- sign-outs and session revocations;
+- password and email changes, bans.
+
+Events never carry tokens, passwords or codes. They can't block or fail auth: they're delivered in order on a background worker, through a bounded, panic-safe queue. The kinds and guarantees are in [ADMIN.md](ADMIN.md#events-audit-hooks).
+
 ## Usage
 
 ```go

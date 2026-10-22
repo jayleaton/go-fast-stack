@@ -173,6 +173,29 @@ secret, so a rotation rewraps them and 2FA keeps working. `UserAdmin.ResetTwoFac
 lost their authenticator and backup codes.
 Turning `TwoFactor` off on an instance skips 2FA even for users who enrolled.
 
+## Events (audit hooks)
+
+`Config.Events` (an `EventHandler`, `func(ctx, Event)`) receives what happened, after it happened. Every kind is an `EventKind` constant:
+
+| Kind | When | Notable fields |
+|---|---|---|
+| `sign_in` | a session was created | `Method`: `password`, `two_factor` (`Details["factor"]` totp / backup_code), `set_password`, `sign_up`, `email_verification`, `email_change`; `SessionID` |
+| `sign_in_failed` | sign-in refused | `Reason` (error code); `UserID`/`Email` only when the email matched an account |
+| `two_factor_succeeded` / `two_factor_failed` | a second-factor or enrolment code accepted / refused | `UserID` from the pending-2FA state (empty if the challenge was invalid); `Method` totp / backup_code; `Reason` |
+| `two_factor_enabled` / `two_factor_disabled` | enrolment confirmed / removed (`Details["by"]="admin"` for `ResetTwoFactor`) | |
+| `sign_out` | the user ended their session | `SessionID` |
+| `session_revoked` | sessions ended by the user elsewhere, a password change, an admin or a ban | `Details["count"]`, `Details["by"]`; `SessionID` for a single one |
+| `password_changed` / `password_reset` | `ChangePassword` / a reset or invite link (`Method` reset / set_password) | |
+| `email_change_requested` / `email_changed` | `ChangeEmail` (`Details["newEmail"]`, `outcome=address_taken` when silently ignored) / the link was opened (`oldEmail`, `newEmail`) | |
+| `user_banned` / `user_unbanned` | `UserAdmin.BanUser` (`reason`, `expiresAt`) / `UnbanUser` | |
+
+- **Never secrets:** events carry ids, never a password, token, TOTP secret or code. `Email` is the account's address, filled in before delivery. A refused sign-in for an unknown address carries no email, because people type passwords into email fields.
+- **Request metadata:** `IP` and `UserAgent` come from the instance's own request data, with `ClientIPHeader` rules. Calls outside `Middleware`, and a standalone `UserAdmin`, have none.
+- **Delivery:** one worker per instance delivers events in order, each call with a context that keeps the request's values but not its cancellation, for at most 5 s. The handler cannot block or fail auth: the queue holds 1024 events, a full queue drops new ones with a warning, and a panic is recovered and logged.
+- **Draining:** `Auth.Shutdown` waits for queued events. Call it on graceful shutdown, and in tests before asserting.
+- **User administration:** `a.Users()` reports to the instance's handler. `NewUserAdmin(pool).WithEvents(h)` opts a standalone `UserAdmin` in.
+- **Attribution:** each event names its user, so audit attribution is exact however many instances run against one database. The admin app audits sign-ins, sign-outs and failed 2FA this way.
+
 ## Errors (errors.Is)
 
 `ErrBannedUser` (403 BANNED_USER), `ErrInvalidCode` (401 INVALID_CODE), `ErrInvalidBackupCode` (401 INVALID_BACKUP_CODE),

@@ -43,7 +43,7 @@ type Deps struct {
 	// Secrets reports whether live secrets are loaded and fresh
 	// (config.Secrets); nil: /healthz checks the databases only.
 	Secrets SecretsHealth
-	Auth    Auth
+	Auth    Auth // audited through its auth.Config.Events (NewAuditEvents)
 	// API is the admin JSON API (/api/admin/v1). cmd/admin mounts none: the
 	// dashboard calls the services in-process, so nothing about the API is
 	// on the network. A deployment that wants scripts or agents to call it
@@ -51,10 +51,7 @@ type Deps struct {
 	// endpoints that issue their bearer tokens (authRoutes), and both are
 	// hidden from browsers like /healthz.
 	API []Router
-	// AuthEvents audits sign-ins, sign-outs and failed 2FA on those auth
-	// endpoints; nil leaves them unaudited (tests).
-	AuthEvents *AuthEvents
-	UI         http.Handler // apps/admin/ui routes, mounted at "/"
+	UI  http.Handler // apps/admin/ui routes, mounted at "/"
 }
 
 // authRoutes are the admin auth endpoints mounted with the JSON API: sign-in
@@ -80,7 +77,7 @@ func New(d Deps) http.Handler {
 	mux.Handle("GET "+config.APIRoutes.Healthz, apiOnly(healthz(d.DBs, d.Secrets)))
 	if len(d.API) > 0 {
 		apiMux := http.NewServeMux()
-		authHandler := d.AuthEvents.Handler(d.Auth.Handler())
+		authHandler := d.Auth.Handler()
 		for _, p := range authRoutes {
 			apiMux.Handle(p, authHandler)
 		}

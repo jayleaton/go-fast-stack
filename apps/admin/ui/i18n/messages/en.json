@@ -205,7 +205,13 @@
         "adminTwoFactorFailed": "Failed two-factor code"
       },
       "signInMethod": "Method: {0}",
-      "failures": "Failed attempts in a row: {0}",
+      "reason": "Reason: {0}",
+      "reasons": {
+        "invalidCode": "wrong code",
+        "invalidBackupCode": "wrong backup code",
+        "locked": "locked after too many wrong codes",
+        "tooManyRequests": "too many attempts"
+      },
       "methods": {
         "password": "password",
         "twoFactor": "password + two-factor",
