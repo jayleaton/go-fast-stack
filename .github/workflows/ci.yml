@@ -287,6 +287,9 @@ jobs:
 
       # This job's own result (docs-only PRs land here with nothing to check:
       # success). With fan-out, the db job posts it instead.
+      # Last real step: every check ran before it (job.status covers them). The
+      # job/run can still show "in progress" a few seconds longer (post-step
+      # cleanup), or minutes when GitHub is slow to process Actions results.
       - name: ci-ok result
         if: always() && !cancelled() && steps.plan.outputs.fanout != 'true' && steps.target.outputs.sha != '' && steps.scope.outputs.skip != 'true'
         env:
