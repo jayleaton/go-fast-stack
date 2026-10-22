@@ -29,8 +29,9 @@ var (
 
 // emailData is the data passed to every email template.
 type emailData struct {
-	Email string
-	URL   string
+	Email    string
+	URL      string
+	NewEmail string // email_change_notice only
 }
 
 // ResendMailer sends auth emails through the Resend HTTP API
@@ -57,16 +58,21 @@ func NewResendMailer(apiKey, from string) *ResendMailer {
 
 // SendVerificationEmail sends the "verify your email" email containing url to to.
 func (m *ResendMailer) SendVerificationEmail(ctx context.Context, to, url string) error {
-	return m.send(ctx, to, "Verify your email address", "verification", url)
+	return m.send(ctx, to, "Verify your email address", "verification", emailData{Email: to, URL: url})
 }
 
 // SendPasswordResetEmail sends the "reset your password" email containing url to to.
 func (m *ResendMailer) SendPasswordResetEmail(ctx context.Context, to, url string) error {
-	return m.send(ctx, to, "Reset your password", "password_reset", url)
+	return m.send(ctx, to, "Reset your password", "password_reset", emailData{Email: to, URL: url})
+}
+
+// SendEmailChangeNotice tells to that the account's email is being changed to newEmail.
+func (m *ResendMailer) SendEmailChangeNotice(ctx context.Context, to, newEmail string) error {
+	return m.send(ctx, to, "Your email address is being changed", "email_change_notice", emailData{Email: to, NewEmail: newEmail})
 }
 
 // send renders templates/<name>.html and .txt and posts them to Resend.
-func (m *ResendMailer) send(ctx context.Context, to, subject, name, url string) error {
+func (m *ResendMailer) send(ctx context.Context, to, subject, name string, data emailData) error {
 	if m.APIKey == "" {
 		return errors.New("auth: resend mailer: missing API key")
 	}
@@ -74,7 +80,6 @@ func (m *ResendMailer) send(ctx context.Context, to, subject, name, url string) 
 		return errors.New("auth: resend mailer: missing from address")
 	}
 
-	data := emailData{Email: to, URL: url}
 	var html, text strings.Builder
 	if err := emailHTMLTemplates.ExecuteTemplate(&html, name+".html", data); err != nil {
 		return fmt.Errorf("auth: render %s.html: %w", name, err)

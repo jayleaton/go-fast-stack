@@ -25,6 +25,11 @@ func (a *Auth) Handler() http.Handler {
 	mux.HandleFunc("POST "+BasePath+"/request-password-reset", a.handleRequestPasswordReset)
 	mux.HandleFunc("GET "+BasePath+"/reset-password/{token}", a.handleResetPasswordCallback)
 	mux.HandleFunc("POST "+BasePath+"/reset-password", a.handleResetPassword)
+	mux.HandleFunc("POST "+BasePath+"/change-password", a.handleChangePassword)
+	mux.HandleFunc("POST "+BasePath+"/change-email", a.handleChangeEmail)
+	mux.HandleFunc("GET "+BasePath+"/list-sessions", a.handleListSessions)
+	mux.HandleFunc("POST "+BasePath+"/revoke-session", a.handleRevokeSession)
+	mux.HandleFunc("POST "+BasePath+"/revoke-other-sessions", a.handleRevokeOtherSessions)
 	mux.HandleFunc("GET "+BasePath+"/ok", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	})
@@ -177,7 +182,7 @@ func (a *Auth) handleVerifyEmail(w http.ResponseWriter, r *http.Request) {
 		a.writeError(w, r, err)
 		return
 	}
-	_, sess, err := a.VerifyEmail(r.Context(), r.URL.Query().Get("token"))
+	user, sess, changed, err := a.verifyEmail(r.Context(), r.URL.Query().Get("token"))
 	if err != nil {
 		e := asError(err)
 		if e == nil {
@@ -196,6 +201,10 @@ func (a *Auth) handleVerifyEmail(w http.ResponseWriter, r *http.Request) {
 	}
 	if callbackURL != "" {
 		http.Redirect(w, r, callbackURL, http.StatusFound) //nolint:gosec // callbackURL passed checkCallbackURL
+		return
+	}
+	if changed {
+		writeJSON(w, http.StatusOK, map[string]any{"status": true, "user": user})
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"status": true, "user": nil})

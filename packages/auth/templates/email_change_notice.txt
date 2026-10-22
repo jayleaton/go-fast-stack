@@ -1,0 +1,7 @@
+Your email address is being changed
+
+Hi! We received a request to change the email address of your account ({{.Email}}) to {{.NewEmail}}.
+
+The change only takes effect once the link we sent to {{.NewEmail}} is opened. Until then, nothing changes and you can keep signing in with this address.
+
+If you didn't request this change, reset your password and sign out your other sessions right away.

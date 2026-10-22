@@ -38,6 +38,12 @@ func (m *DevMailer) SendPasswordResetEmail(ctx context.Context, to, url string) 
 	return nil
 }
 
+// SendEmailChangeNotice logs the email change notice for to. It never fails.
+func (m *DevMailer) SendEmailChangeNotice(ctx context.Context, to, newEmail string) error {
+	m.logger().InfoContext(ctx, "auth: email change notice (dev mode, not sent)", "to", to, "newEmail", newEmail)
+	return nil
+}
+
 // logger lets a zero-value DevMailer work without NewDevMailer.
 func (m *DevMailer) logger() *slog.Logger {
 	if m.Logger == nil {

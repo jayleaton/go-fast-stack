@@ -120,8 +120,12 @@ func TestVerificationToken(t *testing.T) {
 	now := time.Unix(1_800_000_000, 0)
 	a.now = func() time.Time { return now }
 	tok := a.signVerificationToken("User@Example.com", "fp", 24*time.Hour)
-	if got, cred, err := a.parseVerificationToken(tok); err != nil || got != "user@example.com" || cred != "fp" {
-		t.Fatalf("parse = %q %q %v", got, cred, err)
+	if c, err := a.parseVerificationToken(tok); err != nil || c.Email != "user@example.com" || c.Cred != "fp" || c.UpdateTo != "" {
+		t.Fatalf("parse = %+v %v", c, err)
+	}
+	change := a.signChangeEmailToken("uid1", "Old@Example.com", "New@Example.com", "nonce1", time.Hour)
+	if c, err := a.parseVerificationToken(change); err != nil || c.Email != "old@example.com" || c.UpdateTo != "new@example.com" || c.RequestType != changeEmailRequest || c.UserID != "uid1" || c.Nonce != "nonce1" {
+		t.Fatalf("parse change-email = %+v %v", c, err)
 	}
 
 	enc := base64.RawURLEncoding.EncodeToString
@@ -141,19 +145,21 @@ func TestVerificationToken(t *testing.T) {
 		"no email":        sign(`{"alg":"HS256"}`, `{"exp":1900000000}`),
 		"no exp":          sign(`{"alg":"HS256"}`, `{"email":"a@b.co"}`),
 		"change email":    sign(`{"alg":"HS256"}`, `{"email":"a@b.co","updateTo":"c@d.co","exp":1900000000}`),
+		"confirmation":    sign(`{"alg":"HS256"}`, `{"email":"a@b.co","updateTo":"c@d.co","requestType":"change-email-confirmation","exp":1900000000}`),
+		"type no target":  sign(`{"alg":"HS256"}`, `{"email":"a@b.co","requestType":"change-email-verification","exp":1900000000}`),
 		"header base64":   "***." + parts[1] + "." + parts[2],
 		"claims base64":   parts[0] + ".***." + parts[2],
 		"too long":        strings.Repeat("a", 2049) + ".b.c",
 		"empty":           "",
 	}
 	for name, in := range cases {
-		if _, _, err := a.parseVerificationToken(in); !errors.Is(err, ErrInvalidToken) {
+		if _, err := a.parseVerificationToken(in); !errors.Is(err, ErrInvalidToken) {
 			t.Errorf("%s: err = %v, want ErrInvalidToken", name, err)
 		}
 	}
 
 	now = now.Add(24 * time.Hour)
-	if _, _, err := a.parseVerificationToken(tok); !errors.Is(err, errTokenExpired) {
+	if _, err := a.parseVerificationToken(tok); !errors.Is(err, errTokenExpired) {
 		t.Fatalf("expired err = %v", err)
 	}
 }
@@ -207,9 +213,9 @@ func FuzzParseVerificationToken(f *testing.F) {
 	f.Add("a.b.c")
 	f.Add("")
 	f.Fuzz(func(t *testing.T, in string) {
-		email, _, err := a.parseVerificationToken(in)
-		if err == nil && (email == "" || email != strings.ToLower(email)) {
-			t.Fatalf("parse(%q) = %q", in, email)
+		c, err := a.parseVerificationToken(in)
+		if err == nil && (c.Email == "" || c.Email != strings.ToLower(c.Email) || (c.UpdateTo != "") != (c.RequestType == changeEmailRequest)) {
+			t.Fatalf("parse(%q) = %+v", in, c)
 		}
 	})
 }

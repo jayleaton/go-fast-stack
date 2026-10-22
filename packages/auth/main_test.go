@@ -114,6 +114,14 @@ func (m *captureMailer) SendPasswordResetEmail(_ context.Context, to, url string
 	return nil
 }
 
+// SendEmailChangeNotice records the new address in url.
+func (m *captureMailer) SendEmailChangeNotice(_ context.Context, to, newEmail string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.sent = append(m.sent, sentMail{"change-notice", to, newEmail})
+	return nil
+}
+
 type allowAll struct{}
 
 func (allowAll) Allow(context.Context, string, RateRule) (time.Duration, error) { return 0, nil }

@@ -33,6 +33,7 @@ const BasePath = "/api/auth"
 const (
 	DefaultSessionTTL        = 7 * 24 * time.Hour
 	DefaultSessionUpdateAge  = 24 * time.Hour
+	DefaultFreshAge          = 24 * time.Hour
 	DefaultMinPasswordLength = 8
 	DefaultMaxPasswordLength = 128
 	// VerificationTokenTTL is how long an email verification link stays valid.
@@ -50,6 +51,7 @@ type Config struct {
 	SessionUpdateAge         time.Duration // how often a used session is extended (default 1 day)
 	TrustedOrigins           []string      // extra origins allowed to call state-changing endpoints, incl. mobile schemes (see MobileTrustedOrigins)
 
+	FreshAge          time.Duration // how recent a session must be to change the email (default 1 day)
 	MinPasswordLength int           // default 8
 	MaxPasswordLength int           // default 128
 	LoginPath         string        // where RequireUser redirects HTML requests (default "/login")
@@ -74,6 +76,9 @@ func MobileTrustedOrigins(production bool) []string {
 type Mailer interface {
 	SendVerificationEmail(ctx context.Context, to, url string) error
 	SendPasswordResetEmail(ctx context.Context, to, url string) error
+	// SendEmailChangeNotice tells the current address that a change to
+	// newEmail was requested (the confirmation link goes to newEmail).
+	SendEmailChangeNotice(ctx context.Context, to, newEmail string) error
 }
 
 // User is a row of the "user" table, serialised like Better Auth's user object.
@@ -91,7 +96,7 @@ type User struct {
 type Session struct {
 	ID        string    `json:"id"`
 	ExpiresAt time.Time `json:"expiresAt"`
-	Token     string    `json:"token"`
+	Token     string    `json:"token,omitempty"` // empty in ListSessions: other sessions' tokens are never exposed
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
 	IPAddress *string   `json:"ipAddress"`
@@ -136,6 +141,9 @@ func New(cfg Config, pool *pgxpool.Pool, mailer Mailer) (*Auth, error) {
 	}
 	if cfg.SessionUpdateAge <= 0 {
 		cfg.SessionUpdateAge = DefaultSessionUpdateAge
+	}
+	if cfg.FreshAge <= 0 {
+		cfg.FreshAge = DefaultFreshAge
 	}
 	if cfg.MinPasswordLength <= 0 {
 		cfg.MinPasswordLength = DefaultMinPasswordLength

@@ -19,10 +19,13 @@ ported one at a time.
 | Get session | `GET /api/auth/get-session` → `{session,user}` or `null`, `Cache-Control: no-store`. |
 | Verification | `GET /api/auth/verify-email?token=&callbackURL=`: stateless HS256 JWT (`{email,iat,exp}`, 24 h), same format as Better Auth. Verifies, signs in (autoSignInAfterVerification) and redirects to `callbackURL`. Errors redirect with `?error=CODE`, or give `401 {code}` without a callback. After the email is verified, the link no longer signs anyone in. `POST /api/auth/send-verification-email` `{email,callbackURL?}` resends it. |
 | Password reset | `POST /api/auth/request-password-reset` `{email,redirectTo}` always gives the same response. `redirectTo` is required, because without it the emailed link would lead nowhere. The emailed link `GET /api/auth/reset-password/{token}?callbackURL=` redirects to `redirectTo?token=` (or `?error=INVALID_TOKEN`). `POST /api/auth/reset-password` `{token,newPassword}`: in one transaction, the token is consumed (single use, 1 h), every session and every other outstanding reset link of the user is revoked, and the password is set. |
+| Change password | `POST /api/auth/change-password` `{currentPassword,newPassword,revokeOtherSessions?}` → `{token:null,user}`. Needs a session. A wrong current password gives `400 INVALID_PASSWORD`, and a user without a password (OAuth only) `400 CREDENTIAL_ACCOUNT_NOT_FOUND`. Outstanding reset links stop working. `revokeOtherSessions` signs out every other session but keeps the current one, so unlike Better Auth no new token is issued. The update is conditional on the hash just verified, so of two concurrent changes only one wins. |
+| Change email | `POST /api/auth/change-email` `{newEmail,callbackURL?}` → `{status:true}`. Needs a session. A link (Better Auth's `change-email-verification` JWT, 24 h) goes to the new address and a notice to the current one. The email changes, and becomes verified, only when the link is opened on `GET /api/auth/verify-email`, which also signs the opener in and returns the updated user. The link names its user and a one-time nonce stored as a `verification` row. Only the newest link of a user works, and only once. A password change, a reset or revoke-other-sessions cancels it. Opened in a browser signed in as someone else, it gives `INVALID_USER` instead of switching accounts. The session must be fresh (created within `FreshAge`, default 1 day), else `403 SESSION_NOT_FRESH`. Reset links sent to the old address stop working. A taken address gives `422 USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL` when verification is off. When it is required, the request succeeds silently and sends nothing, as with sign-up. The address is checked again, atomically, when the link is opened. The same address gives `400 EMAIL_IS_THE_SAME`. |
+| Sessions | `GET /api/auth/list-sessions` → the caller's active sessions, newest first, **without tokens**. `POST /api/auth/revoke-session` `{id}` (or Better Auth's `{token}`) revokes one of the caller's own sessions; another user's session gives `404 SESSION_NOT_FOUND`. Revoking the current session also clears its cookie. `POST /api/auth/revoke-other-sessions` keeps only the caller's session. |
 | Bearer | `Authorization: Bearer <token>` with the raw session token (response body) or the signed token (`set-auth-token` header), on the same session rows. Bearer wins over the cookie. |
 | CSRF | Better Auth's origin check. State-changing requests that carry cookies need an `Origin`/`Referer` (or Expo's `expo-origin`) matching `BaseURL` or `TrustedOrigins`. Sign-in/up also use Fetch Metadata: a cross-site navigation is blocked and browser requests need a trusted origin. Cookie-less clients (mobile, bearer) cannot be forged by a browser and pass. `callbackURL`/`redirectTo` must be trusted or a safe relative path (open-redirect protection). POST bodies must be `application/json`. |
-| Rate limits | Per client IP (IPv6 reduced to its /64, IPv4-mapped addresses unmapped, as Better Auth does) and endpoint, Better Auth's defaults: sign-in/sign-up 3 per 10 s, request-password-reset/send-verification-email 3 per 60 s, reset-password 3 per 10 s. `429 {code:"TOO_MANY_REQUESTS"}` with `X-Retry-After`. In-memory by default; pass any `RateLimiter` (e.g. Valkey) for several instances. |
-| Mail | `Mailer` interface. `NewDevMailer` logs the links, `NewResendMailer(apiKey, from)` sends through the Resend HTTP API with the original templates (`templates/`). Emails are sent in the background, so response times don't reveal whether an address exists. Call `Shutdown` after the HTTP server has stopped to let them finish. |
+| Rate limits | Per client IP (IPv6 reduced to its /64, IPv4-mapped addresses unmapped, as Better Auth does) and endpoint, Better Auth's defaults: sign-in/sign-up 3 per 10 s, request-password-reset/send-verification-email/change-email 3 per 60 s, reset-password/change-password 3 per 10 s. change-password and change-email are also limited per user, so guessing the current password from many IPs gains nothing. `429 {code:"TOO_MANY_REQUESTS"}` with `X-Retry-After`. In-memory by default; pass any `RateLimiter` (e.g. Valkey) for several instances. |
+| Mail | `Mailer` interface. `NewDevMailer` logs the links, `NewResendMailer(apiKey, from)` sends through the Resend HTTP API with the original templates (`templates/`), plus the email-change notice. Emails are sent in the background, so response times don't reveal whether an address exists. Call `Shutdown` after the HTTP server has stopped to let them finish. |
 
 JSON endpoints return Better Auth shapes (`{"code","message"}` on error), not the
 app envelope, because the original API used Better Auth's own responses there.
@@ -49,7 +52,12 @@ srv.Handler = a.Middleware(mux)                // loads the session for UserFrom
 
 HTML handlers call the service methods (`SignInEmail`, `SignUpEmail`,
 `SignOut`, `RequestPasswordReset`, `ResetPassword`, `VerifyEmail`,
-`SendVerificationEmail`) and then `SetSessionCookie` / `ClearSessionCookie`. They
+`SendVerificationEmail`) and then `SetSessionCookie` / `ClearSessionCookie`.
+Account management (`ChangePassword`, `ChangeEmail`, `ListSessions`,
+`RevokeSession`, `RevokeOtherSessions`) takes the caller's user id, and the
+current session id where it matters, from `UserFrom`. These methods only ever
+touch that user's rows, so passing another id cannot affect someone else's
+password or sessions. They
 apply the same rules as the JSON endpoints. Rate limiting and the session's
 IP/user agent come from the request context, so those routes must run behind
 `Middleware`. Without it, nothing is rate limited. The origin check belongs to
@@ -116,9 +124,21 @@ token. Don't wrap static file routes with it.
 - **Origin `null`** is accepted only together with `Sec-Fetch-Site: same-origin`,
   as in Better Auth. Host-only wildcard origins (`*.example.com`) match
   http(s) URLs only.
-- **Not ported yet**: change-email tokens (`updateTo`, rejected), `rememberMe`
-  (not used by the original UI), cookie cache, secondary storage, form-encoded
-  sign-in.
+- **Account changes**: change-email needs a fresh session but no password,
+  like Better Auth's freshness rule. A session stolen within its first day
+  can therefore still start a change to the thief's address. The old address
+  gets a notice, and changing the password, resetting it or revoking other
+  sessions cancels the pending link. If the thief opens the link first, the
+  account moves to their address, so apps that want more can ask for the
+  password in their service layer before calling `ChangeEmail`. Sessions are
+  not revoked on an email change. Use `RevokeOtherSessions`, or
+  `revokeOtherSessions` on a password change. `ChangeEmail` called without a
+  session in the context (trusted server code) skips the freshness check.
+- **Not ported yet**: Better Auth's other change-email variants
+  (`change-email-confirmation` and the legacy unverified update; their tokens
+  are rejected), `rememberMe` (not used by the original UI), cookie cache,
+  secondary storage, form-encoded sign-in, delete-user (the app's
+  `DeleteAccount` deletes the `user` row; sessions and accounts cascade).
 
 ## Tests
 
