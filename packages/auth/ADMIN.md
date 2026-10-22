@@ -23,6 +23,9 @@ appUsers := auth.NewUserAdmin(appPool)
 ```
 
 Instances share nothing mutable: each has its own rate limiter, background-mail queue, cookies and secret.
+Nesting is safe: an admin `Handler()` or `RequireUser` mounted inside the main app's `Middleware` only sees the admin
+instance's own session (request data is tagged with the instance that loaded it). `UserFrom(ctx)` returns the innermost
+instance's user.
 
 ## Config additions
 
@@ -102,7 +105,7 @@ type CreateUserInput struct {
     Name, Email string
     Role        string // default "user"
 }
-func (a *Auth) CreateUserWithoutPassword(ctx context.Context, in CreateUserInput) (User, error) // email verified: the invite link proves it
+func (a *Auth) CreateUserWithoutPassword(ctx context.Context, in CreateUserInput) (User, error) // unverified until the invite is completed (the link proves the inbox)
 func (a *Auth) IssueSetPasswordLink(ctx context.Context, userID, redirectTo string) error       // emails "Set your password"; single use, InviteTTL
 func (a *Auth) CompleteSetPassword(ctx context.Context, token, newPassword string) (User, Session, error) // may return *TwoFactorChallenge{SetupRequired: true}
 ```
@@ -153,10 +156,16 @@ func (u *UserAdmin) UnbanUser(ctx context.Context, userID string) error
 func (u *UserAdmin) SetRole(ctx context.Context, userID, role string) error
 func (u *UserAdmin) RevokeSession(ctx context.Context, userID, sessionID string) error
 func (u *UserAdmin) RevokeUserSessions(ctx context.Context, userID string) error
+func (u *UserAdmin) ResetTwoFactor(ctx context.Context, userID string) error // recovery: removes the enrolment; Required re-enrols at next sign-in
 ```
 
 Banned users: sign-in (after the password matched) and every session lookup refuse them; a ban whose `banExpires` has passed lifts itself.
 Admin authorisation (who may call these) belongs to the admin app's services; these methods do not check the caller.
+
+Keep `ADMIN_AUTH_SECRET` stable: TOTP secrets and backup codes are protected with keys derived from it, so rotating it
+makes every enrolled admin unable to pass 2FA (recover each with `UserAdmin.ResetTwoFactor`; with `Required` they re-enrol
+at their next sign-in). `ResetTwoFactor` is also the way back for an admin who lost their authenticator and backup codes.
+Turning `TwoFactor` off on an instance skips 2FA even for users who enrolled.
 
 ## Errors (errors.Is)
 
