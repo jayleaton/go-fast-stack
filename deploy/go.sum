@@ -1,0 +1,4 @@
+github.com/railwayapp/railway-go-sdk v0.6.0 h1:dZrZmTS5/xE+UIOgeaeer7d/yEbutFq6Y0n812AwU7s=
+github.com/railwayapp/railway-go-sdk v0.6.0/go.mod h1:y2p6u6jUgxW913FWo9Avs3Q2t7wV9qr8aUBC7khTBUQ=
+go.yaml.in/yaml/v3 v3.0.5 h1:N6y/pJk8buWs9NY5ERU2HSMfm+IuD/OtfdAnq6kESPw=
+go.yaml.in/yaml/v3 v3.0.5/go.mod h1:HVTZu1O7/Vkt2N+BFy8Zza+lnLsABggaTM2ZpNIGuKg=

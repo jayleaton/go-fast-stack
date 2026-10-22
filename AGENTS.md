@@ -84,6 +84,7 @@ Tests live only at these boundaries, so they pin the architecture instead of wor
 | secrets | `packages/secrets` | manager and providers: rotation, outage/staleness, validation, no values in logs | fake providers over `httptest`, `testing/synctest` for the clock (no sleeps), never mocks | 90 % |
 | admin service / route handler / ui handler | `apps/admin/internal/services`, `apps/admin/internal/api`, `apps/admin/ui/**` | the same as the web rows above | the same (admin mocks, `apitest.AsAdmin(a)`) | 90 % / 85 % / 80 % |
 | admin repository | `packages/database/adminrepo` | integration tests of every repository method | real Postgres: `dbtest.App` (app database) or the admin template (admin database) | 80 % |
+| deploy config | `deploy/platform` (own module) | `platform.yaml` validation and the IaC graph per profile | nothing: pure functions | none (`make deploy-check`) |
 
 The allowlist in `scripts/check-test-boundaries.sh` names the files that have no boundary above them, once per app: `config/config_test.go` (env validation at boot) and `server/{server,auth}_test.go` (wiring: mounts, middleware order, CSRF, and the adapters over real `packages/auth` + Postgres). Do not add to it; if a test does not fit a boundary, test the behaviour through the boundary above it. Service tests may not import pgx, `packages/database` (services re-export `User`, `ErrRecordNotFound`, ...), `packages/auth` or `api`; handler tests may not import pgx, `packages/database`, `packages/auth` or `services/mocks` (mock the service, never what is underneath it); repository tests may not import mocks; production code may not import mocks or `apitest`.
 
@@ -145,7 +146,8 @@ Secrets never reach templates, SSE, JSON or logs:
 - `packages/auth`: Better Auth–style auth: its own migrations, queries, endpoints (Better Auth paths and response shapes, not the envelope), sessions, mailers. Self-contained: it never imports `apps/` or `packages/database` (depguard).
 - `apps/mobile-app`: the Expo app, which talks to the JSON API with bearer tokens.
 - `apps/admin`: the optional admin dashboard (see "Admin app"); `packages/database/adminrepo`: its data layer (audit log, stats; migrations, queries and sqlc output under it).
-- Root: `Makefile`, `docker-compose.yml`, `Dockerfile`, `railway.json`, `.golangci.yml`, `tools/` (pinned dev tools, run via `go tool -modfile=tools/go.mod`).
+- `deploy/`: the Railway setup, its own Go module (the Railway IaC SDK never enters the app's `go.mod`). `platform.yaml` is what a team edits; `platform/` turns it into the IaC graph (pure, tested); `.railway/railway.go` is the shim the Railway CLI evaluates; `cmd/railway-setup` does what IaC cannot (project, environments, domains, sealed secrets, previews). Run it through `make railway-plan` / `make railway-apply`, never by hand-editing Railway. Railway bugs we work around are in `docs/railway-go-iac-issues.md`.
+- Root: `Makefile`, `docker-compose.yml`, `Dockerfile`, `.golangci.yml`, `tools/` (pinned dev tools, run via `go tool -modfile=tools/go.mod`).
 
 ## Taste
 

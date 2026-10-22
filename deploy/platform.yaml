@@ -1,0 +1,62 @@
+# The one file that decides your Railway project. Edit it, then:
+#   make railway-plan    # what would change (read-only)
+#   make railway-apply   # create or update the project to match
+# Re-running converges; changing a value here updates every environment.
+# Removing things (admin: false after true, an environment) never deletes
+# anything unless you pass CONFIRM_DESTRUCTIVE=1. See README "Deploy to Railway".
+version: 1
+
+# Railway project name: created on the first apply if it does not exist,
+# otherwise reused (matched by exact name in the workspace).
+project: ai-patterns-go
+# Railway workspace name or id. Empty: your only workspace (required when you
+# belong to more than one).
+workspace: ""
+
+# GitHub repo and branch Railway builds from. Install the Railway GitHub app
+# on the repo first (railway.com/account/github).
+repo: jayleaton/ai-patterns-go
+branch: main
+# Optional per-environment branch, e.g. production deploys a release branch.
+# branches:
+#   production: release
+
+# The admin dashboard (apps/admin) as its own service with its own small
+# Postgres. Adds two services per environment.
+admin: false
+
+# production | staging,production | staging,qa,production
+# Production-only is the cheapest start; teams usually want staging,production.
+environments: production
+
+# Railway PR environments: a temporary copy of staging per pull request
+# (needs staging in environments; a preview never copies production). Off by
+# default: each preview runs its own web + Postgres while the PR is open.
+previews: false
+
+# Railway region for every service and database. Empty: Railway's default.
+# List: railway api 'query { regions { name location } }'
+region: ""
+
+# Where live secrets (RESEND_API_KEY, ...) come from: doppler polls a
+# Doppler config per service and environment, so they rotate without a
+# redeploy; env reads Railway variables at boot. With doppler, a service
+# without a Doppler token yet runs on env until you add one
+# (make railway-secrets).
+secrets:
+  provider: doppler
+
+email:
+  from: noreply@example.com
+
+# admin_bootstrap_email: you@example.com   # first admin, seeded by `admin migrate`
+
+# Per-service caps (per replica). Railway bills actual usage, so caps only
+# bound a runaway process; a Go service idles at a few tens of MB.
+resources:
+  web:   { cpu: 1, memory_mb: 512, replicas: 1 }
+  admin: { cpu: 0.5, memory_mb: 256, replicas: 1 }
+
+# Extra variables IaC leaves alone (set them in the dashboard or with
+# `railway variable set`): NAME, a glob like STRIPE_*, or service/NAME.
+unmanaged_variables: []

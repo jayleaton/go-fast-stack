@@ -110,6 +110,7 @@ jobs:
               - '**'
               - '!docs/**'
               - '!apps/mobile-app/**'
+              - '!deploy/**' # its own module: the deploy job
               - '!*.md'
               - '!.gitignore'
               - '!.dockerignore'
@@ -302,6 +303,45 @@ jobs:
             ~/go/pkg/mod
           key: v7-gomod-${{ runner.os }}-${{ hashFiles('go.sum') }}
 
+  # deploy/ is its own Go module (Railway IaC SDK + yaml), invisible to the
+  # go job above. Runs only when it, the lint config or a workflow changes.
+  deploy:
+    needs: draft
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || !github.event.pull_request.draft || needs.draft.outputs.run == 'true') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: dorny/paths-filter@v4
+        if: github.event_name == 'pull_request'
+        id: filter
+        with:
+          filters: |
+            deploy:
+              - 'deploy/**'
+              - '.golangci.yml'
+              - '.github/workflows/**'
+      - name: Scope
+        id: scope
+        env:
+          RUN: ${{ github.event_name != 'pull_request' || steps.filter.outputs.deploy == 'true' }}
+        run: echo "run=$RUN" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v7
+        if: steps.scope.outputs.run == 'true'
+      - name: vet + test
+        if: steps.scope.outputs.run == 'true'
+        working-directory: deploy
+        run: |
+          go version
+          go vet ./...
+          (cd .railway && go vet railway.go)
+          go test ./...
+      - uses: golangci/golangci-lint-action@v9
+        if: steps.scope.outputs.run == 'true'
+        with:
+          version: v2.15.0
+          working-directory: deploy
+          args: -c ../.golangci.yml ./...
+
   # Typecheck, lint, Expo SDK version check and unit tests. The contract test
   # (pnpm test:contract) needs Go + Docker and runs locally.
   mobile:
@@ -338,12 +378,12 @@ jobs:
   ci-ok:
     name: ${{ github.event.pull_request.draft && needs.draft.outputs.run != 'true' && 'ci (draft, not run)' || 'ci-ok' }}
     if: ${{ always() && (github.event_name != 'pull_request' || !github.event.pull_request.draft || needs.draft.outputs.run == 'true') }}
-    needs: [draft, go, mobile]
+    needs: [draft, go, deploy, mobile]
     runs-on: ubuntu-latest
     timeout-minutes: 1
     steps:
       - name: Fail if any job failed or was cancelled
         if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
         run: |
-          echo 'draft=${{ needs.draft.result }} go=${{ needs.go.result }} mobile=${{ needs.mobile.result }}'
+          echo 'draft=${{ needs.draft.result }} go=${{ needs.go.result }} deploy=${{ needs.deploy.result }} mobile=${{ needs.mobile.result }}'
           exit 1

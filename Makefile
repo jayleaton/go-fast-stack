@@ -93,6 +93,7 @@ ci: ## Run the same checks as CI
 	@# Alone: their temporary probe files would leak into the other checks under make -j.
 	$(MAKE) lint-layering
 	$(MAKE) lint-tests
+	$(MAKE) deploy-check
 
 .PHONY: affected
 affected: ## Show what CI checks for this branch (packages affected vs origin/main)
@@ -153,3 +154,38 @@ admin-docker: ## Build the admin production image
 .PHONY: actionlint
 actionlint: ## Lint GitHub workflows
 	$(GO) tool -modfile=tools/actionlint/go.mod actionlint
+
+# Railway: deploy/platform.yaml decides the project; deploy/ is its own Go
+# module (Railway IaC SDK), so none of it is in the app's go.mod or binary.
+# Never name a variable here RAILWAY_*: make exports it to the Railway CLI,
+# and RAILWAY_ENV=staging points the CLI at Railway's own staging API.
+PLATFORM_FILE ?= platform.yaml
+DEPLOY_SETUP    := cd deploy && $(GO) run ./cmd/railway-setup
+
+.PHONY: railway-plan
+railway-plan: ## Show what railway-apply would change on Railway (read-only)
+	$(DEPLOY_SETUP) plan -config $(PLATFORM_FILE)
+
+.PHONY: railway-apply
+railway-apply: ## Create/update the Railway project from deploy/platform.yaml (CONFIRM_DESTRUCTIVE=1 allows deletes)
+	$(DEPLOY_SETUP) apply -config $(PLATFORM_FILE) $(if $(filter 1,$(CONFIRM_DESTRUCTIVE)),-confirm-destructive)
+
+.PHONY: railway-secrets
+railway-secrets: ## Add Doppler tokens (or RESEND_API_KEY) to Railway, sealed
+	$(DEPLOY_SETUP) secrets -config $(PLATFORM_FILE)
+
+.PHONY: railway-up
+railway-up: ## Upload this checkout to Railway and deploy it (repo: "" in platform.yaml; PLATFORM_ENV=staging for one)
+	$(DEPLOY_SETUP) up -config $(PLATFORM_FILE) $(if $(PLATFORM_ENV),-env $(PLATFORM_ENV))
+
+.PHONY: railway-rotate-db
+railway-rotate-db: ## New Postgres superuser passwords on Railway, then redeploy (PLATFORM_ENV=staging for one)
+	$(DEPLOY_SETUP) rotate-db -config $(PLATFORM_FILE) $(if $(PLATFORM_ENV),-env $(PLATFORM_ENV))
+
+.PHONY: railway-verify
+railway-verify: ## GET /healthz on every public Railway service
+	$(DEPLOY_SETUP) verify -config $(PLATFORM_FILE)
+
+.PHONY: deploy-check
+deploy-check: ## vet, lint and test the deploy/ module
+	cd deploy && $(GO) vet ./... && (cd .railway && $(GO) vet railway.go) && $(GO) tool -modfile=../tools/go.mod golangci-lint run -c ../.golangci.yml ./... && $(GO) test ./...
