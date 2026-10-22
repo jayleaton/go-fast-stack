@@ -25,6 +25,21 @@ cases=(
   "apps/web/internal/services|$mod/packages/secrets"
   "apps/web/internal/api|$mod/packages/secrets"
   "packages/secrets|$mod/packages/auth"
+  # Admin isolation, both ways.
+  "apps/web/internal/server|$mod/packages/database/adminrepo"
+  "apps/web/internal/services|$mod/packages/database/adminrepo/model"
+  "apps/web/ui|$mod/apps/admin/ui"
+  "packages/database|$mod/packages/database/adminrepo"
+  "apps/admin/internal/server|$mod/apps/web/ui"
+  "apps/admin/ui|$mod/apps/web/ui/view"
+  # Admin layering.
+  "apps/admin/internal/api|github.com/jackc/pgx/v5"
+  "apps/admin/internal/api|$mod/packages/auth"
+  "apps/admin/ui|$mod/packages/database/adminrepo"
+  "apps/admin/internal/services|net/http"
+  "apps/admin/internal/services|$mod/packages/database/adminrepo/adminsql"
+  "apps/admin/internal/services|$mod/packages/auth"
+  "apps/admin/internal/api|go.uber.org/mock/gomock"
 )
 
 # Test files. boundary dir | forbidden import
@@ -36,6 +51,13 @@ test_cases=(
   "apps/web/internal/api|$mod/apps/web/internal/services/mocks"
   "packages/database|go.uber.org/mock/gomock"
   "packages/secrets|go.uber.org/mock/gomock"
+  "apps/admin/internal/services|github.com/jackc/pgx/v5"
+  "apps/admin/internal/services|$mod/packages/database/adminrepo/model"
+  "apps/admin/internal/services|$mod/packages/auth"
+  "apps/admin/internal/api|$mod/apps/admin/internal/services/mocks"
+  "apps/admin/internal/api|$mod/packages/database/adminrepo"
+  "apps/admin/ui|$mod/packages/auth"
+  "packages/database/adminrepo|go.uber.org/mock/gomock"
 )
 
 paths=()
