@@ -1,9 +1,13 @@
 # Single required check for branch protection and the merge queue: `ci-ok`.
 # Other jobs may be skipped by path filters; ci-ok treats skipped as success.
+# Draft PRs run nothing: mark ready for review to run CI (merge_group, push to
+# main and workflow_dispatch always run everything).
 name: CI
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
   push:
     branches: [main]
   merge_group:
@@ -18,7 +22,7 @@ permissions:
 jobs:
   # PRs only: push to main and merge_group always run everything.
   changes:
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' && github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     timeout-minutes: 2
     permissions:
@@ -52,7 +56,7 @@ jobs:
   # One job, not lint/test in parallel: a second runner's checkout + setup-go + cache restore (~20 s) outweighs warm lint time on a repo this size.
   go:
     needs: changes
-    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.go == 'true') }}
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || (github.event.pull_request.draft == false && needs.changes.outputs.go == 'true')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     services:
@@ -115,7 +119,7 @@ jobs:
   # Placeholder; finalized when apps/mobile-app lands.
   mobile:
     needs: changes
-    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.mobile == 'true') }}
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || (github.event.pull_request.draft == false && needs.changes.outputs.mobile == 'true')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     defaults:
@@ -142,7 +146,7 @@ jobs:
         run: npm run --if-present typecheck
 
   ci-ok:
-    if: always()
+    if: ${{ always() && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) }}
     needs: [changes, go, mobile]
     runs-on: ubuntu-latest
     timeout-minutes: 1
