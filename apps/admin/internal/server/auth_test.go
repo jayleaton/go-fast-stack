@@ -336,13 +336,17 @@ func TestBanFlow(t *testing.T) {
 	w.do("GET", config.APIRoutes.Audit+"?targetId="+ada.ID, "", root, 200, &audit)
 	var actions []string
 	for _, e := range audit.Data.Entries {
-		actions = append(actions, e.Action)
+		actions = append(actions, e.Action+":"+e.Status)
 		if e.ActorEmail != "root@example.com" || e.TargetLabel != "ada@example.com" {
 			t.Errorf("entry = %+v", e)
 		}
 	}
-	if got := strings.Join(actions, ","); got != "user.revoke_sessions,user.set_role,user.unban,user.ban" {
+	// The refused revoke of a missing session is an audited attempt too.
+	if got := strings.Join(actions, ","); got != "user.revoke_session:failed,user.revoke_sessions:succeeded,user.set_role:succeeded,user.unban:succeeded,user.ban:succeeded" {
 		t.Fatalf("audit actions = %s", got)
+	}
+	if r := audit.Data.Entries[0].Reason; r != "Session not found" {
+		t.Fatalf("failed revoke reason = %q", r)
 	}
 
 	var overview struct{ Data services.Overview }
