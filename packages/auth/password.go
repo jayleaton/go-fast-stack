@@ -1,3 +1,4 @@
+// Scratch: CI measurement (auth-only change).
 package auth
 
 import (
