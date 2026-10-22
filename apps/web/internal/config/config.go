@@ -1,4 +1,4 @@
-// Package config loads environment config, validated once at boot, plus the
+// Package config (scratch: CI warm-run measurement) loads environment config, validated once at boot, plus the
 // routes config and feature toggles. Nothing else reads os.Getenv.
 package config
 
