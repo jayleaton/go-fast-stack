@@ -189,25 +189,29 @@ func TestNoUnescapedOutput(t *testing.T) {
 
 func TestCrawlExposesNothing(t *testing.T) {
 	t.Parallel()
-	// One parallel subtest per state and method, each with one handler (and
-	// mock controller) built for the method it serves: notOnGET needs no
-	// shared state, and a handler per state keeps setup off the CPU budget.
+	// One handler (and mock controller) per state and method, built for the
+	// method it serves (notOnGET needs no shared state), keeps setup small;
+	// its routes run as parallel subtests so no single test is long.
 	for _, failing := range []bool{false, true} {
 		for _, signedIn := range []bool{false, true} {
 			for _, method := range []string{http.MethodGet, http.MethodPost} {
-				t.Run(strings.Join([]string{state(failing, "failing", "ok"), state(signedIn, "signed-in", "anonymous"), method}, "/"), func(t *testing.T) {
+				st := state(failing, "failing", "ok") + "/" + state(signedIn, "signed-in", "anonymous")
+				t.Run(st+"/"+method, func(t *testing.T) {
 					t.Parallel()
 					h := crawlUI(t, method, failing, signedIn)
 					for _, c := range crawlTargets {
 						if m, _, _ := strings.Cut(c.pattern, " "); m != method {
 							continue
 						}
-						for _, path := range c.paths {
-							for _, ds := range []bool{false, true} {
-								name := strings.Join([]string{method, path, state(failing, "failing", "ok"), state(signedIn, "signed-in", "anonymous"), state(ds, "datastar", "plain")}, " ")
-								checkResponse(t, name, method, path, crawl(h, method, path, ds))
+						t.Run(c.pattern, func(t *testing.T) {
+							t.Parallel()
+							for _, path := range c.paths {
+								for _, ds := range []bool{false, true} {
+									name := strings.Join([]string{method, path, st, state(ds, "datastar", "plain")}, " ")
+									checkResponse(t, name, method, path, crawl(h, method, path, ds))
+								}
 							}
-						}
+						})
 					}
 				})
 			}

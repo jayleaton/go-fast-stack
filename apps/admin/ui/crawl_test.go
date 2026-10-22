@@ -179,23 +179,31 @@ func TestNoUnescapedOutput(t *testing.T) {
 
 func TestCrawlExposesNothing(t *testing.T) {
 	t.Parallel()
-	// One parallel subtest per state, each with its own crawler (handler and
-	// mock controller) that requests the routes one at a time.
+	// One handler (and mock controller) per state and method keeps setup
+	// small; its routes run as parallel subtests so no single test is long.
 	for _, failing := range []bool{false, true} {
 		for _, signedIn := range []bool{false, true} {
-			t.Run(state(failing, "failing", "ok")+"/"+state(signedIn, "signed-in", "anonymous"), func(t *testing.T) {
-				t.Parallel()
-				cr := crawlUI(t, failing, signedIn)
-				for _, c := range crawlTargets {
-					method, _, _ := strings.Cut(c.pattern, " ")
-					for _, path := range c.paths {
-						for _, ds := range []bool{false, true} {
-							name := strings.Join([]string{method, path, state(failing, "failing", "ok"), state(signedIn, "signed-in", "anonymous"), state(ds, "datastar", "plain")}, " ")
-							checkResponse(t, name, method, path, cr.crawl(method, path, ds))
+			for _, method := range []string{http.MethodGet, http.MethodPost} {
+				st := state(failing, "failing", "ok") + "/" + state(signedIn, "signed-in", "anonymous")
+				t.Run(st+"/"+method, func(t *testing.T) {
+					t.Parallel()
+					cr := crawlUI(t, method, failing, signedIn)
+					for _, c := range crawlTargets {
+						if m, _, _ := strings.Cut(c.pattern, " "); m != method {
+							continue
 						}
+						t.Run(c.pattern, func(t *testing.T) {
+							t.Parallel()
+							for _, path := range c.paths {
+								for _, ds := range []bool{false, true} {
+									name := strings.Join([]string{method, path, st, state(ds, "datastar", "plain")}, " ")
+									checkResponse(t, name, method, path, cr.crawl(method, path, ds))
+								}
+							}
+						})
 					}
-				}
-			})
+				})
+			}
 		}
 	}
 }
@@ -207,8 +215,8 @@ func state(b bool, yes, no string) string {
 	return no
 }
 
-// crawler is one real UI handler and the method of the request it is
-// serving. Each subtest has its own and crawls one request at a time.
+// crawler is one real UI handler that serves one method (notOnGET reads it).
+// Route subtests share it and send their requests concurrently.
 type crawler struct {
 	h      http.Handler
 	method string
@@ -216,8 +224,8 @@ type crawler struct {
 
 // crawlUI is the real UI handler over mocks that answer anything: test data,
 // or (failing) internal errors carrying canary text.
-func crawlUI(t *testing.T, failing, signedIn bool) *crawler {
-	cr := &crawler{}
+func crawlUI(t *testing.T, method string, failing, signedIn bool) *crawler {
+	cr := &crawler{method: method}
 	ctrl := gomock.NewController(t)
 	a := mocks.NewMockAuth(ctrl)
 	us, ad, au, an := mocks.NewMockUsers(ctrl), mocks.NewMockAdmins(ctrl), mocks.NewMockAudit(ctrl), mocks.NewMockAnalytics(ctrl)
@@ -295,7 +303,9 @@ func (cr *crawler) crawl(method, path string, ds bool) *httptest.ResponseRecorde
 	if method == http.MethodPost {
 		body = strings.NewReader(crawlForm.Encode())
 	}
-	cr.method = method
+	if method != cr.method {
+		panic("crawler for " + cr.method + " asked to send " + method)
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	r := httptest.NewRequestWithContext(ctx, method, "https://admin.example"+path, body)
