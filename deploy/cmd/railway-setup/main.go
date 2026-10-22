@@ -4,6 +4,7 @@
 //	railway-setup doctor    check login, workspace, SSH key, GitHub, Doppler; print fixes
 //	railway-setup plan      show what would change (read-only)
 //	railway-setup apply     create or update everything, deploy, wait until healthy
+//	railway-setup doppler   move app secrets into Doppler (also a phase of apply)
 //	railway-setup secrets   add Doppler tokens / RESEND_API_KEY (sealed)
 //	railway-setup up        upload this checkout and deploy it (repo: "")
 //	railway-setup rotate-db new Postgres superuser passwords (after an incident)
@@ -33,7 +34,7 @@ import (
 	"github.com/jayleaton/go-fast-stack/deploy/platform"
 )
 
-var commands = []string{"doctor", "plan", "apply", "secrets", "up", "rotate-db", "verify"}
+var commands = []string{"doctor", "plan", "apply", "doppler", "secrets", "up", "rotate-db", "verify"}
 
 func main() {
 	os.Exit(run())
@@ -147,6 +148,15 @@ func (s *setup) main(cmd, config, iac, only string, wait time.Duration, ovs []*o
 			return err
 		}
 		return each(s.up)
+	case "doppler":
+		s.apply = true
+		if err := s.findProject(ctx); err != nil {
+			return err
+		}
+		if err := s.dopplerPhase(ctx, true, wait); err != nil {
+			return err
+		}
+		return s.secretSteps(ctx)
 	case "verify":
 		if err := s.findProject(ctx); err != nil {
 			return err
@@ -191,6 +201,9 @@ func (s *setup) reconcile(ctx context.Context, wait time.Duration) error {
 		if trying {
 			s.say("\nGitHub: %s is not connected; apply connects it, or deploys by upload while Railway cannot read it.", s.cfg.Repo)
 		}
+		if err := s.dopplerPhase(ctx, false, 0); err != nil {
+			return err
+		}
 		s.sum.Pending = s.pending
 		if s.pending > 0 {
 			s.say("\nChanges pending in %d step(s) above. Apply with: make railway-apply", s.pending)
@@ -228,11 +241,15 @@ func (s *setup) reconcile(ctx context.Context, wait time.Duration) error {
 			s.next(`repo: "" never deploys on push: deploy new code with make railway-up`)
 		}
 	}
-	if err := s.secretSteps(ctx); err != nil {
+	s.say("\nWaiting for deployments (up to %s)…", wait)
+	if err := s.health(ctx, wait); err != nil {
+		_ = s.secretSteps(ctx)
 		return err
 	}
-	s.say("\nWaiting for deployments (up to %s)…", wait)
-	return s.health(ctx, wait)
+	if err := s.dopplerPhase(ctx, false, wait); err != nil {
+		return err
+	}
+	return s.secretSteps(ctx)
 }
 
 func (s *setup) reconcileEnv(ctx context.Context, env string) error {
@@ -287,13 +304,41 @@ func (s *setup) secretSteps(ctx context.Context) error {
 			}
 		}
 	}
-	if len(doppler) > 0 {
-		s.next("Optional, recommended: move secrets to Doppler (live rotation): fill one Doppler config per service and environment, then make railway-secrets (%s)", strings.Join(doppler, ", "))
+	if len(doppler) > 0 && !s.hasNext("make doppler-setup") {
+		s.next("Move secrets to Doppler (live rotation): doppler login, then make doppler-setup (%s)", strings.Join(doppler, ", "))
 	}
 	if len(resend) > 0 {
-		s.next("Set a real RESEND_API_KEY (sign-up and reset emails fail until then): in Doppler, or RESEND_API_KEY_<ENV>=re_... make railway-secrets (%s)", strings.Join(resend, ", "))
+		s.next("Set a real RESEND_API_KEY (sign-up and reset emails fail until then): RESEND_API_KEY_<ENV>=re_... make railway-secrets (%s)", strings.Join(resend, ", "))
+	}
+	if cfgs := s.dopplerPlaceholders(ctx); len(cfgs) > 0 {
+		s.next("Set a real RESEND_API_KEY in Doppler (sign-up and reset emails fail until then): doppler secrets set RESEND_API_KEY -p %s -c <config> for %s", s.cfg.Secrets.Project, strings.Join(cfgs, ", "))
 	}
 	return nil
+}
+
+func (s *setup) hasNext(substr string) bool {
+	return slices.ContainsFunc(s.sum.NextSteps, func(n string) bool { return strings.Contains(n, substr) })
+}
+
+// dopplerPlaceholders lists the root configs whose RESEND_API_KEY is still
+// the placeholder (values read into memory only, compared, dropped).
+func (s *setup) dopplerPlaceholders(ctx context.Context) []string {
+	if s.cfg.Secrets.Provider != platform.ProviderDoppler {
+		return nil
+	}
+	d, err := newDoppler(s.cfg.Secrets.Project)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, env := range s.cfg.Environments {
+		cfg := platform.DopplerConfig(env, platform.ServiceWeb)
+		b, err := d.run(ctx, nil, "secrets", "get", "RESEND_API_KEY", "-p", d.project, "-c", cfg, "--plain")
+		if err == nil && strings.TrimSpace(string(b)) == platform.ResendPlaceholder {
+			out = append(out, cfg)
+		}
+	}
+	return out
 }
 
 // confirm asks on a terminal; without one it needs --yes.

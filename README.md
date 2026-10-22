@@ -141,18 +141,25 @@ Setup provisions per service and environment, and never overwrites a value that 
 
 IaC never touches these variables (`variables.ignore`), so `railway config plan` won't show or delete them.
 
-With `secrets.provider: doppler` (the default), each service reads `DATABASE_URL`, `AUTH_SECRET` and `RESEND_API_KEY` from its own Doppler config, and they rotate without a redeploy (see [Secrets](#secrets)). Until a service has a real token it runs with `SECRETS_PROVIDER=env` on the Railway values, so the project works on day one. Production still needs `RESEND_API_KEY` there.
+With `secrets.provider: doppler` (the default), each service reads `DATABASE_URL`, `AUTH_SECRET` and `RESEND_API_KEY` from Doppler, and they rotate without a redeploy (see [Secrets](#secrets)). The [Doppler CLI](https://docs.doppler.com/docs/cli) is pinned in `mise.toml` (`mise install`). Run `doppler login` once, and `make railway-setup` moves everything over itself (or later: `make doppler-setup`, same flags, `--json` and exit codes). Not logged in? Services run on the Railway values (`SECRETS_PROVIDER=env`) until you are.
 
-To switch a service to Doppler:
-1. Fill its Doppler config: `DATABASE_URL` (the Postgres service's private URL), `AUTH_SECRET` and `RESEND_API_KEY`. The admin config also needs `ADMIN_DATABASE_URL` and `ADMIN_AUTH_SECRET`.
-2. Create a read-only service token per service and environment.
-3. Run:
+What it sets up in the Doppler project (`secrets.project`, default `go-fast-stack`, created if missing; `auto`: the Railway project's name):
 
-```sh
-make railway-secrets   # asks for each token (input hidden), seals it, switches that service to doppler
-# or non-interactively:
-DOPPLER_TOKEN_WEB_PRODUCTION=dp.st.xxx DOPPLER_TOKEN_WEB_STAGING=dp.st.yyy make railway-secrets
-```
+| Railway | Doppler environment | web reads | admin reads |
+|---|---|---|---|
+| production | `prd` | `prd` | `prd_admin`, a branch of `prd` |
+| staging | `stg` | `stg` | `stg_admin` |
+| qa (only if chosen) | `qa` | `qa` | `qa_admin` |
+| your machine | `dev` | `dev` (`USE_DOPPLER=1 make dev`) | |
+
+A branch config inherits its root (`DATABASE_URL`, `RESEND_API_KEY`), and admin-only secrets (`ADMIN_DATABASE_URL`, `ADMIN_AUTH_SECRET`) live in the branch, so a web token can never read them. Per service and environment, setup:
+1. Seeds the config from Railway, never overwriting a value already in Doppler. `DATABASE_URL` and `ADMIN_DATABASE_URL` come from Railway. The auth secrets are Railway's values: a new one would stop the app from booting, because it wraps the 2FA keys. `RESEND_API_KEY` is Railway's value or a placeholder.
+2. Creates a read-only service token named `railway <project> <service>`, seals it in Railway as `DOPPLER_TOKEN`, and sets `SECRETS_PROVIDER=doppler`.
+3. Once the new deployment is healthy on Doppler, removes the Railway copies (`AUTH_SECRET`, `ADMIN_AUTH_SECRET`, `RESEND_API_KEY`) without another deploy. The IaC `DATABASE_URL` reference stays and is ignored.
+
+Re-running changes nothing. Local dev: setup points this checkout at the `dev` config (`doppler setup`) and gives it an `AUTH_SECRET`; `USE_DOPPLER=1 make dev` runs with it, and plain `make dev` still uses `.env`. Tokens are never printed; setup reads them straight from the Doppler CLI into Railway.
+
+To set one by hand instead (another provider account, say), `make railway-secrets` asks for each token (input hidden) and seals it: `DOPPLER_TOKEN_WEB_PRODUCTION=dp.st.xxx make railway-secrets`.
 
 Without Doppler, set `secrets.provider: env` and give `RESEND_API_KEY` the same way (`RESEND_API_KEY_PRODUCTION=re_xxx make railway-secrets`). Your local `.env` is never sent to Railway.
 

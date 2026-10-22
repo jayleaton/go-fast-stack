@@ -26,6 +26,9 @@ var Profiles = [][]string{
 	{"staging", "qa", "production"},
 }
 
+// DefaultDopplerProject is the Doppler project a template checkout uses.
+const DefaultDopplerProject = "go-fast-stack"
+
 // Secret providers the web and admin apps understand (SECRETS_PROVIDER).
 const (
 	ProviderDoppler = "doppler"
@@ -82,6 +85,9 @@ func (e *Environments) UnmarshalYAML(n *yaml.Node) error {
 // Secrets picks the live-secrets provider.
 type Secrets struct {
 	Provider string `yaml:"provider"`
+	// Project is the Doppler project (default DefaultDopplerProject); auto:
+	// the Railway project's name.
+	Project string `yaml:"project"`
 }
 
 // Email holds the sender address auth emails use.
@@ -108,7 +114,7 @@ var (
 		Version:      1,
 		Branch:       "main",
 		Environments: Environments{"production"},
-		Secrets:      Secrets{Provider: ProviderDoppler},
+		Secrets:      Secrets{Provider: ProviderDoppler, Project: DefaultDopplerProject},
 		Email:        Email{From: "noreply@example.com"},
 		Resources: Resources{
 			Web:   Size{CPU: 1, MemoryMB: 512, Replicas: 1},

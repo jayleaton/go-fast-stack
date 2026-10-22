@@ -35,6 +35,12 @@ func (c Config) Resolve(originURL, checkoutDir string) (Config, error) {
 			c.Project = strings.TrimRight(c.Project[:32], "-._ ")
 		}
 	}
+	switch c.Secrets.Project {
+	case "":
+		c.Secrets.Project = DefaultDopplerProject
+	case Auto:
+		c.Secrets.Project = c.Project
+	}
 	return c, c.Validate()
 }
 

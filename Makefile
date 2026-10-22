@@ -35,8 +35,8 @@ help: ## List targets
 	@grep -hE '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F ':.*## ' '{printf "  %-14s %s\n", $$1, $$2}'
 
 .PHONY: dev
-dev: ## Run the server (0.0.0.0, PORT or 3000) with .env
-	$(GO) run ./apps/web/cmd/server serve
+dev: ## Run the server (0.0.0.0, PORT or 3000) with .env (USE_DOPPLER=1: secrets from Doppler's dev config)
+	$(if $(filter 1,$(USE_DOPPLER)),doppler run --) $(GO) run ./apps/web/cmd/server serve
 
 .PHONY: build
 build: ## Build a static binary into bin/server
@@ -197,6 +197,10 @@ railway-doctor: ## Check everything Railway setup needs (login, workspace, SSH k
 
 .PHONY: railway-setup
 railway-setup: railway-apply ## From nothing to a live Railway project (same as railway-apply)
+
+.PHONY: doppler-setup
+doppler-setup: ## Move the Railway app secrets into Doppler: configs, seeded values, sealed read-only tokens (also run by railway-setup)
+	@$(DEPLOY_SETUP) doppler -config $(PLATFORM_FILE) $(ARGS)
 
 .PHONY: railway-plan
 railway-plan: ## Show what railway-apply would change on Railway (read-only; exit 2 when changes are pending)

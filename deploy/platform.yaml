@@ -44,11 +44,16 @@ region: ""
 
 # Where live secrets (RESEND_API_KEY, ...) come from: doppler polls a
 # Doppler config per service and environment, so they rotate without a
-# redeploy; env reads Railway variables at boot. With doppler, a service
-# without a Doppler token yet runs on env until you add one
-# (make railway-secrets).
+# redeploy; env reads Railway variables at boot. With doppler, setup moves
+# the secrets into Doppler when the Doppler CLI is logged in (doppler login;
+# or later: make doppler-setup); until then services run on env.
 secrets:
   provider: doppler
+  # Doppler project (created if missing; auto: the Railway project's name).
+  # Environments map
+  # production->prd, staging->stg, qa->qa, local->dev; admin reads a branch
+  # config (prd_admin, ...) the web token cannot read.
+  project: go-fast-stack
 
 email:
   from: noreply@example.com

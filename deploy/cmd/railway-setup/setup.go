@@ -583,9 +583,21 @@ func (s *setup) waitDeployed(ctx context.Context, svc, env string) error {
 // variables lists a service's variables in env: name -> value, nil when
 // sealed. Values never leave this process.
 func (s *setup) variables(ctx context.Context, service, env string) (map[string]*string, error) {
-	vars := map[string]*string{}
-	err := s.rw.json(ctx, &vars, "variable", "list", "--service", service, "--environment", env)
-	return vars, err
+	var err error
+	for attempt := range 3 { // reads only: Railway's API sometimes sends a body the CLI cannot decode
+		if attempt > 0 {
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(10 * time.Second):
+			}
+		}
+		vars := map[string]*string{}
+		if err = s.rw.json(ctx, &vars, "variable", "list", "--service", service, "--environment", env); err == nil {
+			return vars, nil
+		}
+	}
+	return nil, err
 }
 
 type secretWrite struct {
