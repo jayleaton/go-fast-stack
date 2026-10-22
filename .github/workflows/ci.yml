@@ -34,7 +34,7 @@ permissions:
 
 jobs:
   draft:
-    if: github.event_name == 'pull_request' && github.event.pull_request.draft
+    if: github.event_name == 'pull_request' && github.event.pull_request.draft && github.event.action == 'synchronize'
     runs-on: ubuntu-latest
     timeout-minutes: 2
     permissions:
@@ -66,38 +66,28 @@ jobs:
 
   # PRs and pushes to main run only the jobs whose paths changed; merge_group
   # and workflow_dispatch run everything.
-  # Gates the mobile job only; the Go jobs decide for themselves (see "Scope").
-  changes:
-    needs: draft
-    if: ${{ !cancelled() && (github.event_name == 'push' || (github.event_name == 'pull_request' && (!github.event.pull_request.draft || needs.draft.outputs.run == 'true'))) }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 2
-    permissions:
-      contents: read
-      pull-requests: read
-    outputs:
-      mobile: ${{ steps.filter.outputs.mobile }}
-    steps:
-      # PR events list changed files through the API; pushes diff with git.
-      - uses: actions/checkout@v7
-        if: github.event_name == 'push'
-      - uses: dorny/paths-filter@v4
-        id: filter
-        with:
-          filters: |
-            mobile:
-              - 'apps/mobile-app/**'
-              # The mobile route test reads the Go route table.
-              - 'apps/web/internal/config/routes.go'
-              - '.github/workflows/**'
-
   # lint and test run in parallel; each restores only the caches it uses.
   lint:
     needs: draft
     if: ${{ !cancelled() && (github.event_name != 'pull_request' || !github.event.pull_request.draft || needs.draft.outputs.run == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # Also decides whether the mobile job runs: a separate "changes" job cost a
+    # billed minute on every run (jobs bill rounded up to whole minutes).
+    outputs:
+      mobile: ${{ steps.mobile-pr.outputs.mobile || steps.mobile-push.outputs.mobile }}
     steps:
+      - uses: dorny/paths-filter@v4
+        if: github.event_name == 'pull_request'
+        id: mobile-pr
+        with:
+          filters: &mobile-filter |
+            mobile:
+              - 'apps/mobile-app/**'
+              # The mobile route test reads the Go route table.
+              - 'apps/web/internal/config/routes.go'
+              - '.github/workflows/**'
+
       # Docs-only and mobile-only PRs stop here: no checkout, cache or
       # toolchain. PR events list changed files through the API.
       - uses: dorny/paths-filter@v4
@@ -124,6 +114,11 @@ jobs:
         if: steps.scope.outputs.go == 'true'
         with:
           fetch-depth: 2
+      - uses: dorny/paths-filter@v4
+        if: github.event_name == 'push'
+        id: mobile-push
+        with:
+          filters: *mobile-filter
 
       # Modules (and the go.mod toolchain) are keyed by go.sum; module zips and
       # dependencies' testdata are deleted before saving (builds read only the
@@ -383,8 +378,8 @@ jobs:
   # Typecheck, lint, Expo SDK version check and unit tests. The contract test
   # (pnpm test:contract) needs Go + Docker and runs locally.
   mobile:
-    needs: changes
-    if: ${{ !cancelled() && (github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch' || needs.changes.outputs.mobile == 'true') }}
+    needs: lint
+    if: ${{ !cancelled() && (github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch' || needs.lint.outputs.mobile == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     defaults:
@@ -410,17 +405,18 @@ jobs:
       - run: pnpm exec expo install --check
       - run: pnpm test
 
-  # Always runs (a skipped job would show its raw name expression). In a run
-  # that stayed a draft it reports as "ci (draft, not run)", not ci-ok.
+  # Skipped in runs that stay a draft (no billed minute). A skipped job shows
+  # its raw name expression, never "ci-ok", so it cannot stand in for the
+  # required check; when it runs, the name evaluates to "ci-ok".
   ci-ok:
     name: ${{ github.event.pull_request.draft && needs.draft.outputs.run != 'true' && 'ci (draft, not run)' || 'ci-ok' }}
-    if: always()
-    needs: [draft, changes, lint, test, mobile]
+    if: ${{ always() && (github.event_name != 'pull_request' || !github.event.pull_request.draft || needs.draft.outputs.run == 'true') }}
+    needs: [draft, lint, test, mobile]
     runs-on: ubuntu-latest
     timeout-minutes: 1
     steps:
       - name: Fail if any job failed or was cancelled
         if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
         run: |
-          echo 'draft=${{ needs.draft.result }} changes=${{ needs.changes.result }} lint=${{ needs.lint.result }} test=${{ needs.test.result }} mobile=${{ needs.mobile.result }}'
+          echo 'draft=${{ needs.draft.result }} lint=${{ needs.lint.result }} test=${{ needs.test.result }} mobile=${{ needs.mobile.result }}'
           exit 1
