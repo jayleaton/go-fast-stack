@@ -2,7 +2,6 @@ package services_test
 
 import (
 	"testing"
-	"time"
 
 	"go.uber.org/mock/gomock"
 
@@ -10,9 +9,9 @@ import (
 	"github.com/jayleaton/ai-patterns-go/apps/admin/internal/services/mocks"
 )
 
-func newAuthEventService(t *testing.T) (*services.AuthEventService, *mocks.MockTwoFactorAttempts, *mocks.MockAuditLog) {
+func newAuthEventService(t *testing.T) (*services.AuthEventService, *mocks.MockAuditLog) {
 	p := newPorts(t)
-	return services.NewAuthEventService(p.attempts, p.log), p.attempts, p.log
+	return services.NewAuthEventService(p.log), p.log
 }
 
 // selfAudit is the entry an admin's own authentication event writes: they
@@ -27,7 +26,7 @@ func selfAudit(id, email, action string, details map[string]string) services.New
 // No policy check by design: the events describe authentication itself, so
 // even an admin without 2FA is recorded.
 func TestSignedIn(t *testing.T) {
-	svc, _, log := newAuthEventService(t)
+	svc, log := newAuthEventService(t)
 
 	for _, method := range []string{services.SignInPassword, services.SignInTwoFactor, services.SignInSetPassword} {
 		log.EXPECT().Append(ctx, selfAudit("a1", "grace@example.com", "admin.sign_in", map[string]string{"method": method})).Return(nil)
@@ -41,7 +40,7 @@ func TestSignedIn(t *testing.T) {
 }
 
 func TestSignedOut(t *testing.T) {
-	svc, _, log := newAuthEventService(t)
+	svc, log := newAuthEventService(t)
 
 	log.EXPECT().Append(ctx, selfAudit("a1", "grace@example.com", "admin.sign_out", nil)).Return(nil)
 	if err := svc.SignedOut(ctx, "a1", "grace@example.com"); err != nil {
@@ -53,34 +52,14 @@ func TestSignedOut(t *testing.T) {
 }
 
 func TestTwoFactorFailed(t *testing.T) {
-	svc, attempts, log := newAuthEventService(t)
-	since := time.Date(2026, 10, 22, 9, 0, 0, 0, time.UTC)
-	failed := []services.TwoFactorFailure{
-		{AdminID: "a1", Email: "grace@example.com", Failures: 1},
-		{AdminID: "a2", Email: "bob@example.com", Failures: 5},
-	}
+	svc, log := newAuthEventService(t)
 
-	// One entry per admin whose counter moved, in order.
-	gomock.InOrder(
-		attempts.EXPECT().FailedSince(ctx, since).Return(failed, nil),
-		log.EXPECT().Append(ctx, selfAudit("a1", "grace@example.com", "admin.two_factor_failed", map[string]string{"failures": "1"})).Return(nil),
-		log.EXPECT().Append(ctx, selfAudit("a2", "bob@example.com", "admin.two_factor_failed", map[string]string{"failures": "5"})).Return(nil),
-	)
-	if err := svc.TwoFactorFailed(ctx, since); err != nil {
+	// Attributed to the admin of the pending sign-in, with auth's reason.
+	log.EXPECT().Append(ctx, selfAudit("a1", "grace@example.com", "admin.two_factor_failed", map[string]string{"reason": "INVALID_CODE"})).Return(nil)
+	if err := svc.TwoFactorFailed(ctx, "a1", "grace@example.com", "INVALID_CODE"); err != nil {
 		t.Fatal(err)
 	}
 
-	// Nothing moved: nothing is written.
-	attempts.EXPECT().FailedSince(ctx, since).Return(nil, nil)
-	if err := svc.TwoFactorFailed(ctx, since); err != nil {
-		t.Fatal(err)
-	}
-
-	attempts.EXPECT().FailedSince(ctx, since).Return(nil, errDB)
-	wantInternal(t, svc.TwoFactorFailed(ctx, since), errDB)
-
-	// A failed write stops at that entry and is returned.
-	attempts.EXPECT().FailedSince(ctx, since).Return(failed, nil)
 	log.EXPECT().Append(ctx, gomock.Any()).Return(errDB)
-	wantInternal(t, svc.TwoFactorFailed(ctx, since), errDB)
+	wantInternal(t, svc.TwoFactorFailed(ctx, "a1", "grace@example.com", "INVALID_CODE"), errDB)
 }

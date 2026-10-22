@@ -74,6 +74,7 @@ type Config struct {
 	AppName         string           // TOTP issuer default (default: BaseURL host)
 	TwoFactor       *TwoFactorConfig // nil turns 2FA off: endpoints answer 404, sign-in is unchanged
 	InviteTTL       time.Duration    // how long a set-password (invite) link stays valid (default 72h)
+	Events          EventHandler     // receives sign-ins, failures, 2FA, sign-outs, revocations, password/email changes and bans after the fact (see EventHandler); nil: none
 	DisableSignUp   bool             // refuse public sign-up (SignUpEmail, POST /sign-up/email); CreateUserWithoutPassword still works
 
 	// VerifyEmailPath is an app page (a root-relative path, no query) that
@@ -150,6 +151,7 @@ type Auth struct {
 	keysMu     sync.Mutex               // serializes syncKeys
 	mail       sync.WaitGroup
 	mailMu     sync.RWMutex // sendMail holds it shared so Wait never races an Add
+	events     *eventSink   // nil without Config.Events
 }
 
 // New validates cfg and returns an Auth backed by pool. Run Migrate first.
@@ -239,6 +241,7 @@ func New(cfg Config, pool DB, mailer Mailer) (*Auth, error) {
 		now:        time.Now,
 	}
 	a.trusted = append([]string{a.baseOrigin}, cfg.TrustedOrigins...)
+	a.events = newEventSink(cfg.Events, cfg.Logger, a.store.userEmail)
 	if a.dummyHash, err = hashPassword("dummy-password-for-timing", a.argon); err != nil {
 		return nil, err
 	}
@@ -270,7 +273,8 @@ func DefaultSecretGrace(cfg Config) time.Duration {
 	return g
 }
 
-// Shutdown waits for emails still being sent in the background, or for ctx.
+// Shutdown waits for emails still being sent and events still queued for
+// Config.Events, or for ctx.
 // Requests arriving meanwhile block before queueing mail until it returns.
 func (a *Auth) Shutdown(ctx context.Context) error {
 	done := make(chan struct{})
@@ -282,10 +286,10 @@ func (a *Auth) Shutdown(ctx context.Context) error {
 	}()
 	select {
 	case <-done:
-		return nil
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+	return a.events.drain(ctx)
 }
 
 // sendMail sends in the background so responses take the same time whether

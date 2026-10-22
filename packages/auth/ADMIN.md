@@ -173,6 +173,34 @@ secret, so a rotation rewraps them and 2FA keeps working. `UserAdmin.ResetTwoFac
 lost their authenticator and backup codes.
 Turning `TwoFactor` off on an instance skips 2FA even for users who enrolled.
 
+## Events (audit hooks)
+
+`Config.Events` (an `EventHandler`, `func(ctx, Event)`) receives what happened, after it happened. Every kind is an `EventKind` constant:
+
+| Kind | When | Notable fields |
+|---|---|---|
+| `sign_in` | a session was created | `Method`: `password`, `two_factor` (`Details["factor"]` totp / backup_code), `set_password`, `sign_up`, `email_verification`, `email_change`; `SessionID` |
+| `sign_in_failed` | sign-in refused, or a correct second factor that still got no session (spent challenge, ban) | `Reason` (error code); `UserID`/`Email` only when the email matched an account |
+| `two_factor_succeeded` / `two_factor_failed` | a second-factor or enrolment code accepted / refused | `UserID` from the pending-2FA state; `Method` totp / backup_code; `Reason`. Attempts without a valid pending sign-in are not reported (no user to name) |
+| `two_factor_enabled` / `two_factor_disabled` | enrolment confirmed / removed (`Details["by"]="admin"` for `ResetTwoFactor`) | |
+| `sign_out` | the user ended their session | `SessionID` |
+| `session_revoked` | sessions ended other than by signing out | `Details["count"]`, `Details["by"]`: `user`, `password_change`, `password_reset` (reset and invite links), `email_verification`, `sign_up` (an unverified account reclaimed), `admin`, `ban`; `SessionID` for a single one |
+| `password_changed` / `password_reset` | `ChangePassword` / a reset or invite link (`Method` reset / set_password) | |
+| `email_change_requested` / `email_changed` | `ChangeEmail` (`Details["newEmail"]`, `outcome=address_taken` when silently ignored) / the link was opened (`oldEmail`, `newEmail`) | |
+| `user_banned` / `user_unbanned` | `UserAdmin.BanUser` (`reason`, `expiresAt`) / `UnbanUser` | |
+
+- **Never secrets:** events carry ids, never a password, token, TOTP secret or code. `Email` is the account's address when the event happened; where the emitter didn't have it, it is looked up before delivery. A refused sign-in for an unknown address carries no email, because people type passwords into email fields.
+- **Not reported:** rate-limited attempts (`TOO_MANY_REQUESTS`) are not reported. They never reached a credential check and would crowd real events out of the queue.
+- **Request metadata:** `IP` and `UserAgent` come from the instance's own request data, with `ClientIPHeader` rules. Calls outside `Middleware`, and a standalone `UserAdmin`, have none.
+- **Delivery:** one worker per instance delivers events in order.
+  - Each call gets a fresh context (no request values, so no session token can reach the handler) that expires after 5 s.
+  - The handler cannot block or fail auth: the queue holds 1024 events, a full queue drops new ones with a warning, and a panic is recovered and logged while the worker carries on.
+  - Drops are visible: `Auth.DroppedEvents()` (and `UserAdmin.DroppedEvents()`) count them for a metric or an alert, and the first drop and every 100th after it are logged at warn level with `dropped_total`.
+  - Emitting never waits, even while `Shutdown` is draining or when the handler calls back into Auth.
+- **Best-effort:** events still queued when the process exits are lost. `Auth.Shutdown` waits for queued events (without blocking new ones), so call it on graceful shutdown, and in tests before asserting.
+- **User administration:** `a.Users()` reports to the instance's handler, and its `Shutdown` drains that queue. `NewUserAdmin(pool).WithEvents(h)` opts a standalone `UserAdmin` in. Call `WithEvents` once at startup (each call starts a worker), and call `UserAdmin.Shutdown` on graceful shutdown.
+- **Attribution:** each event names its user, so audit attribution is exact however many instances run against one database. The admin app audits sign-ins, sign-outs and failed 2FA this way.
+
 ## Errors (errors.Is)
 
 `ErrBannedUser` (403 BANNED_USER), `ErrInvalidCode` (401 INVALID_CODE), `ErrInvalidBackupCode` (401 INVALID_BACKUP_CODE),

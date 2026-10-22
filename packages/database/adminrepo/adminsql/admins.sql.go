@@ -7,13 +7,15 @@ package adminsql
 
 import (
 	"context"
-	"time"
 )
 
 const deleteAdmin = `-- name: DeleteAdmin :execrows
+
 DELETE FROM "user" WHERE "id" = $1
 `
 
+// The admin auth instance's tables (packages/auth owns them). The admin app
+// only deletes admins it removes.
 // Sessions, accounts and 2FA rows cascade.
 func (q *Queries) DeleteAdmin(ctx context.Context, id string) (int64, error) {
 	result, err := q.db.Exec(ctx, deleteAdmin, id)
@@ -21,41 +23,4 @@ func (q *Queries) DeleteAdmin(ctx context.Context, id string) (int64, error) {
 		return 0, err
 	}
 	return result.RowsAffected(), nil
-}
-
-const twoFactorFailuresSince = `-- name: TwoFactorFailuresSince :many
-
-SELECT tf."userId" AS admin_id, u."email", tf."failedVerificationCount" AS failures
-FROM "twoFactor" tf
-JOIN "user" u ON u."id" = tf."userId"
-WHERE tf."updatedAt" >= $1 AND tf."failedVerificationCount" > 0
-ORDER BY tf."updatedAt"
-`
-
-type TwoFactorFailuresSinceRow struct {
-	AdminID  string
-	Email    string
-	Failures int32
-}
-
-// The admin auth instance's tables (packages/auth owns them). The admin app
-// only reads the 2FA failure counters and deletes admins it removes.
-func (q *Queries) TwoFactorFailuresSince(ctx context.Context, since time.Time) ([]TwoFactorFailuresSinceRow, error) {
-	rows, err := q.db.Query(ctx, twoFactorFailuresSince, since)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []TwoFactorFailuresSinceRow
-	for rows.Next() {
-		var i TwoFactorFailuresSinceRow
-		if err := rows.Scan(&i.AdminID, &i.Email, &i.Failures); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
 }

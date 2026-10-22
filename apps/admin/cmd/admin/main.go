@@ -106,7 +106,7 @@ func migrate(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		return nil
 	}
 
-	admins, err := newAdminAuth(ctx, cfg, adminPool, log)
+	admins, err := newAdminAuth(ctx, cfg, adminPool, nil, log)
 	if err != nil {
 		return err
 	}
@@ -137,7 +137,7 @@ func invite(ctx context.Context, cfg config.Config, log *slog.Logger, email stri
 		return err
 	}
 	defer adminPool.Close()
-	admins, err := newAdminAuth(ctx, cfg, adminPool, log)
+	admins, err := newAdminAuth(ctx, cfg, adminPool, nil, log)
 	if err != nil {
 		return err
 	}
@@ -174,18 +174,18 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	}
 	defer adminPool.Close()
 
-	admins, err := newAdminAuth(ctx, cfg, adminPool, log)
+	auditLog := adminrepo.NewAuditLog(adminPool)
+	events := server.NewAuditEvents(services.NewAuthEventService(auditLog), log)
+	admins, err := newAdminAuth(ctx, cfg, adminPool, events, log)
 	if err != nil {
 		return err
 	}
-	auditLog := adminrepo.NewAuditLog(adminPool)
 	p := policy(cfg)
 	users := services.NewUserService(server.NewUserDirectory(auth.NewUserAdmin(appPool)), auditLog, p)
 	adminSvc := services.NewAdminService(server.NewAdminAccounts(admins, adminrepo.NewAdmins(adminPool)), auditLog, p)
 	auditSvc := services.NewAuditService(auditLog, p)
 	analytics := services.NewAnalyticsService(adminrepo.NewStats(appPool), p)
 	callers := server.NewCallers(admins)
-	events := server.NewAuthEvents(services.NewAuthEventService(adminrepo.NewAdmins(adminPool), auditLog), log)
 
 	handler := server.New(server.Deps{
 		Config:  cfg,
@@ -194,12 +194,11 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		Secrets: cfg.Secrets,
 		Auth:    admins,
 		// No JSON API on the network: the UI calls the services in-process
-		// (and audits sign-ins through NewUIAuth). To let scripts call
+		// (sign-ins are audited through the admin auth instance's events). To let scripts call
 		// /api/admin/v1, pass api.NewUsers(users, callers.API) etc. as API;
 		// the audited auth endpoints come with it, hidden from browsers.
-		AuthEvents: events,
 		UI: ui.New(ui.Deps{
-			Auth: server.NewUIAuth(admins, events), Users: users, Admins: adminSvc, Audit: auditSvc, Analytics: analytics,
+			Auth: server.NewUIAuth(admins), Users: users, Admins: adminSvc, Audit: auditSvc, Analytics: analytics,
 			UserFrom: callers.UI, RequireTwoFactor: cfg.RequireTwoFactor, AppName: cfg.AppName,
 			SecureCookies: cfg.PublicURL.Scheme == "https", Logger: log,
 		}).Handler(),
@@ -225,15 +224,17 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	log.Info("shutting down")
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
-	if err := srv.Shutdown(shutdownCtx); err != nil {
+	err = srv.Shutdown(shutdownCtx)
+	if err != nil {
 		_ = srv.Close() // streams still open after the timeout
-		return err
+	} else if serveErr := <-errc; !errors.Is(serveErr, http.ErrServerClosed) {
+		err = serveErr
 	}
-	if err := <-errc; !errors.Is(err, http.ErrServerClosed) {
-		return err
-	}
-	// Requests are done; let invite emails queued by them go out.
-	return admins.Shutdown(shutdownCtx)
+	// Whatever happened above, let the invite emails and audit events the
+	// requests queued go out, on their own time budget.
+	drainCtx, cancelDrain := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer cancelDrain()
+	return errors.Join(err, admins.Shutdown(drainCtx))
 }
 
 // rotationTimeout bounds one live rotation (connecting a new pool, rewrapping
@@ -273,8 +274,10 @@ func livePool(ctx context.Context, log *slog.Logger, name string, url func() (se
 // newAdminAuth is the admin app's own packages/auth instance over the admin
 // database: its own secret keyring, cookies (prefix "admin") and 2FA policy.
 // Sign-up is off: admins are invited (AdminService.InviteAdmin). The keyring
-// and RESEND_API_KEY rotate live.
-func newAdminAuth(ctx context.Context, cfg config.Config, adminPool auth.DB, log *slog.Logger) (*auth.Auth, error) {
+// and RESEND_API_KEY rotate live. events audits its sign-ins, sign-outs and
+// failed 2FA codes (server.NewAuditEvents); nil for the CLI subcommands,
+// which sign no one in.
+func newAdminAuth(ctx context.Context, cfg config.Config, adminPool auth.DB, events auth.EventHandler, log *slog.Logger) (*auth.Auth, error) {
 	dev := auth.NewDevMailer(log)
 	mailer := auth.NewSwapMailer(dev)
 	cfg.Secrets.OnResendAPIKey(func(key secrets.Secret) error {
@@ -307,6 +310,7 @@ func newAdminAuth(ctx context.Context, cfg config.Config, adminPool auth.DB, log
 		LoginPath:       config.AppRoutes.Login,
 		ClientIPHeader:  cfg.ClientIPHeader,
 		TwoFactor:       &auth.TwoFactorConfig{Required: cfg.RequireTwoFactor},
+		Events:          events,
 		Logger:          log,
 	}, adminPool, mailer)
 	if err != nil {

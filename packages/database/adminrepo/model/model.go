@@ -69,10 +69,3 @@ type Overview struct {
 	ActiveSessions int64     `json:"activeSessions"`
 	GeneratedAt    time.Time `json:"generatedAt"`
 }
-
-// TwoFactorFailure is an admin whose wrong second-factor codes were counted.
-type TwoFactorFailure struct {
-	AdminID  string
-	Email    string
-	Failures int64 // consecutive failures so far (auth locks the account at its limit)
-}

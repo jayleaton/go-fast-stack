@@ -89,7 +89,7 @@ func renderCases() []renderCase {
 		{"audit", true, AuditPage(AuditData{Entries: []services.AuditEntry{{Action: services.ActionAdminInvite, TargetType: services.TargetAdmin, TargetLabel: "a@b.c", CreatedAt: at}}, Pager: pager}), "pages.audit.actions.adminInvite"},
 		{"audit admin actions", true, AuditPage(AuditData{Entries: []services.AuditEntry{
 			{Action: services.ActionAdminSignIn, TargetType: services.TargetAdmin, Details: map[string]string{"method": services.SignInTwoFactor}, CreatedAt: at},
-			{Action: services.ActionAdminTwoFactorFailed, TargetType: services.TargetAdmin, Details: map[string]string{"failures": "2"}, CreatedAt: at},
+			{Action: services.ActionAdminTwoFactorFailed, TargetType: services.TargetAdmin, Details: map[string]string{"reason": "INVALID_BACKUP_CODE"}, CreatedAt: at},
 			{Action: services.ActionAdminRemove, TargetType: services.TargetAdmin, CreatedAt: at},
 		}}), "pages.audit.methods.twoFactor"},
 		{"audit empty", true, AuditPage(AuditData{Filters: AuditFilters{TargetID: "u1"}}), "pages.audit.empty"},

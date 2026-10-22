@@ -84,12 +84,31 @@ func (o *outbox) SendSetPasswordEmail(_ context.Context, to, link string) error 
 func (o *outbox) SendEmailChangeNotice(context.Context, string, string) error { return nil }
 
 type wired struct {
-	t        *testing.T
-	admin    http.Handler // the admin app
-	app      *auth.Auth   // the web app's auth instance on the app database
-	admins   *auth.Auth
-	mail     *outbox
-	adminSvc *services.AdminService
+	t         *testing.T
+	admin     http.Handler // the admin app
+	app       *auth.Auth   // the web app's auth instance on the app database
+	admins    *auth.Auth
+	mail      *outbox
+	adminSvc  *services.AdminService
+	adminPool *pgxpool.Pool
+	auditLog  *adminrepo.AuditLog
+	log       *slog.Logger
+}
+
+// newAdminInstance is one admin auth instance (as each replica of the admin
+// app runs it) on the shared admin database, audited like cmd/admin does.
+func newAdminInstance(t *testing.T, adminPool *pgxpool.Pool, auditLog *adminrepo.AuditLog, mail auth.Mailer, log *slog.Logger) *auth.Auth {
+	t.Helper()
+	admins, err := auth.New(auth.Config{
+		Secret: strings.Repeat("b", 32), BaseURL: adminOrigin, CookiePrefix: "admin", DisableSignUp: true,
+		TwoFactor: &auth.TwoFactorConfig{}, Logger: log,
+		Events: NewAuditEvents(services.NewAuthEventService(auditLog), log),
+	}, adminPool, mail)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = admins.Shutdown(context.Background()) })
+	return admins
 }
 
 // newWired builds the real admin server (cmd/admin's wiring) over two fresh
@@ -104,26 +123,18 @@ func newWired(t *testing.T) *wired {
 	if err != nil {
 		t.Fatal(err)
 	}
-	admins, err := auth.New(auth.Config{
-		Secret: strings.Repeat("b", 32), BaseURL: adminOrigin, CookiePrefix: "admin", DisableSignUp: true,
-		TwoFactor: &auth.TwoFactorConfig{}, Logger: log,
-	}, adminPool, mail)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = admins.Shutdown(context.Background()); _ = app.Shutdown(context.Background()) })
-
+	t.Cleanup(func() { _ = app.Shutdown(context.Background()) })
 	auditLog := adminrepo.NewAuditLog(adminPool)
+	admins := newAdminInstance(t, adminPool, auditLog, mail, log)
 	var p services.Policy
 	adminStore := adminrepo.NewAdmins(adminPool)
 	adminSvc := services.NewAdminService(NewAdminAccounts(admins, adminStore), auditLog, p)
 	callers := NewCallers(admins)
 	h := New(Deps{
-		Config:     config.Config{TrustedOrigins: []string{adminOrigin}},
-		Log:        log,
-		DBs:        map[string]Pinger{"app": appPool, "admin": adminPool},
-		Auth:       admins,
-		AuthEvents: NewAuthEvents(services.NewAuthEventService(adminStore, auditLog), log),
+		Config: config.Config{TrustedOrigins: []string{adminOrigin}},
+		Log:    log,
+		DBs:    map[string]Pinger{"app": appPool, "admin": adminPool},
+		Auth:   admins,
 		API: []Router{
 			api.NewUsers(services.NewUserService(NewUserDirectory(auth.NewUserAdmin(appPool)), auditLog, p), callers.API),
 			api.NewAdmins(adminSvc, callers.API),
@@ -131,7 +142,7 @@ func newWired(t *testing.T) *wired {
 			api.NewAnalytics(services.NewAnalyticsService(adminrepo.NewStats(appPool), p), callers.API),
 		},
 	})
-	return &wired{t: t, admin: h, app: app, admins: admins, mail: mail, adminSvc: adminSvc}
+	return &wired{t: t, admin: h, app: app, admins: admins, mail: mail, adminSvc: adminSvc, adminPool: adminPool, auditLog: auditLog, log: log}
 }
 
 // appSignedIn asks the app's auth endpoints (as the web app serves them)
@@ -159,6 +170,10 @@ func (w *wired) raw(method, path, body string, headers ...string) *httptest.Resp
 // with their details.
 func (w *wired) auditActions(bearer, target string) []string {
 	w.t.Helper()
+	// Auth events are audited on auth's event worker: wait for it.
+	if err := w.admins.Shutdown(context.Background()); err != nil {
+		w.t.Fatal(err)
+	}
 	var page struct{ Data services.AuditPage }
 	w.do("GET", config.APIRoutes.Audit+"?limit=100&targetId="+url.QueryEscape(target), "", bearer, 200, &page)
 	var out []string
@@ -175,6 +190,21 @@ func (w *wired) auditActions(bearer, target string) []string {
 		out = append(out, line)
 	}
 	return out
+}
+
+// wrongTOTP is a code that is not valid for secret anywhere near now (a fixed
+// "000000" is valid once in ~300k windows).
+func wrongTOTP(t *testing.T, secret string) string {
+	t.Helper()
+	valid := map[string]bool{}
+	for d := int64(-2); d <= 2; d++ {
+		valid[totp(t, secret, d)] = true
+	}
+	for i := 0; ; i++ {
+		if c := fmt.Sprintf("%06d", i); !valid[c] {
+			return c
+		}
+	}
 }
 
 // totp is RFC 6238 (SHA-1, 30 s, 6 digits) for step offset steps from now.
@@ -437,7 +467,7 @@ func TestAuthEvents(t *testing.T) {
 			challenge = c.Name + "=" + c.Value
 		}
 	}
-	if rec := w.raw("POST", "/api/auth/two-factor/verify-totp", `{"code":"000000"}`, "Cookie", challenge, "Expo-Origin", adminOrigin); rec.Code == 200 {
+	if rec := w.raw("POST", "/api/auth/two-factor/verify-totp", `{"code":"`+wrongTOTP(t, setup.Secret)+`"}`, "Cookie", challenge, "Expo-Origin", adminOrigin); rec.Code == 200 {
 		t.Fatalf("wrong code accepted: %s", rec.Body)
 	}
 	rec = w.raw("POST", "/api/auth/two-factor/verify-totp", `{"code":"`+totp(t, setup.Secret, 1)+`"}`, "Cookie", challenge, "Expo-Origin", adminOrigin)
@@ -450,8 +480,90 @@ func TestAuthEvents(t *testing.T) {
 	}
 
 	got := w.auditActions(root, rootID)
-	want := []string{"admin.sign_out", "admin.sign_in method=two_factor", "admin.two_factor_failed failures=1", "admin.sign_in method=set_password"}
+	want := []string{"admin.sign_out", "admin.sign_in method=two_factor", "admin.two_factor_failed reason=INVALID_CODE", "admin.sign_in method=set_password"}
 	if len(got) < len(want) || !slices.Equal(got[:len(want)], want) {
 		t.Fatalf("root's audit trail = %v\nwant it to start with %v", got, want)
+	}
+}
+
+// TestAuthEventsExactAcrossInstances: two admin instances (two replicas of
+// the admin app) on one admin database each audit through their own events.
+// Concurrent wrong 2FA codes from two admins on different instances are each
+// attributed to their own admin, which counter-based attribution could not do.
+func TestAuthEventsExactAcrossInstances(t *testing.T) {
+	t.Parallel()
+	w := newWired(t)
+	ctx := context.Background()
+	root := w.inviteAdmin("root@example.com", "admin-password-1")
+	var invited struct{ Data services.Admin }
+	w.do("POST", config.APIRoutes.AdminInvites, `{"email":"eve@example.com"}`, root, 200, &invited)
+	_ = w.admins.Shutdown(ctx) // flush the invite email
+	link, _ := url.Parse(w.mail.link(t, "eve@example.com"))
+	w.do("POST", "/api/auth/set-password", `{"token":"`+link.Query().Get("token")+`","newPassword":"eve-password-1"}`, "", 200, nil)
+	var admins struct{ Data []services.Admin }
+	w.do("GET", config.APIRoutes.Admins, "", root, 200, &admins)
+	ids := map[string]string{}
+	for _, a := range admins.Data {
+		ids[a.Email] = a.ID
+	}
+
+	// A second replica: its own auth instance and handler, same database.
+	replica := newAdminInstance(t, w.adminPool, w.auditLog, w.mail, w.log)
+	// Each admin signs in on one instance and fails 2FA on the other: the
+	// challenge lives in the shared database, the audit follows the admin.
+	signInOn := map[string]*auth.Auth{"root@example.com": w.admins, "eve@example.com": replica}
+	failOn := map[string]*auth.Auth{"root@example.com": replica, "eve@example.com": w.admins}
+	const failures = 3 // under the per-IP 2FA rate limit of each instance
+	var wg sync.WaitGroup
+	for email, password := range map[string]string{"root@example.com": "admin-password-1", "eve@example.com": "eve-password-1"} {
+		setup, err := w.admins.EnableTwoFactor(ctx, ids[email], password)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := w.admins.ConfirmTwoFactor(ctx, ids[email], totp(t, setup.Secret, 0)); err != nil {
+			t.Fatal(err)
+		}
+		post := func(a *auth.Auth, path, body string, headers ...string) *httptest.ResponseRecorder {
+			req := httptest.NewRequest(http.MethodPost, adminOrigin+path, strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			for i := 0; i+1 < len(headers); i += 2 {
+				req.Header.Set(headers[i], headers[i+1])
+			}
+			return serve(a.Handler(), req)
+		}
+		rec := post(signInOn[email], "/api/auth/sign-in/email", `{"email":"`+email+`","password":"`+password+`"}`)
+		var challenge string
+		for _, c := range rec.Result().Cookies() {
+			if strings.HasSuffix(c.Name, "two_factor") {
+				challenge = c.Name + "=" + c.Value
+			}
+		}
+		if challenge == "" {
+			t.Fatalf("%s: no 2FA challenge: %d %s", email, rec.Code, rec.Body)
+		}
+		wrong := wrongTOTP(t, setup.Secret)
+		for range failures {
+			wg.Go(func() {
+				if rec := post(failOn[email], "/api/auth/two-factor/verify-totp", `{"code":"`+wrong+`"}`, "Cookie", challenge, "Origin", adminOrigin); rec.Code != http.StatusUnauthorized {
+					t.Errorf("%s: wrong code answered %d %s", email, rec.Code, rec.Body)
+				}
+			})
+		}
+	}
+	wg.Wait()
+	if err := replica.Shutdown(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	for email, id := range ids {
+		n := 0
+		for _, a := range w.auditActions(root, id) {
+			if a == "admin.two_factor_failed reason=INVALID_CODE" {
+				n++
+			}
+		}
+		if n != failures {
+			t.Errorf("%s has %d failed-2FA audit entries, want exactly %d", email, n, failures)
+		}
 	}
 }

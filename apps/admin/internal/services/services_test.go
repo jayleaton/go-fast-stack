@@ -29,7 +29,6 @@ type ports struct {
 	accounts  *mocks.MockAdminAccounts
 	log       *mocks.MockAuditLog
 	analytics *mocks.MockAnalytics
-	attempts  *mocks.MockTwoFactorAttempts
 }
 
 func newPorts(t *testing.T) ports {
@@ -39,7 +38,6 @@ func newPorts(t *testing.T) ports {
 		accounts:  mocks.NewMockAdminAccounts(ctrl),
 		log:       mocks.NewMockAuditLog(ctrl),
 		analytics: mocks.NewMockAnalytics(ctrl),
-		attempts:  mocks.NewMockTwoFactorAttempts(ctrl),
 	}
 }
 

@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"regexp"
 	"strconv"
 	"strings"
@@ -18,6 +19,8 @@ import (
 type UserAdmin struct {
 	store *store
 	now   func() time.Time
+	emit  func(ctx context.Context, e Event) // nil: no events
+	sink  *eventSink                         // where emit queues (drained by Shutdown)
 }
 
 // NewUserAdmin returns a UserAdmin over pool (a database migrated by Migrate).
@@ -27,7 +30,47 @@ func NewUserAdmin(pool DB) *UserAdmin {
 
 // Users returns a UserAdmin over this instance's database.
 func (a *Auth) Users() *UserAdmin {
-	return &UserAdmin{store: a.store, now: a.now}
+	return &UserAdmin{store: a.store, now: a.now, emit: a.emit, sink: a.events}
+}
+
+// WithEvents returns a copy of u that reports bans, unbans, session
+// revocations and 2FA resets to h, with the same delivery guarantees as
+// Config.Events. Call it once at startup and keep the result: each call
+// starts its own delivery worker. A UserAdmin from Auth.Users already reports
+// to that instance's Config.Events. Events carry no request metadata here (a
+// standalone UserAdmin has no request context of its own).
+func (u *UserAdmin) WithEvents(h EventHandler) *UserAdmin {
+	sink := newEventSink(h, slog.Default(), u.store.userEmail)
+	c := *u
+	c.sink = sink
+	c.emit = func(ctx context.Context, e Event) {
+		e.At = c.now()
+		sink.emit(ctx, e)
+	}
+	return &c
+}
+
+// DroppedEvents is how many of this UserAdmin's events were dropped because
+// the queue was full (see Auth.DroppedEvents).
+func (u *UserAdmin) DroppedEvents() int64 { return u.sink.droppedCount() }
+
+// Shutdown waits for this UserAdmin's queued events to be delivered (or ctx).
+// Call it on graceful shutdown after the last admin action.
+func (u *UserAdmin) Shutdown(ctx context.Context) error {
+	return u.sink.drain(ctx)
+}
+
+func (u *UserAdmin) event(ctx context.Context, e Event) {
+	if u.emit != nil {
+		u.emit(ctx, e)
+	}
+}
+
+func (u *UserAdmin) revoked(ctx context.Context, userID, sessionID string, count int64, by string) {
+	if count > 0 {
+		u.event(ctx, Event{Kind: EventSessionRevoked, UserID: userID, SessionID: sessionID,
+			Details: map[string]string{"count": strconv.FormatInt(count, 10), "by": by}})
+	}
 }
 
 // AdminUser is a user with the admin plugin's fields.
@@ -181,7 +224,8 @@ func (u *UserAdmin) BanUser(ctx context.Context, userID, reason string, duration
 	if reason = strings.TrimSpace(reason); reason != "" {
 		why = &reason
 	}
-	return u.store.tx(ctx, func(q querier) error {
+	var revoked int64
+	err := u.store.tx(ctx, func(q querier) error {
 		tag, err := q.Exec(ctx, `
 			UPDATE "user" SET "banned" = true, "banReason" = $2, "banExpires" = $3, "updatedAt" = $4 WHERE "id" = $1`,
 			userID, why, expires, now)
@@ -191,8 +235,22 @@ func (u *UserAdmin) BanUser(ctx context.Context, userID, reason string, duration
 		if tag.RowsAffected() == 0 {
 			return ErrUserNotFound
 		}
-		return u.store.deleteUserSessions(ctx, q, userID)
+		revoked, err = u.store.deleteUserSessionsCount(ctx, q, userID)
+		return err
 	})
+	if err != nil {
+		return err
+	}
+	details := map[string]string{}
+	if reason != "" {
+		details["reason"] = reason
+	}
+	if expires != nil {
+		details["expiresAt"] = expires.UTC().Format(time.RFC3339)
+	}
+	u.event(ctx, Event{Kind: EventUserBanned, UserID: userID, Details: details})
+	u.revoked(ctx, userID, "", revoked, "ban")
+	return nil
 }
 
 // UnbanUser lifts a ban; the user can sign in again.
@@ -206,6 +264,7 @@ func (u *UserAdmin) UnbanUser(ctx context.Context, userID string) error {
 	if tag.RowsAffected() == 0 {
 		return ErrUserNotFound
 	}
+	u.event(ctx, Event{Kind: EventUserUnbanned, UserID: userID})
 	return nil
 }
 
@@ -232,11 +291,15 @@ func (u *UserAdmin) RevokeSession(ctx context.Context, userID, sessionID string)
 	if sessionID == "" {
 		return ErrSessionNotFound
 	}
-	err := u.store.deleteUserSession(ctx, userID, sessionID, "")
+	id, err := u.store.deleteUserSession(ctx, userID, sessionID, "")
 	if errors.Is(err, errNotFound) {
 		return ErrSessionNotFound
 	}
-	return err
+	if err != nil {
+		return err
+	}
+	u.revoked(ctx, userID, id, 1, "admin")
+	return nil
 }
 
 // ResetTwoFactor removes a user's 2FA enrolment, trusted devices and pending
@@ -247,7 +310,7 @@ func (u *UserAdmin) ResetTwoFactor(ctx context.Context, userID string) error {
 	if _, err := u.adminUser(ctx, userID); err != nil {
 		return err
 	}
-	return u.store.tx(ctx, func(q querier) error {
+	err := u.store.tx(ctx, func(q querier) error {
 		if err := u.store.deleteChallenges(ctx, q, userID); err != nil {
 			return err
 		}
@@ -259,9 +322,17 @@ func (u *UserAdmin) ResetTwoFactor(ctx context.Context, userID string) error {
 		}
 		return u.store.deleteTrustedDevices(ctx, q, userID)
 	})
+	if err == nil {
+		u.event(ctx, Event{Kind: EventTwoFactorDisabled, UserID: userID, Details: map[string]string{"by": "admin"}})
+	}
+	return err
 }
 
 // RevokeUserSessions signs out every session of userID.
 func (u *UserAdmin) RevokeUserSessions(ctx context.Context, userID string) error {
-	return u.store.deleteUserSessions(ctx, u.store.pool, userID)
+	n, err := u.store.deleteUserSessionsCount(ctx, u.store.pool, userID)
+	if err == nil {
+		u.revoked(ctx, userID, "", n, "admin")
+	}
+	return err
 }

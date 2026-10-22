@@ -72,7 +72,10 @@ func (a *Auth) SignUpEmail(ctx context.Context, in SignUpInput) (User, Session, 
 		if !a.cfg.RequireEmailVerification {
 			return User{}, Session{}, ErrUserAlreadyExists
 		}
-		err := a.store.replaceUnverifiedPassword(ctx, email, hash, now)
+		id, revoked, err := a.store.replaceUnverifiedPassword(ctx, email, hash, now)
+		if err == nil && revoked > 0 {
+			a.emitRevoked(ctx, id, "", revoked, "sign_up")
+		}
 		if err == nil {
 			a.sendVerification(ctx, email, a.credFingerprint(&hash), in.CallbackURL)
 		} else if !errors.Is(err, errNotFound) {
@@ -111,6 +114,7 @@ func (a *Auth) SignUpEmail(ctx context.Context, in SignUpInput) (User, Session, 
 	if err != nil {
 		return User{}, Session{}, err
 	}
+	a.emit(ctx, Event{Kind: EventSignIn, UserID: user.ID, Email: user.Email, SessionID: sess.ID, Method: SignInMethodSignUp})
 	return user, sess, nil
 }
 
@@ -119,52 +123,67 @@ func (a *Auth) SignUpEmail(ctx context.Context, in SignUpInput) (User, Session, 
 // same amount of hashing work. With required verification, unverified users
 // get ErrEmailNotVerified (only after the password matched).
 func (a *Auth) SignInEmail(ctx context.Context, in SignInInput) (User, Session, error) {
+	user, sess, knownID, err := a.signInEmail(ctx, in)
+	if _, challenged := errors.AsType[*TwoFactorChallenge](err); err == nil {
+		a.emit(ctx, Event{Kind: EventSignIn, UserID: user.ID, Email: user.Email, SessionID: sess.ID, Method: SignInMethodPassword})
+	} else if !challenged {
+		a.emitFailure(ctx, EventSignInFailed, knownID, SignInMethodPassword, err)
+	}
+	return user, sess, err
+}
+
+// signInEmail is SignInEmail; knownID is the user's id once the email matched
+// an account (for EventSignInFailed), even when sign-in is refused.
+func (a *Auth) signInEmail(ctx context.Context, in SignInInput) (_ User, _ Session, knownID string, _ error) {
 	if err := a.rateLimit(ctx, "sign-in", RuleSignIn); err != nil {
-		return User{}, Session{}, err
+		return User{}, Session{}, knownID, err
 	}
 	email, err := normalizeEmail(in.Email)
 	if err != nil {
-		return User{}, Session{}, err
+		return User{}, Session{}, knownID, err
 	}
 	if len([]rune(in.Password)) > a.cfg.MaxPasswordLength {
-		return User{}, Session{}, ErrPasswordTooLong
+		return User{}, Session{}, knownID, ErrPasswordTooLong
 	}
 	if err := a.checkCallbackURL(in.CallbackURL, ErrInvalidCallbackURL); err != nil {
-		return User{}, Session{}, err
+		return User{}, Session{}, knownID, err
 	}
 
 	user, hash, err := a.store.userWithPassword(ctx, email)
+	if err == nil {
+		knownID = user.ID
+	}
 	if err != nil && !errors.Is(err, errNotFound) {
-		return User{}, Session{}, err
+		return User{}, Session{}, knownID, err
 	}
 	if err != nil || hash == nil {
 		_, _ = verifyPassword(in.Password, a.dummyHash)
-		return User{}, Session{}, ErrInvalidEmailOrPassword
+		return User{}, Session{}, knownID, ErrInvalidEmailOrPassword
 	}
 	ok, err := verifyPassword(in.Password, *hash)
 	if err != nil {
 		a.log.ErrorContext(ctx, "auth: stored password hash is unreadable", "userId", user.ID, "err", err)
-		return User{}, Session{}, ErrInvalidEmailOrPassword
+		return User{}, Session{}, knownID, ErrInvalidEmailOrPassword
 	}
 	if !ok {
-		return User{}, Session{}, ErrInvalidEmailOrPassword
+		return User{}, Session{}, knownID, ErrInvalidEmailOrPassword
 	}
 	if isLegacyHash(*hash) {
 		a.upgradeHash(ctx, user.ID, in.Password)
 	}
 	if a.cfg.RequireEmailVerification && !user.EmailVerified {
-		return User{}, Session{}, ErrEmailNotVerified
+		return User{}, Session{}, knownID, ErrEmailNotVerified
 	}
 	if c, err := a.secondFactor(ctx, user.ID); err != nil {
-		return User{}, Session{}, err
+		return User{}, Session{}, knownID, err
 	} else if c != nil {
-		return User{}, Session{}, c
+		return User{}, Session{}, knownID, c
 	}
 	sess, err := a.createSession(ctx, user.ID)
 	if err != nil {
-		return User{}, Session{}, err
+		return User{}, Session{}, knownID, err
 	}
-	return user, sess, nil
+	return user, sess, knownID, nil
 }
 
 // upgradeHash replaces an imported Better Auth scrypt hash with argon2id after
@@ -184,7 +203,15 @@ func (a *Auth) SignOut(ctx context.Context, sessionToken string) error {
 	if sessionToken == "" {
 		return nil
 	}
-	return a.store.deleteSession(ctx, sessionToken)
+	id, userID, err := a.store.endSession(ctx, sessionToken)
+	if errors.Is(err, errNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	a.emit(ctx, Event{Kind: EventSignOut, UserID: userID, SessionID: id})
+	return nil
 }
 
 // RequestPasswordReset emails a single-use reset link valid for one hour if
@@ -250,25 +277,29 @@ func (a *Auth) resetTokenValid(ctx context.Context, token string) (bool, error) 
 // Used, expired or unknown tokens return ErrInvalidToken. It does not sign in;
 // CompleteSetPassword does.
 func (a *Auth) ResetPassword(ctx context.Context, token, newPassword string) error {
-	_, err := a.setPassword(ctx, token, newPassword, false)
+	userID, revoked, err := a.setPassword(ctx, token, newPassword, false)
+	if err == nil {
+		a.emit(ctx, Event{Kind: EventPasswordReset, UserID: userID, Method: "reset"})
+		a.emitRevoked(ctx, userID, "", revoked, "password_reset")
+	}
 	return err
 }
 
 // setPassword is ResetPassword returning the user id; verifyEmail also marks
 // the email verified (invites: the link proves the inbox).
-func (a *Auth) setPassword(ctx context.Context, token, newPassword string, verifyEmail bool) (string, error) {
+func (a *Auth) setPassword(ctx context.Context, token, newPassword string, verifyEmail bool) (_ string, revoked int64, _ error) {
 	if err := a.rateLimit(ctx, "reset-password", RuleResetPassword); err != nil {
-		return "", err
+		return "", 0, err
 	}
 	if !isTokenString(token) {
-		return "", ErrInvalidToken
+		return "", 0, ErrInvalidToken
 	}
 	if err := a.checkPasswordLength(newPassword); err != nil {
-		return "", err
+		return "", 0, err
 	}
 	hash, err := hashPassword(newPassword, a.argon)
 	if err != nil {
-		return "", err
+		return "", 0, err
 	}
 	now := a.now()
 	var userID string
@@ -287,8 +318,11 @@ func (a *Auth) setPassword(ctx context.Context, token, newPassword string, verif
 			}
 			return err
 		}
+		if revoked, err = a.store.deleteUserSessionsCount(ctx, q, id); err != nil {
+			return err
+		}
 		for _, revoke := range []func(context.Context, querier, string) error{
-			a.store.deleteUserSessions, a.store.deleteResetTokens, a.store.deleteEmailChanges,
+			a.store.deleteResetTokens, a.store.deleteEmailChanges,
 			a.store.deleteChallenges, a.store.deleteTrustedDevices,
 		} {
 			if err := revoke(ctx, q, id); err != nil {
@@ -302,7 +336,7 @@ func (a *Auth) setPassword(ctx context.Context, token, newPassword string, verif
 		}
 		return a.store.setCredentialPassword(ctx, q, id, hash, now)
 	})
-	return userID, err
+	return userID, revoked, err
 }
 
 // VerifyEmail checks an email verification token, marks the email verified
@@ -365,9 +399,11 @@ func (a *Auth) verifyAddress(ctx context.Context, claims verificationClaims) (Us
 		return User{}, Session{}, err
 	}
 	user = verified
-	if err := a.store.deleteUserSessions(ctx, a.store.pool, user.ID); err != nil {
+	revoked, err := a.store.deleteUserSessionsCount(ctx, a.store.pool, user.ID)
+	if err != nil {
 		return User{}, Session{}, err
 	}
+	a.emitRevoked(ctx, user.ID, "", revoked, "email_verification")
 	if needs, err := a.needsSecondFactor(ctx, user.ID); err != nil || needs {
 		return user, Session{}, err // an email link is no second factor: sign in normally
 	}
@@ -375,6 +411,7 @@ func (a *Auth) verifyAddress(ctx context.Context, claims verificationClaims) (Us
 	if err != nil {
 		return User{}, Session{}, err
 	}
+	a.emit(ctx, Event{Kind: EventSignIn, UserID: user.ID, Email: user.Email, SessionID: sess.ID, Method: SignInMethodEmailVerified})
 	return user, sess, nil
 }
 

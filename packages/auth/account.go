@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"errors"
+	"strconv"
 )
 
 // ChangePassword sets a new password after checking the current one (Better
@@ -41,7 +42,8 @@ func (a *Auth) ChangePassword(ctx context.Context, userID, currentPassword, newP
 		return err
 	}
 	now := a.now()
-	return a.store.tx(ctx, func(q querier) error {
+	var revoked int64
+	err = a.store.tx(ctx, func(q querier) error {
 		// Conditional on the hash just verified: of two concurrent changes
 		// only the first wins, the other sees ErrInvalidPassword.
 		if err := a.store.changePassword(ctx, q, userID, current, hash, now); err != nil {
@@ -60,10 +62,29 @@ func (a *Auth) ChangePassword(ctx context.Context, userID, currentPassword, newP
 			if err := a.store.deleteTrustedDevices(ctx, q, userID); err != nil {
 				return err
 			}
-			return a.store.deleteOtherSessions(ctx, q, userID, currentSessionID)
+			revoked, err = a.store.deleteOtherSessions(ctx, q, userID, currentSessionID)
+			return err
 		}
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+	a.emit(ctx, Event{Kind: EventPasswordChanged, UserID: userID, SessionID: currentSessionID})
+	if revoked > 0 {
+		a.emitRevoked(ctx, userID, "", revoked, "password_change")
+	}
+	return nil
+}
+
+// emitRevoked reports sessions ended by someone other than their holder
+// signing out: by is "user", "password_change", "admin" or "ban".
+func (a *Auth) emitRevoked(ctx context.Context, userID, sessionID string, count int64, by string) {
+	if count <= 0 {
+		return
+	}
+	a.emit(ctx, Event{Kind: EventSessionRevoked, UserID: userID, SessionID: sessionID,
+		Details: map[string]string{"count": strconv.FormatInt(count, 10), "by": by}})
 }
 
 // ChangeEmail starts Better Auth's change-email flow: a verification link
@@ -109,6 +130,8 @@ func (a *Auth) ChangeEmail(ctx context.Context, userID, newEmail, callbackURL st
 	if _, err := a.store.userByEmail(ctx, newEmail); err == nil {
 		if a.cfg.RequireEmailVerification {
 			a.log.InfoContext(ctx, "auth: change-email to an existing address", "userId", userID)
+			a.emit(ctx, Event{Kind: EventEmailChangeRequested, UserID: userID, Email: user.Email,
+				Details: map[string]string{"newEmail": newEmail, "outcome": "address_taken"}})
 			return nil
 		}
 		return ErrEmailTaken
@@ -127,6 +150,7 @@ func (a *Auth) ChangeEmail(ctx context.Context, userID, newEmail, callbackURL st
 	a.sendMail(ctx, "change-email-notice", user.Email, func(ctx context.Context) error {
 		return a.mailer.SendEmailChangeNotice(ctx, user.Email, newEmail)
 	})
+	a.emit(ctx, Event{Kind: EventEmailChangeRequested, UserID: userID, Email: user.Email, Details: map[string]string{"newEmail": newEmail}})
 	return nil
 }
 
@@ -152,6 +176,7 @@ func (a *Auth) confirmEmailChange(ctx context.Context, c verificationClaims) (Us
 	if err != nil {
 		return User{}, Session{}, err
 	}
+	a.emit(ctx, Event{Kind: EventEmailChanged, UserID: user.ID, Email: user.Email, Details: map[string]string{"oldEmail": c.Email, "newEmail": user.Email}})
 	if current, sess, ok := a.userFrom(ctx); ok && current.ID == user.ID {
 		return user, sess, nil
 	}
@@ -162,6 +187,7 @@ func (a *Auth) confirmEmailChange(ctx context.Context, c verificationClaims) (Us
 	if err != nil {
 		return User{}, Session{}, err
 	}
+	a.emit(ctx, Event{Kind: EventSignIn, UserID: user.ID, Email: user.Email, SessionID: sess.ID, Method: SignInMethodEmailChanged})
 	return user, sess, nil
 }
 
@@ -182,23 +208,36 @@ func (a *Auth) revokeSession(ctx context.Context, userID, sessionID, token strin
 	if sessionID == "" && token == "" {
 		return ErrSessionNotFound
 	}
-	err := a.store.deleteUserSession(ctx, userID, sessionID, token)
+	if sessionID != "" {
+		token = "" // one session: the id wins, so a body with both cannot revoke two
+	}
+	id, err := a.store.deleteUserSession(ctx, userID, sessionID, token)
 	if errors.Is(err, errNotFound) {
 		return ErrSessionNotFound
 	}
-	return err
+	if err != nil {
+		return err
+	}
+	a.emitRevoked(ctx, userID, id, 1, "user")
+	return nil
 }
 
 // RevokeOtherSessions signs out every session of the user except
 // currentSessionID and cancels pending email changes, which another session
 // may have started.
 func (a *Auth) RevokeOtherSessions(ctx context.Context, userID, currentSessionID string) error {
-	return a.store.tx(ctx, func(q querier) error {
-		if err := a.store.deleteOtherSessions(ctx, q, userID, currentSessionID); err != nil {
+	var revoked int64
+	err := a.store.tx(ctx, func(q querier) error {
+		var err error
+		if revoked, err = a.store.deleteOtherSessions(ctx, q, userID, currentSessionID); err != nil {
 			return err
 		}
 		return a.store.deleteEmailChanges(ctx, q, userID)
 	})
+	if err == nil && revoked > 0 {
+		a.emitRevoked(ctx, userID, "", revoked, "user")
+	}
+	return err
 }
 
 // rateLimitUser applies rule per client IP and per user, so neither many

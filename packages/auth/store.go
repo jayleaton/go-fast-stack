@@ -136,18 +136,19 @@ func (s *store) verifyEmail(ctx context.Context, email string, now time.Time, ch
 // replaceUnverifiedPassword sets a new password on an account whose email is
 // still unverified and drops its sessions. It returns errNotFound when the
 // account is verified (or gone).
-func (s *store) replaceUnverifiedPassword(ctx context.Context, email, hash string, now time.Time) error {
-	return s.tx(ctx, func(q querier) error {
-		var id string
-		err := q.QueryRow(ctx, `SELECT "id" FROM "user" WHERE "email" = $1 AND NOT "emailVerified" FOR UPDATE`, email).Scan(&id)
-		if err != nil {
+// It returns the account and how many sessions it dropped.
+func (s *store) replaceUnverifiedPassword(ctx context.Context, email, hash string, now time.Time) (id string, revoked int64, err error) {
+	err = s.tx(ctx, func(q querier) error {
+		if err := q.QueryRow(ctx, `SELECT "id" FROM "user" WHERE "email" = $1 AND NOT "emailVerified" FOR UPDATE`, email).Scan(&id); err != nil {
 			return notFound(err)
 		}
-		if err := s.deleteUserSessions(ctx, q, id); err != nil {
+		var err error
+		if revoked, err = s.deleteUserSessionsCount(ctx, q, id); err != nil {
 			return err
 		}
 		return s.setCredentialPassword(ctx, q, id, hash, now)
 	})
+	return id, revoked, err
 }
 
 func (s *store) createSession(ctx context.Context, sess Session) error {
@@ -210,9 +211,17 @@ func (s *store) deleteSession(ctx context.Context, token string) error {
 	return err
 }
 
-func (s *store) deleteUserSessions(ctx context.Context, q querier, userID string) error {
-	_, err := q.Exec(ctx, `DELETE FROM "session" WHERE "userId" = $1`, userID)
-	return err
+// endSession deletes the session with token and returns its id and user, or
+// errNotFound.
+func (s *store) endSession(ctx context.Context, token string) (id, userID string, err error) {
+	err = s.pool.QueryRow(ctx, `DELETE FROM "session" WHERE "token" = $1 RETURNING "id", "userId"`, token).Scan(&id, &userID)
+	return id, userID, notFound(err)
+}
+
+// deleteUserSessionsCount deletes every session of a user and returns how many.
+func (s *store) deleteUserSessionsCount(ctx context.Context, q querier, userID string) (int64, error) {
+	tag, err := q.Exec(ctx, `DELETE FROM "session" WHERE "userId" = $1`, userID)
+	return tag.RowsAffected(), err
 }
 
 func (s *store) createVerification(ctx context.Context, identifier, value string, expiresAt, now time.Time) error {
@@ -310,23 +319,20 @@ func (s *store) listSessions(ctx context.Context, userID string, now time.Time) 
 
 // deleteUserSession deletes one of the user's sessions, matched by id or by
 // token. It returns errNotFound when the user has no such session.
-func (s *store) deleteUserSession(ctx context.Context, userID, id, token string) error {
-	tag, err := s.pool.Exec(ctx, `
+func (s *store) deleteUserSession(ctx context.Context, userID, id, token string) (string, error) {
+	var deleted string
+	err := s.pool.QueryRow(ctx, `
 		DELETE FROM "session"
-		WHERE "userId" = $1 AND (("id" = $2 AND $2 <> '') OR ("token" = $3 AND $3 <> ''))`, userID, id, token)
-	if err != nil {
-		return err
-	}
-	if tag.RowsAffected() == 0 {
-		return errNotFound
-	}
-	return nil
+		WHERE "userId" = $1 AND (("id" = $2 AND $2 <> '') OR ("token" = $3 AND $3 <> ''))
+		RETURNING "id"`, userID, id, token).Scan(&deleted)
+	return deleted, notFound(err)
 }
 
-// deleteOtherSessions deletes every session of the user except keepID.
-func (s *store) deleteOtherSessions(ctx context.Context, q querier, userID, keepID string) error {
-	_, err := q.Exec(ctx, `DELETE FROM "session" WHERE "userId" = $1 AND "id" <> $2`, userID, keepID)
-	return err
+// deleteOtherSessions deletes every session of the user except keepID and
+// returns how many.
+func (s *store) deleteOtherSessions(ctx context.Context, q querier, userID, keepID string) (int64, error) {
+	tag, err := q.Exec(ctx, `DELETE FROM "session" WHERE "userId" = $1 AND "id" <> $2`, userID, keepID)
+	return tag.RowsAffected(), err
 }
 
 // changeEmailPrefix prefixes the verification row of a pending email change;
@@ -456,8 +462,9 @@ var errAlreadyEnabled = errors.New("auth: two-factor already enabled")
 // It returns errNotFound for a replayed (or older) step.
 // The update is pinned to secret, the one the code was checked against, so an
 // enrolment replaced meanwhile is never the one that gets verified.
-func (s *store) acceptTOTPStep(ctx context.Context, userID, secret string, step int64, now time.Time) error {
-	return s.tx(ctx, func(q querier) error {
+// enabled reports whether this call is the one that turned 2FA on.
+func (s *store) acceptTOTPStep(ctx context.Context, userID, secret string, step int64, now time.Time) (enabled bool, err error) {
+	err = s.tx(ctx, func(q querier) error {
 		tag, err := q.Exec(ctx, `
 			UPDATE "twoFactor" SET "lastUsedStep" = $2, "verified" = true, "failedVerificationCount" = 0,
 				"lockedUntil" = NULL, "updatedAt" = $3
@@ -468,9 +475,11 @@ func (s *store) acceptTOTPStep(ctx context.Context, userID, secret string, step 
 		if tag.RowsAffected() == 0 {
 			return errNotFound
 		}
-		_, err = q.Exec(ctx, `UPDATE "user" SET "twoFactorEnabled" = true, "updatedAt" = $2 WHERE "id" = $1 AND NOT "twoFactorEnabled"`, userID, now)
+		tag, err = q.Exec(ctx, `UPDATE "user" SET "twoFactorEnabled" = true, "updatedAt" = $2 WHERE "id" = $1 AND NOT "twoFactorEnabled"`, userID, now)
+		enabled = tag.RowsAffected() > 0
 		return err
 	})
+	return enabled, err
 }
 
 // useBackupCode removes hash from the user's verified backup codes. It

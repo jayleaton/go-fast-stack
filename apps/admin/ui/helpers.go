@@ -279,7 +279,7 @@ func auditTarget(e services.AuditEntry) (href, label string) {
 }
 
 // auditDetails are the detail lines of an entry: the sign-in method and the
-// 2FA failure count translated, anything else as details does.
+// reason a 2FA code was refused translated, anything else as details does.
 func auditDetails(ctx context.Context, e services.AuditEntry) []string {
 	if len(e.Details) == 1 {
 		if m, ok := e.Details["method"]; ok && e.Action == services.ActionAdminSignIn {
@@ -288,11 +288,23 @@ func auditDetails(ctx context.Context, e services.AuditEntry) []string {
 			}
 			return []string{i18n.Tf(ctx, "pages.audit.signInMethod", m)}
 		}
-		if n, ok := e.Details["failures"]; ok && e.Action == services.ActionAdminTwoFactorFailed {
-			return []string{i18n.Tf(ctx, "pages.audit.failures", n)}
+		if r, ok := e.Details["reason"]; ok && e.Action == services.ActionAdminTwoFactorFailed {
+			if key, known := twoFactorReasonKeys[r]; known {
+				r = i18n.T(ctx, key)
+			}
+			return []string{i18n.Tf(ctx, "pages.audit.reason", r)}
 		}
 	}
 	return details(e.Details)
+}
+
+// twoFactorReasonKeys translate the packages/auth error codes a refused 2FA
+// code is audited with; other codes show as they are.
+var twoFactorReasonKeys = map[string]string{
+	"INVALID_CODE":               "pages.audit.reasons.invalidCode",
+	"INVALID_BACKUP_CODE":        "pages.audit.reasons.invalidBackupCode",
+	"ACCOUNT_TEMPORARILY_LOCKED": "pages.audit.reasons.locked",
+	"TOO_MANY_REQUESTS":          "pages.audit.reasons.tooManyRequests",
 }
 
 // details renders an entry's details as "key: value" pairs, sorted by key.
