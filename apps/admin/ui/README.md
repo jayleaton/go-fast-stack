@@ -68,10 +68,24 @@ the adapter must see the request (for example through the context its middleware
 - **Auth state**: pages without a session 303 to login; actions redirect over SSE. A service `ErrTwoFactorRequired`
   sends the admin to `/two-factor/setup`. Signed-in pages are `Cache-Control: no-store`.
 - **Audit log**: `actionKeys` in `helpers.go` labels every `services.Action*` (table and filter); unknown actions
-  show raw. `auditDetails` translates the sign-in method and the 2FA failure count.
+  show raw. `auditDetails` translates the sign-in method and the 2FA failure count. The Status column
+  (`auditStatus`) badges each entry: done, failed (with its reason, translated when it is the message of an
+  `errorKeys` error, otherwise as recorded), outcome unknown (`pending`: the change may or may not have been
+  applied; the reconciler resolves it) and unknown (the reconciler could not tell). Reconciled entries get a
+  "reconciled" marker, and their reason is translated by status, never shown as the reconciler's English.
 - **Errors**: one table (`errorKeys` in `ui.go`) maps `ui.Err*` and `services.Err*` to messages; validation errors
-  show `errors.invalidInput`; anything else is logged and shows `errors.somethingWentWrong`.
+  show `errors.invalidInput`; anything else is logged and shows `errors.somethingWentWrong`. Mutations fail
+  closed: `services.ErrAuditUnavailable` (the audit intent could not be written, nothing changed) shows
+  `errors.auditUnavailable` and is logged with its cause; a change applied but whose outcome was not recorded
+  is an internal error (something went wrong; the entry stays "outcome unknown").
 - **i18n**: like the web copy, except that messages may carry ordered placeholders (`{0}`), filled by `Tf`, because
   word order differs (`Invite sent to {0}` / `{0} に招待を送信しました`). `TestPlaceholdersMatch` keeps them aligned.
 - **Tests** (`apps/admin/ui/**` is a test boundary): generated mocks of the ports plus a mock session through
   `Deps.UserFrom`. `TestRenderStopsWhenClientHangsUp` fails the connection at every write of every page.
+
+## Audit log: two ways of recording
+
+- **Admin changes** (the services' `mutate`) fail closed: a pending row before the change, the outcome after. No row, no change (`ErrAuditUnavailable`, translated alert). A pending row whose outcome was never written shows as "Outcome unknown" until the reconciler resolves it.
+- **Authentication events** (sign-in, sign-out, refused 2FA code) come from packages/auth's event hook (`server.NewAuditEvents`) after the fact, on auth's event worker. They are best-effort by design: they never block or undo a sign-in, a failed write is logged at error level, and auth drops events (with a counted warning) if its queue is full. They have no status beyond "Done".
+
+The page says this in one line under the title (`pages.audit.howRecorded`).

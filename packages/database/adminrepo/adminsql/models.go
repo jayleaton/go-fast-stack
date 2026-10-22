@@ -3,19 +3,3 @@
 //   sqlc v1.31.1
 
 package adminsql
-
-import (
-	"time"
-)
-
-type AdminAuditLog struct {
-	ID          int64
-	ActorID     string
-	ActorEmail  string
-	Action      string
-	TargetType  string
-	TargetID    string
-	TargetLabel string
-	Details     []byte
-	CreatedAt   time.Time
-}

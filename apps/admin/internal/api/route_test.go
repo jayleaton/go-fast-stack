@@ -207,6 +207,7 @@ func TestErrorMapping(t *testing.T) {
 		{services.ErrNotFound, 404, "Not found"},
 		{&services.Error{Kind: services.KindRateLimited, Message: "Slow down"}, 429, "Slow down"},
 		{&services.Error{Kind: services.KindUnauthorized, Message: "Nope"}, 401, "Nope"},
+		{services.ErrAuditUnavailable, 503, "The audit log is unavailable, so nothing was changed. Try again later."},
 		{&services.Error{Kind: services.Kind(99), Message: "odd"}, 500, "odd"},
 		{&services.Error{Kind: services.KindInternal, Message: "secret detail"}, 500, "Internal server error"},
 		{errors.New("pq: connection refused"), 500, "Internal server error"},

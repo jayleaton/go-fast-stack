@@ -40,6 +40,9 @@ func writeErr(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.As(err, &verr):
 		WriteError(w, http.StatusBadRequest, "Invalid request data", verr.Fields)
 	case errors.As(err, &serr) && serr.Kind != services.KindInternal:
+		if serr.Kind == services.KindUnavailable { // a dependency is down: keep the cause
+			slog.ErrorContext(r.Context(), "request refused", "method", r.Method, "path", r.URL.Path, "err", err)
+		}
 		WriteError(w, statusFor(serr.Kind), serr.Message, nil)
 	default:
 		slog.ErrorContext(r.Context(), "request failed", "method", r.Method, "path", r.URL.Path, "err", err)
@@ -61,6 +64,8 @@ func statusFor(k services.Kind) int {
 		return http.StatusConflict
 	case services.KindRateLimited:
 		return http.StatusTooManyRequests
+	case services.KindUnavailable:
+		return http.StatusServiceUnavailable
 	default:
 		return http.StatusInternalServerError
 	}

@@ -36,7 +36,7 @@ var adminRoutes = map[string]route{
 	"POST admin invite": {
 		method: "POST", path: r.AdminInvites, body: `{"email":"  Linus@Example.COM ","name":"  Linus T "}`,
 		invalidBody: `{"email":"not an email"}`, field: "email",
-		errs: []svcErr{{services.ErrAdminExists, 409, "This person is already an admin"}},
+		errs: []svcErr{{services.ErrAdminExists, 409, "This person is already an admin"}, unavailable},
 		expect: func(m svcs, err error) {
 			m.admins.InviteAdmin(anyCtx, actor, validate.CreateAdminInvite{Email: "linus@example.com", Name: "Linus T"}).Return(linus, err)
 		},
@@ -48,7 +48,7 @@ var adminRoutes = map[string]route{
 	},
 	"POST admin disable": {
 		method: "POST", path: config.AdminPath("admin 2", "/disable"),
-		errs: []svcErr{adminNotFound, adminSelf, lastAdmin, {services.ErrAdminDisabled, 400, "This admin is already disabled"}},
+		errs: []svcErr{adminNotFound, adminSelf, lastAdmin, {services.ErrAdminDisabled, 400, "This admin is already disabled"}, unavailable},
 		expect: func(m svcs, err error) { // the path id arrives unescaped
 			m.admins.DisableAdmin(anyCtx, actor, "admin 2").Return(err)
 		},
@@ -56,14 +56,14 @@ var adminRoutes = map[string]route{
 	},
 	"POST admin enable": {
 		method: "POST", path: config.AdminPath("a2", "/enable"),
-		errs: []svcErr{adminNotFound, {services.ErrAdminNotDisabled, 400, "This admin is not disabled"}},
+		errs: []svcErr{adminNotFound, {services.ErrAdminNotDisabled, 400, "This admin is not disabled"}, unavailable},
 		expect: func(m svcs, err error) {
 			m.admins.EnableAdmin(anyCtx, actor, "a2").Return(err)
 		},
 		check: wantSuccess,
 	},
 	"DELETE admin": {
-		method: "DELETE", path: config.AdminPath("a2", ""), errs: []svcErr{adminNotFound, adminSelf, lastAdmin},
+		method: "DELETE", path: config.AdminPath("a2", ""), errs: []svcErr{adminNotFound, adminSelf, lastAdmin, unavailable},
 		expect: func(m svcs, err error) {
 			m.admins.RemoveAdmin(anyCtx, actor, "a2").Return(err)
 		},

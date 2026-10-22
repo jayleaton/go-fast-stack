@@ -262,12 +262,17 @@ var errorKeys = []struct {
 	{services.ErrAdminDisabled, "errors.adminDisabled"},
 	{services.ErrAdminNotDisabled, "errors.adminNotDisabled"},
 	{services.ErrTwoFactorRequired, "errors.twoFactorRequired"},
+	{services.ErrAuditUnavailable, "errors.auditUnavailable"},
 	{services.ErrForbidden, "errors.forbidden"},
 }
 
 // errorMessage translates an auth, service or validation error; unknown
-// errors are logged.
+// errors are logged, and so is a refusal for an unavailable audit log (its
+// wrapped cause is the outage).
 func (u *UI) errorMessage(ctx context.Context, err error) string {
+	if errors.Is(err, services.ErrAuditUnavailable) {
+		u.log.ErrorContext(ctx, "ui: action refused", "err", err)
+	}
 	for _, e := range errorKeys {
 		if errors.Is(err, e.err) {
 			return i18n.T(ctx, e.key)

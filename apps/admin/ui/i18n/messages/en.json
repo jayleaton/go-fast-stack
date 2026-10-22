@@ -182,12 +182,14 @@
     "audit": {
       "title": "Audit log",
       "subtitle": "Every admin action, newest first.",
+      "howRecorded": "Admin changes (bans, roles, sessions, invites, admins) are recorded before they run: if the audit log cannot record one, it is refused and nothing changes. Sign-ins, sign-outs and refused two-factor codes are recorded just after they happen and never block them, so one can be missing if the log was unavailable at that moment.",
       "action": "Action",
       "allActions": "All actions",
       "time": "Time",
       "actor": "Admin",
       "target": "Target",
       "details": "Details",
+      "status": "Status",
       "empty": "No entries yet.",
       "actions": {
         "userBan": "Banned user",
@@ -216,6 +218,21 @@
         "password": "password",
         "twoFactor": "password + two-factor",
         "setPassword": "set-password link"
+      },
+      "statuses": {
+        "succeeded": "Done",
+        "failed": "Failed",
+        "pending": "Outcome unknown",
+        "pendingHint": "The change may or may not have been applied. It will be checked against the current state and resolved.",
+        "unknown": "Unknown",
+        "reconciled": "reconciled",
+        "reconciledHint": "Resolved later from the current state, not recorded when the action ran. A later action may have changed that state since."
+      },
+      "internalReason": "Internal error (details are in the server log)",
+      "reconciledReasons": {
+        "stateMatches": "The current state shows the change.",
+        "stateDiffers": "The current state does not show the change.",
+        "undecidable": "The outcome cannot be told from the current state."
       }
     },
     "analytics": {
@@ -252,6 +269,7 @@
     "adminSelf": "You cannot disable or remove yourself.",
     "lastAdmin": "The last active admin cannot be disabled or removed.",
     "adminDisabled": "This admin is already disabled.",
-    "adminNotDisabled": "This admin is not disabled."
+    "adminNotDisabled": "This admin is not disabled.",
+    "auditUnavailable": "The audit log is unavailable, so nothing was changed. Please try again later."
   }
 }

@@ -4,6 +4,7 @@ package services
 
 import (
 	"context"
+	"time"
 
 	"github.com/jayleaton/ai-patterns-go/apps/admin/internal/validate"
 	"github.com/jayleaton/ai-patterns-go/packages/database/adminrepo/model"
@@ -15,6 +16,15 @@ type (
 	AuditEntry    = model.AuditEntry
 	AuditQuery    = model.AuditQuery
 	AuditPage     = model.AuditPage
+	AuditOutcome  = model.AuditOutcome
+)
+
+// Audit statuses (see model.Status*).
+const (
+	StatusPending   = model.StatusPending
+	StatusSucceeded = model.StatusSucceeded
+	StatusFailed    = model.StatusFailed
+	StatusUnknown   = model.StatusUnknown
 )
 
 // Audit targets.
@@ -26,7 +36,14 @@ const (
 // AuditLog is the port to admin_audit_log in the admin database
 // (adminrepo.AuditLog). Entries are append-only.
 type AuditLog interface {
+	// Append records a completed fact (no outcome follows).
 	Append(ctx context.Context, e NewAuditEntry) error
+	// Begin records a mutation's intent (pending) before it runs.
+	Begin(ctx context.Context, e NewAuditEntry) (id int64, err error)
+	// Resolve appends the outcome of a pending entry; the first one wins.
+	Resolve(ctx context.Context, id int64, o AuditOutcome) error
+	// Pending lists up to limit intents older than before without an outcome.
+	Pending(ctx context.Context, before time.Time, limit int) ([]AuditEntry, error)
 	List(ctx context.Context, q AuditQuery) (AuditPage, error)
 }
 

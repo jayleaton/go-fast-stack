@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jayleaton/ai-patterns-go/packages/database/adminrepo"
 	"github.com/jayleaton/ai-patterns-go/packages/database/adminrepo/model"
@@ -84,5 +85,81 @@ func TestMigrateIsIdempotent(t *testing.T) {
 	pool := dbtest.New(t, adminDB)
 	if err := adminrepo.Migrate(context.Background(), pool); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// A mutation's entry is pending until resolved; the first outcome wins and
+// outcomes are append-only too. Facts (Append) read as succeeded.
+func TestAuditLogIntentsAndOutcomes(t *testing.T) {
+	t.Parallel()
+	pool := dbtest.New(t, adminDB)
+	log := adminrepo.NewAuditLog(pool)
+	ctx := context.Background()
+	entry := func(action string) model.NewAuditEntry {
+		return model.NewAuditEntry{ActorID: "a1", ActorEmail: "root@example.com", Action: action, TargetType: model.TargetUser, TargetID: "u1", TargetLabel: "ada@example.com"}
+	}
+
+	if err := log.Append(ctx, entry("admin.sign_in")); err != nil {
+		t.Fatal(err)
+	}
+	okID, err := log.Begin(ctx, entry("user.ban"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	failedID, _ := log.Begin(ctx, entry("user.unban"))
+	pendingID, _ := log.Begin(ctx, entry("user.set_role"))
+
+	if err := log.Resolve(ctx, okID, model.AuditOutcome{Status: model.StatusSucceeded}); err != nil {
+		t.Fatal(err)
+	}
+	if err := log.Resolve(ctx, failedID, model.AuditOutcome{Status: model.StatusFailed, Reason: "The user is not banned"}); err != nil {
+		t.Fatal(err)
+	}
+	// The first outcome wins: a second one (e.g. the reconciler after a late
+	// request result) is a no-op, not an error.
+	if err := log.Resolve(ctx, okID, model.AuditOutcome{Status: model.StatusUnknown, Reconciled: true}); err != nil {
+		t.Fatal(err)
+	}
+
+	page, err := log.List(ctx, model.AuditQuery{Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]model.AuditEntry{}
+	for _, e := range page.Entries {
+		got[e.Action] = e
+	}
+	for action, want := range map[string]string{"admin.sign_in": "succeeded", "user.ban": "succeeded", "user.unban": "failed", "user.set_role": "pending"} {
+		if got[action].Status != want {
+			t.Errorf("%s: status %q, want %q", action, got[action].Status, want)
+		}
+	}
+	if got["user.unban"].Reason != "The user is not banned" || got["user.ban"].Reconciled {
+		t.Errorf("outcomes = %+v / %+v", got["user.unban"], got["user.ban"])
+	}
+
+	// Pending lists unresolved intents written before the cut-off only.
+	pending, err := log.Pending(ctx, time.Now().Add(time.Minute), 10)
+	if err != nil || len(pending) != 1 || pending[0].ID != pendingID || pending[0].Status != model.StatusPending {
+		t.Fatalf("Pending = %+v, %v", pending, err)
+	}
+	if pending, _ := log.Pending(ctx, time.Now().Add(-time.Minute), 10); len(pending) != 0 {
+		t.Fatalf("Pending before the cut-off = %+v", pending)
+	}
+	if err := log.Resolve(ctx, pendingID, model.AuditOutcome{Status: model.StatusUnknown, Reason: "r", Reconciled: true}); err != nil {
+		t.Fatal(err)
+	}
+	if pending, _ := log.Pending(ctx, time.Now().Add(time.Minute), 10); len(pending) != 0 {
+		t.Fatalf("resolved entry still pending: %+v", pending)
+	}
+
+	// Outcomes are append-only, and facts never take one.
+	for _, stmt := range []string{`UPDATE admin_audit_outcome SET status = 'failed'`, `DELETE FROM admin_audit_outcome`} {
+		if _, err := pool.Exec(ctx, stmt); err == nil || !strings.Contains(err.Error(), "append-only") {
+			t.Errorf("%s: err = %v, want append-only", stmt, err)
+		}
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO admin_audit_outcome (entry_id, status) VALUES ($1, 'bogus')`, pendingID+100); err == nil {
+		t.Error("outcome for a missing entry / bad status accepted")
 	}
 }

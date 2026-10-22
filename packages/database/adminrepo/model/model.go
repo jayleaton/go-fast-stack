@@ -29,6 +29,23 @@ type NewAuditEntry struct {
 	Details     map[string]string
 }
 
+// Audit statuses. A mutation's entry is written pending before it runs and
+// resolved afterwards; an entry that records a fact (a sign-in) is succeeded.
+const (
+	StatusPending   = "pending"   // attempted; the outcome was never recorded (shown as "outcome unknown")
+	StatusSucceeded = "succeeded" // the change was applied
+	StatusFailed    = "failed"    // the change was refused or failed; nothing applied
+	StatusUnknown   = "unknown"   // the reconciler could not tell from the current state
+)
+
+// AuditOutcome resolves a pending entry. Reason is safe to show (a service
+// error message), never a raw database or driver error.
+type AuditOutcome struct {
+	Status     string // StatusSucceeded, StatusFailed or StatusUnknown
+	Reason     string
+	Reconciled bool // written by the reconciler from the current state
+}
+
 // AuditEntry is a recorded admin action (admin_audit_log row).
 type AuditEntry struct {
 	ID          int64             `json:"id"`
@@ -40,6 +57,9 @@ type AuditEntry struct {
 	TargetLabel string            `json:"targetLabel"`
 	Details     map[string]string `json:"details"`
 	CreatedAt   time.Time         `json:"createdAt"`
+	Status      string            `json:"status"`           // one of the Status* values
+	Reason      string            `json:"reason,omitempty"` // why it failed (or how it was reconciled)
+	Reconciled  bool              `json:"reconciled"`
 }
 
 // AuditQuery filters and pages the audit log, newest first.

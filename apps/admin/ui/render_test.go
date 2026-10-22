@@ -92,6 +92,16 @@ func renderCases() []renderCase {
 			{Action: services.ActionAdminTwoFactorFailed, TargetType: services.TargetAdmin, Details: map[string]string{"reason": "INVALID_BACKUP_CODE"}, CreatedAt: at},
 			{Action: services.ActionAdminRemove, TargetType: services.TargetAdmin, CreatedAt: at},
 		}}), "pages.audit.methods.twoFactor"},
+		{"audit statuses", true, AuditPage(AuditData{Entries: []services.AuditEntry{
+			{Action: services.ActionUserBan, TargetType: services.TargetUser, TargetID: "u1", CreatedAt: at, Status: services.StatusSucceeded},
+			{Action: services.ActionUserBan, TargetType: services.TargetUser, TargetID: "u1", CreatedAt: at, Status: services.StatusFailed, Reason: services.ErrUserNotFound.Message},
+			{Action: services.ActionAdminRemove, TargetType: services.TargetAdmin, CreatedAt: at, Status: services.StatusFailed, Reason: services.ErrAuditUnavailable.Message},
+			{Action: services.ActionUserUnban, TargetType: services.TargetUser, TargetID: "u1", CreatedAt: at, Status: services.StatusPending},
+			{Action: services.ActionAdminInvite, TargetType: services.TargetAdmin, CreatedAt: at, Status: services.StatusUnknown},
+			{Action: services.ActionUserBan, TargetType: services.TargetUser, TargetID: "u1", CreatedAt: at, Status: services.StatusSucceeded, Reason: "Reconciled: x", Reconciled: true},
+			{Action: services.ActionUserBan, TargetType: services.TargetUser, TargetID: "u1", CreatedAt: at, Status: services.StatusFailed, Reason: "Reconciled: x", Reconciled: true},
+			{Action: services.ActionAdminInvite, TargetType: services.TargetAdmin, CreatedAt: at, Status: services.StatusUnknown, Reason: "Reconciled: x", Reconciled: true},
+		}}), "pages.audit.statuses.pendingHint"},
 		{"audit empty", true, AuditPage(AuditData{Filters: AuditFilters{TargetID: "u1"}}), "pages.audit.empty"},
 		{"audit error", true, AuditPage(AuditData{Error: "x"}), "pages.audit.title"},
 		{"analytics", true, AnalyticsPage(AnalyticsData{Overview: services.Overview{TotalUsers: 3, GeneratedAt: at}}), "pages.analytics.placeholder"},
@@ -208,6 +218,40 @@ func TestRenderStopsWhenClientHangsUp(t *testing.T) {
 	}
 }
 
+// TestAuditStatus pins the badge of every status in every locale: a known
+// tone and a translated label, the pending hint, and reconciled reasons
+// chosen by status rather than shown as recorded.
+func TestAuditStatus(t *testing.T) {
+	tones := map[string]string{
+		services.StatusSucceeded: "green", services.StatusFailed: "red",
+		services.StatusPending: "amber", services.StatusUnknown: "neutral",
+	}
+	for _, l := range i18n.Locales {
+		ctx := i18n.WithTranslator(context.Background(), i18n.Translator{Locale: l})
+		for status, tone := range tones {
+			s := auditStatus(ctx, services.AuditEntry{Status: status, Reason: "Reconciled: raw", Reconciled: true})
+			if s.Tone != tone || s.Label == "" || s.Label == status || rawKey.MatchString(s.Label) {
+				t.Errorf("%s %s: %+v", l, status, s)
+			}
+			if (s.Hint != "") != (status == services.StatusPending) {
+				t.Errorf("%s %s: hint %q", l, status, s.Hint)
+			}
+			if _, reconciles := reconciledReasonKeys[status]; reconciles == (s.Reason == "Reconciled: raw") || !s.Reconciled {
+				t.Errorf("%s %s: reconciled reason %q", l, status, s.Reason)
+			}
+		}
+		if s := auditStatus(ctx, services.AuditEntry{}); s.Label != "—" || s.Tone != "neutral" {
+			t.Errorf("%s: no status: %+v", l, s)
+		}
+		if got := auditReason(ctx, services.ErrAuditUnavailable.Message); got != i18n.T(ctx, "errors.auditUnavailable") {
+			t.Errorf("%s: audit unavailable reason %q", l, got)
+		}
+		if got := auditReason(ctx, "disk full"); got != "disk full" {
+			t.Errorf("%s: unknown reason %q", l, got)
+		}
+	}
+}
+
 func TestSection(t *testing.T) {
 	for path, want := range map[string]string{
 		"/users": view.SectionUsers, "/users/u1": view.SectionUsers, "/admins": view.SectionAdmins,
@@ -285,5 +329,26 @@ func TestConfirmPostFormEscapes(t *testing.T) {
 	want := `confirm("Remove o\"brien's \u003c/script\u003e \u0026 co?") && @post('/admins/x\'y/remove', {contentType: 'form'})`
 	if got != want {
 		t.Fatalf("got  %s\nwant %s", got, want)
+	}
+}
+
+// A failure recorded without a service error is translated, never shown raw.
+func TestAuditReasonInternal(t *testing.T) {
+	for _, l := range i18n.Locales {
+		ctx := i18n.WithTranslator(context.Background(), i18n.Translator{Locale: l})
+		if got, want := auditReason(ctx, services.ReasonInternal), i18n.T(ctx, "pages.audit.internalReason"); got != want || got == services.ReasonInternal && l != i18n.En {
+			t.Errorf("%s: auditReason = %q, want %q", l, got, want)
+		}
+	}
+}
+
+// The audit page says how its two kinds of entries are recorded: admin
+// changes fail closed, authentication events are best-effort.
+func TestAuditPageExplainsRecording(t *testing.T) {
+	for _, l := range i18n.Locales {
+		html := renderIn(t, l, view.State{Authenticated: true}, AuditPage(AuditData{}))
+		if !strings.Contains(html, templ.EscapeString(i18n.Translator{Locale: l}.T("pages.audit.howRecorded"))) {
+			t.Errorf("%s: audit page lacks the recording note", l)
+		}
 	}
 }

@@ -12,6 +12,7 @@ package mocks
 import (
 	context "context"
 	reflect "reflect"
+	time "time"
 
 	services "github.com/jayleaton/ai-patterns-go/apps/admin/internal/services"
 	gomock "go.uber.org/mock/gomock"
@@ -55,6 +56,21 @@ func (mr *MockAuditLogMockRecorder) Append(ctx, e any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Append", reflect.TypeOf((*MockAuditLog)(nil).Append), ctx, e)
 }
 
+// Begin mocks base method.
+func (m *MockAuditLog) Begin(ctx context.Context, e services.NewAuditEntry) (int64, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Begin", ctx, e)
+	ret0, _ := ret[0].(int64)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Begin indicates an expected call of Begin.
+func (mr *MockAuditLogMockRecorder) Begin(ctx, e any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Begin", reflect.TypeOf((*MockAuditLog)(nil).Begin), ctx, e)
+}
+
 // List mocks base method.
 func (m *MockAuditLog) List(ctx context.Context, q services.AuditQuery) (services.AuditPage, error) {
 	m.ctrl.T.Helper()
@@ -68,4 +84,33 @@ func (m *MockAuditLog) List(ctx context.Context, q services.AuditQuery) (service
 func (mr *MockAuditLogMockRecorder) List(ctx, q any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "List", reflect.TypeOf((*MockAuditLog)(nil).List), ctx, q)
+}
+
+// Pending mocks base method.
+func (m *MockAuditLog) Pending(ctx context.Context, before time.Time, limit int) ([]services.AuditEntry, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Pending", ctx, before, limit)
+	ret0, _ := ret[0].([]services.AuditEntry)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Pending indicates an expected call of Pending.
+func (mr *MockAuditLogMockRecorder) Pending(ctx, before, limit any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Pending", reflect.TypeOf((*MockAuditLog)(nil).Pending), ctx, before, limit)
+}
+
+// Resolve mocks base method.
+func (m *MockAuditLog) Resolve(ctx context.Context, id int64, o services.AuditOutcome) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Resolve", ctx, id, o)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// Resolve indicates an expected call of Resolve.
+func (mr *MockAuditLogMockRecorder) Resolve(ctx, id, o any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Resolve", reflect.TypeOf((*MockAuditLog)(nil).Resolve), ctx, id, o)
 }

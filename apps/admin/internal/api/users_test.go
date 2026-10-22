@@ -1,6 +1,7 @@
 package api_test
 
 import (
+	"errors"
 	"fmt"
 	"net/url"
 	"strings"
@@ -29,6 +30,13 @@ var (
 	roleRule   = "must be a role name"
 )
 
+// unavailable is every mutation refused because its audit intent could not
+// be written (wrapped with the cause, as services.mutate returns it).
+var unavailable = svcErr{
+	fmt.Errorf("%w: audit intent: %w", services.ErrAuditUnavailable, errors.New("pq: connection refused")),
+	503, "The audit log is unavailable, so nothing was changed. Try again later.",
+}
+
 var userRoutes = map[string]route{
 	"GET users": {
 		method: "GET", path: r.Users, invalidPath: r.Users + "?limit=1000", field: "limit",
@@ -56,14 +64,14 @@ var userRoutes = map[string]route{
 	},
 	"POST user ban": {
 		method: "POST", path: config.UserPath("u2", "/ban"), body: `{"banReason":"  spam  ","banExpiresIn":3600}`,
-		invalidBody: `{"banReason":"   "}`, field: "banReason", errs: []svcErr{notFound},
+		invalidBody: `{"banReason":"   "}`, field: "banReason", errs: []svcErr{notFound, unavailable},
 		expect: func(m svcs, err error) {
 			m.users.BanUser(anyCtx, actor, "u2", validate.BanUser{BanReason: "spam", BanExpiresIn: ptr(int64(3600))}).Return(err)
 		},
 		check: wantSuccess,
 	},
 	"POST user unban": {
-		method: "POST", path: config.UserPath("u2", "/unban"), errs: []svcErr{notFound, notBanned},
+		method: "POST", path: config.UserPath("u2", "/unban"), errs: []svcErr{notFound, notBanned, unavailable},
 		expect: func(m svcs, err error) {
 			m.users.UnbanUser(anyCtx, actor, "u2").Return(err)
 		},
@@ -71,21 +79,21 @@ var userRoutes = map[string]route{
 	},
 	"PUT user role": {
 		method: "PUT", path: config.UserPath("u2", "/role"), body: `{"role":" admin "}`,
-		invalidBody: `{"role":"Admin"}`, field: "role", errs: []svcErr{notFound, badRole, sameRole},
+		invalidBody: `{"role":"Admin"}`, field: "role", errs: []svcErr{notFound, badRole, sameRole, unavailable},
 		expect: func(m svcs, err error) {
 			m.users.SetRole(anyCtx, actor, "u2", validate.SetUserRole{Role: "admin"}).Return(err)
 		},
 		check: wantSuccess,
 	},
 	"DELETE user sessions": {
-		method: "DELETE", path: config.UserPath("u2", "/sessions"), errs: []svcErr{notFound},
+		method: "DELETE", path: config.UserPath("u2", "/sessions"), errs: []svcErr{notFound, unavailable},
 		expect: func(m svcs, err error) {
 			m.users.RevokeSessions(anyCtx, actor, "u2").Return(err)
 		},
 		check: wantSuccess,
 	},
 	"DELETE user session": {
-		method: "DELETE", path: config.UserSessionPath("u2", "s2"), errs: []svcErr{notFound, noSession},
+		method: "DELETE", path: config.UserSessionPath("u2", "s2"), errs: []svcErr{notFound, noSession, unavailable},
 		expect: func(m svcs, err error) {
 			m.users.RevokeSession(anyCtx, actor, "u2", "s2").Return(err)
 		},
