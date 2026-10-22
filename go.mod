@@ -5,6 +5,7 @@ go 1.26.8
 require (
 	github.com/a-h/templ v0.3.1070
 	github.com/jackc/pgx/v5 v5.11.0
+	github.com/oklog/ulid/v2 v2.1.2
 	github.com/pressly/goose/v3 v3.29.0
 	github.com/starfederation/datastar-go v1.2.2
 	go.uber.org/mock v0.6.0
