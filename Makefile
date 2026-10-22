@@ -94,6 +94,10 @@ ci: ## Run the same checks as CI
 	$(MAKE) lint-layering
 	$(MAKE) lint-tests
 
+.PHONY: affected
+affected: ## Show what CI checks for this branch (packages affected vs origin/main)
+	./scripts/affected.sh
+
 .PHONY: migrate
 migrate: ## Run auth then app migrations against DATABASE_URL
 	$(GO) run ./apps/web/cmd/server migrate
