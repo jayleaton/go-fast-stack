@@ -316,7 +316,7 @@ func TestAuditListQuery(t *testing.T) {
 func TestAnalyticsPage(t *testing.T) {
 	e := newEnv(t)
 	e.analytics.EXPECT().Overview(gomock.Any(), actor).Return(services.Overview{TotalUsers: 1234, VerifiedUsers: 1000, BannedUsers: 7, NewUsers7d: 55, ActiveSessions: 321, GeneratedAt: created}, nil)
-	assertPage(t, e.do("GET", config.AppRoutes.Analytics, nil, signedIn), http.StatusOK, ">1234<", ">1000<", ">7<", ">55<", ">321<", "Jan 2, 2026 03:04 UTC", "services.Analytics")
+	assertPage(t, e.do("GET", config.AppRoutes.Analytics, nil, signedIn), http.StatusOK, ">1234<", ">1000<", ">7<", ">55<", ">321<", "Jan 2, 2026 03:04 UTC", "placeholder")
 }
 
 // --- sign-in flows ---

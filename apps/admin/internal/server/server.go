@@ -1,9 +1,8 @@
 // Package server composes the admin app's HTTP handler: global middleware,
-// /healthz over both databases, the admin auth mount (sign-up is off in its
-// auth.Config: admins are invited), the
-// JSON API and the UI. With cmd/admin it is the only place in apps/admin that
-// wires packages together, and the only one that imports packages/auth (the
-// adapters in this package).
+// /healthz over both databases, the UI and (only when a deployment opts in)
+// the JSON API with the admin auth endpoints that issue its tokens. With
+// cmd/admin it is the only place in apps/admin that wires packages together,
+// and the only one that imports packages/auth (the adapters in this package).
 package server
 
 import (
@@ -22,7 +21,7 @@ import (
 // Auth is the part of the admin *auth.Auth the server mounts.
 type Auth interface {
 	Middleware(next http.Handler) http.Handler // loads the admin session into the request context
-	Handler() http.Handler                     // JSON endpoints under config.APIRoutes.Auth
+	Handler() http.Handler                     // JSON endpoints, mounted (authRoutes) only with Deps.API
 }
 
 // Pinger reports database health (*pgxpool.Pool).
@@ -41,72 +40,69 @@ type Deps struct {
 	Log    *slog.Logger
 	DBs    map[string]Pinger // by name, every one must answer /healthz
 	Auth   Auth
-	// AuthEvents audits sign-ins, sign-outs and failed 2FA on the JSON auth
+	// API is the admin JSON API (/api/admin/v1). cmd/admin mounts none: the
+	// dashboard calls the services in-process, so nothing about the API is
+	// on the network. A deployment that wants scripts or agents to call it
+	// passes the routers here; they are mounted with the admin auth
+	// endpoints that issue their bearer tokens (authRoutes), and both are
+	// hidden from browsers like /healthz.
+	API []Router
+	// AuthEvents audits sign-ins, sign-outs and failed 2FA on those auth
 	// endpoints; nil leaves them unaudited (tests).
 	AuthEvents *AuthEvents
-	API        []Router
 	UI         http.Handler // apps/admin/ui routes, mounted at "/"
 }
 
-// authRoutes are the admin auth endpoints mounted: sign-in (with the 2FA
-// step and enrolment), sign-out, the session, and the emailed set-password
-// link. Self-service account changes (password, email, disabling 2FA, backup
-// codes, other sessions) are not exposed: they would bypass the audit log.
-// Sign-up is off in the admin auth.Config.
+// authRoutes are the admin auth endpoints mounted with the JSON API: sign-in
+// (with the 2FA step and enrolment), sign-out, the session, and setting the
+// password from an invite token. Self-service account changes (password,
+// email, disabling 2FA, backup codes, other sessions) are not exposed: they
+// would bypass the audit log. Sign-up is off in the admin auth.Config.
 var authRoutes = []string{
 	"POST " + auth.BasePath + "/sign-in/email",
 	"POST " + auth.BasePath + "/sign-out",
 	"GET " + auth.BasePath + "/get-session",
-	"GET " + auth.BasePath + "/reset-password/{token}",
 	"POST " + auth.BasePath + "/set-password",
 	"POST " + auth.BasePath + "/two-factor/enable",
 	"POST " + auth.BasePath + "/two-factor/verify-totp",
 	"POST " + auth.BasePath + "/two-factor/verify-backup-code",
 }
 
-// New returns the root handler.
+// New returns the root handler. Without Deps.API nothing under /api/ is
+// mounted: the UI signs in, sets passwords (invite links land on its
+// /set-password page) and runs 2FA through packages/auth in-process.
 func New(d Deps) http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET "+config.APIRoutes.Healthz, healthz(d.DBs))
-	authHandler := d.AuthEvents.Handler(d.Auth.Handler())
-	for _, p := range authRoutes {
-		mux.Handle(p, authHandler)
-	}
-	for _, r := range d.API {
-		r.Routes(mux)
+	mux.Handle("GET "+config.APIRoutes.Healthz, apiOnly(healthz(d.DBs)))
+	if len(d.API) > 0 {
+		apiMux := http.NewServeMux()
+		authHandler := d.AuthEvents.Handler(d.Auth.Handler())
+		for _, p := range authRoutes {
+			apiMux.Handle(p, authHandler)
+		}
+		for _, r := range d.API {
+			r.Routes(apiMux)
+		}
+		mux.Handle(apiPrefix, apiOnly(hideMethods(apiMux)))
 	}
 	if d.UI != nil {
 		mux.Handle("/", d.UI)
 	}
-
-	// Browsers send Sec-Fetch-Site/Origin; bearer-token clients (agents,
-	// scripts) send neither and pass through.
-	csrf := http.NewCrossOriginProtection()
-	csrf.SetDenyHandler(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		api.WriteError(w, http.StatusForbidden, "Cross-origin request rejected", nil)
-	}))
-	for _, o := range d.Config.TrustedOrigins {
-		if err := csrf.AddTrustedOrigin(o); err != nil {
-			d.Log.Warn("trusted origin ignored by CSRF protection", "origin", o, "err", err)
-		}
-	}
-
-	var h http.Handler = mux
-	h = d.Auth.Middleware(h)
-	h = csrf.Handler(h)
-	return securityHeaders(logRequests(d.Log, recoverPanics(d.Log, h)))
+	return securityHeaders(logRequests(d.Log, recoverPanics(d.Log, d.Auth.Middleware(mux))))
 }
 
-// securityHeaders: the dashboard is never framed, indexed or cached (pages,
-// API responses, set-password and 2FA screens all carry user data or
-// secrets); the static handler overrides Cache-Control for its assets.
+// securityHeaders: the dashboard is never indexed, framed or cached,
+// including /healthz and bare 404s; the UI adds its CSP and the rest of the
+// browser headers, and the static handler overrides Cache-Control for its
+// assets.
 func securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
 		h.Set("Cache-Control", "no-store")
 		h.Set("X-Frame-Options", "DENY")
+		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("X-Robots-Tag", "noindex, nofollow")
-		h.Set("Referrer-Policy", "same-origin")
+		h.Set("Referrer-Policy", "strict-origin")
 		next.ServeHTTP(w, r)
 	})
 }

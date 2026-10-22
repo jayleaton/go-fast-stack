@@ -82,8 +82,8 @@ func loadSecrets(env Env, get func(key, fallback string) string, errs *[]error) 
 		}
 		p = secrets.NewEnv(values)
 	case SecretsDoppler:
-		d := secrets.NewDoppler(get("DOPPLER_TOKEN", ""))
-		if d.Token == "" {
+		d := secrets.NewDoppler(secrets.NewSecret(get("DOPPLER_TOKEN", "")))
+		if d.Token.IsZero() {
 			*errs = append(*errs, errors.New("DOPPLER_TOKEN is required when SECRETS_PROVIDER=doppler (a read-only service token for this service's config)"))
 		}
 		d.APIURL = get("DOPPLER_API_URL", secrets.DefaultDopplerURL)

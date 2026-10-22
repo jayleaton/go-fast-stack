@@ -116,7 +116,7 @@ func TestDisableSignUpKeepsInvites(t *testing.T) {
 	if err := h.a.IssueSetPasswordLink(ctx, user.ID, "/set"); err != nil {
 		t.Fatal(err)
 	}
-	token := mustQuery(t, h.do("GET", pathOf(t, h.mails()[0].url), nil, nil).Header().Get("Location"), "token")
+	token := mustQuery(t, h.mails()[0].url, "token")
 	wantStatus(t, h.do("POST", BasePath+"/set-password", map[string]any{"token": token, "newPassword": "admin-password"}, nil), http.StatusOK)
 	wantStatus(t, h.signIn(email, "admin-password"), http.StatusOK)
 }
@@ -262,25 +262,20 @@ func TestInviteSetPasswordFlow(t *testing.T) {
 		t.Fatal(err)
 	}
 	first := h.mails()[0]
-	if first.kind != "set-password" || first.to != email || !strings.HasPrefix(first.url, testBase+"/api/auth/reset-password/") {
+	if first.kind != "set-password" || first.to != email || !strings.HasPrefix(first.url, testBase+"/set?token=") {
 		t.Fatalf("mail = %+v", first)
 	}
 	// A newer invite replaces the first.
 	if err := h.a.IssueSetPasswordLink(ctx, user.ID, "/set"); err != nil {
 		t.Fatal(err)
 	}
-	firstToken := mustQuery(t, h.do("GET", pathOf(t, first.url), nil, nil).Header().Get("Location"), "token")
-	if firstToken != "" {
-		t.Fatalf("superseded invite still valid")
+	if ok, err := h.a.resetTokenValid(ctx, mustQuery(t, first.url, "token")); ok || err != nil {
+		t.Fatalf("superseded invite still valid (%v)", err)
 	}
-	rec := h.do("GET", pathOf(t, h.mails()[1].url), nil, nil)
-	token := mustQuery(t, rec.Header().Get("Location"), "token")
-	if !strings.HasPrefix(rec.Header().Get("Location"), "/set?token=") {
-		t.Fatalf("redirect = %q", rec.Header().Get("Location"))
-	}
+	token := mustQuery(t, h.mails()[1].url, "token")
 
 	wantCode(t, h.do("POST", BasePath+"/set-password", map[string]any{"token": token, "newPassword": "short"}, nil), http.StatusBadRequest, "PASSWORD_TOO_SHORT")
-	rec = h.do("POST", BasePath+"/set-password", map[string]any{"token": token, "newPassword": "admin-password"}, nil)
+	rec := h.do("POST", BasePath+"/set-password", map[string]any{"token": token, "newPassword": "admin-password"}, nil)
 	wantStatus(t, rec, http.StatusOK)
 	session := h.getSession(hdr{"Cookie": cookieHeader(t, rec)})
 	if session == nil || session["user"].(map[string]any)["emailVerified"] != true {
@@ -299,7 +294,7 @@ func TestInviteSetPasswordFlow(t *testing.T) {
 	}
 	link := h.mails()[2].url
 	h.clock.Advance(DefaultInviteTTL + time.Minute)
-	if loc := h.do("GET", pathOf(t, link), nil, nil).Header().Get("Location"); loc != "/set?error=INVALID_TOKEN" {
+	if loc := h.do("GET", BasePath+"/reset-password/"+mustQuery(t, link, "token")+"?callbackURL=/set", nil, nil).Header().Get("Location"); loc != "/set?error=INVALID_TOKEN" {
 		t.Fatalf("expired invite redirect = %q", loc)
 	}
 }
@@ -315,7 +310,7 @@ func TestInviteContinuesIntoRequiredTwoFactor(t *testing.T) {
 	if err := h.a.IssueSetPasswordLink(ctx, user.ID, "/set"); err != nil {
 		t.Fatal(err)
 	}
-	token := mustQuery(t, h.do("GET", pathOf(t, h.mails()[0].url), nil, nil).Header().Get("Location"), "token")
+	token := mustQuery(t, h.mails()[0].url, "token")
 
 	// Service form, as an HTML handler uses it.
 	_, _, err = h.a.CompleteSetPassword(ctx, token, "admin-password")

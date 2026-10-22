@@ -88,7 +88,7 @@ templ StatusAlert(id string, s Status) {
 templ formButton(label, loadingLabel, signal string) {
 	<button type="submit" data-attr:disabled={ "$" + signal } class="inline-flex items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-600/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-blue-500 dark:hover:bg-blue-400">
 		<span data-show={ "!$" + signal }>{ label }</span>
-		<span style="display: none" data-show={ "$" + signal }>{ loadingLabel }</span>
+		<span class="hidden" data-class:hidden={ "!$" + signal }>{ loadingLabel }</span>
 	</button>
 }
 
@@ -228,12 +228,12 @@ templ DangerCard(sum services.UserDataSummary) {
 		>
 			{ i18n.T(ctx, "pages.account.danger.button") }
 		</button>
-		<form style="display: none" data-show="$_confirmDelete" class="mt-4 space-y-3" method="post" action={ templ.SafeURL(routes.AccountDelete) } data-on:submit={ view.PostForm(routes.AccountDelete) } data-indicator:_deleting>
+		<form class="hidden mt-4 space-y-3" data-class:hidden="!$_confirmDelete" method="post" action={ templ.SafeURL(routes.AccountDelete) } data-on:submit={ view.PostForm(routes.AccountDelete) } data-indicator:_deleting>
 			<p class="text-sm font-medium text-red-700 dark:text-red-300">{ i18n.T(ctx, "pages.account.danger.confirm") }</p>
 			<div class="flex flex-wrap gap-2">
 				<button type="submit" data-attr:disabled="$_deleting" class="rounded-md bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50">
 					<span data-show="!$_deleting">{ i18n.T(ctx, "pages.account.danger.confirmButton") }</span>
-					<span style="display: none" data-show="$_deleting">{ i18n.T(ctx, "pages.account.danger.deleting") }</span>
+					<span class="hidden" data-class:hidden="!$_deleting">{ i18n.T(ctx, "pages.account.danger.deleting") }</span>
 				</button>
 				<button type="button" data-on:click="$_confirmDelete = false" class="rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-800 hover:bg-neutral-50 dark:border-neutral-800 dark:bg-neutral-800 dark:text-neutral-200">
 					{ i18n.T(ctx, "common.cancel") }

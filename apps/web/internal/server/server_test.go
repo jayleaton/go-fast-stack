@@ -72,7 +72,7 @@ func TestHealthz(t *testing.T) {
 func TestMountsAndMiddleware(t *testing.T) {
 	ui := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/boom" {
-			panic("boom")
+			panic("boom: /home/dev/secret.go:12")
 		}
 		_, _ = io.WriteString(w, "ui")
 	})
@@ -87,23 +87,93 @@ func TestMountsAndMiddleware(t *testing.T) {
 		{"ui mounted at /", httptest.NewRequest(http.MethodGet, "/dashboard", nil), 200, "ui"},
 		{"auth mounted", httptest.NewRequest(http.MethodPost, "/api/auth/sign-in/email", nil), 501, `"error"`},
 		{"api needs a session", httptest.NewRequest(http.MethodGet, "/api/core/v1/users/me", nil), 401, `"Unauthorized"`},
-		{"panics become 500 envelopes", httptest.NewRequest(http.MethodGet, "/boom", nil), 500, `"Internal server error"`},
-		{"cross-site writes are rejected", crossSite("https://evil.example"), 403, `"Cross-origin request rejected"`},
-		{"trusted origins pass", crossSite("http://dev-box:3000"), 401, `"Unauthorized"`},
+		{"ui panics become a plain 500", httptest.NewRequest(http.MethodGet, "/boom", nil), 500, "Internal Server Error"},
+		{"unknown api paths are a bare 404", httptest.NewRequest(http.MethodGet, "/api/core/v2/nope", nil), 404, "404 page not found"},
+		{"wrong methods are a 404, not a 405", httptest.NewRequest(http.MethodPut, "/api/core/v1/users/me/sessions/others", nil), 404, "404 page not found"},
 	}
 	for _, c := range cases {
 		rec := serve(h, c.req)
 		if rec.Code != c.status || !strings.Contains(rec.Body.String(), c.snippet) {
 			t.Errorf("%s: %d %s", c.name, rec.Code, rec.Body)
 		}
+		if strings.Contains(rec.Body.String(), "secret.go") || rec.Header().Get("Allow") != "" {
+			t.Errorf("%s leaks: Allow %q body %s", c.name, rec.Header().Get("Allow"), rec.Body)
+		}
 	}
 }
 
-func crossSite(origin string) *http.Request {
-	req := httptest.NewRequest(http.MethodPatch, "/api/core/v1/users/me", strings.NewReader(`{}`))
-	req.Header.Set("Origin", origin)
-	req.Header.Set("Sec-Fetch-Site", "cross-site")
-	return req
+// The JSON API and /healthz are invisible to browsers: any request a browser
+// could send there (fetch, form post, preflight, typed-in URL) gets the bare
+// 404 of an unknown path, with no CORS headers.
+func TestAPIIsHiddenFromBrowsers(t *testing.T) {
+	h := newHandler(pinger{}, http.NotFoundHandler())
+	browser := map[string]func(*http.Request){
+		"same-origin fetch": func(r *http.Request) {
+			r.Header.Set("Sec-Fetch-Site", "same-origin")
+			r.Header.Set("Sec-Fetch-Mode", "cors")
+		},
+		"cross-site post": func(r *http.Request) { r.Header.Set("Origin", "https://evil.example") },
+		"trusted origin":  func(r *http.Request) { r.Header.Set("Origin", "http://dev-box:3000") },
+		"navigation": func(r *http.Request) {
+			r.Header.Set("Sec-Fetch-Mode", "navigate")
+			r.Header.Set("Sec-Fetch-Dest", "document")
+		},
+		"plain-http typed URL": func(r *http.Request) {
+			r.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+		},
+		"followed link": func(r *http.Request) { r.Header.Set("Referer", "http://dev-box:3000/dashboard") },
+	}
+	targets := []struct{ method, path string }{
+		{http.MethodGet, "/api/core/v1/users/me"},
+		{http.MethodPatch, "/api/core/v1/users/me"},
+		{http.MethodOptions, "/api/core/v1/users/me"},
+		{http.MethodPost, "/api/auth/sign-in/email"},
+		{http.MethodGet, "/api/auth/get-session"},
+		{http.MethodGet, "/healthz"},
+	}
+	unknown := serve(h, httptest.NewRequest(http.MethodGet, "/api/nope", nil))
+	for name, set := range browser {
+		for _, tg := range targets {
+			req := httptest.NewRequest(tg.method, tg.path, strings.NewReader(`{}`))
+			req.Header.Set("Access-Control-Request-Method", "PATCH")
+			set(req)
+			rec := serve(h, req)
+			if rec.Code != http.StatusNotFound || rec.Body.String() != unknown.Body.String() {
+				t.Errorf("%s %s %s: %d %s", name, tg.method, tg.path, rec.Code, rec.Body)
+			}
+			for k := range rec.Header() {
+				if strings.HasPrefix(k, "Access-Control-") {
+					t.Errorf("%s %s %s: CORS header %s", name, tg.method, tg.path, k)
+				}
+			}
+		}
+	}
+
+	// Native apps and servers send no browser headers and reach the API.
+	if rec := serve(h, httptest.NewRequest(http.MethodGet, "/healthz", nil)); rec.Code != http.StatusOK {
+		t.Errorf("healthz from a probe: %d", rec.Code)
+	}
+	// A browser opening an emailed link whose callback is a deep link
+	// (mobile) reaches auth's redirecting link endpoints, and nothing else.
+	link := func(target string) *http.Request {
+		req := httptest.NewRequest(http.MethodGet, target, nil)
+		req.Header.Set("Sec-Fetch-Mode", "navigate")
+		req.Header.Set("Sec-Fetch-Site", "none")
+		req.Header.Set("Accept", "text/html")
+		return req
+	}
+	for target, want := range map[string]int{
+		"/api/auth/verify-email?token=t&callbackURL=myapp%3A%2F%2Fdone":     501,
+		"/api/auth/reset-password/tok?callbackURL=myapp%3A%2F%2Freset":      501,
+		"/api/auth/verify-email?token=t":                                    404,
+		"/api/auth/get-session?callbackURL=myapp%3A%2F%2F":                  404,
+		"/api/core/v1/users/me?callbackURL=myapp%3A%2F%2F":                  404,
+		"/api/auth/reset-password-evil/tok?callbackURL=myapp%3A%2F%2Freset": 404,
+	} {
+		if rec := serve(h, link(target)); rec.Code != want {
+			t.Errorf("link %s: %d, want %d", target, rec.Code, want)
+		}
+	}
 }
 
 // Emailed reset links carry a credential in the path; logs keep the route only.

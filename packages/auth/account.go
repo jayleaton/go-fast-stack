@@ -3,7 +3,6 @@ package auth
 import (
 	"context"
 	"errors"
-	"net/url"
 )
 
 // ChangePassword sets a new password after checking the current one (Better
@@ -117,15 +116,11 @@ func (a *Auth) ChangeEmail(ctx context.Context, userID, newEmail, callbackURL st
 		return err
 	}
 
-	if callbackURL == "" {
-		callbackURL = "/"
-	}
 	now, nonce := a.now(), generateID(32)
 	if err := a.store.startEmailChange(ctx, user.ID, nonce, now.Add(VerificationTokenTTL), now); err != nil {
 		return err
 	}
-	link := a.authURL("/verify-email") + "?token=" + a.signChangeEmailToken(user.ID, user.Email, newEmail, nonce, VerificationTokenTTL) +
-		"&callbackURL=" + url.QueryEscape(callbackURL)
+	link := a.verificationLink(a.signChangeEmailToken(user.ID, user.Email, newEmail, nonce, VerificationTokenTTL), callbackURL)
 	a.sendMail(ctx, "change-email", newEmail, func(ctx context.Context) error {
 		return a.mailer.SendVerificationEmail(ctx, newEmail, link)
 	})

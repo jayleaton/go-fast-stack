@@ -13,6 +13,8 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+
+	"github.com/jayleaton/ai-patterns-go/packages/secrets"
 )
 
 // Env is the deployment environment (APP_ENV), shared with the web app.
@@ -24,26 +26,28 @@ const (
 	Production  Env = "production"
 )
 
-// Config is the validated environment.
+// Config is the validated environment. Credentials are secrets.Secret, so the
+// whole Config prints, logs and marshals without them; cmd/admin reveals each
+// one where it builds the client that needs it.
 type Config struct {
 	Env            Env
 	Addr           string   // listen address, always 0.0.0.0:ADMIN_PORT (or PORT)
 	PublicURL      *url.URL // ADMIN_PUBLIC_URL: origin admins reach the dashboard on (invite links, auth callbacks)
 	TrustedOrigins []string // PublicURL plus ADMIN_TRUSTED_ORIGINS
 	// DatabaseURL is the main app's database (the users being administered).
-	DatabaseURL string
+	DatabaseURL secrets.Secret
 	// AdminDatabaseURL is the admin app's own database (admins, audit log).
-	AdminDatabaseURL string
+	AdminDatabaseURL secrets.Secret
 	// AuthSecret signs admin cookies and tokens; never the app's AUTH_SECRET.
-	AuthSecret string
+	AuthSecret secrets.Secret
 	// BootstrapEmail is seeded as the first admin (without a password) by
 	// `admin migrate`; `admin invite <email>` then sends its set-password link.
 	BootstrapEmail string
 	// RequireTwoFactor makes every admin enrol in TOTP before getting a
 	// session. Defaults to on in production.
 	RequireTwoFactor bool
-	AppName          string // shown in the header and as the TOTP issuer
-	ResendAPIKey     string // empty outside production: invite links are logged
+	AppName          string         // shown in the header and as the TOTP issuer
+	ResendAPIKey     secrets.Secret // empty outside production: invite links are logged
 	FromEmail        string
 	ClientIPHeader   string // header the trusted proxy sets to the client IP; empty uses the TCP peer
 }
@@ -61,12 +65,12 @@ func Load(getenv func(string) string) (Config, error) {
 
 	cfg := Config{
 		Env:              Env(get("APP_ENV", string(Development))),
-		DatabaseURL:      get("DATABASE_URL", ""),
-		AdminDatabaseURL: get("ADMIN_DATABASE_URL", ""),
-		AuthSecret:       get("ADMIN_AUTH_SECRET", ""),
+		DatabaseURL:      secrets.NewSecret(get("DATABASE_URL", "")),
+		AdminDatabaseURL: secrets.NewSecret(get("ADMIN_DATABASE_URL", "")),
+		AuthSecret:       secrets.NewSecret(get("ADMIN_AUTH_SECRET", "")),
 		BootstrapEmail:   strings.ToLower(get("ADMIN_BOOTSTRAP_EMAIL", "")),
 		AppName:          get("ADMIN_APP_NAME", "Admin"),
-		ResendAPIKey:     get("RESEND_API_KEY", ""),
+		ResendAPIKey:     secrets.NewSecret(get("RESEND_API_KEY", "")),
 		FromEmail:        get("FROM_EMAIL", "noreply@example.com"),
 		ClientIPHeader:   get("CLIENT_IP_HEADER", ""),
 	}
@@ -96,24 +100,24 @@ func Load(getenv func(string) string) (Config, error) {
 		errs = append(errs, err)
 	}
 
-	if cfg.DatabaseURL == "" {
+	if cfg.DatabaseURL.IsZero() {
 		errs = append(errs, errors.New("DATABASE_URL (the app database) is required"))
 	}
-	switch cfg.AdminDatabaseURL {
-	case "":
+	switch {
+	case cfg.AdminDatabaseURL.IsZero():
 		errs = append(errs, errors.New("ADMIN_DATABASE_URL is required"))
-	case cfg.DatabaseURL:
+	case cfg.AdminDatabaseURL.Equal(cfg.DatabaseURL):
 		errs = append(errs, errors.New("ADMIN_DATABASE_URL must be a different database from DATABASE_URL"))
 	}
-	if len(cfg.AuthSecret) < 32 {
+	if cfg.AuthSecret.Len() < 32 {
 		errs = append(errs, errors.New("ADMIN_AUTH_SECRET must be at least 32 characters (openssl rand -base64 32)"))
-	} else if cfg.AuthSecret == get("AUTH_SECRET", "") {
+	} else if cfg.AuthSecret.Equal(secrets.NewSecret(get("AUTH_SECRET", ""))) {
 		errs = append(errs, errors.New("ADMIN_AUTH_SECRET must differ from the app's AUTH_SECRET"))
 	}
 	if cfg.BootstrapEmail != "" && !strings.Contains(cfg.BootstrapEmail, "@") {
 		errs = append(errs, fmt.Errorf("ADMIN_BOOTSTRAP_EMAIL must be an email address, got %q", cfg.BootstrapEmail))
 	}
-	if cfg.Env == Production && cfg.ResendAPIKey == "" {
+	if cfg.Env == Production && cfg.ResendAPIKey.IsZero() {
 		errs = append(errs, errors.New("RESEND_API_KEY is required in production (admin invites are emailed)"))
 	}
 

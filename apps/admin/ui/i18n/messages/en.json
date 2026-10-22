@@ -215,7 +215,7 @@
     "analytics": {
       "title": "Analytics",
       "subtitle": "Headline numbers for the app.",
-      "placeholder": "This page is a placeholder: the numbers are simple counts over the app database, served through the services.Analytics port. Swap that port's implementation for a real analytics source (PostHog, a warehouse...) without changing this page.",
+      "placeholder": "This page is a placeholder: the numbers are simple counts over the app database. Connect a real analytics source (PostHog, a warehouse...) to replace them.",
       "totalUsers": "Total users",
       "verifiedUsers": "Verified users",
       "bannedUsers": "Banned users",

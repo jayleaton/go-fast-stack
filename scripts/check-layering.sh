@@ -40,6 +40,12 @@ cases=(
   "apps/admin/internal/services|$mod/packages/database/adminrepo/adminsql"
   "apps/admin/internal/services|$mod/packages/auth"
   "apps/admin/internal/api|go.uber.org/mock/gomock"
+  # Secrets never reach templates, SSE or JSON; the UI never uses the JSON API.
+  "apps/web/ui|$mod/packages/secrets"
+  "apps/admin/ui|$mod/packages/secrets"
+  "apps/admin/internal/api|$mod/packages/secrets"
+  "apps/web/ui|$mod/apps/web/internal/api"
+  "apps/admin/ui|$mod/apps/admin/internal/api"
 )
 
 # Test files. boundary dir | forbidden import
@@ -64,11 +70,17 @@ paths=()
 cleanup() { for p in "${paths[@]}"; do rm -rf "$p"; done; rmdir apps/web/ui 2>/dev/null || true; }
 trap cleanup EXIT
 
-# auth's user-administration entry points (forbidigo, not depguard: they
-# live in packages/auth, which apps/web imports). layer dir | call
+# Forbidden calls (forbidigo, not depguard: the package may be imported).
+# auth's user-administration entry points, and secrets.Secret.Reveal outside
+# apps/*/cmd and packages/secrets. layer dir | import | call
 calls=(
-  "apps/web/internal/server|auth.NewUserAdmin(nil)"
-  "apps/web/ui|(*auth.Auth)(nil).Users()"
+  "apps/web/internal/server|$mod/packages/auth|auth.NewUserAdmin(nil)"
+  "apps/web/ui|$mod/packages/auth|(*auth.Auth)(nil).Users()"
+  "apps/web/ui|$mod/packages/secrets|secrets.Secret{}.Reveal()"
+  "apps/admin/ui|$mod/packages/secrets|secrets.Secret{}.Reveal()"
+  "apps/web/internal/config|$mod/packages/secrets|secrets.Secret{}.Reveal()"
+  "apps/web/internal/server|$mod/packages/secrets|secrets.Secret{}.Reveal()"
+  "apps/admin/internal/server|$mod/packages/secrets|secrets.Secret{}.Reveal()"
 )
 
 # label | probe file | package to lint, one per planted probe
@@ -93,11 +105,12 @@ done
 
 called=()
 for i in "${!calls[@]}"; do
-  layer=${calls[$i]%%|*} call=${calls[$i]#*|}
+  layer=${calls[$i]%%|*} rest=${calls[$i]#*|}
+  imp=${rest%%|*} call=${rest#*|}
   dir="$layer/${probe}_call$i"
   mkdir -p "$dir"
   paths+=("$dir")
-  printf 'package %s\n\nimport "%s"\n\nvar _ = %s\n' "${probe}_call$i" "$mod/packages/auth" "$call" > "$dir/probe.go"
+  printf 'package %s\n\nimport "%s"\n\nvar _ = %s\n' "${probe}_call$i" "$imp" "$call" > "$dir/probe.go"
   called+=("$layer must not call $call|$dir/probe.go|./$dir/")
 done
 

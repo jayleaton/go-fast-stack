@@ -38,10 +38,15 @@ func TestMigrateIsIdempotent(t *testing.T) {
 func TestNewValidatesConfig(t *testing.T) {
 	needDB(t)
 	cases := map[string]Config{
-		"short secret":  {Secret: "short", BaseURL: testBase},
-		"no base url":   {Secret: testSecret},
-		"relative base": {Secret: testSecret, BaseURL: "/app"},
-		"ftp base":      {Secret: testSecret, BaseURL: "ftp://app.test"},
+		"short secret":          {Secret: "short", BaseURL: testBase},
+		"no base url":           {Secret: testSecret},
+		"relative base":         {Secret: testSecret, BaseURL: "/app"},
+		"ftp base":              {Secret: testSecret, BaseURL: "ftp://app.test"},
+		"verify path relative":  {Secret: testSecret, BaseURL: testBase, VerifyEmailPath: "verify"},
+		"verify path absolute":  {Secret: testSecret, BaseURL: testBase, VerifyEmailPath: "https://evil.test/verify"},
+		"verify path protocol":  {Secret: testSecret, BaseURL: testBase, VerifyEmailPath: "//evil.test/verify"},
+		"verify path backslash": {Secret: testSecret, BaseURL: testBase, VerifyEmailPath: "/\\evil.test"},
+		"verify path query":     {Secret: testSecret, BaseURL: testBase, VerifyEmailPath: "/verify?x=1"},
 	}
 	for name, cfg := range cases {
 		if _, err := New(cfg, testPool, &captureMailer{}); err == nil {
@@ -333,22 +338,20 @@ func TestPasswordResetFlow(t *testing.T) {
 	if len(mails) != 1 || mails[0].kind != "reset" || mails[0].to != email {
 		t.Fatalf("mails = %+v", mails)
 	}
+	// A relative redirectTo is linked directly, with the token.
 	link := mails[0].url
-	if !strings.HasPrefix(link, testBase+"/api/auth/reset-password/") {
+	token := mustQuery(t, link, "token")
+	if !strings.HasPrefix(link, testBase+"/auth/reset-password?token=") || token == "" {
 		t.Fatalf("reset link = %s", link)
 	}
-
-	// The link redirects to the app's reset page with the token.
-	rec := h.do("GET", pathOf(t, link), nil, nil)
-	wantStatus(t, rec, http.StatusFound)
-	loc := rec.Header().Get("Location")
-	token := mustQuery(t, loc, "token")
-	if !strings.HasPrefix(loc, "/auth/reset-password?token=") || token == "" {
-		t.Fatalf("redirect = %q", loc)
+	// The API callback still accepts the token (absolute and deep-link targets use it).
+	apiLink := BasePath + "/reset-password/" + token + "?callbackURL=/auth/reset-password"
+	if loc := h.do("GET", apiLink, nil, nil).Header().Get("Location"); loc != "/auth/reset-password?token="+token {
+		t.Fatalf("callback redirect = %q", loc)
 	}
 
 	wantCode(t, h.do("POST", BasePath+"/reset-password", map[string]any{"token": token, "newPassword": "short"}, nil), http.StatusBadRequest, "PASSWORD_TOO_SHORT")
-	rec = h.do("POST", BasePath+"/reset-password", map[string]any{"token": token, "newPassword": "new-password"}, nil)
+	rec := h.do("POST", BasePath+"/reset-password", map[string]any{"token": token, "newPassword": "new-password"}, nil)
 	wantStatus(t, rec, http.StatusOK)
 
 	// Every existing session is revoked, the old password is dead.
@@ -360,7 +363,7 @@ func TestPasswordResetFlow(t *testing.T) {
 
 	// Single use: the token and its link are spent.
 	wantCode(t, h.do("POST", BasePath+"/reset-password", map[string]any{"token": token, "newPassword": "third-password"}, nil), http.StatusBadRequest, "INVALID_TOKEN")
-	rec = h.do("GET", pathOf(t, link), nil, nil)
+	rec = h.do("GET", apiLink, nil, nil)
 	if loc := rec.Header().Get("Location"); loc != "/auth/reset-password?error=INVALID_TOKEN" {
 		t.Fatalf("spent link redirect = %q", loc)
 	}
@@ -397,8 +400,7 @@ func TestPasswordResetTokenIsSingleUseUnderConcurrency(t *testing.T) {
 	if err := h.a.RequestPasswordReset(context.Background(), email, "/reset"); err != nil {
 		t.Fatal(err)
 	}
-	rec := h.do("GET", pathOf(t, h.mails()[0].url), nil, nil)
-	token := mustQuery(t, rec.Header().Get("Location"), "token")
+	token := mustQuery(t, h.mails()[0].url, "token")
 
 	var wg sync.WaitGroup
 	results := make([]error, 8)
@@ -650,6 +652,28 @@ func TestServiceMethodsForHTMLTransport(t *testing.T) {
 	}
 }
 
+// HostOnlyCookies: on https every cookie of the instance is __Host- (Path=/,
+// no Domain, Secure), and the __Secure- name is not read.
+func TestHostOnlyCookies(t *testing.T) {
+	h := newHarness(t, func(c *Config) { c.BaseURL = "https://admin.test"; c.CookiePrefix = "admin"; c.HostOnlyCookies = true })
+	rec := h.signUp(uniqueEmail(t), "password123")
+	c := sessionCookie(rec)
+	if c == nil || c.Name != "__Host-admin.session_token" || !c.Secure || !c.HttpOnly || c.Path != "/" || c.Domain != "" {
+		t.Fatalf("cookie = %+v", c)
+	}
+	if h.getSession(hdr{"Cookie": c.Name + "=" + c.Value}) == nil {
+		t.Fatal("own __Host- cookie rejected")
+	}
+	if h.getSession(hdr{"Cookie": "__Secure-admin.session_token=" + c.Value}) != nil {
+		t.Fatal("__Secure- cookie name accepted with HostOnlyCookies")
+	}
+	// Plain http (dev) keeps the bare name: prefixes need https.
+	dev := newHarness(t, func(c *Config) { c.CookiePrefix = "admin"; c.HostOnlyCookies = true })
+	if c := sessionCookie(dev.signUp(uniqueEmail(t), "password123")); c == nil || c.Name != "admin.session_token" {
+		t.Fatalf("http cookie = %+v", c)
+	}
+}
+
 func TestSecureCookieOnHTTPS(t *testing.T) {
 	h := newHarness(t, func(c *Config) { c.BaseURL = "https://app.test" })
 	rec := h.signUp(uniqueEmail(t), "password123")
@@ -803,7 +827,7 @@ func TestResetRevokesOtherResetLinks(t *testing.T) {
 	}
 	var tokens []string
 	for _, m := range h.mails() {
-		tokens = append(tokens, mustQuery(t, h.do("GET", pathOf(t, m.url), nil, nil).Header().Get("Location"), "token"))
+		tokens = append(tokens, mustQuery(t, m.url, "token"))
 	}
 	if err := h.a.ResetPassword(ctx, tokens[0], "new-password"); err != nil {
 		t.Fatal(err)

@@ -168,21 +168,24 @@ func (u *UI) resendVerification(w http.ResponseWriter, r *http.Request) {
 }
 
 func (u *UI) verifyEmailSuccessPage(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
 	// auth's own link handler lands here with ?error=<code> when it failed.
-	if code := r.URL.Query().Get("error"); code != "" {
-		u.render(w, r, http.StatusOK, VerifyEmailSuccessPage("", VerifyEmailFailed(authCodeMessage(r.Context(), code))))
+	if code := q.Get("error"); code != "" {
+		u.render(w, r, http.StatusOK, VerifyEmailSuccessPage("", "", VerifyEmailFailed(authCodeMessage(r.Context(), code))))
 		return
 	}
-	u.render(w, r, http.StatusOK, VerifyEmailSuccessPage(r.URL.Query().Get("token"), nil))
+	u.render(w, r, http.StatusOK, VerifyEmailSuccessPage(q.Get("token"), q.Get("callbackURL"), nil))
 }
 
-// verifyEmail consumes the token (when the link carried one) and signs the
-// user in. Without a token the auth endpoint already verified and set the
+// verifyEmail spends the token of a verification or change-email link (auth
+// emails them to this page) and signs the opener in, then continues to the
+// link's callbackURL when it is a path on this site, else the dashboard.
+// Without a token auth's own link endpoint already verified and set the
 // session cookie before redirecting here, so only the session is checked.
 func (u *UI) verifyEmail(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	token := r.URL.Query().Get("token")
-	result := VerifyEmailSucceeded()
+	token, callback := r.URL.Query().Get("token"), r.URL.Query().Get("callbackURL")
+	result := VerifyEmailSucceeded(verifyNext(callback))
 	status := http.StatusOK
 	if token != "" {
 		_, s, err := u.auth.VerifyEmail(ctx, token)
@@ -194,13 +197,22 @@ func (u *UI) verifyEmail(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, auth.ErrInvalidToken), errors.Is(err, auth.ErrTokenExpired):
 			result, status = VerifyEmailFailed(i18n.T(ctx, "pages.verifyEmail.invalidToken")), http.StatusUnprocessableEntity
 		default:
-			u.log.ErrorContext(ctx, "ui: verify email", "err", err)
-			result, status = VerifyEmailFailed(i18n.T(ctx, "pages.verifyEmail.unexpectedErrorDuringVerification")), http.StatusInternalServerError
+			result, status = VerifyEmailFailed(u.errorMessage(ctx, err)), http.StatusUnprocessableEntity
 		}
 	} else if _, _, ok := u.userFrom(ctx); !ok {
 		result = VerifyEmailFailed(i18n.T(ctx, "pages.verifyEmail.emailVerificationCompletedButLoginFailed"))
 	}
-	u.patch(w, r, status, VerifyEmailSuccessPage(token, result), result)
+	u.patch(w, r, status, VerifyEmailSuccessPage(token, callback, result), result)
+}
+
+// verifyNext is where a verified link continues: its callbackURL when that
+// is another page on this site, else the dashboard.
+func verifyNext(callback string) string {
+	next := safeNext(callback)
+	if next == config.AppRoutes.Home || strings.HasPrefix(next, config.AppRoutes.VerifyEmailSuccess) {
+		return config.AppRoutes.Dashboard
+	}
+	return next
 }
 
 func (u *UI) dashboard(w http.ResponseWriter, r *http.Request) {

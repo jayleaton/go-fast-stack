@@ -44,16 +44,18 @@ var navItems = []navItem{
 // switcher.
 templ Layout(title string) {
 	<!DOCTYPE html>
-	<html lang={ string(i18n.From(ctx).Locale) } dir="ltr" class={ StateFrom(ctx).Theme }>
+	<html lang={ string(i18n.From(ctx).Locale) } dir="ltr" class={ StateFrom(ctx).Theme } if templ.GetNonce(ctx) != "" {
+		data-nonce={ templ.GetNonce(ctx) }
+	}>
 		<head>
 			<meta charset="utf-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1"/>
 			<meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff"/>
 			<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0a0a0a"/>
-						<title>{ pageTitle(title, StateFrom(ctx)) }</title>
+			<title>{ pageTitle(title, StateFrom(ctx)) }</title>
 			<link rel="icon" href={ static.URL(static.FaviconFile) }/>
 			<link rel="stylesheet" href={ static.URL(static.CSSFile) }/>
-			<script type="module" src={ static.URL(static.DatastarFile) }></script>
+			<script type="module" src={ static.URL(static.DatastarFile) } nonce={ templ.GetNonce(ctx) }></script>
 		</head>
 		<body class="bg-white text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100">
 			<div class="relative min-h-screen">
@@ -170,9 +172,8 @@ templ LanguageSelector() {
 				id="language-menu"
 				role="listbox"
 				aria-label={ t.T("components.languageSelector.language") }
-				style="display: none"
-				data-show="$_langOpen"
-				class="absolute right-0 z-50 mt-1 min-w-[10.5rem] overflow-hidden rounded-md border border-neutral-200 bg-white py-1 shadow-lg dark:border-neutral-800 dark:bg-neutral-900"
+				data-class:hidden="!$_langOpen"
+				class="hidden absolute right-0 z-50 mt-1 min-w-[10.5rem] overflow-hidden rounded-md border border-neutral-200 bg-white py-1 shadow-lg dark:border-neutral-800 dark:bg-neutral-900"
 			>
 				for _, l := range i18n.Locales {
 					<li role="option" aria-selected={ boolString(l == t.Locale) }>

@@ -19,7 +19,6 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/jayleaton/ai-patterns-go/apps/admin/internal/api"
 	"github.com/jayleaton/ai-patterns-go/apps/admin/internal/config"
 	"github.com/jayleaton/ai-patterns-go/apps/admin/internal/server"
 	"github.com/jayleaton/ai-patterns-go/apps/admin/internal/services"
@@ -28,6 +27,7 @@ import (
 	"github.com/jayleaton/ai-patterns-go/packages/auth"
 	"github.com/jayleaton/ai-patterns-go/packages/database"
 	"github.com/jayleaton/ai-patterns-go/packages/database/adminrepo"
+	"github.com/jayleaton/ai-patterns-go/packages/secrets"
 )
 
 const shutdownTimeout = 15 * time.Second
@@ -78,7 +78,7 @@ func main() {
 // tables, then the audit log. The app database is the web service's to
 // migrate. Then it seeds ADMIN_BOOTSTRAP_EMAIL (idempotent).
 func migrate(ctx context.Context, cfg config.Config, log *slog.Logger) error {
-	adminPool, err := database.Open(ctx, cfg.AdminDatabaseURL)
+	adminPool, err := database.Open(ctx, cfg.AdminDatabaseURL.Reveal())
 	if err != nil {
 		return err
 	}
@@ -116,7 +116,7 @@ func migrate(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 // invite emails a set-password link (the dev mailer logs it). The operator
 // running the CLI acts as services.SystemActor and is audited as "cli".
 func invite(ctx context.Context, cfg config.Config, log *slog.Logger, email string) error {
-	adminPool, err := database.Open(ctx, cfg.AdminDatabaseURL)
+	adminPool, err := database.Open(ctx, cfg.AdminDatabaseURL.Reveal())
 	if err != nil {
 		return err
 	}
@@ -143,12 +143,12 @@ func invite(ctx context.Context, cfg config.Config, log *slog.Logger, email stri
 }
 
 func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
-	appPool, err := database.Open(ctx, cfg.DatabaseURL)
+	appPool, err := database.Open(ctx, cfg.DatabaseURL.Reveal())
 	if err != nil {
 		return fmt.Errorf("app database: %w", err)
 	}
 	defer appPool.Close()
-	adminPool, err := database.Open(ctx, cfg.AdminDatabaseURL)
+	adminPool, err := database.Open(ctx, cfg.AdminDatabaseURL.Reveal())
 	if err != nil {
 		return fmt.Errorf("admin database: %w", err)
 	}
@@ -168,17 +168,15 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	events := server.NewAuthEvents(services.NewAuthEventService(adminrepo.NewAdmins(adminPool), auditLog), log)
 
 	handler := server.New(server.Deps{
-		Config:     cfg,
-		Log:        log,
-		DBs:        map[string]server.Pinger{"app": appPool, "admin": adminPool},
-		Auth:       admins,
+		Config: cfg,
+		Log:    log,
+		DBs:    map[string]server.Pinger{"app": appPool, "admin": adminPool},
+		Auth:   admins,
+		// No JSON API on the network: the UI calls the services in-process
+		// (and audits sign-ins through NewUIAuth). To let scripts call
+		// /api/admin/v1, pass api.NewUsers(users, callers.API) etc. as API;
+		// the audited auth endpoints come with it, hidden from browsers.
 		AuthEvents: events,
-		API: []server.Router{
-			api.NewUsers(users, callers.API),
-			api.NewAdmins(adminSvc, callers.API),
-			api.NewAudit(auditSvc, callers.API),
-			api.NewAnalytics(analytics, callers.API),
-		},
 		UI: ui.New(ui.Deps{
 			Auth: server.NewUIAuth(admins, events), Users: users, Admins: adminSvc, Audit: auditSvc, Analytics: analytics,
 			UserFrom: callers.UI, RequireTwoFactor: cfg.RequireTwoFactor, AppName: cfg.AppName,
@@ -222,22 +220,24 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 // is off: admins are invited (AdminService.InviteAdmin).
 func newAdminAuth(cfg config.Config, adminPool *pgxpool.Pool, log *slog.Logger) (*auth.Auth, error) {
 	var mailer auth.Mailer = auth.NewDevMailer(log)
-	if cfg.ResendAPIKey != "" {
-		mailer = auth.NewResendMailer(cfg.ResendAPIKey, cfg.FromEmail)
+	if !cfg.ResendAPIKey.IsZero() {
+		mailer = auth.NewResendMailer(cfg.ResendAPIKey.Reveal(), cfg.FromEmail)
 	} else {
 		log.Warn("RESEND_API_KEY not set: admin invite links are logged, not sent")
 	}
 	return auth.New(auth.Config{
-		Secret:         cfg.AuthSecret,
-		BaseURL:        cfg.PublicURL.String(),
-		CookiePrefix:   "admin",
-		DisableSignUp:  true,
-		AppName:        cfg.AppName,
-		TrustedOrigins: cfg.TrustedOrigins,
-		LoginPath:      config.AppRoutes.Login,
-		ClientIPHeader: cfg.ClientIPHeader,
-		TwoFactor:      &auth.TwoFactorConfig{Required: cfg.RequireTwoFactor},
-		Logger:         log,
+		Secret:       cfg.AuthSecret.Reveal(),
+		BaseURL:      cfg.PublicURL.String(),
+		CookiePrefix: "admin",
+		// No Better Auth clients: bind the admin cookies to this host.
+		HostOnlyCookies: true,
+		DisableSignUp:   true,
+		AppName:         cfg.AppName,
+		TrustedOrigins:  cfg.TrustedOrigins,
+		LoginPath:       config.AppRoutes.Login,
+		ClientIPHeader:  cfg.ClientIPHeader,
+		TwoFactor:       &auth.TwoFactorConfig{Required: cfg.RequireTwoFactor},
+		Logger:          log,
 	}, adminPool, mailer)
 }
 
@@ -245,10 +245,13 @@ func policy(cfg config.Config) services.Policy {
 	return services.Policy{RequireTwoFactor: cfg.RequireTwoFactor}
 }
 
+// newLogger redacts credentials from every record (secrets.NewRedactingHandler);
+// outside production it keeps the dev mailer's links readable.
 func newLogger(env config.Env) *slog.Logger {
 	opts := &slog.HandlerOptions{Level: slog.LevelInfo}
+	redact := secrets.RedactOptions{KeepDevMailLinks: env != config.Production}
 	if env == config.Production {
-		return slog.New(slog.NewJSONHandler(os.Stdout, opts))
+		return slog.New(secrets.NewRedactingHandler(slog.NewJSONHandler(os.Stdout, opts), redact))
 	}
-	return slog.New(slog.NewTextHandler(os.Stdout, opts))
+	return slog.New(secrets.NewRedactingHandler(slog.NewTextHandler(os.Stdout, opts), redact))
 }

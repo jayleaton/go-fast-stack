@@ -101,8 +101,8 @@ templ TwoFactorPage(f TwoFactorForm) {
 				@TwoFactorError(f)
 				<div>
 					<label for="code" class={ view.LabelClass }>
-						<span data-show="!$_backup" style={ displayIf(!f.Backup) }>{ i18n.T(ctx, "pages.twoFactor.codeLabel") }</span>
-						<span data-show="$_backup" style={ displayIf(f.Backup) }>{ i18n.T(ctx, "pages.twoFactor.backupCodeLabel") }</span>
+						<span class={ templ.KV("hidden", f.Backup) } data-class:hidden="$_backup">{ i18n.T(ctx, "pages.twoFactor.codeLabel") }</span>
+						<span class={ templ.KV("hidden", !f.Backup) } data-class:hidden="!$_backup">{ i18n.T(ctx, "pages.twoFactor.backupCodeLabel") }</span>
 					</label>
 					<input id="code" name="code" type="text" required autocomplete="one-time-code" inputmode={ codeInputmode(f.Backup) } data-attr:inputmode="$_backup ? 'text' : 'numeric'" class={ view.InputClass } placeholder="123456"/>
 				</div>

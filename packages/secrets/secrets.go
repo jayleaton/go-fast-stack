@@ -6,14 +6,16 @@
 // down, reports itself unhealthy once that copy is older than the staleness
 // limit, and calls per-key change hooks so consumers can rebuild their clients:
 //
-//	m := secrets.NewManager(secrets.NewDoppler(token), secrets.Options{Keys: []string{"RESEND_API_KEY"}})
+//	m := secrets.NewManager(secrets.NewDoppler(secrets.NewSecret(token)), secrets.Options{Keys: []string{"RESEND_API_KEY"}})
 //	if err := m.Start(ctx); err != nil { ... } // first fetch; fails boot without a valid snapshot
 //	defer m.Stop()
 //	m.OnChange("RESEND_API_KEY", func(v secrets.Secret) error { mailer.Swap(newMailer(v.Reveal())); return nil })
 //
 // Values are Secret, which formats, logs and marshals as "[redacted]"; only
 // Reveal returns the value. Nothing in this package logs a value, a token or a
-// provider response body. The package never reads the environment:
+// provider response body. NewRedactingHandler wraps the binaries' slog
+// handler so credentials that reach a log anyway are redacted. The package
+// never reads the environment:
 // apps/web/internal/config builds the Manager.
 package secrets
 
@@ -44,6 +46,10 @@ func NewSecret(v string) Secret { return Secret{v} }
 
 // Reveal returns the value. Pass it straight to the client that needs it.
 func (s Secret) Reveal() string { return s.v }
+
+// Len is the length of the value in bytes, for validation (minimum lengths)
+// without revealing it.
+func (s Secret) Len() int { return len(s.v) }
 
 // IsZero reports whether the secret is empty (unset or removed upstream).
 func (s Secret) IsZero() bool { return s.v == "" }

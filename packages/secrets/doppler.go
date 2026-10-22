@@ -31,7 +31,7 @@ const maxDopplerBody = 1 << 20
 // whole config; when Doppler sends an ETag the next request is conditional and
 // a 304 keeps the previous snapshot.
 type Doppler struct {
-	Token      string       // DOPPLER_TOKEN: a read-only service token (dp.st.…) for one config
+	Token      Secret       // DOPPLER_TOKEN: a read-only service token (dp.st.…) for one config
 	APIURL     string       // defaults to DefaultDopplerURL; tests point it at a fake
 	HTTPClient *http.Client // defaults to a client with a 15s timeout
 }
@@ -39,7 +39,7 @@ type Doppler struct {
 var _ Provider = (*Doppler)(nil)
 
 // NewDoppler returns a Doppler provider for token against the public API.
-func NewDoppler(token string) *Doppler {
+func NewDoppler(token Secret) *Doppler {
 	return &Doppler{Token: token, APIURL: DefaultDopplerURL, HTTPClient: newDopplerClient()}
 }
 
@@ -67,7 +67,7 @@ func (*Doppler) Name() string { return "doppler" }
 // Fetch downloads the config. Errors carry the status code only, never the
 // token or the response body.
 func (d *Doppler) Fetch(ctx context.Context, previous Snapshot) (Snapshot, error) {
-	if d.Token == "" {
+	if d.Token.IsZero() {
 		return Snapshot{}, errors.New("doppler: missing token")
 	}
 	base := d.APIURL
@@ -78,7 +78,7 @@ func (d *Doppler) Fetch(ctx context.Context, previous Snapshot) (Snapshot, error
 	if err != nil {
 		return Snapshot{}, fmt.Errorf("doppler: build request: %w", err)
 	}
-	req.Header.Set("Authorization", "Bearer "+d.Token)
+	req.Header.Set("Authorization", "Bearer "+d.Token.Reveal())
 	req.Header.Set("Accept", "application/json")
 	if previous.Len() > 0 && previous.Revision() != "" {
 		req.Header.Set("If-None-Match", previous.Revision())

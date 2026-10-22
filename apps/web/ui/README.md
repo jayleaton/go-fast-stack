@@ -52,16 +52,18 @@ deps.UI = ui.Handler() // server.Deps.UI, mounted at "/" inside auth.Middleware
 ```
 
 `Routes(mux)` registers `GET /{$}`, the pages in `config.AppRoutes`, the UI actions in `ui/routes`, `GET /static/` and
-`GET /favicon.ico`; `Handler()` returns a mux with them. POST actions are wrapped in `http.CrossOriginProtection`
-(stdlib); keep that if a global CSRF layer is added. Compile-time assertions in `deps.go` keep both interfaces in step
+`GET /favicon.ico`; `Handler()` serves them behind the security headers (`security.go`: nonce CSP, `no-store`, and the
+rest) with a bare 404 for anything else. POST actions are wrapped in `http.CrossOriginProtection` (stdlib), the UI's
+only CSRF layer. Compile-time assertions in `deps.go` keep both interfaces in step
 with `packages/auth` and the user service.
 
 `ui.Auth` uses the auth types directly (`ui.User` = `auth.User`, ...) and the handlers map `auth.Err*` values to
 messages (`AuthErrors`); unknown errors show "Something went wrong" and are logged. Sign-up and sign-in pass
 `CallbackURL: config.AppRoutes.VerifyEmailSuccess`; password reset passes `config.AppRoutes.ResetPassword` as
-`redirectTo`. Auth joins app paths with its `BaseURL`, so no origin is hardcoded here. The verify link may land after
-auth's own `GET /api/auth/verify-email` already set the cookie (the page then checks the session) or carry `?token=`
-(the page POSTs it to `VerifyEmail`, so link scanners doing GETs cannot spend it).
+`redirectTo`. Auth joins app paths with its `BaseURL`, so no origin is hardcoded here, and emails links to those pages
+directly (`auth.Config.VerifyEmailPath`): the reset link carries `?token=`, the verify link `?token=&callbackURL=` (the
+page POSTs it to `VerifyEmail`, so link scanners doing GETs cannot spend it, then continues to the callback when it is
+a path on this site).
 
 `ui.Users` is the method set of `*services.UserService`: profile, email change, password, sessions, delete and data
 summary. The Account page (`config.AppRoutes.Account`) is built only on it; the existing auth flows (sign-in, sign-up,

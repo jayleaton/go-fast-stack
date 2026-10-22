@@ -61,9 +61,14 @@ func Get(path string) string {
 	return fmt.Sprintf("@get('%s')", jsPath(path))
 }
 
+// Assign is the expression that navigates to path (a safe relative path).
+func Assign(path string) string {
+	return fmt.Sprintf("window.location.assign('%s')", jsPath(path))
+}
+
 // jsPath keeps a server path safe inside a single-quoted JS string.
 func jsPath(p string) string {
-	return strings.NewReplacer(`\`, `\\`, `'`, `\'`).Replace(p)
+	return strings.NewReplacer(`\`, `\\`, `'`, `\'`, "\n", `\n`, "\r", `\r`, "\u2028", `\u2028`, "\u2029", `\u2029`).Replace(p)
 }
 
 // themeToggle flips the effective theme, persists it in the theme cookie and

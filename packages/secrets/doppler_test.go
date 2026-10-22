@@ -25,7 +25,7 @@ func TestDopplerDownloadOverHTTP(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	d := secrets.NewDoppler(testToken)
+	d := secrets.NewDoppler(secrets.NewSecret(testToken))
 	if d.APIURL != secrets.DefaultDopplerURL || d.Name() != "doppler" {
 		t.Fatalf("defaults: %+v", d)
 	}
@@ -52,7 +52,7 @@ func TestDopplerDownloadOverHTTP(t *testing.T) {
 	}
 
 	// A zero-value Doppler uses a default client and still works against APIURL.
-	if _, err := (&secrets.Doppler{Token: testToken, APIURL: srv.URL}).Fetch(t.Context(), secrets.Snapshot{}); err != nil {
+	if _, err := (&secrets.Doppler{Token: secrets.NewSecret(testToken), APIURL: srv.URL}).Fetch(t.Context(), secrets.Snapshot{}); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -62,7 +62,7 @@ func TestDopplerErrors(t *testing.T) {
 	srv := httptest.NewServer(f)
 	defer srv.Close()
 	at := func(token string) *secrets.Doppler {
-		return &secrets.Doppler{Token: token, APIURL: srv.URL, HTTPClient: srv.Client()}
+		return &secrets.Doppler{Token: secrets.NewSecret(token), APIURL: srv.URL, HTTPClient: srv.Client()}
 	}
 
 	tests := []struct {
@@ -75,8 +75,8 @@ func TestDopplerErrors(t *testing.T) {
 		{"bad token", func() {}, at("dp.st.wrong_token"), "token rejected (401 Unauthorized)"},
 		{"server error", func() { f.fail(500, "") }, at(testToken), "unexpected status 500"},
 		{"oversize", func() { f.setRaw(`{"A":"` + strings.Repeat("x", 1<<20) + `"}`) }, at(testToken), "larger than"},
-		{"unreachable", func() {}, &secrets.Doppler{Token: testToken, APIURL: "http://user:pass@127.0.0.1:1"}, "doppler: request"},
-		{"bad url", func() {}, &secrets.Doppler{Token: testToken, APIURL: "http://[::1"}, "build request"},
+		{"unreachable", func() {}, &secrets.Doppler{Token: secrets.NewSecret(testToken), APIURL: "http://user:pass@127.0.0.1:1"}, "doppler: request"},
+		{"bad url", func() {}, &secrets.Doppler{Token: secrets.NewSecret(testToken), APIURL: "http://[::1"}, "build request"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -99,7 +99,7 @@ func TestDopplerRateLimit(t *testing.T) {
 	f := newFake(map[string]string{key: "re_a"})
 	srv := httptest.NewServer(f)
 	defer srv.Close()
-	d := &secrets.Doppler{Token: testToken, APIURL: srv.URL, HTTPClient: srv.Client()}
+	d := &secrets.Doppler{Token: secrets.NewSecret(testToken), APIURL: srv.URL, HTTPClient: srv.Client()}
 
 	for _, tt := range []struct {
 		header string
@@ -133,8 +133,8 @@ func TestSecretNeverPrints(t *testing.T) {
 			t.Fatalf("secret printed: %s", out)
 		}
 	}
-	if s.Reveal() != "re_plain_value" || s.IsZero() || !s.Equal(secrets.NewSecret("re_plain_value")) || s.Equal(secrets.NewSecret("x")) {
-		t.Fatal("Reveal/IsZero/Equal")
+	if s.Reveal() != "re_plain_value" || s.Len() != len("re_plain_value") || s.IsZero() || !s.Equal(secrets.NewSecret("re_plain_value")) || s.Equal(secrets.NewSecret("x")) {
+		t.Fatal("Reveal/Len/IsZero/Equal")
 	}
 	fp := s.Fingerprint()
 	if !strings.HasPrefix(fp, "fp:") || len(fp) != 11 || fp != secrets.NewSecret("re_plain_value").Fingerprint() || fp == secrets.NewSecret("re_other").Fingerprint() {
@@ -146,7 +146,7 @@ func TestSecretNeverPrints(t *testing.T) {
 
 	// Types holding secrets in unexported fields redact themselves too.
 	snap := secrets.NewSnapshot(map[string]string{"K": "re_plain_value"}, `"v1"`)
-	d := secrets.NewDoppler("dp.st.plain_token")
+	d := secrets.NewDoppler(secrets.NewSecret("dp.st.plain_token"))
 	m := secrets.NewManager(secrets.NewEnv(map[string]string{"K": "re_plain_value"}), secrets.Options{})
 	if err := m.Start(t.Context()); err != nil {
 		t.Fatal(err)
@@ -176,13 +176,13 @@ func TestDopplerDoesNotFollowRedirects(t *testing.T) {
 		http.Redirect(w, r, "/elsewhere", http.StatusFound)
 	}))
 	defer srv.Close()
-	d := secrets.NewDoppler(testToken)
+	d := secrets.NewDoppler(secrets.NewSecret(testToken))
 	d.APIURL = srv.URL
 	if _, err := d.Fetch(t.Context(), secrets.Snapshot{}); err == nil || !strings.Contains(err.Error(), "302") || followed {
 		t.Fatalf("err = %v, followed = %v", err, followed)
 	}
 	// The zero-value client refuses redirects too.
-	if _, err := (&secrets.Doppler{Token: testToken, APIURL: srv.URL}).Fetch(t.Context(), secrets.Snapshot{}); err == nil || followed {
+	if _, err := (&secrets.Doppler{Token: secrets.NewSecret(testToken), APIURL: srv.URL}).Fetch(t.Context(), secrets.Snapshot{}); err == nil || followed {
 		t.Fatalf("zero-value client: err = %v, followed = %v", err, followed)
 	}
 }

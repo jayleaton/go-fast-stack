@@ -14,6 +14,7 @@ import (
 const (
 	sessionCookieName = "better-auth.session_token" // with the default CookiePrefix
 	securePrefix      = "__Secure-"
+	hostPrefix        = "__Host-" // Config.HostOnlyCookies
 )
 
 type ctxKey struct{}
@@ -63,10 +64,14 @@ func UserFrom(ctx context.Context) (User, Session, bool) {
 }
 
 // cookie returns the full name of one of this instance's cookies:
-// "<CookiePrefix>.<name>", with the __Secure- prefix on https.
+// "<CookiePrefix>.<name>", with the __Secure- prefix on https (__Host- with
+// Config.HostOnlyCookies).
 func (a *Auth) cookie(name string) string {
 	full := a.cfg.CookiePrefix + "." + name
-	if a.secure {
+	switch {
+	case a.secure && a.cfg.HostOnlyCookies:
+		return hostPrefix + full
+	case a.secure:
 		return securePrefix + full
 	}
 	return full

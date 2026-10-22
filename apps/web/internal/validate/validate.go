@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"reflect"
 	"sort"
 	"strings"
 )
@@ -78,11 +79,33 @@ func jsonMessage(err error) string {
 	case errors.Is(err, io.EOF):
 		return "is empty"
 	case errors.As(err, &typeErr):
-		return fmt.Sprintf("%s must be %s", typeErr.Field, typeErr.Type)
+		return fmt.Sprintf("%s must be %s", typeErr.Field, jsonType(typeErr.Type))
 	case strings.HasPrefix(err.Error(), "json: unknown field"):
 		return strings.TrimPrefix(err.Error(), "json: ")
 	default:
 		return "must be valid JSON"
+	}
+}
+
+// jsonType names t the way a JSON client sees it, never as a Go type.
+func jsonType(t reflect.Type) string {
+	for t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	switch t.Kind() {
+	case reflect.String:
+		return "a string"
+	case reflect.Bool:
+		return "a boolean"
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return "an integer"
+	case reflect.Float32, reflect.Float64:
+		return "a number"
+	case reflect.Slice, reflect.Array:
+		return "an array"
+	default:
+		return "an object"
 	}
 }
 

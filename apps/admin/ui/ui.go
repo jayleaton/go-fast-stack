@@ -62,18 +62,24 @@ func New(d Deps) *UI {
 	return u
 }
 
+// Mux is what Routes registers on (*http.ServeMux).
+type Mux interface {
+	Handle(pattern string, handler http.Handler)
+}
+
 // Routes mounts every page, action and static asset on mux. The auth
-// middleware must wrap mux so Deps.UserFrom sees the session.
-func (u *UI) Routes(mux *http.ServeMux) {
+// middleware must wrap mux so Deps.UserFrom sees the session. Mount Handler
+// rather than Routes in production: it adds the security headers.
+func (u *UI) Routes(mux Mux) {
 	page := func(pattern string, h http.HandlerFunc) { mux.Handle(pattern, u.wrap(h)) }
 	// Actions also pass Go's cross-origin protection (Sec-Fetch-Site / Origin).
 	action := func(pattern string, h http.HandlerFunc) { mux.Handle(pattern, u.csrf.Handler(u.wrap(h))) }
 	p := config.AppRoutes
 
 	mux.Handle("GET "+routes.Static, static.Handler())
-	mux.HandleFunc("GET /favicon.ico", func(w http.ResponseWriter, r *http.Request) {
+	mux.Handle("GET /favicon.ico", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, static.URL(static.FaviconFile), http.StatusMovedPermanently)
-	})
+	}))
 
 	page("GET /{$}", u.home)
 	page("GET "+p.Login, u.loginPage)
@@ -105,11 +111,12 @@ func (u *UI) Routes(mux *http.ServeMux) {
 	action("POST "+routes.Locale, u.setLocale)
 }
 
-// Handler returns a mux with Routes mounted.
+// Handler returns the UI for server.Deps.UI: Routes behind the browser
+// security headers (secure), with a bare 404 for anything unrouted.
 func (u *UI) Handler() http.Handler {
 	mux := http.NewServeMux()
 	u.Routes(mux)
-	return mux
+	return secure(strict(mux), u.secure)
 }
 
 // wrap puts the translator and layout state on the request context.

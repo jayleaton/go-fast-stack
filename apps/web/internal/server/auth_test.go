@@ -65,7 +65,12 @@ func TestAuthWiring(t *testing.T) {
 	var signUp struct{ Token string }
 	_ = json.Unmarshal(rec.Body.Bytes(), &signUp)
 	cookie := rec.Result().Cookies()[0]
-	withCookie := []string{"Cookie", cookie.Name + "=" + cookie.Value, "Origin", origin}
+	// The mobile app sends the cookie with Expo's expo-origin header; a
+	// browser (Origin) never reaches the API.
+	withCookie := []string{"Cookie", cookie.Name + "=" + cookie.Value, "Expo-Origin", origin}
+	if rec := do("GET", config.APIRoutes.Me, "", "Cookie", cookie.Name+"="+cookie.Value, "Origin", origin); rec.Code != http.StatusNotFound {
+		t.Fatalf("GET users from a browser: %d %s", rec.Code, rec.Body)
+	}
 
 	rec = do("GET", config.APIRoutes.Me, "", withCookie...)
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"email":"ada@example.com"`) {

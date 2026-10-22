@@ -5,7 +5,6 @@ import (
 	"crypto/hmac"
 	"errors"
 	"net/mail"
-	"net/url"
 	"strings"
 )
 
@@ -190,9 +189,10 @@ func (a *Auth) SignOut(ctx context.Context, sessionToken string) error {
 }
 
 // RequestPasswordReset emails a single-use reset link valid for one hour if
-// the email belongs to a user, and returns nil either way. The link points at
-// GET /api/auth/reset-password/{token}, which redirects to redirectTo (a
-// trusted URL or relative path, e.g. "/reset-password") with ?token=.
+// the email belongs to a user, and returns nil either way. redirectTo is the
+// page that takes the new password (a relative path, e.g. "/reset-password",
+// or a trusted URL); see passwordLink for the link each one gets. Either way
+// the page receives ?token= and calls ResetPassword.
 func (a *Auth) RequestPasswordReset(ctx context.Context, email, redirectTo string) error {
 	if err := a.rateLimit(ctx, "request-password-reset", RuleEmailSending); err != nil {
 		return err
@@ -222,7 +222,7 @@ func (a *Auth) RequestPasswordReset(ctx context.Context, email, redirectTo strin
 	if err := a.store.createVerification(ctx, "reset-password:"+token, user.ID, now.Add(ResetPasswordTokenTTL), now); err != nil {
 		return err
 	}
-	link := a.authURL("/reset-password/"+token) + "?callbackURL=" + url.QueryEscape(redirectTo)
+	link := a.passwordLink(token, redirectTo)
 	a.sendMail(ctx, "password-reset", user.Email, func(ctx context.Context) error {
 		// Cleanup runs here, off the request path, so it adds no timing signal.
 		if err := a.store.deleteExpiredVerifications(ctx, now); err != nil {
@@ -316,6 +316,10 @@ func (a *Auth) setPassword(ctx context.Context, token, newPassword string, verif
 // Change-email links (see ChangeEmail) switch the account to the new address,
 // mark it verified and sign in; they are single-use because the old address
 // they name is gone afterwards.
+//
+// It behaves exactly like GET /verify-email (which calls it), including the
+// signed-in opener read from ctx, so an app page (Config.VerifyEmailPath) can
+// spend either kind of link and set the returned session's cookie.
 func (a *Auth) VerifyEmail(ctx context.Context, token string) (User, Session, error) {
 	user, sess, _, err := a.verifyEmail(ctx, token)
 	return user, sess, err
@@ -411,11 +415,7 @@ func (a *Auth) SendVerificationEmail(ctx context.Context, email, callbackURL str
 // sendVerification emails a verification link bound to the credential
 // fingerprint cred.
 func (a *Auth) sendVerification(ctx context.Context, email, cred, callbackURL string) {
-	if callbackURL == "" {
-		callbackURL = "/"
-	}
-	link := a.authURL("/verify-email") + "?token=" + a.signVerificationToken(email, cred, VerificationTokenTTL) +
-		"&callbackURL=" + url.QueryEscape(callbackURL)
+	link := a.verificationLink(a.signVerificationToken(email, cred, VerificationTokenTTL), callbackURL)
 	a.sendMail(ctx, "verification", email, func(ctx context.Context) error {
 		return a.mailer.SendVerificationEmail(ctx, email, link)
 	})

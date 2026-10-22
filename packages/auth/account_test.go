@@ -60,7 +60,7 @@ func TestChangePassword(t *testing.T) {
 	if err := h.a.RequestPasswordReset(context.Background(), email, "/r"); err != nil {
 		t.Fatal(err)
 	}
-	resetToken := mustQuery(t, h.do("GET", pathOf(t, h.mails()[0].url), nil, nil).Header().Get("Location"), "token")
+	resetToken := mustQuery(t, h.mails()[0].url, "token")
 
 	if r := change(cookie, body("old-password", "new-password", false)); r.code != 200 || !strings.Contains(r.body, `"token":null`) {
 		t.Fatalf("change: %+v", r)
@@ -176,8 +176,8 @@ func TestChangeEmail(t *testing.T) {
 	if loc := rec.Header().Get("Location"); loc != "/dashboard?error=INVALID_TOKEN" || sessionCookie(rec) != nil {
 		t.Fatalf("reused link: %d %q", rec.Code, loc)
 	}
-	if loc := h.do("GET", pathOf(t, resetLink), nil, nil).Header().Get("Location"); loc != "/r?error=INVALID_TOKEN" {
-		t.Fatalf("old reset link redirect = %q", loc)
+	if err := h.a.ResetPassword(context.Background(), mustQuery(t, resetLink, "token"), "reset-password"); !errors.Is(err, ErrInvalidToken) {
+		t.Fatalf("old reset link err = %v", err)
 	}
 }
 
@@ -317,8 +317,7 @@ func TestPendingEmailChangeIsCancelledByRecovery(t *testing.T) {
 					link = m.url
 				}
 			}
-			token := mustQuery(t, h.do("GET", pathOf(t, link), nil, nil).Header().Get("Location"), "token")
-			if err := h.a.ResetPassword(ctx, token, "new-password"); err != nil {
+			if err := h.a.ResetPassword(ctx, mustQuery(t, link, "token"), "new-password"); err != nil {
 				t.Fatal(err)
 			}
 		},
