@@ -1,3 +1,4 @@
+// Scratch: CI one job (single package).
 package ui
 
 import (
