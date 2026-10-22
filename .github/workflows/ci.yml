@@ -50,9 +50,11 @@ jobs:
   ci:
     if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: ubuntu-latest
-    # Timeouts are ~2x measured averages and sit on the steps that do the work
-    # (see "Timeouts" below); this is only a backstop above their sum.
-    timeout-minutes: 12
+    # The ~2x-average timeouts sit on the steps that do the work (see
+    # "Timeouts" below): the job cannot know at start whether a run is full or
+    # cold. This is only a backstop just above the worst case (all packages,
+    # cold: ~5.5 min job, Check step capped at 11).
+    timeout-minutes: 13
     outputs:
       fanout: ${{ steps.plan.outputs.fanout }}
       timeout: ${{ steps.timeouts.outputs.fanout }}
@@ -193,11 +195,13 @@ jobs:
           FANOUT: ${{ contains(github.event.pull_request.labels.*.name, 'ci:fanout') || inputs.fanout == true }}
         run: echo "fanout=$FANOUT" >> "$GITHUB_OUTPUT"
 
-      # Timeouts (minutes) for the Check steps, ~2x their measured averages,
-      # by whether the build cache is warm (a lookup-only probe, no download):
-      #   PR single job:   warm 9-77 s (heaviest: admin ~75 s) -> 3; cold 131-159 s -> 6
-      #   mobile only:     40-45 s -> 2
-      #   full/fan-out:    warm 59-97 s -> 3;                     cold 185-233 s -> 8
+      # Timeouts (minutes) for the Check step (the work), ~2x its measured
+      # average for the case, by whether the build cache is warm (a lookup-only
+      # probe, no download) and whether all packages are checked:
+      #   affected set:  warm 9-77 s (heaviest: admin ~75 s) -> 3; cold 131-159 s -> 6
+      #   all packages:  warm 138 s -> 5;                          cold 312 s -> 11
+      #   mobile/deploy only (no Go packages): 40-45 s -> 2
+      #   opt-in fan-out jobs: warm 59-97 s -> 3; cold 185-233 s -> 8
       - uses: actions/cache/restore@v6
         if: steps.affected.outputs.packages != ''
         id: build-cache
@@ -212,10 +216,13 @@ jobs:
         env:
           MATCHED: ${{ steps.build-cache.outputs.cache-matched-key }}
           PACKAGES: ${{ steps.affected.outputs.packages }}
-          SINGLE: ${{ github.event_name == 'pull_request' && steps.plan.outputs.fanout != 'true' }}
+          FULL: ${{ steps.affected.outputs.full }}
         run: |
-          if [ -n "$MATCHED" ]; then check=3 fanout=3; else fanout=8; check=8; [ "$SINGLE" = true ] && check=6; fi
-          # No Go packages (mobile- or deploy-only): mobile averages 40-45 s.
+          if [ -n "$MATCHED" ]; then
+            fanout=3; check=3; [ "$FULL" = true ] && check=5
+          else
+            fanout=8; check=6; [ "$FULL" = true ] && check=11
+          fi
           [ -z "$PACKAGES" ] && check=2
           echo "check=$check" >> "$GITHUB_OUTPUT"; echo "fanout=$fanout" >> "$GITHUB_OUTPUT"
           echo "poll=$((fanout + 1))" >> "$GITHUB_OUTPUT"
