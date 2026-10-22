@@ -2,8 +2,8 @@
 # Proves the depguard layering rules in .golangci.yml still bite: drops a probe
 # package with a forbidden import into each guarded layer, and an external
 # _test.go file with a forbidden import into each test boundary, runs
-# golangci-lint, and fails unless depguard reports every probe. Probes whose
-# import is not in the module yet are skipped. Probes are always removed.
+# golangci-lint, and fails unless depguard reports every probe. Probes are
+# always removed.
 # GOLANGCI_LINT overrides the binary (CI uses the prebuilt one).
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -38,18 +38,11 @@ paths=()
 cleanup() { for p in "${paths[@]}"; do rm -rf "$p"; done; rmdir apps/web/ui 2>/dev/null || true; }
 trap cleanup EXIT
 
-# Imports that resolve in the module graph; a probe needs its package to type-check.
-imports=()
-for c in "${cases[@]}" "${test_cases[@]}"; do imports+=("${c#*|}"); done
-known=$(go list -e -f '{{if not .Error}}{{.ImportPath}}{{end}}' "${imports[@]}")
-have() { grep -qxF "$1" <<<"$known"; }
-
 # label | probe file | package to lint, one per planted probe
 planted=()
 for i in "${!cases[@]}"; do
   layer=${cases[$i]%%|*} imp=${cases[$i]#*|}
   label="$layer must not import $imp"
-  if ! have "$imp"; then echo "skip  $label (package not in module yet)"; continue; fi
   dir="$layer/$probe$i"
   mkdir -p "$dir"
   paths+=("$dir")
@@ -59,7 +52,6 @@ done
 for i in "${!test_cases[@]}"; do
   dir=${test_cases[$i]%%|*} imp=${test_cases[$i]#*|}
   label="$dir tests must not import $imp"
-  if ! have "$imp"; then echo "skip  $label (package not in module yet)"; continue; fi
   file="$dir/${probe}${i}_test.go"
   paths+=("$file")
   printf 'package %s_test\n\nimport _ "%s"\n' "$(basename "$dir")" "$imp" > "$file"
