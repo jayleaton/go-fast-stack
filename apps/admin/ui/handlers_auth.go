@@ -7,7 +7,7 @@ import (
 
 	"github.com/jayleaton/ai-patterns-go/apps/admin/internal/config"
 	"github.com/jayleaton/ai-patterns-go/apps/admin/ui/i18n"
-	"github.com/jayleaton/ai-patterns-go/apps/admin/ui/view"
+	"github.com/jayleaton/ai-patterns-go/packages/uikit"
 )
 
 func (u *UI) home(w http.ResponseWriter, r *http.Request) {
@@ -35,7 +35,7 @@ func (u *UI) login(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		msg := u.errorMessage(ctx, err)
-		u.patch(w, r, http.StatusUnprocessableEntity, LoginPage(AuthForm{Email: email, Error: msg}), view.ErrorAlert(formErrorID, msg))
+		u.patch(w, r, http.StatusUnprocessableEntity, LoginPage(AuthForm{Email: email, Error: msg}), uikit.Alert(formErrorID, uikit.Error, msg))
 		return
 	}
 	u.auth.SetSessionCookie(w, s)
@@ -71,7 +71,7 @@ func (u *UI) setPassword(w http.ResponseWriter, r *http.Request) {
 	token := r.PostFormValue("token")
 	password := r.PostFormValue("password")
 	fail := func(msg string) {
-		u.patch(w, r, http.StatusUnprocessableEntity, SetPasswordPage(token, AuthForm{Error: msg}), view.ErrorAlert(formErrorID, msg))
+		u.patch(w, r, http.StatusUnprocessableEntity, SetPasswordPage(token, AuthForm{Error: msg}), uikit.Alert(formErrorID, uikit.Error, msg))
 	}
 	if token == "" {
 		fail(i18n.T(ctx, "pages.setPassword.invalidLink"))
@@ -162,7 +162,7 @@ func (u *UI) enableTwoFactor(w http.ResponseWriter, r *http.Request) {
 	setup, err := u.auth.EnableTwoFactor(ctx, a.ID, r.PostFormValue("password"))
 	if err != nil {
 		st.Error = u.errorMessage(ctx, err)
-		u.patch(w, r, http.StatusUnprocessableEntity, TwoFactorSetupPage(st), view.ErrorAlert(formErrorID, st.Error))
+		u.patch(w, r, http.StatusUnprocessableEntity, TwoFactorSetupPage(st), uikit.Alert(formErrorID, uikit.Error, st.Error))
 		return
 	}
 	st.Setup = &setup
@@ -200,7 +200,7 @@ func (u *UI) twoFactorSetup(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		st.Error = u.errorMessage(ctx, err)
-		u.patch(w, r, http.StatusUnprocessableEntity, TwoFactorSetupPage(st), view.ErrorAlert(formErrorID, st.Error))
+		u.patch(w, r, http.StatusUnprocessableEntity, TwoFactorSetupPage(st), uikit.Alert(formErrorID, uikit.Error, st.Error))
 		return
 	}
 	st = SetupState{SignedIn: true, Done: true}

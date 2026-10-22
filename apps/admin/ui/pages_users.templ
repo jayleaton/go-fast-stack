@@ -6,6 +6,7 @@ import (
 	"github.com/jayleaton/ai-patterns-go/apps/admin/ui/i18n"
 	"github.com/jayleaton/ai-patterns-go/apps/admin/ui/routes"
 	"github.com/jayleaton/ai-patterns-go/apps/admin/ui/view"
+	"github.com/jayleaton/ai-patterns-go/packages/uikit"
 )
 
 // Patch target ids of the user page.
@@ -21,7 +22,7 @@ type UsersData struct {
 	Filters UserFilters
 	Sort    SortLinks
 	Users   []services.User
-	Pager   view.Pager
+	Pager   Pager
 	Error   string
 }
 
@@ -52,228 +53,277 @@ type Status struct {
 
 templ UsersPage(d UsersData) {
 	@view.Layout(i18n.T(ctx, "pages.users.title")) {
-		<div class="container-balanced py-8">
-			@view.PageHeader(i18n.T(ctx, "pages.users.title"), i18n.T(ctx, "pages.users.subtitle"))
-			<form method="get" action={ templ.SafeURL(config.AppRoutes.Users) } class={ "grid grid-cols-1 items-end gap-3 p-4 sm:grid-cols-2 lg:grid-cols-6", view.CardClass } data-signals="{_searching: false}" data-on:submit="$_searching = true; el.submit()">
+		<div class={ uikit.ContainerClass, "py-8 sm:py-10" }>
+			@uikit.PageHeader(i18n.T(ctx, "pages.users.title"), i18n.T(ctx, "pages.users.subtitle"))
+			<form method="get" role="search" aria-label={ i18n.T(ctx, "pages.users.filters.label") } action={ templ.SafeURL(config.AppRoutes.Users) } class={ uikit.CardClass, "grid grid-cols-1 items-end gap-4 p-4 sm:grid-cols-2 sm:p-5 lg:grid-cols-6" } data-signals="{_searching: false}" data-on:submit="$_searching = true; el.submit()">
 				<input type="hidden" name="sortBy" value={ d.Filters.SortBy }/>
 				<input type="hidden" name="sortDirection" value={ d.Filters.SortDirection }/>
-				<div class="lg:col-span-2">
-					@view.Input(view.Field{ID: "search", Type: "search", Label: i18n.T(ctx, "pages.users.filters.search"), Placeholder: i18n.T(ctx, "pages.users.filters.searchPlaceholder"), Value: d.Filters.Search, Optional: true})
+				<div class="sm:col-span-2">
+					@uikit.Input(uikit.Field{ID: "search", Type: "search", Label: i18n.T(ctx, "pages.users.filters.search"), Placeholder: i18n.T(ctx, "pages.users.filters.searchPlaceholder"), Value: d.Filters.Search, Optional: true})
 				</div>
-				@view.Select("searchField", i18n.T(ctx, "pages.users.filters.searchField"), searchFieldOptions(ctx), d.Filters.SearchField)
-				@view.Select("banned", i18n.T(ctx, "pages.users.filters.status"), bannedOptions(ctx), d.Filters.Banned)
-				@view.Select("role", i18n.T(ctx, "pages.users.role"), roleFilterOptions(ctx), d.Filters.Role)
-				<button type="submit" class={ view.InlineButtonClass } data-attr:disabled="$_searching">
-					<span data-show="!$_searching">{ i18n.T(ctx, "pages.users.filters.apply") }</span>
-					<span class="hidden" data-class:hidden="!$_searching">{ i18n.T(ctx, "common.loading") }</span>
-				</button>
+				@uikit.Select(uikit.SelectField{ID: "searchField", Label: i18n.T(ctx, "pages.users.filters.searchField"), Options: searchFieldOptions(ctx), Selected: d.Filters.SearchField})
+				@uikit.Select(uikit.SelectField{ID: "banned", Label: i18n.T(ctx, "pages.users.filters.status"), Options: bannedOptions(ctx), Selected: d.Filters.Banned})
+				@uikit.Select(uikit.SelectField{ID: "role", Label: i18n.T(ctx, "pages.users.role"), Options: roleFilterOptions(ctx), Selected: d.Filters.Role})
+				@filterButton(i18n.T(ctx, "pages.users.filters.apply"), "_searching")
 			</form>
 			<div class="mt-6">
 				if d.Error != "" {
-					<div role="alert" class={ view.ErrorAlertClass }>{ d.Error }</div>
+					@uikit.Alert("users-error", uikit.Error, d.Error)
 				} else {
-					<div class={ "overflow-x-auto", view.CardClass }>
-						<table class={ view.TableClass }>
-							<thead>
-								<tr>
-									<th class={ view.ThClass }>@sortHeading(d.Sort.Email, i18n.T(ctx, "common.email"))</th>
-									<th class={ view.ThClass }>@sortHeading(d.Sort.Name, i18n.T(ctx, "common.name"))</th>
-									<th class={ view.ThClass }>{ i18n.T(ctx, "pages.users.role") }</th>
-									<th class={ view.ThClass }>{ i18n.T(ctx, "pages.users.verified") }</th>
-									<th class={ view.ThClass }>{ i18n.T(ctx, "pages.users.filters.status") }</th>
-									<th class={ view.ThClass }>@sortHeading(d.Sort.Created, i18n.T(ctx, "pages.users.created"))</th>
-								</tr>
-							</thead>
-							<tbody class="divide-y divide-neutral-100 dark:divide-neutral-800">
-								for _, usr := range d.Users {
+					if len(d.Users) == 0 {
+						@uikit.EmptyState(i18n.T(ctx, "pages.users.empty"), i18n.T(ctx, "pages.users.emptyHint")) {
+							if d.Filters.filtered() {
+								@uikit.LinkButton(config.AppRoutes.Users, uikit.ButtonProps{Variant: uikit.Secondary, Size: uikit.Small}) {
+									{ i18n.T(ctx, "pages.users.filters.clear") }
+								}
+							}
+						}
+					} else {
+						@uikit.TableWrap(i18n.T(ctx, "pages.users.title")) {
+							<table class={ uikit.TableClass }>
+								<thead class="bg-muted/50">
 									<tr>
-										<td class={ view.TdClass }><a href={ templ.SafeURL(config.UserPage(usr.ID)) } class={ view.TextLinkClass }>{ usr.Email }</a></td>
-										<td class={ view.TdClass }>{ orDash(usr.Name) }</td>
-										<td class={ view.TdClass }>{ orDash(usr.Role) }</td>
-										<td class={ view.TdClass }>{ yesNo(ctx, usr.EmailVerified) }</td>
-										<td class={ view.TdClass }>
-											if usr.Banned {
-												@view.Badge("red", i18n.T(ctx, "pages.users.bannedBadge"))
-												<span class="ml-1 text-xs text-neutral-500">{ banExpires(ctx, usr) }</span>
-											} else {
-												@view.Badge("green", i18n.T(ctx, "pages.users.activeBadge"))
-											}
-										</td>
-										<td class={ view.TdClass }>{ date(ctx, usr.CreatedAt) }</td>
+										@sortHeading(d.Sort.Email, i18n.T(ctx, "common.email"))
+										@sortHeading(d.Sort.Name, i18n.T(ctx, "common.name"))
+										<th scope="col" class={ uikit.ThClass }>{ i18n.T(ctx, "pages.users.role") }</th>
+										<th scope="col" class={ uikit.ThClass }>{ i18n.T(ctx, "pages.users.verified") }</th>
+										<th scope="col" class={ uikit.ThClass }>{ i18n.T(ctx, "pages.users.filters.status") }</th>
+										@sortHeading(d.Sort.Created, i18n.T(ctx, "pages.users.created"))
 									</tr>
-								}
-								if len(d.Users) == 0 {
-									<tr><td colspan="6" class="px-3 py-6 text-center text-sm text-neutral-500">{ i18n.T(ctx, "pages.users.empty") }</td></tr>
-								}
-							</tbody>
-						</table>
-					</div>
-					@view.Pagination(d.Pager, pagerSummary(ctx, d.Pager))
+								</thead>
+								<tbody class="divide-y divide-border">
+									for _, usr := range d.Users {
+										<tr class={ uikit.TrClass }>
+											<td class={ uikit.TdClass }><a href={ templ.SafeURL(config.UserPage(usr.ID)) } class={ uikit.LinkClass }>{ usr.Email }</a></td>
+											<td class={ uikit.TdClass }>{ orDash(usr.Name) }</td>
+											<td class={ uikit.TdClass }>{ orDash(usr.Role) }</td>
+											<td class={ uikit.TdClass, "text-muted-foreground" }>{ yesNo(ctx, usr.EmailVerified) }</td>
+											<td class={ uikit.TdClass }>
+												@banBadge(usr)
+											</td>
+											<td class={ uikit.TdClass, "tabular-nums text-muted-foreground" }>{ date(ctx, usr.CreatedAt) }</td>
+										</tr>
+									}
+								</tbody>
+							</table>
+						}
+					}
+					@uikit.Pagination(pagination(ctx, d.Pager))
 				}
 			</div>
 		</div>
 	}
 }
 
+// filterButton is the submit of a GET filter form; signal flips on submit.
+templ filterButton(label, signal string) {
+	<button type="submit" class={ uikit.ButtonClass(uikit.Primary, uikit.Medium, true) } data-attr:disabled={ "$" + signal }>
+		<span data-show={ "!$" + signal }>{ label }</span>
+		<span class="hidden items-center gap-2" data-class:hidden={ "!$" + signal } data-class:inline-flex={ "$" + signal }>
+			@uikit.Spinner("size-4")
+			{ i18n.T(ctx, "common.loading") }
+		</span>
+	</button>
+}
+
+// sortHeading is a sortable column heading: a link that sorts by it (or
+// flips the direction), with aria-sort on the active column.
 templ sortHeading(l SortLink, label string) {
-	<a href={ templ.SafeURL(l.URL) } class="hover:text-neutral-900 dark:hover:text-neutral-100">{ label }{ sortMark(l) }</a>
+	<th
+		scope="col"
+		class={ uikit.ThClass }
+		if sortOrder(l) != "" {
+			aria-sort={ sortOrder(l) }
+		}
+	>
+		<a href={ templ.SafeURL(l.URL) } class={ "rounded-sm hover:text-foreground", templ.KV("text-foreground", l.Active) }>{ label }{ sortMark(l) }</a>
+	</th>
+}
+
+// banBadge is a user's state: banned (with when the ban ends) or active.
+templ banBadge(usr services.User) {
+	if usr.Banned {
+		<span class="inline-flex flex-wrap items-center gap-1.5">
+			@uikit.Badge(uikit.Error, i18n.T(ctx, "pages.users.bannedBadge"), true)
+			<span class="text-xs text-muted-foreground">{ banExpires(ctx, usr) }</span>
+		</span>
+	} else {
+		@uikit.Badge(uikit.Success, i18n.T(ctx, "pages.users.activeBadge"), true)
+	}
 }
 
 templ UserPage(d UserData) {
 	@view.Layout(i18n.T(ctx, "pages.user.title")) {
-		<div class="container-balanced py-8">
-			<div class="mb-4">
-				<a href={ templ.SafeURL(config.AppRoutes.Users) } class={ view.TextLinkClass + " text-sm" }>{ i18n.T(ctx, "pages.user.back") }</a>
-			</div>
-			@view.PageHeader(i18n.T(ctx, "pages.user.title"), d.Detail.User.Email)
-			<div class="mb-6">
+		<div class={ uikit.ContainerClass, "py-8 sm:py-10" }>
+			<p class="mb-4 text-sm">
+				<a href={ templ.SafeURL(config.AppRoutes.Users) } class={ uikit.LinkClass }>{ i18n.T(ctx, "pages.user.back") }</a>
+			</p>
+			@uikit.PageHeader(firstNonEmpty(d.Detail.User.Email, i18n.T(ctx, "pages.user.title")), d.Detail.User.Name)
+			<div class="flex flex-col gap-6">
 				@UserStatus(d.Status)
+				if !d.Missing {
+					<div class="grid grid-cols-1 items-start gap-6 lg:grid-cols-3">
+						<div class="lg:col-span-2">
+							@UserProfile(d.Detail.User)
+						</div>
+						@UserBan(d.Detail.User)
+					</div>
+					@UserSessions(d.Detail.User, d.Detail.Sessions)
+				}
 			</div>
-			if !d.Missing {
-				<div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
-					@UserProfile(d.Detail.User)
-					@UserBan(d.Detail.User)
-				</div>
-				<div class="mt-6">
-					@UserSessions(d.Detail.User.ID, d.Detail.Sessions)
-				</div>
-			}
 		</div>
 	}
 }
 
 // UserStatus is the patch target for action outcomes.
 templ UserStatus(s Status) {
-	if s.Error {
-		@view.Alert(userStatusID, "alert", view.ErrorAlertClass+" text-sm", s.Message)
-	} else {
-		@view.Alert(userStatusID, "status", view.SuccessAlertClass+" text-sm", s.Message)
-	}
-}
-
-templ profileRow(label, value string) {
-	<div class="flex justify-between gap-4 py-1.5">
-		<dt class="text-neutral-500 dark:text-neutral-400">{ label }</dt>
-		<dd class="text-right break-all text-neutral-900 dark:text-neutral-100">{ value }</dd>
-	</div>
+	@uikit.Alert(userStatusID, statusTone(s), s.Message)
 }
 
 // UserProfile is the profile card with the role form.
 templ UserProfile(usr services.User) {
-	<div id={ userProfileID } class={ "p-5", view.CardClass }>
-		<h2 class="text-sm font-semibold text-neutral-800 dark:text-neutral-200">{ i18n.T(ctx, "pages.user.profile") }</h2>
-		<dl class="mt-3 divide-y divide-neutral-100 text-sm dark:divide-neutral-800">
-			@profileRow(i18n.T(ctx, "pages.user.id"), usr.ID)
-			@profileRow(i18n.T(ctx, "common.name"), orDash(usr.Name))
-			@profileRow(i18n.T(ctx, "common.email"), usr.Email)
-			@profileRow(i18n.T(ctx, "pages.users.verified"), yesNo(ctx, usr.EmailVerified))
-			@profileRow(i18n.T(ctx, "pages.users.role"), orDash(usr.Role))
-			@profileRow(i18n.T(ctx, "pages.user.twoFactor"), yesNo(ctx, usr.TwoFactorEnabled))
-			@profileRow(i18n.T(ctx, "pages.user.hasPassword"), yesNo(ctx, usr.HasPassword))
-			@profileRow(i18n.T(ctx, "pages.users.created"), dateTime(ctx, usr.CreatedAt))
-			@profileRow(i18n.T(ctx, "pages.user.updated"), dateTime(ctx, usr.UpdatedAt))
-		</dl>
-		<form class="mt-4 flex items-end gap-3" method="post" action={ templ.SafeURL(routes.User(routes.UserRole, usr.ID)) } data-on:submit={ view.PostForm(routes.User(routes.UserRole, usr.ID)) } data-indicator:_setting-role>
+	@uikit.Card("p-5 sm:p-6", templ.Attributes{"id": userProfileID}) {
+		@uikit.CardHeader(i18n.T(ctx, "pages.user.profile"), "")
+		<div class="mt-2">
+			@uikit.DetailList() {
+				@uikit.Detail(i18n.T(ctx, "pages.user.id")) {
+					<span class="font-mono text-xs">{ usr.ID }</span>
+				}
+				@uikit.Detail(i18n.T(ctx, "common.name")) {
+					{ orDash(usr.Name) }
+				}
+				@uikit.Detail(i18n.T(ctx, "common.email")) {
+					{ usr.Email }
+				}
+				@uikit.Detail(i18n.T(ctx, "pages.users.verified")) {
+					{ yesNo(ctx, usr.EmailVerified) }
+				}
+				@uikit.Detail(i18n.T(ctx, "pages.users.role")) {
+					{ orDash(usr.Role) }
+				}
+				@uikit.Detail(i18n.T(ctx, "pages.user.twoFactor")) {
+					{ yesNo(ctx, usr.TwoFactorEnabled) }
+				}
+				@uikit.Detail(i18n.T(ctx, "pages.user.hasPassword")) {
+					{ yesNo(ctx, usr.HasPassword) }
+				}
+				@uikit.Detail(i18n.T(ctx, "pages.users.created")) {
+					{ dateTime(ctx, usr.CreatedAt) }
+				}
+				@uikit.Detail(i18n.T(ctx, "pages.user.updated")) {
+					{ dateTime(ctx, usr.UpdatedAt) }
+				}
+			}
+		</div>
+		<form class="mt-4 flex flex-col gap-3 border-t border-border pt-5 sm:flex-row sm:items-end" method="post" action={ templ.SafeURL(routes.User(routes.UserRole, usr.ID)) } data-on:submit={ uikit.PostForm(routes.User(routes.UserRole, usr.ID)) } data-indicator:_setting-role>
 			<div class="flex-1">
-				@view.Select("role", i18n.T(ctx, "pages.user.setRole"), roleOptions(), usr.Role)
+				@uikit.Select(uikit.SelectField{ID: "role", Label: i18n.T(ctx, "pages.user.setRole"), Options: roleOptions(), Selected: usr.Role})
 			</div>
-			<button type="submit" class={ view.InlineButtonClass } data-attr:disabled="$_settingRole">
-				<span data-show="!$_settingRole">{ i18n.T(ctx, "common.save") }</span>
-				<span class="hidden" data-class:hidden="!$_settingRole">{ i18n.T(ctx, "common.saving") }</span>
-			</button>
+			@uikit.SubmitButton(uikit.Submit{Label: i18n.T(ctx, "common.save"), Loading: i18n.T(ctx, "common.saving"), Signal: "_settingRole", ButtonProps: uikit.ButtonProps{Variant: uikit.Secondary}})
 		</form>
-	</div>
+	}
 }
 
-// UserBan shows the ban state with the ban form, and unban when banned.
+// UserBan shows the ban state with the ban form (behind a confirm dialog),
+// and unban when banned.
 templ UserBan(usr services.User) {
-	<div id={ userBanID } class={ "p-5", view.CardClass }>
-		<h2 class="text-sm font-semibold text-neutral-800 dark:text-neutral-200">{ i18n.T(ctx, "pages.user.ban.title") }</h2>
+	@uikit.Card("p-5 sm:p-6", templ.Attributes{"id": userBanID}) {
+		@uikit.CardHeader(i18n.T(ctx, "pages.user.ban.title"), "") {
+			if usr.Banned {
+				@uikit.Badge(uikit.Error, i18n.T(ctx, "pages.users.bannedBadge"), true)
+			} else {
+				@uikit.Badge(uikit.Success, i18n.T(ctx, "pages.users.activeBadge"), true)
+			}
+		}
 		if usr.Banned {
-			<div class="mt-3 space-y-1 text-sm">
-				@view.Badge("red", i18n.T(ctx, "pages.users.bannedBadge"))
-				<dl class="mt-2 divide-y divide-neutral-100 dark:divide-neutral-800">
-					@profileRow(i18n.T(ctx, "pages.user.ban.reason"), orDash(deref(usr.BanReason)))
-					@profileRow(i18n.T(ctx, "pages.user.ban.expires"), banExpires(ctx, usr))
-				</dl>
+			<div class="mt-2">
+				@uikit.DetailList() {
+					@uikit.Detail(i18n.T(ctx, "pages.user.ban.reason")) {
+						{ orDash(deref(usr.BanReason)) }
+					}
+					@uikit.Detail(i18n.T(ctx, "pages.user.ban.expires")) {
+						{ banExpires(ctx, usr) }
+					}
+				}
 			</div>
-			<form class="mt-4" method="post" action={ templ.SafeURL(routes.User(routes.UserUnban, usr.ID)) } data-on:submit={ view.PostForm(routes.User(routes.UserUnban, usr.ID)) } data-indicator:_unbanning>
-				<button type="submit" class={ view.SecondaryButtonClass } data-attr:disabled="$_unbanning">
-					<span data-show="!$_unbanning">{ i18n.T(ctx, "pages.user.ban.unban") }</span>
-					<span class="hidden" data-class:hidden="!$_unbanning">{ i18n.T(ctx, "common.loading") }</span>
-				</button>
+			<form class="mt-2" method="post" action={ templ.SafeURL(routes.User(routes.UserUnban, usr.ID)) } data-on:submit={ uikit.PostForm(routes.User(routes.UserUnban, usr.ID)) } data-indicator:_unbanning>
+				@uikit.SubmitButton(uikit.Submit{Label: i18n.T(ctx, "pages.user.ban.unban"), Loading: i18n.T(ctx, "common.loading"), Signal: "_unbanning", ButtonProps: uikit.ButtonProps{Variant: uikit.Secondary, Full: true}})
 			</form>
 		} else {
-			<p class="mt-3 text-sm text-neutral-600 dark:text-neutral-300">{ i18n.T(ctx, "pages.user.ban.notBanned") }</p>
+			<p class="mt-2 text-sm text-muted-foreground text-pretty">{ i18n.T(ctx, "pages.user.ban.notBanned") }</p>
 		}
-		<form class="mt-4 space-y-3" method="post" action={ templ.SafeURL(routes.User(routes.UserBan, usr.ID)) } data-on:submit={ view.PostForm(routes.User(routes.UserBan, usr.ID)) } data-indicator:_banning>
-			<div>
-				<label for="banReason" class={ view.LabelClass }>{ i18n.T(ctx, "pages.user.ban.reason") }</label>
-				<textarea id="banReason" name="banReason" required maxlength="500" rows="2" class={ view.InputClass } placeholder={ i18n.T(ctx, "pages.user.ban.reasonPlaceholder") }></textarea>
-			</div>
-			@view.Select("banExpiresIn", i18n.T(ctx, "pages.user.ban.expires"), banExpiryOptions(ctx), "86400")
-			<button type="submit" class={ view.DangerButtonClass } data-attr:disabled="$_banning">
-				<span data-show="!$_banning">
-					if usr.Banned {
-						{ i18n.T(ctx, "pages.user.ban.update") }
-					} else {
-						{ i18n.T(ctx, "pages.user.ban.submit") }
-					}
-				</span>
-				<span class="hidden" data-class:hidden="!$_banning">{ i18n.T(ctx, "common.loading") }</span>
-			</button>
-		</form>
-	</div>
+		<div class="mt-5 border-t border-border pt-5">
+			@uikit.ConfirmForm(uikit.Confirm{
+				ID:           "ban",
+				Action:       routes.User(routes.UserBan, usr.ID),
+				Signal:       "_banning",
+				Title:        i18n.T(ctx, "pages.user.ban.confirmTitle"),
+				Message:      i18n.Tf(ctx, "pages.user.ban.confirmMessage", usr.Email),
+				ConfirmLabel: banLabel(ctx, usr),
+				CancelLabel:  i18n.T(ctx, "components.confirm.cancel"),
+				Trigger:      uikit.ButtonProps{Variant: uikit.DangerOutline, Full: true, Class: "mt-4"},
+				Variant:      uikit.Danger,
+			}, banLabel(ctx, usr)) {
+				<div class="space-y-4">
+					@uikit.Textarea(uikit.Field{ID: "banReason", Label: i18n.T(ctx, "pages.user.ban.reason"), Placeholder: i18n.T(ctx, "pages.user.ban.reasonPlaceholder"), MaxLength: 500, Rows: 2})
+					@uikit.Select(uikit.SelectField{ID: "banExpiresIn", Label: i18n.T(ctx, "pages.user.ban.expires"), Options: banExpiryOptions(ctx), Selected: "86400"})
+				</div>
+			}
+		</div>
+	}
 }
 
-// UserSessions lists the active sessions, each with a revoke button.
-templ UserSessions(userID string, sessions []services.Session) {
-	<div id={ userSessionsID } class={ "p-5", view.CardClass }>
-		<div class="flex flex-wrap items-center justify-between gap-3">
-			<h2 class="text-sm font-semibold text-neutral-800 dark:text-neutral-200">{ i18n.T(ctx, "pages.user.sessions.title") }</h2>
+// UserSessions lists the active sessions, each with a revoke button, and
+// revoke-all behind a confirm dialog.
+templ UserSessions(usr services.User, sessions []services.Session) {
+	<section id={ userSessionsID } aria-labelledby="user-sessions-title">
+		<div class="mb-3 flex flex-wrap items-center justify-between gap-3">
+			<h2 id="user-sessions-title" class="text-base font-semibold">{ i18n.T(ctx, "pages.user.sessions.title") }</h2>
 			if len(sessions) > 0 {
-				<form method="post" action={ templ.SafeURL(routes.User(routes.UserSessions, userID)) } data-on:submit={ view.PostForm(routes.User(routes.UserSessions, userID)) } data-indicator:_revoking-all>
-					<button type="submit" class={ view.DangerButtonClass } data-attr:disabled="$_revokingAll">
-						<span data-show="!$_revokingAll">{ i18n.T(ctx, "pages.user.sessions.revokeAll") }</span>
-						<span class="hidden" data-class:hidden="!$_revokingAll">{ i18n.T(ctx, "common.loading") }</span>
-					</button>
-				</form>
+				@uikit.ConfirmForm(uikit.Confirm{
+					ID:           "revoke-all",
+					Action:       routes.User(routes.UserSessions, usr.ID),
+					Signal:       "_revokingAll",
+					Title:        i18n.T(ctx, "pages.user.sessions.confirmRevokeAllTitle"),
+					Message:      i18n.Tf(ctx, "pages.user.sessions.confirmRevokeAll", usr.Email),
+					ConfirmLabel: i18n.T(ctx, "pages.user.sessions.revokeAll"),
+					CancelLabel:  i18n.T(ctx, "components.confirm.cancel"),
+					Trigger:      uikit.ButtonProps{Variant: uikit.DangerOutline, Size: uikit.Small},
+					Variant:      uikit.Danger,
+				}, i18n.T(ctx, "pages.user.sessions.revokeAll"))
 			}
 		</div>
 		if len(sessions) == 0 {
-			<p class="mt-3 text-sm text-neutral-500">{ i18n.T(ctx, "pages.user.sessions.empty") }</p>
+			@uikit.EmptyState(i18n.T(ctx, "pages.user.sessions.empty"), "")
 		} else {
-			<div class="mt-3 overflow-x-auto">
-				<table class={ view.TableClass }>
-					<thead>
+			@uikit.TableWrap(i18n.T(ctx, "pages.user.sessions.title")) {
+				<table class={ uikit.TableClass }>
+					<thead class="bg-muted/50">
 						<tr>
-							<th class={ view.ThClass }>{ i18n.T(ctx, "pages.users.created") }</th>
-							<th class={ view.ThClass }>{ i18n.T(ctx, "pages.user.sessions.expires") }</th>
-							<th class={ view.ThClass }>{ i18n.T(ctx, "pages.user.sessions.ip") }</th>
-							<th class={ view.ThClass }>{ i18n.T(ctx, "pages.user.sessions.userAgent") }</th>
-							<th class={ view.ThClass }></th>
+							<th scope="col" class={ uikit.ThClass }>{ i18n.T(ctx, "pages.users.created") }</th>
+							<th scope="col" class={ uikit.ThClass }>{ i18n.T(ctx, "pages.user.sessions.expires") }</th>
+							<th scope="col" class={ uikit.ThClass }>{ i18n.T(ctx, "pages.user.sessions.ip") }</th>
+							<th scope="col" class={ uikit.ThClass }>{ i18n.T(ctx, "pages.user.sessions.userAgent") }</th>
+							<th scope="col" class={ uikit.ThClass, "relative" }><span class="sr-only">{ i18n.T(ctx, "common.actions") }</span></th>
 						</tr>
 					</thead>
-					<tbody class="divide-y divide-neutral-100 dark:divide-neutral-800">
+					<tbody class="divide-y divide-border">
 						for _, s := range sessions {
-							<tr>
-								<td class={ view.TdClass }>{ dateTime(ctx, s.CreatedAt) }</td>
-								<td class={ view.TdClass }>{ dateTime(ctx, s.ExpiresAt) }</td>
-								<td class={ view.TdClass }>{ orDash(deref(s.IPAddress)) }</td>
-								<td class="max-w-xs truncate px-3 py-2 text-neutral-700 dark:text-neutral-300" title={ deref(s.UserAgent) }>{ orDash(deref(s.UserAgent)) }</td>
-								<td class={ view.TdClass }>
-									<form method="post" action={ templ.SafeURL(routes.Session(userID, s.ID)) } data-on:submit={ view.PostForm(routes.Session(userID, s.ID)) } data-indicator:_revoking>
-										<button type="submit" class={ view.SecondaryButtonClass } data-attr:disabled="$_revoking">
-											<span data-show="!$_revoking">{ i18n.T(ctx, "pages.user.sessions.revoke") }</span>
-											<span class="hidden" data-class:hidden="!$_revoking">{ i18n.T(ctx, "common.loading") }</span>
-										</button>
+							<tr class={ uikit.TrClass }>
+								<td class={ uikit.TdClass, "tabular-nums" }>{ dateTime(ctx, s.CreatedAt) }</td>
+								<td class={ uikit.TdClass, "tabular-nums" }>{ dateTime(ctx, s.ExpiresAt) }</td>
+								<td class={ uikit.TdClass, "font-mono text-xs" }>{ orDash(deref(s.IPAddress)) }</td>
+								<td class={ uikit.TdClass, "max-w-xs truncate text-muted-foreground" } title={ deref(s.UserAgent) }>{ orDash(deref(s.UserAgent)) }</td>
+								<td class={ uikit.TdClass, "text-right" }>
+									<form method="post" action={ templ.SafeURL(routes.Session(usr.ID, s.ID)) } data-on:submit={ uikit.PostForm(routes.Session(usr.ID, s.ID)) } data-indicator:_revoking>
+										@uikit.SubmitButton(uikit.Submit{Label: i18n.T(ctx, "pages.user.sessions.revoke"), Loading: i18n.T(ctx, "common.loading"), Signal: "_revoking", ButtonProps: uikit.ButtonProps{Variant: uikit.Secondary, Size: uikit.Small}})
 									</form>
 								</td>
 							</tr>
 						}
 					</tbody>
 				</table>
-			</div>
+			}
 		}
-	</div>
+	</section>
 }

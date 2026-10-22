@@ -18,6 +18,7 @@ import (
 	"github.com/jayleaton/ai-patterns-go/apps/admin/internal/services"
 	"github.com/jayleaton/ai-patterns-go/apps/admin/ui/i18n"
 	"github.com/jayleaton/ai-patterns-go/apps/admin/ui/view"
+	"github.com/jayleaton/ai-patterns-go/packages/uikit"
 )
 
 // rawKey catches a message key that rendered as itself (missing translation).
@@ -55,7 +56,7 @@ func renderCases() []renderCase {
 	timed.BanExpires = &at
 	detail := services.UserDetail{User: banned, Sessions: []services.Session{{ID: "s1", CreatedAt: at, ExpiresAt: at}}}
 	setup := &TOTPSetup{Secret: "ABCDEFGH", URI: "otpauth://totp/x", BackupCodes: []string{"c1"}}
-	pager := view.Pager{From: 1, To: 1, Total: 3, NextURL: "/users?offset=1"}
+	pager := Pager{From: 1, To: 1, Total: 3, NextURL: "/users?offset=1"}
 
 	return []renderCase{
 		{"login", false, LoginPage(AuthForm{}), "pages.login.title"},
@@ -222,9 +223,9 @@ func TestRenderStopsWhenClientHangsUp(t *testing.T) {
 // tone and a translated label, the pending hint, and reconciled reasons
 // chosen by status rather than shown as recorded.
 func TestAuditStatus(t *testing.T) {
-	tones := map[string]string{
-		services.StatusSucceeded: "green", services.StatusFailed: "red",
-		services.StatusPending: "amber", services.StatusUnknown: "neutral",
+	tones := map[string]uikit.Tone{
+		services.StatusSucceeded: uikit.Success, services.StatusFailed: uikit.Error,
+		services.StatusPending: uikit.Warning, services.StatusUnknown: uikit.Neutral,
 	}
 	for _, l := range i18n.Locales {
 		ctx := i18n.WithTranslator(context.Background(), i18n.Translator{Locale: l})
@@ -240,7 +241,7 @@ func TestAuditStatus(t *testing.T) {
 				t.Errorf("%s %s: reconciled reason %q", l, status, s.Reason)
 			}
 		}
-		if s := auditStatus(ctx, services.AuditEntry{}); s.Label != "—" || s.Tone != "neutral" {
+		if s := auditStatus(ctx, services.AuditEntry{}); s.Label != "—" || s.Tone != uikit.Neutral {
 			t.Errorf("%s: no status: %+v", l, s)
 		}
 		if got := auditReason(ctx, services.ErrAuditUnavailable.Message); got != i18n.T(ctx, "errors.auditUnavailable") {
@@ -324,11 +325,22 @@ func TestTOTPQR(t *testing.T) {
 	}
 }
 
-func TestConfirmPostFormEscapes(t *testing.T) {
-	got := view.ConfirmPostForm(`Remove o"brien's </script> & co?`, "/admins/x'y/remove")
-	want := `confirm("Remove o\"brien's \u003c/script\u003e \u0026 co?") && @post('/admins/x\'y/remove', {contentType: 'form'})`
-	if got != want {
-		t.Fatalf("got  %s\nwant %s", got, want)
+// Remove asks in a dialog that names the admin (escaped), while the form
+// itself posts straight to the remove action, so it works without JS.
+func TestRemoveAdminAsksInADialog(t *testing.T) {
+	email := `o"brien's </script>&co@example.com`
+	html := renderIn(t, i18n.En, view.State{Authenticated: true}, AdminsPage(AdminsData{SelfID: "a1", Admins: []services.Admin{{ID: "a2", Email: email, HasPassword: true}}}))
+	for _, want := range []string{
+		`action="/admins/a2/remove" data-on:submit="@post(&#39;/admins/a2/remove&#39;, {contentType: &#39;form&#39;})" data-indicator:_removing`,
+		`<dialog id="remove-a2-dialog"`, `aria-haspopup="dialog"`,
+		templ.EscapeString(i18n.Tf(i18n.WithTranslator(context.Background(), i18n.Translator{Locale: i18n.En}), "pages.admins.confirmRemove", email)),
+	} {
+		if !strings.Contains(html, want) {
+			t.Errorf("admins page lacks %s", want)
+		}
+	}
+	if strings.Contains(html, email) || strings.Contains(html, "confirm(") {
+		t.Error("the email is unescaped, or Remove still uses a browser confirm")
 	}
 }
 

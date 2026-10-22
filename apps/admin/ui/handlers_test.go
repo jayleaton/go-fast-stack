@@ -238,7 +238,7 @@ func TestPublicPages(t *testing.T) {
 		for _, p := range []string{config.AppRoutes.Login, config.AppRoutes.SetPassword + "?token=t", config.AppRoutes.SetPassword, config.AppRoutes.TwoFactor} {
 			rec := e.do("GET", p, nil, lang(l))
 			assertPage(t, rec, http.StatusOK, `<html lang="`+l+`"`, "<title>")
-			if strings.Contains(rec.Body.String(), "aria-current") {
+			if strings.Contains(rec.Body.String(), `aria-current="page"`) {
 				t.Errorf("%s: nav shown signed out", p)
 			}
 		}
@@ -322,7 +322,7 @@ func TestAuditListQuery(t *testing.T) {
 	}, nil)
 	rec := e.do("GET", config.AppRoutes.Audit+"?action=user.set_role&targetId=u1", nil, signedIn)
 	assertPage(t, rec, http.StatusOK, "Changed role", "custom.thing", `href="/users/u1"`, ">ada@example.com</a>", "a9",
-		"from: user</div><div class=\"font-mono\">to: admin", `<option value="user.set_role" selected>`,
+		"from: user</li><li>to: admin", `<option value="user.set_role" selected>`,
 		`name="targetId" value="u1"`, "Showing 1–2 of 30", `href="/audit?action=user.set_role&amp;offset=2&amp;targetId=u1"`)
 }
 
@@ -684,8 +684,9 @@ func TestAdminsPageRowActions(t *testing.T) {
 		`action="/admins/a2/disable"`, `action="/admins/a2/remove"`,
 		`action="/admins/a3/disable"`, `action="/admins/a3/remove"`,
 		`action="/admins/a4/enable"`, `action="/admins/a4/remove"`,
-		// Remove asks first with JS; the plain form posts as is.
-		`data-on:submit="confirm(&#34;Remove active@example.com? They lose access to the dashboard right away. This cannot be undone.&#34;) &amp;&amp; @post(&#39;/admins/a2/remove&#39;, {contentType: &#39;form&#39;})"`,
+		// Remove asks first in a dialog with JS; the plain form posts as is.
+		`<dialog id="remove-a2-dialog"`, "Remove active@example.com? They lose access to the dashboard right away. This cannot be undone.",
+		`data-on:submit="@post(&#39;/admins/a2/remove&#39;, {contentType: &#39;form&#39;})"`,
 		"data-indicator:_disabling", "data-indicator:_enabling", "data-indicator:_removing")
 	body := rec.Body.String()
 	for _, absent := range []string{"/admins/a1/", `action="/admins/a2/enable"`, `action="/admins/a3/enable"`, `action="/admins/a4/disable"`} {
@@ -859,7 +860,8 @@ func TestAuditStatuses(t *testing.T) {
 
 	rec := e.do("GET", config.AppRoutes.Audit, nil, signedIn)
 	assertPage(t, rec, http.StatusOK, ">Status<",
-		">Done<", ">Failed<", ">Outcome unknown<", ">Unknown<", ">archived<",
+		// status badges (a dot, then the label)
+		" Done</span>", " Failed</span>", " Outcome unknown</span>", " Unknown</span>", " archived</span>",
 		">The user is not banned.<", ">Internal error (details are in the server log)<",
 		"The change may or may not have been applied.",
 		">reconciled<", `title="Resolved later from the current state`,
@@ -874,12 +876,12 @@ func TestAuditStatuses(t *testing.T) {
 
 	rec = e.do("GET", config.AppRoutes.Audit, nil, signedIn, lang("ja"))
 	assertPage(t, rec, http.StatusOK, ">結果<",
-		">完了<", ">失敗<", ">結果不明<", ">判定不能<",
+		" 完了</span>", " 失敗</span>", " 結果不明</span>", " 判定不能</span>",
 		">このユーザーは利用停止されていません。<",
 		"変更が適用されたかどうかは不明です。", ">照合済み<",
 		">現在の状態に変更が反映されています。<", ">現在の状態に変更は反映されていません。<",
 		">現在の状態からは結果を判断できません。<")
-	for _, en := range []string{"Reconciled:", ">Done<", "Outcome unknown", "The user is not banned"} {
+	for _, en := range []string{"Reconciled:", " Done</span>", "Outcome unknown", "The user is not banned"} {
 		if strings.Contains(rec.Body.String(), en) {
 			t.Errorf("ja page shows %q", en)
 		}

@@ -130,7 +130,7 @@ func (u *UI) userAction(w http.ResponseWriter, r *http.Request, doneKey string, 
 		u.patchOnly(w, r, UserStatus(st))
 		return
 	}
-	u.patchOnly(w, r, UserProfile(d.User), UserBan(d.User), UserSessions(d.User.ID, d.Sessions), UserStatus(st))
+	u.patchOnly(w, r, UserProfile(d.User), UserBan(d.User), UserSessions(d.User, d.Sessions), UserStatus(st))
 }
 
 // banInput reads the ban form: the reason and the expiry select in seconds
