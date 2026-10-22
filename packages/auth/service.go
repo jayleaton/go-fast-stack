@@ -46,6 +46,9 @@ func normalizeEmail(email string) (string, error) {
 // old one and a fresh link goes to the inbox. That stops a squatter who signed
 // up with someone else's email from keeping access after the owner verifies.
 func (a *Auth) SignUpEmail(ctx context.Context, in SignUpInput) (User, Session, error) {
+	if a.cfg.DisableSignUp {
+		return User{}, Session{}, ErrSignUpDisabled
+	}
 	if err := a.rateLimit(ctx, "sign-up", RuleSignIn); err != nil {
 		return User{}, Session{}, err
 	}

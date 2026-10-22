@@ -15,6 +15,7 @@ admins, err := auth.New(auth.Config{
     CookiePrefix: "admin",                        // cookies admin.session_token, admin.two_factor, admin.trust_device
     AppName:      "Acme Admin",                   // TOTP issuer
     RequireEmailVerification: false,              // invites prove the address
+    DisableSignUp: true,                          // admins only arrive by invite
     TwoFactor:    &auth.TwoFactorConfig{Required: cfg.AdminRequire2FA},
 }, adminPool, mailer)
 
@@ -36,6 +37,7 @@ type Config struct {
     AppName      string           // TOTP issuer default; default: BaseURL host
     TwoFactor    *TwoFactorConfig // nil: 2FA off (endpoints 404, sign-in unchanged)
     InviteTTL    time.Duration    // set-password links, default 72h
+    DisableSignUp bool            // public sign-up off: SignUpEmail / POST /sign-up/email return ErrSignUpDisabled; invites still work
 }
 
 type TwoFactorConfig struct {
@@ -172,4 +174,4 @@ Turning `TwoFactor` off on an instance skips 2FA even for users who enrolled.
 `ErrBannedUser` (403 BANNED_USER), `ErrInvalidCode` (401 INVALID_CODE), `ErrInvalidBackupCode` (401 INVALID_BACKUP_CODE),
 `ErrInvalidTwoFactorCookie` (401 INVALID_TWO_FACTOR_COOKIE), `ErrTwoFactorNotEnabled` (400 TWO_FACTOR_NOT_ENABLED),
 `ErrTOTPAlreadyEnabled` (400 TOTP_ALREADY_ENABLED), `ErrTwoFactorLocked` (429 ACCOUNT_TEMPORARILY_LOCKED),
-`ErrInvalidRole` (400 INVALID_ROLE_TYPE), plus the existing `ErrUserNotFound`, `ErrInvalidPassword`, `ErrInvalidToken`, `ErrSessionNotFound`.
+`ErrInvalidRole` (400 INVALID_ROLE_TYPE), `ErrSignUpDisabled` (400 EMAIL_PASSWORD_SIGN_UP_DISABLED), plus the existing `ErrUserNotFound`, `ErrInvalidPassword`, `ErrInvalidToken`, `ErrSessionNotFound`.

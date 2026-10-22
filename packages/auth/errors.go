@@ -48,8 +48,9 @@ var (
 	ErrInvalidUser               = &Error{http.StatusBadRequest, "INVALID_USER", "Invalid user"}
 
 	// Admin plugin.
-	ErrBannedUser  = &Error{http.StatusForbidden, "BANNED_USER", "You have been banned from this application. Please contact support if you believe this is an error."}
-	ErrInvalidRole = &Error{http.StatusBadRequest, "INVALID_ROLE_TYPE", "Invalid role type"}
+	ErrBannedUser     = &Error{http.StatusForbidden, "BANNED_USER", "You have been banned from this application. Please contact support if you believe this is an error."}
+	ErrInvalidRole    = &Error{http.StatusBadRequest, "INVALID_ROLE_TYPE", "Invalid role type"}
+	ErrSignUpDisabled = &Error{http.StatusBadRequest, "EMAIL_PASSWORD_SIGN_UP_DISABLED", "Email and password sign up is not enabled"}
 
 	// Two-factor plugin.
 	ErrInvalidCode            = &Error{http.StatusUnauthorized, "INVALID_CODE", "Invalid code"}

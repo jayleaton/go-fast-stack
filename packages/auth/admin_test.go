@@ -97,6 +97,30 @@ func TestAdminResetTwoFactorRecoversAccess(t *testing.T) {
 	}
 }
 
+func TestDisableSignUpKeepsInvites(t *testing.T) {
+	h := newHarness(t, func(c *Config) { c.DisableSignUp = true })
+	ctx := context.Background()
+	email := uniqueEmail(t)
+	wantCode(t, h.signUp(email, "password123"), http.StatusBadRequest, "EMAIL_PASSWORD_SIGN_UP_DISABLED")
+	if _, _, err := h.a.SignUpEmail(ctx, SignUpInput{Email: email, Password: "password123"}); !errors.Is(err, ErrSignUpDisabled) {
+		t.Fatalf("SignUpEmail err = %v", err)
+	}
+	if n := len(h.mails()); n != 0 {
+		t.Fatalf("disabled sign-up sent %d mails", n)
+	}
+	// Invites still create accounts that can sign in.
+	user, err := h.a.CreateUserWithoutPassword(ctx, CreateUserInput{Email: email, Role: "admin"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.a.IssueSetPasswordLink(ctx, user.ID, "/set"); err != nil {
+		t.Fatal(err)
+	}
+	token := mustQuery(t, h.do("GET", pathOf(t, h.mails()[0].url), nil, nil).Header().Get("Location"), "token")
+	wantStatus(t, h.do("POST", BasePath+"/set-password", map[string]any{"token": token, "newPassword": "admin-password"}, nil), http.StatusOK)
+	wantStatus(t, h.signIn(email, "admin-password"), http.StatusOK)
+}
+
 func TestBannedUserGetsNoTwoFactorChallenge(t *testing.T) {
 	h := newHarness(t, with2FA(false))
 	email := uniqueEmail(t)

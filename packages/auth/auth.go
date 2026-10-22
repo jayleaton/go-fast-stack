@@ -62,10 +62,11 @@ type Config struct {
 	Logger            *slog.Logger  // default slog.Default()
 	MailTimeout       time.Duration // timeout for sending one email (default 30s)
 
-	CookiePrefix string           // cookie name prefix (default "better-auth"): a second instance in the same browser needs its own
-	AppName      string           // TOTP issuer default (default: BaseURL host)
-	TwoFactor    *TwoFactorConfig // nil turns 2FA off: endpoints answer 404, sign-in is unchanged
-	InviteTTL    time.Duration    // how long a set-password (invite) link stays valid (default 72h)
+	CookiePrefix  string           // cookie name prefix (default "better-auth"): a second instance in the same browser needs its own
+	AppName       string           // TOTP issuer default (default: BaseURL host)
+	TwoFactor     *TwoFactorConfig // nil turns 2FA off: endpoints answer 404, sign-in is unchanged
+	InviteTTL     time.Duration    // how long a set-password (invite) link stays valid (default 72h)
+	DisableSignUp bool             // refuse public sign-up (SignUpEmail, POST /sign-up/email); CreateUserWithoutPassword still works
 }
 
 // MobileTrustedOrigins returns the deep-link origins of the Expo app: its
