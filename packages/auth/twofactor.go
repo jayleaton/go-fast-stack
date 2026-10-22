@@ -197,26 +197,55 @@ func (a *Auth) pendingFor(ctx context.Context, userID string) bool {
 // valid TOTP code also turns 2FA on. A challenge allows 5 attempts and is
 // spent on success; a TOTP code is accepted once.
 func (a *Auth) VerifyTwoFactor(ctx context.Context, in VerifyTwoFactorInput) (TwoFactorResult, error) {
+	res, att, err := a.verifyTwoFactor(ctx, in)
+	switch {
+	case errors.Is(err, errTwoFactorOff):
+	case err != nil:
+		a.emitFailure(ctx, EventTwoFactorFailed, att.userID, att.method, err)
+	default:
+		a.emit(ctx, Event{Kind: EventTwoFactorSucceeded, UserID: res.User.ID, Method: att.method})
+		if att.setup {
+			a.emit(ctx, Event{Kind: EventTwoFactorEnabled, UserID: res.User.ID})
+		}
+		a.emit(ctx, Event{Kind: EventSignIn, UserID: res.User.ID, SessionID: res.Session.ID, Method: SignInMethodTwoFactor,
+			Details: map[string]string{"factor": att.method}})
+	}
+	return res, err
+}
+
+// twoFactorAttempt is what an attempt is known to be about, for events: the
+// user from the pending sign-in (empty if the challenge was not valid).
+type twoFactorAttempt struct {
+	userID, method string
+	setup          bool
+}
+
+func (a *Auth) verifyTwoFactor(ctx context.Context, in VerifyTwoFactorInput) (_ TwoFactorResult, att twoFactorAttempt, _ error) {
+	att.method = in.Method
+	if att.method == "" {
+		att.method = TwoFactorMethodTOTP
+	}
 	if err := a.twoFactorOn(); err != nil {
-		return TwoFactorResult{}, err
+		return TwoFactorResult{}, att, err
 	}
 	if err := a.rateLimit(ctx, "two-factor", RuleSignIn); err != nil {
-		return TwoFactorResult{}, err
+		return TwoFactorResult{}, att, err
 	}
 	token := a.challengeToken(ctx, in.ChallengeToken)
 	userID, setup, err := a.challenge(ctx, token)
 	if err != nil {
-		return TwoFactorResult{}, err
+		return TwoFactorResult{}, att, err
 	}
+	att.userID, att.setup = userID, setup
 	if retry, err := a.limiter.Allow(ctx, "2fa-challenge|"+token, RateRule{Window: challengeTTL, Max: challengeAttempts}); err == nil && retry > 0 {
-		return TwoFactorResult{}, &RateLimitError{RetryAfter: retry}
+		return TwoFactorResult{}, att, &RateLimitError{RetryAfter: retry}
 	}
-	method := in.Method
-	if method == "" || setup {
-		method = TwoFactorMethodTOTP
+	if setup {
+		att.method = TwoFactorMethodTOTP
 	}
+	method := att.method
 	if err := a.checkSecondFactor(ctx, userID, method, in.Code, !setup); err != nil {
-		return TwoFactorResult{}, err
+		return TwoFactorResult{}, att, err
 	}
 	// Spend the challenge: of two concurrent successes only one gets a session.
 	var consumed string
@@ -230,25 +259,25 @@ func (a *Auth) VerifyTwoFactor(ctx context.Context, in VerifyTwoFactorInput) (Tw
 				a.log.ErrorContext(ctx, "auth: restoring backup code failed", "userId", userID, "err", err)
 			}
 		}
-		return TwoFactorResult{}, ErrInvalidTwoFactorCookie
+		return TwoFactorResult{}, att, ErrInvalidTwoFactorCookie
 	}
 	user, err := a.store.userByID(ctx, a.store.pool, userID)
 	if err != nil {
-		return TwoFactorResult{}, err
+		return TwoFactorResult{}, att, err
 	}
 	sess, err := a.createSession(ctx, userID)
 	if err != nil {
-		return TwoFactorResult{}, err
+		return TwoFactorResult{}, att, err
 	}
 	res := TwoFactorResult{User: user, Session: sess}
 	if in.TrustDevice && a.cfg.TwoFactor.TrustDeviceTTL > 0 {
 		res.TrustToken = generateID(32)
 		now := a.now()
 		if err := a.store.createVerification(ctx, trustDevicePrefix+res.TrustToken, userID, now.Add(a.cfg.TwoFactor.TrustDeviceTTL), now); err != nil {
-			return TwoFactorResult{}, err
+			return TwoFactorResult{}, att, err
 		}
 	}
-	return res, nil
+	return res, att, nil
 }
 
 // checkSecondFactor verifies code for userID, enforcing the lockout. With
@@ -382,9 +411,19 @@ func (a *Auth) ConfirmTwoFactor(ctx context.Context, userID, code string) error 
 		return err
 	}
 	if err := a.rateLimitUser(ctx, "two-factor", userID, RuleSignIn); err != nil {
+		a.emitFailure(ctx, EventTwoFactorFailed, userID, TwoFactorMethodTOTP, err)
 		return err
 	}
-	return a.checkSecondFactor(ctx, userID, TwoFactorMethodTOTP, code, false)
+	wasOn, _ := a.store.twoFactorEnabled(ctx, userID)
+	if err := a.checkSecondFactor(ctx, userID, TwoFactorMethodTOTP, code, false); err != nil {
+		a.emitFailure(ctx, EventTwoFactorFailed, userID, TwoFactorMethodTOTP, err)
+		return err
+	}
+	a.emit(ctx, Event{Kind: EventTwoFactorSucceeded, UserID: userID, Method: TwoFactorMethodTOTP})
+	if !wasOn {
+		a.emit(ctx, Event{Kind: EventTwoFactorEnabled, UserID: userID})
+	}
+	return nil
 }
 
 // DisableTwoFactor turns 2FA off after checking the password, and forgets the
@@ -404,7 +443,11 @@ func (a *Auth) DisableTwoFactor(ctx context.Context, userID, password string) er
 	} else if err != nil {
 		return err
 	}
-	return a.store.disableTwoFactor(ctx, userID, a.now())
+	if err := a.store.disableTwoFactor(ctx, userID, a.now()); err != nil {
+		return err
+	}
+	a.emit(ctx, Event{Kind: EventTwoFactorDisabled, UserID: userID})
+	return nil
 }
 
 // GenerateBackupCodes replaces the user's backup codes after checking the

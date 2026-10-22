@@ -97,6 +97,7 @@ func (a *Auth) CompleteSetPassword(ctx context.Context, token, newPassword strin
 	if err != nil {
 		return User{}, Session{}, err
 	}
+	a.emit(ctx, Event{Kind: EventPasswordReset, UserID: userID, Method: SignInMethodSetPassword})
 	user, err := a.store.userByID(ctx, a.store.pool, userID)
 	if err != nil {
 		return User{}, Session{}, err
@@ -110,5 +111,6 @@ func (a *Auth) CompleteSetPassword(ctx context.Context, token, newPassword strin
 	if err != nil {
 		return User{}, Session{}, err
 	}
+	a.emit(ctx, Event{Kind: EventSignIn, UserID: userID, SessionID: sess.ID, Method: SignInMethodSetPassword})
 	return user, sess, nil
 }

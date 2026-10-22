@@ -210,6 +210,19 @@ func (s *store) deleteSession(ctx context.Context, token string) error {
 	return err
 }
 
+// endSession deletes the session with token and returns its id and user, or
+// errNotFound.
+func (s *store) endSession(ctx context.Context, token string) (id, userID string, err error) {
+	err = s.pool.QueryRow(ctx, `DELETE FROM "session" WHERE "token" = $1 RETURNING "id", "userId"`, token).Scan(&id, &userID)
+	return id, userID, notFound(err)
+}
+
+// deleteUserSessionsCount deletes every session of a user and returns how many.
+func (s *store) deleteUserSessionsCount(ctx context.Context, q querier, userID string) (int64, error) {
+	tag, err := q.Exec(ctx, `DELETE FROM "session" WHERE "userId" = $1`, userID)
+	return tag.RowsAffected(), err
+}
+
 func (s *store) deleteUserSessions(ctx context.Context, q querier, userID string) error {
 	_, err := q.Exec(ctx, `DELETE FROM "session" WHERE "userId" = $1`, userID)
 	return err
@@ -310,23 +323,20 @@ func (s *store) listSessions(ctx context.Context, userID string, now time.Time) 
 
 // deleteUserSession deletes one of the user's sessions, matched by id or by
 // token. It returns errNotFound when the user has no such session.
-func (s *store) deleteUserSession(ctx context.Context, userID, id, token string) error {
-	tag, err := s.pool.Exec(ctx, `
+func (s *store) deleteUserSession(ctx context.Context, userID, id, token string) (string, error) {
+	var deleted string
+	err := s.pool.QueryRow(ctx, `
 		DELETE FROM "session"
-		WHERE "userId" = $1 AND (("id" = $2 AND $2 <> '') OR ("token" = $3 AND $3 <> ''))`, userID, id, token)
-	if err != nil {
-		return err
-	}
-	if tag.RowsAffected() == 0 {
-		return errNotFound
-	}
-	return nil
+		WHERE "userId" = $1 AND (("id" = $2 AND $2 <> '') OR ("token" = $3 AND $3 <> ''))
+		RETURNING "id"`, userID, id, token).Scan(&deleted)
+	return deleted, notFound(err)
 }
 
-// deleteOtherSessions deletes every session of the user except keepID.
-func (s *store) deleteOtherSessions(ctx context.Context, q querier, userID, keepID string) error {
-	_, err := q.Exec(ctx, `DELETE FROM "session" WHERE "userId" = $1 AND "id" <> $2`, userID, keepID)
-	return err
+// deleteOtherSessions deletes every session of the user except keepID and
+// returns how many.
+func (s *store) deleteOtherSessions(ctx context.Context, q querier, userID, keepID string) (int64, error) {
+	tag, err := q.Exec(ctx, `DELETE FROM "session" WHERE "userId" = $1 AND "id" <> $2`, userID, keepID)
+	return tag.RowsAffected(), err
 }
 
 // changeEmailPrefix prefixes the verification row of a pending email change;
