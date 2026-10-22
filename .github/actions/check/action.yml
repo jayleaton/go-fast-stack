@@ -46,8 +46,8 @@ runs:
         path: |
           ~/.cache/go-build
           ~/.cache/golangci-lint
-        key: v7-go-${{ runner.os }}-${{ github.sha }}
-        restore-keys: v7-go-${{ runner.os }}-
+        key: v9cold-go-${{ runner.os }}-${{ github.sha }}
+        restore-keys: v9cold-go-${{ runner.os }}-
 
     # ---- lint ("all" and "db") ----
     - name: gofmt
@@ -160,7 +160,7 @@ runs:
         path: |
           ~/.cache/go-build
           ~/.cache/golangci-lint
-        key: v7-go-${{ runner.os }}-${{ github.sha }}
+        key: v9cold-go-${{ runner.os }}-${{ github.sha }}
 
     # ---- mobile app: typecheck, lint, Expo SDK check, unit tests ----
     # (The contract test, pnpm test:contract, needs Go + Docker and runs locally.)

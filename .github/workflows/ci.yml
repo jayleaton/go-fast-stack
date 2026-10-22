@@ -236,8 +236,8 @@ jobs:
         with:
           lookup-only: true
           path: ~/.cache/go-build
-          key: v7-go-${{ runner.os }}-${{ github.sha }}
-          restore-keys: v7-go-${{ runner.os }}-
+          key: v9cold-go-${{ runner.os }}-${{ github.sha }}
+          restore-keys: v9cold-go-${{ runner.os }}-
       - name: Timeouts
         id: timeouts
         env:
