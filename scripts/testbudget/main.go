@@ -1,8 +1,10 @@
 // Command testbudget keeps the test suite fast as it grows. It reads
 // `go test -json` on stdin, prints what plain `go test` would (ok/FAIL lines,
 // the output of failed tests, build errors), lists the slowest tests, and
-// fails when a package's test binary or a single top-level test runs longer
-// than its budget. `make test` and CI pipe every run through it.
+// fails when a package's test binary or a single test runs longer than its
+// budget. A single test is a leaf: a test without subtests, or one subtest
+// (a parent's time includes its parallel subtests; the package budget
+// bounds their sum). `make test` and CI pipe every run through it.
 //
 //	go test -race -json ./... | go run ./scripts/testbudget
 //
@@ -50,7 +52,7 @@ func main() {
 		os.Exit(table(os.Stdout, os.Args[2:]))
 	}
 	pkgBudget := flag.Duration("pkg", defaultPackageBudget, "budget for one package's test binary (0: off)")
-	testBudget := flag.Duration("test", defaultTestBudget, "budget for one top-level test (0: off)")
+	testBudget := flag.Duration("test", defaultTestBudget, "budget for one leaf test or subtest (0: off)")
 	top := flag.Int("top", 10, "list this many slowest tests at the end")
 	flag.Parse()
 	os.Exit(run(os.Stdin, os.Stdout, *pkgBudget, *testBudget, *top))
@@ -102,7 +104,7 @@ func run(in io.Reader, out io.Writer, pkgBudget, testBudget time.Duration, top i
 				break
 			}
 			if e.Test != "" {
-				if e.Action == "pass" && !strings.Contains(e.Test, "/") {
+				if e.Action == "pass" {
 					tests = append(tests, result{e.Package + " " + e.Test, d})
 				}
 				break
@@ -124,6 +126,7 @@ func run(in io.Reader, out io.Writer, pkgBudget, testBudget time.Duration, top i
 	}
 
 	byTime := func(a, b result) int { return cmp.Compare(b.elapsed, a.elapsed) }
+	tests = leaves(tests)
 	slices.SortFunc(tests, byTime)
 	slices.SortFunc(pkgs, byTime)
 	if top > 0 && len(tests) > 0 {
@@ -157,6 +160,19 @@ func overBudget(rs []result, budget time.Duration, kind string) []string {
 		}
 	}
 	return over
+}
+
+// leaves drops tests that have subtests ("pkg Test" when "pkg Test/x" ran).
+func leaves(rs []result) []result {
+	parents := map[string]bool{}
+	for _, r := range rs {
+		for i := len(r.name) - 1; i > 0; i-- {
+			if r.name[i] == '/' {
+				parents[r.name[:i]] = true
+			}
+		}
+	}
+	return slices.DeleteFunc(rs, func(r result) bool { return parents[r.name] })
 }
 
 func seconds(s float64) time.Duration { return time.Duration(s * float64(time.Second)) }
@@ -197,7 +213,7 @@ func table(out io.Writer, args []string) int {
 					seen[e.Package] = true
 					order = append(order, e.Package)
 				}
-			} else if !strings.Contains(e.Test, "/") {
+			} else {
 				c.tests = append(c.tests, result{e.Package + " " + e.Test, seconds(e.Elapsed)})
 			}
 		}
@@ -234,9 +250,9 @@ func table(out io.Writer, args []string) int {
 	}
 	fmt.Fprintln(out)
 
-	tests := cols[0].tests
+	tests := leaves(cols[0].tests)
 	slices.SortFunc(tests, func(a, b result) int { return cmp.Compare(b.elapsed, a.elapsed) })
-	fmt.Fprintf(out, "\nSlowest top-level tests (%s):\n\n| test | time |\n|---|--:|\n", cols[0].name)
+	fmt.Fprintf(out, "\nSlowest tests (leaf tests and subtests, %s):\n\n| test | time |\n|---|--:|\n", cols[0].name)
 	for _, t := range tests[:min(15, len(tests))] {
 		fmt.Fprintf(out, "| %s | %.2fs |\n", strings.TrimPrefix(t.name, mod), t.elapsed.Seconds())
 	}
