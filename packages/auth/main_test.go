@@ -53,7 +53,9 @@ func runWithDatabase(m *testing.M, dsn string) (int, error) {
 		return 0, err
 	}
 	defer func() { _ = admin.Close(ctx) }()
-	name := fmt.Sprintf("auth_test_%d_%d", os.Getpid(), time.Now().UnixNano()%1e6)
+	// Random, not pid+time: concurrent or repeated test binaries must never pick
+	// the same name (a collision fails TestMain before any test runs).
+	name := "auth_test_" + strings.ToLower(generateID(16))
 	if _, err := admin.Exec(ctx, "CREATE DATABASE "+name); err != nil {
 		return 0, err
 	}
@@ -214,6 +216,11 @@ func newHarness(t *testing.T, mutate func(*Config)) *harness {
 	}
 	clock := &testClock{t: time.Now()}
 	a.now = clock.Now
+	// Limiters run on the same clock as everything else, so a slow machine
+	// cannot let a rate-limit window lapse mid-test.
+	if m, ok := a.limiter.(*MemoryRateLimiter); ok {
+		m.now = clock.Now
+	}
 	return &harness{t: t, a: a, h: a.Handler(), mail: mail, clock: clock, logBuf: logBuf}
 }
 

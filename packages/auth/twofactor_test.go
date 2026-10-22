@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -23,6 +24,27 @@ func (h *harness) code(secret string) string {
 		h.t.Fatal(err)
 	}
 	return totpCode(key, totpStep(h.clock.Now()))
+}
+
+// wrongCode returns a 6-digit code that is guaranteed invalid for secret at
+// the harness clock: a fixed "000000" is valid in 3 of every million windows,
+// which makes a test fail at random once in a while.
+func (h *harness) wrongCode(secret string) string {
+	h.t.Helper()
+	key, err := b32.DecodeString(secret)
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	step := totpStep(h.clock.Now())
+	valid := map[string]bool{}
+	for d := int64(-totpWindow - 1); d <= totpWindow+1; d++ {
+		valid[totpCode(key, step+d)] = true
+	}
+	for i := 0; ; i++ {
+		if c := fmt.Sprintf("%06d", i); !valid[c] {
+			return c
+		}
+	}
 }
 
 // tick moves the clock to the next TOTP step so a fresh code is accepted.
@@ -98,7 +120,7 @@ func TestTwoFactorEnrolmentAndSignIn(t *testing.T) {
 	h.enrol(stranger)
 	foreign := strings.Split(h.challenge(stranger, "password123"), "; ")
 	signedIn["Cookie"] += "; " + foreign[len(foreign)-1]
-	wantCode(t, h.do("POST", BasePath+"/two-factor/verify-totp", map[string]any{"code": "000000"}, signedIn), http.StatusUnauthorized, "INVALID_CODE")
+	wantCode(t, h.do("POST", BasePath+"/two-factor/verify-totp", map[string]any{"code": h.wrongCode(secret)}, signedIn), http.StatusUnauthorized, "INVALID_CODE")
 	confirm := h.code(secret)
 	wantStatus(t, h.do("POST", BasePath+"/two-factor/verify-totp", map[string]any{"code": confirm}, signedIn), http.StatusOK)
 	if on, _ := h.a.TwoFactorEnabled(context.Background(), h.userID(signedIn)); !on {
@@ -126,7 +148,7 @@ func TestTwoFactorEnrolmentAndSignIn(t *testing.T) {
 
 	// The code used to confirm cannot be replayed in its window.
 	wantCode(t, h.do("POST", BasePath+"/two-factor/verify-totp", map[string]any{"code": confirm}, pending), http.StatusUnauthorized, "INVALID_CODE")
-	wantCode(t, h.do("POST", BasePath+"/two-factor/verify-totp", map[string]any{"code": "123456"}, pending), http.StatusUnauthorized, "INVALID_CODE")
+	wantCode(t, h.do("POST", BasePath+"/two-factor/verify-totp", map[string]any{"code": h.wrongCode(secret)}, pending), http.StatusUnauthorized, "INVALID_CODE")
 	h.tick()
 	code := h.code(secret)
 	rec = h.do("POST", BasePath+"/two-factor/verify-totp", map[string]any{"code": code}, pending)
@@ -222,14 +244,14 @@ func TestTwoFactorLockoutExpiryAndOff(t *testing.T) {
 	// Ten wrong codes lock the second factor for 15 minutes, even for the right code.
 	for range twoFactorMaxFailures {
 		c := hdr{"Cookie": h.challenge(email, "password123"), "Origin": testBase}
-		wantCode(t, h.do("POST", BasePath+"/two-factor/verify-totp", map[string]any{"code": "000000"}, c), http.StatusUnauthorized, "INVALID_CODE")
+		wantCode(t, h.do("POST", BasePath+"/two-factor/verify-totp", map[string]any{"code": h.wrongCode(setup.Secret)}, c), http.StatusUnauthorized, "INVALID_CODE")
 	}
 	locked := hdr{"Cookie": h.challenge(email, "password123"), "Origin": testBase}
 	wantCode(t, h.do("POST", BasePath+"/two-factor/verify-totp", map[string]any{"code": h.code(setup.Secret)}, locked), http.StatusTooManyRequests, "ACCOUNT_TEMPORARILY_LOCKED")
 	h.clock.Advance(twoFactorLockout + time.Minute)
 	// After the lock runs out one typo does not lock again: counting restarts.
 	typo := hdr{"Cookie": h.challenge(email, "password123"), "Origin": testBase}
-	wantCode(t, h.do("POST", BasePath+"/two-factor/verify-totp", map[string]any{"code": "000000"}, typo), http.StatusUnauthorized, "INVALID_CODE")
+	wantCode(t, h.do("POST", BasePath+"/two-factor/verify-totp", map[string]any{"code": h.wrongCode(setup.Secret)}, typo), http.StatusUnauthorized, "INVALID_CODE")
 	unlocked := hdr{"Cookie": h.challenge(email, "password123"), "Origin": testBase}
 	wantStatus(t, h.do("POST", BasePath+"/two-factor/verify-totp", map[string]any{"code": h.code(setup.Secret)}, unlocked), http.StatusOK)
 
