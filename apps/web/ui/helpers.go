@@ -41,3 +41,5 @@ func cooldownLabel(resendIn, resend string) string {
 		jsString(resendIn), jsString(resend),
 	)
 }
+
+var  zzBadFormat = 1
