@@ -1,0 +1,158 @@
+# Single required check for branch protection and the merge queue: `ci-ok`.
+# Other jobs may be skipped by path filters; ci-ok treats skipped as success.
+# Draft PRs run nothing: mark ready for review to run CI (merge_group, push to
+# main and workflow_dispatch always run everything).
+name: CI
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+  push:
+    branches: [main]
+  merge_group:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # PRs only: push to main and merge_group always run everything.
+  changes:
+    if: github.event_name == 'pull_request' && github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      go: ${{ steps.filter.outputs.go }}
+      mobile: ${{ steps.filter.outputs.mobile }}
+    steps:
+      - uses: dorny/paths-filter@v4
+        id: filter
+        with:
+          filters: |
+            go:
+              - '**/*.go'
+              - 'go.mod'
+              - 'go.sum'
+              - 'tools/**'
+              - '**/*.sql'
+              - 'packages/database/sqlc.yaml'
+              - '.golangci.yml'
+              - 'Makefile'
+              - 'apps/web/**'
+              - 'packages/**'
+              - 'scripts/**'
+              - 'Dockerfile'
+              - '.github/workflows/**'
+            mobile:
+              - 'apps/mobile-app/**'
+
+  # One job, not lint/test in parallel: a second runner's checkout + setup-go + cache restore (~20 s) outweighs warm lint time on a repo this size.
+  go:
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || (github.event.pull_request.draft == false && needs.changes.outputs.go == 'true')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: gofmt
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "$unformatted"
+            echo 'gofmt: run gofmt -w .'
+            exit 1
+          fi
+
+      - uses: sqlc-dev/setup-sqlc@v5
+        with:
+          sqlc-version: '1.31.1'
+
+      - name: Generated code is up to date
+        run: |
+          sqlc generate -f packages/database/sqlc.yaml
+          if [ -d apps/web/ui ]; then go tool templ generate -path apps/web/ui; fi
+          git diff --exit-code
+          test -z "$(git status --porcelain)" || { git status --short; echo 'untracked generated files: run make generate and commit'; exit 1; }
+
+      - name: Build
+        run: go build ./...
+
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.15.0
+
+      - name: Layering rules
+        run: ./scripts/check-layering.sh
+        env:
+          GOLANGCI_LINT: golangci-lint
+
+      - name: Test
+        run: go test -race ./...
+        env:
+          TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable
+
+  # Placeholder; finalized when apps/mobile-app lands.
+  mobile:
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || (github.event.pull_request.draft == false && needs.changes.outputs.mobile == 'true')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: apps/mobile-app
+    steps:
+      - uses: actions/checkout@v7
+
+      # hashFiles is not available in job-level `if`, so each step checks it.
+      - uses: actions/setup-node@v7
+        if: hashFiles('apps/mobile-app/package.json') != ''
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/mobile-app/package-lock.json
+
+      - if: hashFiles('apps/mobile-app/package.json') != ''
+        run: npm ci
+
+      - if: hashFiles('apps/mobile-app/package.json') != ''
+        run: npm run --if-present lint
+
+      - if: hashFiles('apps/mobile-app/package.json') != ''
+        run: npm run --if-present typecheck
+
+  ci-ok:
+    if: ${{ always() && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) }}
+    needs: [changes, go, mobile]
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    steps:
+      - name: Fail if any job failed or was cancelled
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: |
+          echo 'changes=${{ needs.changes.result }} go=${{ needs.go.result }} mobile=${{ needs.mobile.result }}'
+          exit 1

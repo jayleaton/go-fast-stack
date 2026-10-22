@@ -1,0 +1,19 @@
+version: "2"
+sql:
+  - engine: postgresql
+    # TODO(feat/auth): replace authstub/user.sql with ../auth/migrations once packages/auth lands.
+    schema: [authstub/user.sql, migrations]
+    queries: queries
+    gen:
+      go:
+        package: sqlc
+        out: sqlc
+        sql_package: pgx/v5
+        emit_pointers_for_null_types: true
+        emit_json_tags: true
+        json_tags_case_style: camel
+        overrides:
+          - db_type: timestamptz
+            go_type: time.Time
+          - db_type: timestamp
+            go_type: time.Time

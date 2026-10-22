@@ -1,0 +1,74 @@
+# golangci-lint v2. `make lint` runs it; `make lint-layering` proves the
+# depguard rules below still reject forbidden imports.
+version: "2"
+
+linters:
+  default: standard # errcheck, govet, ineffassign, staticcheck, unused
+  enable:
+    - bodyclose
+    - copyloopvar
+    - depguard
+    - errorlint
+    - intrange
+    - misspell
+    - nilerr
+    - noctx
+    - rowserrcheck
+    - sqlclosecheck
+    - unconvert
+    - usestdlibvars
+    - wastedassign
+  settings:
+    # Layering: packages/database -> services -> transports (api, ui).
+    # See AGENTS.md "Architecture".
+    depguard:
+      rules:
+        transports:
+          files:
+            - "**/apps/web/internal/api/**"
+            - "**/apps/web/ui/**"
+          deny:
+            - pkg: github.com/jackc/pgx
+              desc: transports call services; only packages/database talks to Postgres
+            - pkg: github.com/jayleaton/ai-patterns-go/packages/database
+              desc: transports call services (use services.User etc.), never repositories or sqlc
+        services:
+          files:
+            - "**/apps/web/internal/services/**"
+          deny:
+            - pkg: net/http
+              desc: services are transport-agnostic; return *services.Error and let the transport map it
+            - pkg: github.com/a-h/templ
+              desc: rendering belongs to apps/web/ui
+            - pkg: github.com/starfederation/datastar-go
+              desc: SSE belongs to apps/web/ui
+            - pkg: github.com/jackc/pgx
+              desc: services use repositories from packages/database
+            - pkg: github.com/jayleaton/ai-patterns-go/packages/database/sqlc
+              desc: services use repositories, not sqlc output
+            - pkg: github.com/jayleaton/ai-patterns-go/apps/web/internal/api
+              desc: services never import a transport
+            - pkg: github.com/jayleaton/ai-patterns-go/apps/web/ui
+              desc: services never import a transport
+        database:
+          files:
+            - "**/packages/database/**"
+          deny:
+            - pkg: github.com/jayleaton/ai-patterns-go/apps
+              desc: packages/database is the bottom layer and never imports apps
+  exclusions:
+    generated: lax
+    presets:
+      - std-error-handling
+    rules:
+      - path: _test\.go
+        linters: [noctx]
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/jayleaton/ai-patterns-go
