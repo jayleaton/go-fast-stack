@@ -74,6 +74,14 @@ func TestAccountPage(t *testing.T) {
 		t.Error("the current session must not offer a revoke button")
 	}
 
+	// A change-email link that failed lands with auth's error code instead.
+	e.users.EXPECT().ListSessions(gomock.Any(), demoActor, "u1").Return(demoSessions, nil)
+	e.users.EXPECT().DataSummary(gomock.Any(), demoActor, "u1").Return(demoSummary, nil)
+	body = e.do(http.MethodGet, config.AppRoutes.EmailChanged+"&error=INVALID_USER", nil).Body.String()
+	if !strings.Contains(body, en("pages.verifyEmail.invalidUser")) || strings.Contains(body, en("pages.account.emailChanged", "email", "demo@example.com")) {
+		t.Error("failed link must show the auth error, not the changed banner")
+	}
+
 	// A failing load still renders the page, with the reason.
 	e.users.EXPECT().ListSessions(gomock.Any(), demoActor, "u1").Return(nil, errors.New("db down"))
 	e.users.EXPECT().DataSummary(gomock.Any(), demoActor, "u1").Return(demoSummary, nil)

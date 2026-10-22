@@ -168,6 +168,11 @@ func (u *UI) resendVerification(w http.ResponseWriter, r *http.Request) {
 }
 
 func (u *UI) verifyEmailSuccessPage(w http.ResponseWriter, r *http.Request) {
+	// auth's own link handler lands here with ?error=<code> when it failed.
+	if code := r.URL.Query().Get("error"); code != "" {
+		u.render(w, r, http.StatusOK, VerifyEmailSuccessPage("", VerifyEmailFailed(authCodeMessage(r.Context(), code))))
+		return
+	}
 	u.render(w, r, http.StatusOK, VerifyEmailSuccessPage(r.URL.Query().Get("token"), nil))
 }
 

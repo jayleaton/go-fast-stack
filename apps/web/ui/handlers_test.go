@@ -150,6 +150,14 @@ func TestVerifyEmail(t *testing.T) {
 		t.Fatal("success page does not post the token on load")
 	}
 
+	// auth's own link handler redirects here with ?error=<code> on failure.
+	for code, key := range map[string]string{"INVALID_TOKEN": "pages.verifyEmail.invalidToken", "TOKEN_EXPIRED": "pages.verifyEmail.invalidToken", "SOMETHING_NEW": "pages.verifyEmail.unexpectedErrorDuringVerification"} {
+		body := e.do(http.MethodGet, config.AppRoutes.VerifyEmailSuccess+"?error="+code, nil).Body.String()
+		if !strings.Contains(body, en("pages.verifyEmail.verificationFailed")) || !strings.Contains(body, en(key)) || strings.Contains(body, "data-init") {
+			t.Errorf("?error=%s: not rendered as a failed verification", code)
+		}
+	}
+
 	e.auth.EXPECT().VerifyEmail(gomock.Any(), "abc").Return(demoUser, demoSession, nil)
 	e.auth.EXPECT().SetSessionCookie(gomock.Any(), demoSession)
 	assertSSE(t, e.do(http.MethodPost, config.AppRoutes.VerifyEmailSuccess+"?token=abc", nil, datastar), `id="verify-result"`, en("pages.verifyEmail.emailVerifiedSuccessfully"))

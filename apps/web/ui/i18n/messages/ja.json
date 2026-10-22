@@ -143,7 +143,8 @@
       "unexpectedErrorDuringVerification": "確認中に予期しないエラーが発生しました",
       "emailVerifiedSuccessfully": "メールが正常に確認されました！",
       "accountVerifiedRedirect": "アカウントが確認されました。ログイン済みです。まもなくリダイレクトします。",
-      "continueToDashboard": "ダッシュボードに続行"
+      "continueToDashboard": "ダッシュボードに続行",
+      "invalidUser": "このリンクは別のアカウント用です。サインアウトしてからもう一度リンクを開いてください。"
     },
     "home": {
       "title": "アプリが起動しています",

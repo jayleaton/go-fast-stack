@@ -43,7 +43,12 @@ func (u *UI) accountPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	d := u.accountData(r.Context(), user, session)
-	d.EmailChanged = r.URL.Query().Get("email-changed") == "1"
+	// The change-email link lands here; on failure auth adds ?error=<code>.
+	if code := r.URL.Query().Get("error"); code != "" {
+		d.LoadError = authCodeMessage(r.Context(), code)
+	} else {
+		d.EmailChanged = r.URL.Query().Get("email-changed") == "1"
+	}
 	w.Header().Set("Cache-Control", "no-store")
 	u.render(w, r, http.StatusOK, AccountPage(d))
 }
