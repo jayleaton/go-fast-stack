@@ -349,8 +349,11 @@ func TestPasswordHashDefaults(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow with -race")
 	}
-	p := argonParams{Memory: 64 * 1024, Time: 3, Threads: 4, SaltLen: 16, KeyLen: 32}
-	h, err := hashPassword("pw", p)
+	// New hashes with these outside test binaries (argonParamsFor).
+	if got := argonParamsFor(false); got != defaultArgonParams {
+		t.Fatalf("production params = %+v", got)
+	}
+	h, err := hashPassword("pw", defaultArgonParams)
 	if err != nil || !strings.HasPrefix(h, "$argon2id$v=19$m=65536,t=3,p=4$") {
 		t.Fatalf("hash = %q %v", h, err)
 	}

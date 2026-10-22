@@ -31,10 +31,6 @@ var testPool *pgxpool.Pool
 // run alongside other packages' tests. Without a URL the database tests skip,
 // except under CI where they fail.
 func TestMain(m *testing.M) {
-	// Cheap hashing keeps the suite fast; production parameters are covered
-	// by TestPasswordHashDefaults.
-	defaultArgonParams = argonParams{Memory: 64, Time: 1, Threads: 1, SaltLen: 16, KeyLen: 32}
-
 	dsn := os.Getenv("TEST_DATABASE_URL")
 	if dsn == "" {
 		dsn = os.Getenv("DATABASE_URL")

@@ -21,6 +21,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -172,7 +173,7 @@ func New(cfg Config, pool *pgxpool.Pool, mailer Mailer) (*Auth, error) {
 		limiter:    cfg.RateLimiter,
 		baseOrigin: originOf(base),
 		secure:     base.Scheme == "https",
-		argon:      defaultArgonParams,
+		argon:      argonParamsFor(testing.Testing()),
 		now:        time.Now,
 	}
 	a.trusted = append([]string{a.baseOrigin}, cfg.TrustedOrigins...)
