@@ -69,6 +69,7 @@ func (s *setup) doctor(ctx context.Context) error {
 	}
 	s.report(s.checkRepo(ctx))
 	if s.cfg.Secrets.Provider == platform.ProviderDoppler {
+		s.report(s.checkDopplerCLI(ctx))
 		s.report(s.checkDoppler(ctx))
 	}
 	if failed {
@@ -171,7 +172,7 @@ func (s *setup) checkRepo(ctx context.Context) check {
 func (s *setup) checkDoppler(ctx context.Context) check {
 	c := check{Name: "doppler tokens", Status: "ok"}
 	if s.project == nil {
-		c.Detail = "optional; services start on SECRETS_PROVIDER=env until you add tokens (make railway-secrets)"
+		c.Detail = "optional; services run on SECRETS_PROVIDER=env until setup moves them to Doppler (doppler login, then make railway-setup or make doppler-setup)"
 		return c
 	}
 	var missing []string
@@ -189,9 +190,40 @@ func (s *setup) checkDoppler(ctx context.Context) check {
 	if len(missing) > 0 {
 		c.Status = "warn"
 		c.Detail = "optional; still on SECRETS_PROVIDER=env: " + strings.Join(missing, ", ")
-		c.Fix = "make railway-secrets (one read-only Doppler service token per service and environment)"
+		c.Fix = "doppler login, then make doppler-setup"
 		return c
 	}
 	c.Detail = "every service reads Doppler"
+	return c
+}
+
+// checkDopplerCLI: the CLI (pinned in mise.toml), its login and the project.
+// Optional: without it setup keeps secrets in Railway (SECRETS_PROVIDER=env).
+func (s *setup) checkDopplerCLI(ctx context.Context) check {
+	c := check{Name: "doppler cli", Status: "warn"}
+	d, err := newDoppler(s.cfg.Secrets.Project)
+	if err != nil {
+		c.Detail, c.Fix = "not installed (optional: secrets stay in Railway until you add it)", "mise install, then doppler login"
+		return c
+	}
+	v := d.version(ctx)
+	ws, err := d.whoami(ctx)
+	if err != nil {
+		c.Detail, c.Fix = "doppler "+v+": not logged in", "doppler login"
+		return c
+	}
+	if v != dopplerVersion {
+		c.Detail, c.Fix = "doppler "+v+" (mise.toml pins "+dopplerVersion+"), workplace "+ws, "mise install"
+		return c
+	}
+	projects, err := d.names(ctx, "projects", "name")
+	if err != nil {
+		c.Detail = err.Error()
+		return c
+	}
+	c.Status, c.Detail = "ok", "doppler "+v+", workplace "+ws+", project "+s.cfg.Secrets.Project
+	if !projects[s.cfg.Secrets.Project] {
+		c.Detail += " (setup creates it)"
+	}
 	return c
 }

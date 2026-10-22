@@ -1,2 +1,4 @@
 [tools]
 go = "1.26.8"
+# Secrets (optional): make doppler-setup, USE_DOPPLER=1 make dev.
+doppler = "3.77.0"

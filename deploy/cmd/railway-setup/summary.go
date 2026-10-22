@@ -125,16 +125,22 @@ func (s *setup) finish(err error) int {
 
 // deploymentStatus is the latest deployment's status ("" when none).
 func (s *setup) deploymentStatus(ctx context.Context, svc, env string) (string, error) {
+	_, status, err := s.latestDeployment(ctx, svc, env)
+	return status, err
+}
+
+func (s *setup) latestDeployment(ctx context.Context, svc, env string) (id, status string, err error) {
 	var deps []struct {
+		ID     string `json:"id"`
 		Status string `json:"status"`
 	}
 	if err := s.rw.json(ctx, &deps, "deployment", "list", "--service", svc, "--environment", env); err != nil {
-		return "", err
+		return "", "", err
 	}
 	if len(deps) == 0 {
-		return "", nil
+		return "", "", nil
 	}
-	return deps[0].Status, nil
+	return deps[0].ID, deps[0].Status, nil
 }
 
 // settled reports whether a deployment status will not change by itself.

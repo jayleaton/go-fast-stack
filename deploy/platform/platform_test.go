@@ -356,3 +356,36 @@ func TestEditKeepsCommentsAndValidates(t *testing.T) {
 		t.Fatalf("Edit touched more than the value (err %v)", err)
 	}
 }
+
+func TestDopplerLayout(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct{ env, svc, cfg string }{
+		{"production", "web", "prd"}, {"production", "admin", "prd_admin"},
+		{"staging", "web", "stg"}, {"staging", "admin", "stg_admin"},
+		{"qa", "web", "qa"}, {"qa", "admin", "qa_admin"},
+	} {
+		if got := platform.DopplerConfig(tc.env, tc.svc); got != tc.cfg {
+			t.Errorf("DopplerConfig(%s, %s) = %s, want %s", tc.env, tc.svc, got, tc.cfg)
+		}
+	}
+	names := func(svc string) (out []string) {
+		for _, s := range platform.DopplerSeeds(svc) {
+			out = append(out, s.Name)
+		}
+		return out
+	}
+	// The web config never holds an admin secret; admin inherits the shared ones.
+	if web := names("web"); slices.ContainsFunc(web, func(n string) bool { return strings.HasPrefix(n, "ADMIN_") }) {
+		t.Fatalf("web seeds admin secrets: %v", web)
+	}
+	if admin := names("admin"); slices.Contains(admin, "AUTH_SECRET") || !slices.Contains(admin, "ADMIN_AUTH_SECRET") {
+		t.Fatalf("admin seeds: %v", admin)
+	}
+	if slices.Contains(platform.RailwayCopies("web"), "DATABASE_URL") {
+		t.Fatal("DATABASE_URL is the IaC reference; it must stay")
+	}
+	cfg, err := parse(t, minimal).Resolve("", "")
+	if err != nil || cfg.Secrets.Project != "acme" {
+		t.Fatalf("doppler project auto = Railway project: %q %v", cfg.Secrets.Project, err)
+	}
+}

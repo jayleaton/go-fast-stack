@@ -35,6 +35,9 @@ func (c Config) Resolve(originURL, checkoutDir string) (Config, error) {
 			c.Project = strings.TrimRight(c.Project[:32], "-._ ")
 		}
 	}
+	if c.Secrets.Project == Auto || c.Secrets.Project == "" {
+		c.Secrets.Project = c.Project
+	}
 	return c, c.Validate()
 }
 
