@@ -1,0 +1,180 @@
+{
+  "common": {
+    "language": "Language",
+    "english": "English",
+    "japanese": "Japanese",
+    "loading": "Loading...",
+    "error": "Error",
+    "success": "Success",
+    "continue": "Continue",
+    "cancel": "Cancel",
+    "submit": "Submit",
+    "back": "Back",
+    "next": "Next",
+    "save": "Save",
+    "name": "Full name",
+    "email": "Email",
+    "password": "Password",
+    "yes": "Yes",
+    "no": "No",
+    "home": "Home"
+  },
+  "components": {
+    "languageSelector": {
+      "language": "Language"
+    },
+    "authStatus": {
+      "authenticationStatus": "Authentication Status",
+      "loggedIn": "You are signed in",
+      "loggedOut": "You are not signed in",
+      "login": "Sign In",
+      "logout": "Sign Out",
+      "signup": "Sign Up",
+      "verified": "Verified"
+    },
+    "themeToggle": {
+      "toggle": "Toggle theme",
+      "toLight": "Switch to light mode",
+      "toDark": "Switch to dark mode"
+    }
+  },
+  "pages": {
+    "dashboard": {
+      "title": "Dashboard",
+      "subtitle": "Welcome to your dashboard. Manage your account and explore features.",
+      "account": "Account",
+      "memberSince": "Member since",
+      "subscriptionActive": "Active subscription",
+      "quickActions": {
+        "title": "Quick Actions",
+        "settings": "Settings",
+        "profile": "Profile",
+        "support": "Support"
+      },
+      "sections": {
+        "analytics": {
+          "title": "Analytics",
+          "description": "View your usage statistics and insights."
+        },
+        "activity": {
+          "title": "Recent Activity",
+          "description": "Track your recent actions and updates."
+        },
+        "settings": {
+          "title": "Settings",
+          "description": "Manage your preferences and configuration."
+        }
+      },
+      "settingsForm": {
+        "title": "Account settings",
+        "description": "Update your name and email address.",
+        "saving": "Saving...",
+        "saved": "Settings saved."
+      },
+      "deleteAccount": {
+        "title": "Delete account",
+        "description": "Permanently delete your account and all of its data. This cannot be undone.",
+        "button": "Delete account",
+        "confirm": "Are you sure? This permanently deletes your account.",
+        "confirmButton": "Yes, delete my account",
+        "deleting": "Deleting..."
+      },
+      "live": {
+        "title": "Live session",
+        "description": "Streamed from the server over SSE.",
+        "serverTime": "Server time",
+        "sessionExpires": "Session expires",
+        "connected": "Connected",
+        "updatedElsewhere": "Your account was updated in another tab."
+      }
+    },
+    "login": {
+      "title": "Sign in to your account",
+      "loginButton": "Sign in",
+      "forgotPassword": "Forgot Password?",
+      "dontHaveAccount": "Don't have an account?",
+      "signUpInstead": "Sign up instead",
+      "emailPlaceholder": "Enter your email",
+      "passwordPlaceholder": "Enter your password"
+    },
+    "signup": {
+      "title": "Create your account",
+      "signupButton": "Sign up",
+      "alreadyHaveAccount": "Already have an account?",
+      "signInInstead": "Sign in instead",
+      "namePlaceholder": "Enter your full name",
+      "emailPlaceholder": "Enter your email",
+      "passwordPlaceholder": "Create a password"
+    },
+    "forgotPassword": {
+      "title": "Reset your password",
+      "description": "Enter your email address and we'll send you a link to reset your password.",
+      "sendResetLink": "Send Reset Link",
+      "emailSent": "Email sent! Check your inbox for instructions.",
+      "backToLogin": "Back to login",
+      "checkEmail": "Check your email for the reset link. If you don't see it, check your spam folder.",
+      "emailLabel": "Email address",
+      "emailPlaceholder": "Enter your email address"
+    },
+    "resetPassword": {
+      "title": "Reset Password",
+      "description": "Enter your new password",
+      "newPassword": "New Password",
+      "confirmPassword": "Confirm Password",
+      "resetButton": "Reset Password",
+      "passwordResetSuccess": "Password reset successfully!",
+      "invalidResetLink": "Invalid reset link. Please request a new password reset.",
+      "requestNewResetLink": "Request new reset link",
+      "passwordMismatch": "Passwords don't match",
+      "passwordTooShort": "Password must be at least 8 characters long",
+      "resettingPassword": "Resetting password...",
+      "backToLogin": "Back to sign in",
+      "newPasswordPlaceholder": "Enter your new password",
+      "confirmPasswordPlaceholder": "Confirm your new password",
+      "passwordRequirement": "Password must be at least 8 characters long",
+      "signInWithNewPassword": "Sign in with new password",
+      "passwordUpdated": "Your password has been updated. You can now sign in with your new password."
+    },
+    "verifyEmail": {
+      "title": "Verify your email",
+      "description": "We sent you an email with a verification link. Please check your inbox and click the link to verify your email address.",
+      "checkEmail": "Check your email",
+      "emailVerified": "Email verified successfully!",
+      "invalidToken": "Invalid or expired token",
+      "resendEmail": "Resend email",
+      "checkEmailTitle": "Check your email",
+      "emailSentTo": "We've sent a verification link to",
+      "clickLinkInstructions": "Click the link in the email to verify your account. If you don't see the email, check your spam folder.",
+      "resendVerificationEmail": "Resend verification email",
+      "verificationEmailSent": "Verification email sent! Please check your inbox.",
+      "backToLogin": "Back to sign in",
+      "sending": "Sending...",
+      "resendIn": "Resend in",
+      "verifyingEmail": "Verifying your email...",
+      "pleaseWait": "Please wait while we verify your email address.",
+      "verificationFailed": "Verification failed",
+      "emailVerificationCompletedButLoginFailed": "Email verification completed, but automatic login failed. Please try signing in manually.",
+      "unexpectedErrorDuringVerification": "An unexpected error occurred during verification",
+      "emailVerifiedSuccessfully": "Email verified successfully!",
+      "accountVerifiedRedirect": "Your account has been verified. You're now logged in and will be redirected shortly.",
+      "continueToDashboard": "Continue to dashboard"
+    },
+    "home": {
+      "title": "Your app is running",
+      "body": "The starter welcome page is turned off. Sign in, or replace this screen with your own homepage.",
+      "signUp": "Sign up",
+      "signIn": "Sign in"
+    }
+  },
+  "errors": {
+    "somethingWentWrong": "Something went wrong",
+    "tryAgain": "Please try again",
+    "invalidCredentials": "Invalid credentials",
+    "emailRequired": "Email is required",
+    "passwordRequired": "Password is required",
+    "passwordTooShort": "Password must be at least 8 characters",
+    "emailInvalid": "Please enter a valid email address",
+    "emailTaken": "Email already in use",
+    "invalidInput": "Please check the form and try again"
+  }
+}
