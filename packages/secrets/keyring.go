@@ -32,17 +32,6 @@ func ParseKeyring(get func(name string) string, name string) Keyring {
 	return k
 }
 
-// Reveal returns the values, for the one consumer that needs them.
-func (k Keyring) Reveal() (current string, previous, revoked []string) {
-	for _, p := range k.Previous {
-		previous = append(previous, p.Reveal())
-	}
-	for _, r := range k.Revoked {
-		revoked = append(revoked, r.Reveal())
-	}
-	return k.Current.Reveal(), previous, revoked
-}
-
 // Fingerprint names the whole keyring in logs without revealing it.
 func (k Keyring) Fingerprint() string {
 	fp := k.Current.Fingerprint()
@@ -63,7 +52,7 @@ func (m *Manager) Keyring(name string) (Keyring, error) {
 	m.mu.RLock()
 	snap := m.snap
 	m.mu.RUnlock()
-	return ParseKeyring(func(n string) string { v, _ := snap.Get(n); return v.Reveal() }, name), nil
+	return ParseKeyring(func(n string) string { v, _ := snap.Get(n); return v.v }, name), nil
 }
 
 // OnKeyring calls fn now (once a snapshot is published) and whenever any of

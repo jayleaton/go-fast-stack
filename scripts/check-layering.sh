@@ -2,8 +2,9 @@
 # Proves the depguard layering rules in .golangci.yml still bite: drops a probe
 # package with a forbidden import into each guarded layer, and an external
 # _test.go file with a forbidden import into each test boundary, runs
-# golangci-lint, and fails unless depguard reports every probe. Probes are
-# always removed.
+# golangci-lint, and fails unless depguard reports every probe. Then plants
+# code that must not compile (reading a secret around reveal.Value) and fails
+# unless the compiler rejects it. Probes are always removed.
 # GOLANGCI_LINT overrides the binary (CI uses the prebuilt one).
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -44,6 +45,14 @@ cases=(
   "apps/web/ui|$mod/packages/secrets"
   "apps/admin/ui|$mod/packages/secrets"
   "apps/admin/internal/api|$mod/packages/secrets"
+  # A secret's value is read only through packages/secrets/reveal, in apps/*/cmd.
+  "apps/web/ui|$mod/packages/secrets/reveal"
+  "apps/admin/ui|$mod/packages/secrets/reveal"
+  "apps/web/internal/config|$mod/packages/secrets/reveal"
+  "apps/web/internal/server|$mod/packages/secrets/reveal"
+  "apps/admin/internal/server|$mod/packages/secrets/reveal"
+  "apps/web/internal/api|$mod/packages/secrets/reveal"
+  "apps/web/internal/services|$mod/packages/secrets/reveal"
   "apps/web/ui|$mod/apps/web/internal/api"
   "apps/admin/ui|$mod/apps/admin/internal/api"
 )
@@ -71,16 +80,21 @@ cleanup() { for p in "${paths[@]}"; do rm -rf "$p"; done; rmdir apps/web/ui 2>/d
 trap cleanup EXIT
 
 # Forbidden calls (forbidigo, not depguard: the package may be imported).
-# auth's user-administration entry points, and secrets.Secret.Reveal outside
-# apps/*/cmd and packages/secrets. layer dir | import | call
+# auth's user-administration entry points. layer dir | import | call
 calls=(
   "apps/web/internal/server|$mod/packages/auth|auth.NewUserAdmin(nil)"
   "apps/web/ui|$mod/packages/auth|(*auth.Auth)(nil).Users()"
-  "apps/web/ui|$mod/packages/secrets|secrets.Secret{}.Reveal()"
-  "apps/admin/ui|$mod/packages/secrets|secrets.Secret{}.Reveal()"
-  "apps/web/internal/config|$mod/packages/secrets|secrets.Secret{}.Reveal()"
-  "apps/web/internal/server|$mod/packages/secrets|secrets.Secret{}.Reveal()"
-  "apps/admin/internal/server|$mod/packages/secrets|secrets.Secret{}.Reveal()"
+)
+
+# Code that must not compile: a lint rule can be routed around, the compiler
+# cannot. secrets.Secret has no method returning its value (so an interface
+# cannot reach it), and only packages/secrets/... may import the internal
+# package reveal.Value reads it through.
+# layer dir | what | declaration | compiler error (grep -E)
+builds=(
+  "apps/web/ui|reach secrets.Secret through interface{ Reveal() string }|import \"$mod/packages/secrets\"\n\nvar _ interface{ Reveal() string } = secrets.Secret{}|missing method|does not implement"
+  "apps/admin/internal/server|reach secrets.Secret through interface{ Reveal() string }|import \"$mod/packages/secrets\"\n\nvar _ interface{ Reveal() string } = secrets.Secret{}|missing method|does not implement"
+  "apps/web/internal/server|import $mod/packages/secrets/internal/access|import _ \"$mod/packages/secrets/internal/access\"|use of internal package"
 )
 
 # label | probe file | package to lint, one per planted probe
@@ -114,7 +128,10 @@ for i in "${!calls[@]}"; do
   called+=("$layer must not call $call|$dir/probe.go|./$dir/")
 done
 
-pkgs=()
+# Where reveal.Value is allowed, the rule must stay quiet.
+allowed=(./apps/web/cmd/server/ ./apps/admin/cmd/admin/ ./packages/secrets/)
+
+pkgs=("${allowed[@]}")
 for p in "${planted[@]}" "${called[@]}"; do pkgs+=("${p##*|}"); done
 out=$($lint run --enable-only depguard,forbidigo --max-issues-per-linter 0 --max-same-issues 0 \
   $(printf '%s\n' "${pkgs[@]}" | sort -u) 2>&1 || true)
@@ -138,7 +155,36 @@ for p in "${called[@]}"; do
     failed=1
   fi
 done
+for p in "${allowed[@]}"; do
+  if grep "^${p#./}[^/:]*:" <<<"$out" | grep -qv "$probe"; then
+    echo "FAIL  ${p#./} may import $mod/packages/secrets/reveal (golangci-lint reported it)"
+    failed=1
+  else
+    echo "ok    ${p#./} may import $mod/packages/secrets/reveal"
+  fi
+done
 if [ "$failed" = 1 ]; then
   echo "--- golangci-lint output:"; echo "$out"
   exit 1
 fi
+
+for i in "${!builds[@]}"; do
+  layer=${builds[$i]%%|*} rest=${builds[$i]#*|}
+  what=${rest%%|*} rest=${rest#*|}
+  decl=${rest%%|*} want=${rest#*|}
+  label="$layer must not compile: $what"
+  dir="$layer/${probe}_build$i"
+  mkdir -p "$dir"
+  paths+=("$dir")
+  printf 'package %s\n\n%b\n' "${probe}_build$i" "$decl" > "$dir/probe.go"
+  if bout=$(go build "./$dir/" 2>&1); then
+    echo "FAIL  $label (it compiled)"
+    failed=1
+  elif grep -qE "$want" <<<"$bout"; then
+    echo "ok    $label"
+  else
+    echo "FAIL  $label (unexpected error)"; echo "$bout"
+    failed=1
+  fi
+done
+[ "$failed" = 0 ] || exit 1

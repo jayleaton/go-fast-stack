@@ -32,12 +32,6 @@ linters:
         - pattern: ^auth\.Auth\.Users$
           pkg: ^github\.com/jayleaton/ai-patterns-go/packages/auth$
           msg: user administration (ban, roles, any user's sessions) is for apps/admin only
-        # Credentials travel as secrets.Secret (prints "[redacted]"); only the
-        # cmd packages, where clients are built, and packages/secrets itself
-        # read the value (exclusions below). Validation uses Len/IsZero/Equal.
-        - pattern: ^secrets\.Secret\.Reveal$
-          pkg: ^github\.com/jayleaton/ai-patterns-go/packages/secrets$
-          msg: secrets are revealed only where a client is built (apps/*/cmd); pass secrets.Secret everywhere else
     # Layering: packages/database -> services -> transports (api, ui), for
     # apps/web and apps/admin alike. See AGENTS.md "Architecture".
     depguard:
@@ -99,6 +93,19 @@ linters:
               desc: packages/secrets is self-contained
             - pkg: go.uber.org/mock
               desc: secrets tests use fake providers over httptest, never mocks
+        # Credentials travel as secrets.Secret (prints "[redacted]"), which has
+        # no method returning the value; reveal.Value is the only way to read
+        # it (package secrets/internal/access keeps it that way). Only the cmd
+        # packages, where clients are built, and packages/secrets itself may
+        # import reveal. Validation uses Len/IsZero/Equal.
+        secrets-reveal:
+          files:
+            - $all
+            - "!**/apps/*/cmd/**"
+            - "!**/packages/secrets/**"
+          deny:
+            - pkg: github.com/jayleaton/ai-patterns-go/packages/secrets/reveal
+              desc: secrets are revealed only where a client is built (apps/*/cmd)
         # apps/admin is a separate, optional, higher-privilege app. Neither app
         # imports the other, and only apps/admin reaches adminrepo.
         # See AGENTS.md "Admin app".
@@ -277,9 +284,6 @@ linters:
       - path: (apps/admin|packages/auth)/
         linters: [forbidigo]
         text: is for apps/admin only
-      - path: (apps/[^/]+/cmd|packages/secrets)/
-        linters: [forbidigo]
-        text: secrets are revealed only where a client is built
 
 formatters:
   enable:

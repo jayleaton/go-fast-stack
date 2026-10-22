@@ -64,6 +64,8 @@ var leaks = []*regexp.Regexp{
 var (
 	scriptTag = regexp.MustCompile(`<script\b[^>]*>`)
 	nonceAttr = regexp.MustCompile(`\snonce="([^"]+)"`)
+	dataInit  = regexp.MustCompile(`\sdata-init="([^"]*)"`)
+	autoPost  = regexp.MustCompile(`@(post|put|patch|delete)\(`)
 	dataAttr  = regexp.MustCompile(`\sdata-[\w:.\-]+="([^"]*)"`)
 	// jsBreakout is the probe's quote closing a JS string: not escaped.
 	jsBreakout = regexp.MustCompile(`(^|[^\\])'\+XSSPROBE\+'`)
@@ -182,7 +184,7 @@ func TestCrawlExposesNothing(t *testing.T) {
 				for _, path := range c.paths {
 					for _, ds := range []bool{false, true} {
 						name := strings.Join([]string{method, path, state(failing, "failing", "ok"), state(signedIn, "signed-in", "anonymous"), state(ds, "datastar", "plain")}, " ")
-						checkResponse(t, name, crawl(h, method, path, ds))
+						checkResponse(t, name, method, path, crawl(h, method, path, ds))
 					}
 				}
 			}
@@ -216,30 +218,33 @@ func crawlUI(t *testing.T, failing, signedIn bool) http.Handler {
 	detail := services.UserDetail{User: user, Sessions: []services.Session{{ID: "us1", CreatedAt: now, ExpiresAt: now.Add(time.Hour), IPAddress: &ip, UserAgent: &agent}}}
 	audit := services.AuditPage{Total: 1, Limit: 50, Entries: []services.AuditEntry{{ID: 1, ActorID: "a1", ActorEmail: "root@example.com", Action: services.ActionUserBan, TargetType: "user", TargetID: "u1", TargetLabel: "ada " + xssProbe, Details: map[string]string{"reason": xssProbe}, CreatedAt: now}}}
 
-	a.EXPECT().SignIn(gomock.Any(), gomock.Any(), gomock.Any()).Return(sess, fail).AnyTimes()
-	a.EXPECT().SignOut(gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
-	a.EXPECT().CompleteSetPassword(gomock.Any(), gomock.Any(), gomock.Any()).Return(sess, fail).AnyTimes()
-	a.EXPECT().VerifyTwoFactor(gomock.Any(), gomock.Any()).Return(sess, "trust-tok", fail).AnyTimes()
+	a.EXPECT().SignIn(notOnGET(t, "SignIn"), gomock.Any(), gomock.Any()).Return(sess, fail).AnyTimes()
+	a.EXPECT().SignOut(notOnGET(t, "SignOut"), gomock.Any()).Return(fail).AnyTimes()
+	a.EXPECT().CompleteSetPassword(notOnGET(t, "CompleteSetPassword"), gomock.Any(), gomock.Any()).Return(sess, fail).AnyTimes()
+	a.EXPECT().VerifyTwoFactor(notOnGET(t, "VerifyTwoFactor"), gomock.Any()).Return(sess, "trust-tok", fail).AnyTimes()
+	// StartTwoFactorSetup runs on GET /two-factor/setup on purpose: it needs
+	// the HttpOnly challenge cookie a set-password or sign-in POST just set,
+	// which a link scanner never has, and is not behind an emailed link.
 	a.EXPECT().StartTwoFactorSetup(gomock.Any()).Return(setup, fail).AnyTimes()
-	a.EXPECT().EnableTwoFactor(gomock.Any(), gomock.Any(), gomock.Any()).Return(setup, fail).AnyTimes()
-	a.EXPECT().ConfirmTwoFactor(gomock.Any(), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
-	a.EXPECT().SetSessionCookie(gomock.Any(), gomock.Any()).AnyTimes()
-	a.EXPECT().ClearSessionCookie(gomock.Any()).AnyTimes()
-	a.EXPECT().SetTwoFactorCookie(gomock.Any(), gomock.Any()).AnyTimes()
-	a.EXPECT().SetTrustDeviceCookie(gomock.Any(), gomock.Any()).AnyTimes()
+	a.EXPECT().EnableTwoFactor(notOnGET(t, "EnableTwoFactor"), gomock.Any(), gomock.Any()).Return(setup, fail).AnyTimes()
+	a.EXPECT().ConfirmTwoFactor(notOnGET(t, "ConfirmTwoFactor"), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
+	a.EXPECT().SetSessionCookie(notOnGET(t, "SetSessionCookie"), gomock.Any()).AnyTimes()
+	a.EXPECT().ClearSessionCookie(notOnGET(t, "ClearSessionCookie")).AnyTimes()
+	a.EXPECT().SetTwoFactorCookie(notOnGET(t, "SetTwoFactorCookie"), gomock.Any()).AnyTimes()
+	a.EXPECT().SetTrustDeviceCookie(notOnGET(t, "SetTrustDeviceCookie"), gomock.Any()).AnyTimes()
 
 	us.EXPECT().ListUsers(gomock.Any(), gomock.Any(), gomock.Any()).Return(services.UserPage{Users: []services.User{user}, Total: 1, Limit: 50}, fail).AnyTimes()
 	us.EXPECT().GetUser(gomock.Any(), gomock.Any(), gomock.Any()).Return(detail, fail).AnyTimes()
-	us.EXPECT().BanUser(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
-	us.EXPECT().UnbanUser(gomock.Any(), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
-	us.EXPECT().SetRole(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
-	us.EXPECT().RevokeSession(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
-	us.EXPECT().RevokeSessions(gomock.Any(), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
+	us.EXPECT().BanUser(notOnGET(t, "BanUser"), gomock.Any(), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
+	us.EXPECT().UnbanUser(notOnGET(t, "UnbanUser"), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
+	us.EXPECT().SetRole(notOnGET(t, "SetRole"), gomock.Any(), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
+	us.EXPECT().RevokeSession(notOnGET(t, "RevokeSession"), gomock.Any(), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
+	us.EXPECT().RevokeSessions(notOnGET(t, "RevokeSessions"), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
 	ad.EXPECT().ListAdmins(gomock.Any(), gomock.Any()).Return([]services.Admin{{ID: "a1", Name: "Root " + xssProbe, Email: "root@example.com", CreatedAt: now, TwoFactorEnabled: true, HasPassword: true}}, fail).AnyTimes()
-	ad.EXPECT().InviteAdmin(gomock.Any(), gomock.Any(), gomock.Any()).Return(services.Admin{ID: "a2", Email: "new@example.com", CreatedAt: now}, fail).AnyTimes()
-	ad.EXPECT().DisableAdmin(gomock.Any(), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
-	ad.EXPECT().EnableAdmin(gomock.Any(), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
-	ad.EXPECT().RemoveAdmin(gomock.Any(), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
+	ad.EXPECT().InviteAdmin(notOnGET(t, "InviteAdmin"), gomock.Any(), gomock.Any()).Return(services.Admin{ID: "a2", Email: "new@example.com", CreatedAt: now}, fail).AnyTimes()
+	ad.EXPECT().DisableAdmin(notOnGET(t, "DisableAdmin"), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
+	ad.EXPECT().EnableAdmin(notOnGET(t, "EnableAdmin"), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
+	ad.EXPECT().RemoveAdmin(notOnGET(t, "RemoveAdmin"), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
 	au.EXPECT().List(gomock.Any(), gomock.Any(), gomock.Any()).Return(audit, fail).AnyTimes()
 	an.EXPECT().Overview(gomock.Any(), gomock.Any()).Return(services.Overview{TotalUsers: 3, VerifiedUsers: 2, BannedUsers: 1, GeneratedAt: now}, fail).AnyTimes()
 
@@ -254,12 +259,30 @@ func crawlUI(t *testing.T, failing, signedIn bool) http.Handler {
 	}).Handler()
 }
 
+// crawlMethod is the method of the request being crawled (tests run the
+// crawl sequentially).
+var crawlMethod string
+
+// notOnGET matches any argument but fails the test when a state-changing
+// port is called while a GET is served: mail scanners and link previews
+// fetch links, so opening a page (an emailed link above all) must never
+// spend a token, sign in or change anything.
+func notOnGET(t *testing.T, port string) gomock.Matcher {
+	return gomock.Cond(func(any) bool {
+		if crawlMethod == http.MethodGet {
+			t.Errorf("GET called %s: only a POST may change state", port)
+		}
+		return true
+	})
+}
+
 // crawl sends what a browser would. Streams are cut after their first write.
 func crawl(h http.Handler, method, path string, ds bool) *httptest.ResponseRecorder {
 	var body io.Reader
 	if method == http.MethodPost {
 		body = strings.NewReader(crawlForm.Encode())
 	}
+	crawlMethod = method
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	r := httptest.NewRequestWithContext(ctx, method, "https://admin.example"+path, body)
@@ -292,7 +315,7 @@ func (f *firstEvent) Flush() {
 	}
 }
 
-func checkResponse(t *testing.T, name string, rec *httptest.ResponseRecorder) {
+func checkResponse(t *testing.T, name, method, path string, rec *httptest.ResponseRecorder) {
 	t.Helper()
 	h, body := rec.Header(), rec.Body.String()
 	for _, re := range leaks {
@@ -334,12 +357,34 @@ func checkResponse(t *testing.T, name string, rec *httptest.ResponseRecorder) {
 	for k, want := range map[string]string{
 		"X-Content-Type-Options":     "nosniff",
 		"X-Frame-Options":            "DENY",
-		"Referrer-Policy":            "strict-origin",
 		"Strict-Transport-Security":  "max-age=63072000; includeSubDomains",
 		"Cross-Origin-Opener-Policy": "same-origin",
 	} {
 		if got := h.Get(k); got != want {
 			t.Errorf("%s: %s = %q, want %q", name, k, got, want)
+		}
+	}
+	// An emailed token in the URL: never sent on as a Referer, and rendered
+	// only as the page's own hidden token field.
+	tok := ""
+	if u, err := url.Parse(path); err == nil && method == http.MethodGet {
+		tok = u.Query().Get("token")
+	}
+	if rp := h.Get("Referrer-Policy"); (tok != "" && rp != "no-referrer") || (rp != "no-referrer" && rp != "strict-origin") {
+		t.Errorf("%s: Referrer-Policy = %q", name, rp)
+	}
+	if tok != "" {
+		esc := html.EscapeString(tok)
+		field := `<input type="hidden" name="token" value="` + esc + `">`
+		enc := url.QueryEscape(tok)
+		if strings.Count(body, esc) != strings.Count(body, field) || (enc != esc && strings.Contains(body, enc)) {
+			t.Errorf("%s: token rendered outside its hidden field", name)
+		}
+	}
+	// Nothing posts on load: a page acts only when the person submits it.
+	for _, v := range dataInit.FindAllStringSubmatch(body, -1) {
+		if autoPost.MatchString(html.UnescapeString(v[1])) {
+			t.Errorf("%s: data-init sends a request on load: %s", name, v[0])
 		}
 	}
 	if !strings.Contains(h.Get("Permissions-Policy"), "camera=()") {

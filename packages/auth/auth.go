@@ -77,12 +77,13 @@ type Config struct {
 	DisableSignUp   bool             // refuse public sign-up (SignUpEmail, POST /sign-up/email); CreateUserWithoutPassword still works
 
 	// VerifyEmailPath is an app page (a root-relative path, no query) that
-	// spends verification and change-email tokens itself (Auth.VerifyEmail)
-	// and then continues to the callbackURL it is given. When set, emailed
-	// verification links with a relative callbackURL open
-	// <BaseURL><VerifyEmailPath>?token=..&callbackURL=.. instead of
-	// GET /api/auth/verify-email, so browsers never touch the JSON API.
-	// Absolute and deep-link callbacks (mobile) keep the API link.
+	// asks the person to confirm, spends verification and change-email
+	// tokens on that POST (Auth.VerifyEmail) and then continues to the
+	// callbackURL it is given (checked with CheckCallbackURL). When set,
+	// every emailed verification link opens
+	// <BaseURL><VerifyEmailPath>?token=..&callbackURL=.., deep-link callbacks
+	// included, so browsers never touch the JSON API and nothing spends a
+	// token on GET; GET /verify-email then only forwards old links there.
 	VerifyEmailPath string
 }
 
@@ -320,15 +321,17 @@ func (a *Auth) passwordLink(token, redirectTo string) string {
 }
 
 // verificationLink is the emailed verification or change-email link for
-// token. With Config.VerifyEmailPath set and a relative callbackURL (default
-// "/") it opens that app page, which spends the token and continues to
-// callbackURL; otherwise GET /verify-email does both.
+// token. With Config.VerifyEmailPath set it always opens that app page,
+// which asks the person to confirm before it spends the token (a GET never
+// does: mail scanners and link previews fetch links) and then continues to
+// callbackURL (default "/"), deep links included; otherwise it is Better
+// Auth's GET /verify-email, which spends the token itself.
 func (a *Auth) verificationLink(token, callbackURL string) string {
 	if callbackURL == "" {
 		callbackURL = "/"
 	}
 	base := a.authURL("/verify-email")
-	if a.cfg.VerifyEmailPath != "" && isSafeRelativeURL(callbackURL) {
+	if a.cfg.VerifyEmailPath != "" {
 		base = a.baseOrigin + a.cfg.VerifyEmailPath
 	}
 	return base + "?token=" + url.QueryEscape(token) + "&callbackURL=" + url.QueryEscape(callbackURL)

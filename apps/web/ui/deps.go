@@ -43,6 +43,10 @@ type Auth interface {
 	// VerifyEmail returns a zero Session when the email was already verified.
 	VerifyEmail(ctx context.Context, token string) (User, Session, error)
 	SendVerificationEmail(ctx context.Context, email, callbackURL string) error
+	// CheckCallbackURL reports (nil) whether an emailed link's callbackURL
+	// may be redirected to: a safe relative path, a trusted origin or the
+	// mobile app's deep-link scheme.
+	CheckCallbackURL(callbackURL string) error
 	SetSessionCookie(w http.ResponseWriter, s Session)
 	ClearSessionCookie(w http.ResponseWriter)
 }

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 	"unicode"
@@ -130,7 +131,7 @@ func (u *UI) wrap(h http.HandlerFunc) http.Handler {
 		ctx = view.WithState(ctx, view.State{
 			Authenticated: authed,
 			Theme:         view.ThemeFrom(r),
-			Path:          r.URL.RequestURI(),
+			Path:          pathWithoutToken(r.URL),
 		})
 		w.Header().Set("Content-Language", string(loc))
 		w.Header().Add("Vary", "Cookie, Accept-Language")
@@ -222,4 +223,18 @@ func safeNext(next string) string {
 
 func newTabID() string {
 	return rand.Text()[:12]
+}
+
+// pathWithoutToken is the request's path and query minus an emailed link's
+// token: the layout echoes the path (the language switcher's "next"), and a
+// token may only appear in its page's own hidden form field.
+func pathWithoutToken(u *url.URL) string {
+	q := u.Query()
+	if !q.Has("token") {
+		return u.RequestURI()
+	}
+	q.Del("token")
+	out := *u
+	out.RawQuery = q.Encode()
+	return out.RequestURI()
 }

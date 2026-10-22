@@ -41,6 +41,8 @@ func TestRedactingHandlerKeys(t *testing.T) {
 		"token", "session_token", "accessToken", "refresh.token", "csrfToken", "api_key", "apiKey", "X-API-Key", "APIKey", "apikey",
 		"Authorization", "cookie", "Set-Cookie", "dsn", "DATABASE_URL", "admin_database_url", "dbURL",
 		"otp", "totpCode", "backup_codes", "recoveryCode", "private_key", "privateKey", "AWS_ACCESS_KEY", "credentials", "signature",
+		"password_hash", "newPassword", "PGPASSWORD", "smtp_pass", "authToken", "refresh_token", "csrftoken", "jwt", "client_secret",
+		"x-api-key", "aws_secret_access_key", "private_key_pem", "code_verifier", "auth", "auth_header", "sig", "connect.sid", "JSESSIONID",
 	} {
 		out := redactLog(t, secrets.RedactOptions{}, func(l *slog.Logger) { l.Info("m", key, "s3cr3t-value") })
 		if strings.Contains(out, "s3cr3t-value") || strings.Count(out, "[redacted]") != 2 {
@@ -48,7 +50,7 @@ func TestRedactingHandlerKeys(t *testing.T) {
 		}
 	}
 	// Harmless keys stay readable.
-	for _, key := range []string{"status", "code", "keys", "secrets_provider", "key", "url", "email", "provider", "user_id", "footprint"} {
+	for _, key := range []string{"status", "code", "keys", "secrets_provider", "key", "session", "url", "email", "provider", "user_id", "footprint"} {
 		out := redactLog(t, secrets.RedactOptions{}, func(l *slog.Logger) { l.Info("m", key, "plainvalue") })
 		if strings.Count(out, "plainvalue") != 2 {
 			t.Errorf("key %q over-redacted: %s", key, out)
@@ -62,10 +64,39 @@ func TestRedactingHandlerKeys(t *testing.T) {
 	if strings.Count(out, fp) != 2 || strings.Contains(out, "hunter22") || !strings.Contains(out, "none_token=none") {
 		t.Errorf("fingerprints: %s", out)
 	}
-	// A non-string value under a credential key is redacted too.
-	out = redactLog(t, secrets.RedactOptions{}, func(l *slog.Logger) { l.Info("m", "otp", 123456) })
-	if strings.Contains(out, "123456") {
-		t.Errorf("int otp: %s", out)
+	// A non-string value under a credential key is redacted too; a boolean
+	// cannot carry one.
+	out = redactLog(t, secrets.RedactOptions{}, func(l *slog.Logger) { l.Info("m", "otp", 123456, "has_password", true) })
+	if strings.Contains(out, "123456") || strings.Count(out, "true") != 2 {
+		t.Errorf("non-string values: %s", out)
+	}
+}
+
+// Names that mention a credential without holding one stay readable, as an
+// attribute key, as name=value in a message, and inside error text.
+func TestRedactingHandlerFalsePositives(t *testing.T) {
+	for _, name := range []string{
+		// Facts about a credential: a word after it marks metadata.
+		"set_password_page", "password_page", "reset_password_path", "token_ttl", "secret_name",
+		"password_min_length", "token_expires_at", "api_key_fingerprint", "cookie_name", "token_type",
+		"session_id", "passwordChangedAt",
+		// Words that merely contain a credential word.
+		"status_code", "exit_code", "keys", "passed", "session_count", "author", "keyboard", "bypass",
+		"passage", "max_tokens", "cache_key", "public_key",
+	} {
+		out := redactLog(t, secrets.RedactOptions{}, func(l *slog.Logger) {
+			l.Info("m "+name+"=plainvalue", name, "plainvalue", "err", errors.New("failed: "+name+"=plainvalue"))
+		})
+		if strings.Contains(out, "[redacted]") || strings.Count(out, "plainvalue") != 6 {
+			t.Errorf("%q over-redacted: %s", name, out)
+		}
+	}
+	// The admin invite flow's exact record.
+	out := redactLog(t, secrets.RedactOptions{}, func(l *slog.Logger) {
+		l.Info("invite sent", "email", "ada@example.com", "set_password_page", "https://admin.example/set-password")
+	})
+	if strings.Count(out, "https://admin.example/set-password") != 2 {
+		t.Errorf("set_password_page: %s", out)
 	}
 }
 
@@ -87,8 +118,25 @@ func TestRedactString(t *testing.T) {
 		{"token=abc", "token=[redacted]"},
 		{"reset with password=hunter2, done", "reset with password=[redacted], done"},
 		{"better-auth.session_token=abc.sig; Path=/", "better-auth.session_token=[redacted]; Path=/"},
+		{"/cb?code=abc&state=x", "/cb?code=[redacted]&state=x"},
+		{"/maps?key=k1&zoom=3", "/maps?key=[redacted]&zoom=3"},
+		{"/f?token=a=b==&n=1", "/f?token=[redacted]&n=1"},
+		{"sessionid=abc; sid=def; connect.sid=ghi; session=jkl", "sessionid=[redacted]; sid=[redacted]; connect.sid=[redacted]; session=[redacted]"},
+		{"x-api-key=k2 newPassword=p1 password_hash=h1 client_secret=c1 refresh_token=r1", "x-api-key=[redacted] newPassword=[redacted] password_hash=[redacted] client_secret=[redacted] refresh_token=[redacted]"},
+		{`bad query "token=abc"`, `bad query "token=[redacted]"`},
+		// A readable parameter's value is still scanned.
+		{"next=/x?token=abc password_page=/y?code=xyz", "next=/x?token=[redacted] password_page=/y?code=[redacted]"},
+		{"token=", "token="},
+		{"mytoken=abc", "mytoken=[redacted]"},
+		{"a:token=abc", "a:token=abc"}, // not a parameter boundary
+		// JSON fields by the same word rule; empty values and fingerprints stay.
+		{`{"id":"u1","password_hash":"h2","password_min_length":"8","newPassword":"p\"2","token":"","api_key":"fp:0123abcd"}`,
+			`{"id":"u1","password_hash":"[redacted]","password_min_length":"8","newPassword":"[redacted]","token":"","api_key":"fp:0123abcd"}`},
+		{`{"code":"E42","status_code":"500"}`, `{"code":"E42","status_code":"500"}`},
 		{"status 200 ok", "status 200 ok"},
 		{"page=2&sort=name", "page=2&sort=name"},
+		{"status_code=500 exit_code=1 keys=3 passed=true session_count=2 author=ada keyboard=us bypass=no passage=x",
+			"status_code=500 exit_code=1 keys=3 passed=true session_count=2 author=ada keyboard=us bypass=no passage=x"},
 		{"abc", "abc"},
 	} {
 		if got := secrets.RedactString(tt.in); got != tt.want {
@@ -192,17 +240,18 @@ func TestRedactingHandlerMapsAndStructs(t *testing.T) {
 	out := redactLog(t, secrets.RedactOptions{}, func(l *slog.Logger) {
 		l.Info("m",
 			"headers", http.Header{"Authorization": {"Bearer s3cr3t-a"}, "Cookie": {"sid=s3cr3t-b"}, "Accept": {"text/html"}},
-			"query", url.Values{"token": {"s3cr3t-c"}, "page": {"2"}},
+			"query", url.Values{"token": {"s3cr3t-c"}, "code": {"s3cr3t-g"}, "page": {"2"}},
 			"labels", map[string]string{"api_key": "s3cr3t-d", "region": "eu"},
 			"session", session{ID: "sess-1", Token: "s3cr3t-e"},
 			"ptr", &session{ID: "sess-2", Token: "s3cr3t-f"},
 			"plain", struct{ N int }{7},
+			"key", map[string]string{"region": "us"}, // a bare name counts inside a map, not as its key
 		)
 	})
 	if strings.Contains(out, "s3cr3t") {
 		t.Fatalf("leaked: %s", out)
 	}
-	for _, want := range []string{"text/html", "page=2", "eu", "sess-1", "sess-2", "N:7"} {
+	for _, want := range []string{"text/html", "page=2", "eu", "sess-1", "sess-2", "N:7", "region=us"} {
 		if !strings.Contains(out, want) && !strings.Contains(out, strings.ReplaceAll(want, "=", `":"`)) {
 			t.Errorf("lost %q: %s", want, out)
 		}

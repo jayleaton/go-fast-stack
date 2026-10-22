@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/jayleaton/ai-patterns-go/packages/secrets"
+	"github.com/jayleaton/ai-patterns-go/packages/secrets/reveal"
 )
 
 // These run the Doppler adapter over a real socket (httptest.Server).
@@ -35,7 +36,7 @@ func TestDopplerDownloadOverHTTP(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if v, _ := snap.Get(key); v.Reveal() != "re_live" || snap.Revision() != `"v1"` || gotAccept != "application/json" {
+	if v, _ := snap.Get(key); reveal.Value(v) != "re_live" || snap.Revision() != `"v1"` || gotAccept != "application/json" {
 		t.Fatalf("snapshot names=%v revision=%s accept=%s", snap.Names(), snap.Revision(), gotAccept)
 	}
 	if names := snap.Names(); len(names) != 2 || names[0] != "DOPPLER_CONFIG" {
@@ -133,8 +134,8 @@ func TestSecretNeverPrints(t *testing.T) {
 			t.Fatalf("secret printed: %s", out)
 		}
 	}
-	if s.Reveal() != "re_plain_value" || s.Len() != len("re_plain_value") || s.IsZero() || !s.Equal(secrets.NewSecret("re_plain_value")) || s.Equal(secrets.NewSecret("x")) {
-		t.Fatal("Reveal/Len/IsZero/Equal")
+	if reveal.Value(s) != "re_plain_value" || s.Len() != len("re_plain_value") || s.IsZero() || !s.Equal(secrets.NewSecret("re_plain_value")) || s.Equal(secrets.NewSecret("x")) {
+		t.Fatal("reveal.Value/Len/IsZero/Equal")
 	}
 	fp := s.Fingerprint()
 	if !strings.HasPrefix(fp, "fp:") || len(fp) != 11 || fp != secrets.NewSecret("re_plain_value").Fingerprint() || fp == secrets.NewSecret("re_other").Fingerprint() {

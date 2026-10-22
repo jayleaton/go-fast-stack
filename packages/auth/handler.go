@@ -195,6 +195,12 @@ func (a *Auth) handleVerifyEmail(w http.ResponseWriter, r *http.Request) {
 		a.writeError(w, r, err)
 		return
 	}
+	if a.cfg.VerifyEmailPath != "" {
+		// A GET never spends the token (scanners prefetch links): links
+		// emailed before VerifyEmailPath was set go to the confirm page.
+		http.Redirect(w, r, a.verificationLink(r.URL.Query().Get("token"), callbackURL), http.StatusFound)
+		return
+	}
 	user, sess, changed, err := a.verifyEmail(r.Context(), r.URL.Query().Get("token"))
 	if err != nil {
 		e := asError(err)

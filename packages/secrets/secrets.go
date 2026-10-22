@@ -9,11 +9,12 @@
 //	m := secrets.NewManager(secrets.NewDoppler(secrets.NewSecret(token)), secrets.Options{Keys: []string{"RESEND_API_KEY"}})
 //	if err := m.Start(ctx); err != nil { ... } // first fetch; fails boot without a valid snapshot
 //	defer m.Stop()
-//	m.OnChange("RESEND_API_KEY", func(v secrets.Secret) error { mailer.Swap(newMailer(v.Reveal())); return nil })
+//	m.OnChange("RESEND_API_KEY", func(v secrets.Secret) error { mailer.Swap(newMailer(reveal.Value(v))); return nil })
 //
-// Values are Secret, which formats, logs and marshals as "[redacted]"; only
-// Reveal returns the value. Nothing in this package logs a value, a token or a
-// provider response body. NewRedactingHandler wraps the binaries' slog
+// Values are Secret, which formats, logs and marshals as "[redacted]". No
+// method returns the value: only reveal.Value (package
+// packages/secrets/reveal) does, and only apps/*/cmd may import it (depguard).
+// Nothing in this package logs a value, a token or a provider response body. NewRedactingHandler wraps the binaries' slog
 // handler so credentials that reach a log anyway are redacted. The package
 // never reads the environment:
 // apps/web/internal/config builds the Manager.
@@ -34,19 +35,26 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/jayleaton/ai-patterns-go/packages/secrets/internal/access"
 )
 
 const redacted = "[redacted]"
 
 // Secret is a secret value. Every way of printing it (fmt verbs, slog, JSON,
-// text marshalling) yields "[redacted]"; Reveal returns the value.
+// text marshalling) yields "[redacted]". No method returns the value, so no
+// interface can reach it either: reveal.Value is the only way to read it.
 type Secret struct{ v string }
+
+func init() {
+	access.Reveal = func(x any) (string, bool) {
+		s, ok := x.(Secret)
+		return s.v, ok
+	}
+}
 
 // NewSecret wraps v.
 func NewSecret(v string) Secret { return Secret{v} }
-
-// Reveal returns the value. Pass it straight to the client that needs it.
-func (s Secret) Reveal() string { return s.v }
 
 // Len is the length of the value in bytes, for validation (minimum lengths)
 // without revealing it.

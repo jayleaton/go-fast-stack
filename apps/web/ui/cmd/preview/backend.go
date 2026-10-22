@@ -7,6 +7,7 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"net/http"
 	"net/url"
 	"sort"
@@ -217,6 +218,14 @@ func (a Auth) VerifyEmail(ctx context.Context, tok string) (ui.User, ui.Session,
 	}
 	acc.user.EmailVerified = true
 	return acc.user, s.newSessionLocked(ctx, id), nil
+}
+
+// CheckCallbackURL trusts this site's paths only: the preview has no mobile app.
+func (Auth) CheckCallbackURL(callbackURL string) error {
+	if strings.HasPrefix(callbackURL, "/") && !strings.HasPrefix(callbackURL, "//") {
+		return nil
+	}
+	return errors.New("untrusted callback")
 }
 
 func (a Auth) SendVerificationEmail(_ context.Context, email, callbackURL string) error {

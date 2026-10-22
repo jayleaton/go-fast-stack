@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/jayleaton/ai-patterns-go/packages/secrets"
+	"github.com/jayleaton/ai-patterns-go/packages/secrets/reveal"
 )
 
 func getter(kv map[string]string) func(string) string {
@@ -90,7 +91,7 @@ func TestKeyring(t *testing.T) {
 
 		var seen []string
 		m.OnKeyring("SIGNING", func(k secrets.Keyring) error {
-			cur, prev, rev := k.Reveal()
+			cur, prev, rev := reveal.Keyring(k)
 			seen = append(seen, cur+"|"+strings.Join(prev, ",")+"|"+strings.Join(rev, ","))
 			return nil
 		})

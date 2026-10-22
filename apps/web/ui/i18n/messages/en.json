@@ -144,7 +144,10 @@
       "emailVerifiedSuccessfully": "Email verified successfully!",
       "accountVerifiedRedirect": "Your account has been verified. You're now logged in and will be redirected shortly.",
       "continueToDashboard": "Continue to dashboard",
-      "invalidUser": "This link belongs to a different account. Sign out, then open the link again."
+      "invalidUser": "This link belongs to a different account. Sign out, then open the link again.",
+      "confirmTitle": "Confirm your email",
+      "confirmDescription": "Confirm that this is your email address to finish verifying it.",
+      "confirmButton": "Verify email"
     },
     "home": {
       "title": "Your app is running",

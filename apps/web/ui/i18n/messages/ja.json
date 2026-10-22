@@ -144,7 +144,10 @@
       "emailVerifiedSuccessfully": "メールが正常に確認されました！",
       "accountVerifiedRedirect": "アカウントが確認されました。ログイン済みです。まもなくリダイレクトします。",
       "continueToDashboard": "ダッシュボードに続行",
-      "invalidUser": "このリンクは別のアカウント用です。サインアウトしてからもう一度リンクを開いてください。"
+      "invalidUser": "このリンクは別のアカウント用です。サインアウトしてからもう一度リンクを開いてください。",
+      "confirmTitle": "メールアドレスの確認",
+      "confirmDescription": "このメールアドレスがあなたのものであることを確認して、認証を完了してください。",
+      "confirmButton": "メールアドレスを認証"
     },
     "home": {
       "title": "アプリが起動しています",

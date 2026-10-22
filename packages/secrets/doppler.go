@@ -78,7 +78,7 @@ func (d *Doppler) Fetch(ctx context.Context, previous Snapshot) (Snapshot, error
 	if err != nil {
 		return Snapshot{}, fmt.Errorf("doppler: build request: %w", err)
 	}
-	req.Header.Set("Authorization", "Bearer "+d.Token.Reveal())
+	req.Header.Set("Authorization", "Bearer "+d.Token.v)
 	req.Header.Set("Accept", "application/json")
 	if previous.Len() > 0 && previous.Revision() != "" {
 		req.Header.Set("If-None-Match", previous.Revision())
