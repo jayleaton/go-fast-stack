@@ -229,3 +229,4 @@ railway-verify: ## GET /healthz on every public Railway service
 .PHONY: deploy-check
 deploy-check: ## vet and lint the deploy/ module (it has no tests)
 	cd deploy && $(GO) vet ./... && (cd .railway && $(GO) vet railway.go) && $(GO) tool -modfile=../tools/go.mod golangci-lint run -c ../.golangci.yml ./...
+# ci timing probe
