@@ -71,7 +71,7 @@ type Config struct {
 
 // MobileTrustedOrigins returns the deep-link origins of the Expo app: its
 // scheme always, plus Expo Go / dev-client wildcards outside production.
-func MobileTrustedOrigins(production bool) []string {
+func MobileOrigins(production bool) []string {
 	origins := []string{"betterstack://"}
 	if !production {
 		origins = append(origins, "exp://**", "exp+go://**")
