@@ -248,14 +248,6 @@ jobs:
             !~/go/pkg/mod/cache/download/**/*.zip
           key: v4-gomod-${{ runner.os }}-${{ hashFiles('go.sum') }}
           restore-keys: v4-gomod-${{ runner.os }}-
-      - uses: actions/cache/restore@v6
-        if: steps.scope.outputs.go == 'true'
-        with:
-          path: |
-            ~/.cache/go-build
-          key: v4-gotest-${{ runner.os }}-${{ github.sha }}
-          restore-keys: v4-gotest-${{ runner.os }}-
-
       # No setup-go: the runner's preinstalled go switches to the go.mod
       # version itself (GOTOOLCHAIN=auto); the toolchain lives in the module cache.
       - name: Go toolchain
@@ -280,6 +272,15 @@ jobs:
             --tmpfs /var/lib/postgresql postgres:18-alpine \
             -c fsync=off -c synchronous_commit=off -c full_page_writes=off -c max_connections=200 \
             > "$RUNNER_TEMP/pg.log" 2>&1 &
+
+      # After Postgres starts, so it boots while this restores and the build runs.
+      - uses: actions/cache/restore@v6
+        if: steps.scope.outputs.go == 'true'
+        with:
+          path: |
+            ~/.cache/go-build
+          key: v4-gotest-${{ runner.os }}-${{ github.sha }}
+          restore-keys: v4-gotest-${{ runner.os }}-
 
       - name: Build
         if: steps.affected.outputs.packages != ''
