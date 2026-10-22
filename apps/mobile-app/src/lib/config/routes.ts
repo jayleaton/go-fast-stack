@@ -26,3 +26,4 @@ export const ApiRoutes = {
 export function userPath(id: string): string {
   return ApiRoutes.users.byId.replace('{id}', encodeURIComponent(id))
 }
+// scratch: CI billing shape
