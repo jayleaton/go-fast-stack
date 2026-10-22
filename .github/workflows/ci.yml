@@ -9,7 +9,7 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
   push:
-    branches: [main, feat/foundation] # TEMP: measure CI before ci.yml is on main (workflow_dispatch needs it there)
+    branches: [main]
   merge_group:
 
 concurrency:
