@@ -286,7 +286,7 @@ templ PageHeader(title, subtitle string) {
 
 // TableWrap scrolls a wide table inside a card on small screens.
 templ TableWrap(label string) {
-	<div class="overflow-x-auto rounded-card border border-border bg-surface shadow-card" role="region" aria-label={ label } tabindex="0">
+	<div class="relative overflow-x-auto rounded-card border border-border bg-surface shadow-card" role="region" aria-label={ label } tabindex="0">
 		{ children... }
 	</div>
 }
