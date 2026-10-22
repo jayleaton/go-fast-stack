@@ -78,4 +78,4 @@ docker: ## Build the production image
 
 .PHONY: actionlint
 actionlint: ## Lint GitHub workflows
-	$(TOOL) actionlint
+	$(GO) tool -modfile=tools/actionlint/go.mod actionlint
