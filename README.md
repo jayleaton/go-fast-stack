@@ -20,12 +20,24 @@ curl localhost:3000/healthz
 curl -c jar -H 'Content-Type: application/json' \
   -d '{"name":"Ada","email":"ada@example.com","password":"password123"}' \
   localhost:3000/api/auth/sign-up/email
-curl -b jar localhost:3000/api/core/v1/users
-curl -b jar -H 'Origin: http://localhost:3000' -X PATCH -d '{"name":"Ada Lovelace"}' localhost:3000/api/core/v1/users
+curl -b jar localhost:3000/api/core/v1/users/me
+curl -b jar -H 'Origin: http://localhost:3000' -X PATCH -d '{"name":"Ada Lovelace"}' localhost:3000/api/core/v1/users/me
 # Mobile clients send the token from the sign-in/sign-up body as a bearer token.
-curl -H "Authorization: Bearer <token>" localhost:3000/api/core/v1/users
+curl -H "Authorization: Bearer <token>" localhost:3000/api/core/v1/users/me
 curl -b jar -H 'Origin: http://localhost:3000' -X POST localhost:3000/api/auth/sign-out
 ```
+
+The signed-in user's account lives under `/api/core/v1/users/me` (all JSON, envelope `{"data", "error"}`):
+
+| Route | |
+|---|---|
+| `GET /me`, `PATCH /me` | profile (`{"name", "image"}`; `image: null` clears it) |
+| `POST /me/email` | `{"newEmail", "callbackURL"?}`: emails a verification link to the new address; it changes when the link is opened |
+| `POST /me/password` | `{"currentPassword", "newPassword", "revokeOtherSessions"}` |
+| `GET /me/sessions`, `DELETE /me/sessions/{id}`, `DELETE /me/sessions/others` | list sessions (the request's own is `current`), sign one or all others out |
+| `GET /me/data`, `DELETE /me` | what is stored, delete the account |
+
+`PATCH /api/core/v1/users/{id}` answers 403 for anyone but the caller.
 
 Auth endpoints live under `/api/auth/` (sign-up, sign-in, sign-out, get-session, verify-email, send-verification-email, request-password-reset, reset-password); see [packages/auth/README.md](packages/auth/README.md).
 
@@ -36,10 +48,11 @@ Each checkout gets its own compose project and database ports, derived from its 
 | | |
 |---|---|
 | `make dev` | run the server with `.env` |
-| `make test` | `go test -race ./...` against this checkout's throwaway tmpfs Postgres (or `TEST_DATABASE_URL`) |
-| `make lint` | gofmt + golangci-lint (includes layering rules) |
+| `make test` | `go test -race ./...` against this checkout's throwaway tmpfs Postgres (or `TEST_DATABASE_URL`), then per-boundary coverage floors |
+| `make lint` | gofmt + golangci-lint (layering and test-import rules) + test file locations |
+| `make lint-layering` / `make lint-tests` | prove the layering, test-location and coverage rules still reject planted violations |
 | `make ci` | everything CI runs |
-| `make generate` | sqlc (and templ) code generation |
+| `make generate` | sqlc, mocks (`go generate`) and templ code generation |
 | `make build` / `make docker` | static binary / production image |
 | `make db-up` / `make db-down` | start / stop the local databases |
 | `make env` | print this checkout's compose project, ports and `DATABASE_URL` |
@@ -54,4 +67,4 @@ Go stdlib `net/http` · `templ` + Datastar + Tailwind (standalone CLI) · `pgx` 
 
 ## Working on it
 
-Read [AGENTS.md](AGENTS.md) (architecture, verification, PR rules) and [CONTEXT.md](CONTEXT.md) (shared vocabulary).
+Read [AGENTS.md](AGENTS.md) (architecture, test boundaries, how to add a service, PR rules) and [CONTEXT.md](CONTEXT.md) (shared vocabulary).

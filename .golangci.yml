@@ -64,6 +64,58 @@ linters:
               desc: packages/auth is self-contained and never imports apps
             - pkg: github.com/jayleaton/ai-patterns-go/packages/database
               desc: packages/auth owns its tables and queries; it never uses the app's repositories
+        # Test boundaries: each layer is tested with the layer below mocked or
+        # real, never skipped. See AGENTS.md "Test boundaries".
+        service-tests:
+          files:
+            - "**/apps/web/internal/services/*_test.go"
+          deny:
+            - pkg: github.com/jackc/pgx
+              desc: service tests use the generated port mocks in services/mocks only
+            - pkg: github.com/jayleaton/ai-patterns-go/packages/database
+              desc: service tests use the generated port mocks in services/mocks only (services re-export the model types)
+            - pkg: github.com/jayleaton/ai-patterns-go/packages/auth
+              desc: service tests use the generated port mocks in services/mocks only
+            - pkg: github.com/jayleaton/ai-patterns-go/apps/web/internal/api
+              desc: service tests use the generated port mocks in services/mocks only
+        handler-tests:
+          files: # "/**/" needs a subdirectory, so list the package dir too
+            - "**/apps/web/internal/api/*_test.go"
+            - "**/apps/web/internal/api/**/*_test.go"
+            - "**/apps/web/ui/*_test.go"
+            - "**/apps/web/ui/**/*_test.go"
+          deny:
+            - pkg: github.com/jackc/pgx
+              desc: handler tests mock the service and the session, never the database
+            - pkg: github.com/jayleaton/ai-patterns-go/packages/database
+              desc: handler tests mock the service and the session, never the database
+            - pkg: github.com/jayleaton/ai-patterns-go/apps/web/internal/services/mocks
+              desc: those are repository/credential mocks; handler tests mock the SERVICE, never the repos underneath it
+            - pkg: github.com/jayleaton/ai-patterns-go/packages/auth
+              desc: handler tests mock the session; real auth is tested in packages/auth and server
+        repository-tests:
+          files:
+            - "**/packages/database/*_test.go"
+          deny:
+            - pkg: go.uber.org/mock
+              desc: repository tests run against real Postgres (dbtest), never mocks
+            - pkg: github.com/jayleaton/ai-patterns-go/apps
+              desc: repository tests run against real Postgres (dbtest) and never import apps
+        no-test-helpers:
+          files:
+            - $all
+            - "!$test"
+            - "!**/mocks/**"
+            - "!**/apitest/**"
+          deny:
+            - pkg: go.uber.org/mock
+              desc: mocks are for tests; production code never imports them
+            - pkg: github.com/jayleaton/ai-patterns-go/apps/web/internal/api/apitest
+              desc: test helpers are for tests; production code never imports them
+            - pkg: github.com/jayleaton/ai-patterns-go/apps/web/internal/services/mocks
+              desc: mocks are for tests; production code never imports them
+            - pkg: github.com/jayleaton/ai-patterns-go/apps/web/internal/api/mocks
+              desc: mocks are for tests; production code never imports them
   exclusions:
     generated: lax
     presets:

@@ -46,8 +46,8 @@ type Auth interface {
 // Users is the user service the dashboard calls; *services.UserService
 // satisfies it.
 type Users interface {
-	UpdateUserSettings(ctx context.Context, actor services.Actor, userID string, in validate.UpdateUserSettings) (services.User, error)
-	DeleteAllUserData(ctx context.Context, actor services.Actor) error
+	UpdateProfile(ctx context.Context, actor services.Actor, userID string, in validate.UpdateUserSettings) (services.User, error)
+	DeleteAccount(ctx context.Context, actor services.Actor, userID string) error
 }
 
 // The real implementations plug in without adapters.

@@ -13,6 +13,9 @@ import (
 
 // UserRepository reads and updates the non-credential columns of the Better
 // Auth "user" table. packages/auth owns the table and its credentials.
+//
+// It implements services.UserRepository: the method set is the port the
+// service declares, nothing more. Copy this file for a new repository.
 type UserRepository struct {
 	q *sqlc.Queries
 }
@@ -22,25 +25,20 @@ func NewUserRepository(pool *pgxpool.Pool) *UserRepository {
 	return &UserRepository{q: sqlc.New(pool)}
 }
 
-// GetUserByID returns model.ErrNotFound when no user has id.
-func (r *UserRepository) GetUserByID(ctx context.Context, id string) (model.User, error) {
+// GetByID returns model.ErrNotFound when no user has id.
+func (r *UserRepository) GetByID(ctx context.Context, id string) (model.User, error) {
 	return one(r.q.GetUserByID(ctx, id))
 }
 
-// GetUserByEmail returns model.ErrNotFound when no user has email.
-func (r *UserRepository) GetUserByEmail(ctx context.Context, email string) (model.User, error) {
-	return one(r.q.GetUserByEmail(ctx, email))
-}
-
-// UpdateUserProfile applies u and returns the updated user.
-func (r *UserRepository) UpdateUserProfile(ctx context.Context, id string, u model.UserProfileUpdate) (model.User, error) {
+// UpdateProfile applies p and returns the updated user.
+func (r *UserRepository) UpdateProfile(ctx context.Context, id string, p model.UserProfileUpdate) (model.User, error) {
 	return one(r.q.UpdateUserProfile(ctx, sqlc.UpdateUserProfileParams{
-		ID: id, Name: u.Name, SetImage: u.SetImage, Image: u.Image,
+		ID: id, Name: p.Name, SetImage: p.SetImage, Image: p.Image,
 	}))
 }
 
-// DeleteUser deletes the user; sessions, accounts and app rows cascade.
-func (r *UserRepository) DeleteUser(ctx context.Context, id string) error {
+// Delete deletes the user; sessions, accounts and app rows cascade.
+func (r *UserRepository) Delete(ctx context.Context, id string) error {
 	n, err := r.q.DeleteUser(ctx, id)
 	if err != nil {
 		return err
@@ -51,13 +49,17 @@ func (r *UserRepository) DeleteUser(ctx context.Context, id string) error {
 	return nil
 }
 
-// GetUserDataSummary lists the data stored for a user.
-func (r *UserRepository) GetUserDataSummary(ctx context.Context, id string) (model.UserDataSummary, error) {
-	u, err := r.GetUserByID(ctx, id)
+// DataSummary lists the data stored for a user.
+func (r *UserRepository) DataSummary(ctx context.Context, id string) (model.UserDataSummary, error) {
+	u, err := r.GetByID(ctx, id)
 	if err != nil {
 		return model.UserDataSummary{}, err
 	}
-	return model.UserDataSummary{User: u}, nil
+	sessions, err := r.q.CountUserSessions(ctx, id)
+	if err != nil {
+		return model.UserDataSummary{}, err
+	}
+	return model.UserDataSummary{User: u, Sessions: sessions}, nil
 }
 
 func one(u sqlc.User, err error) (model.User, error) {
