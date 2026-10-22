@@ -38,6 +38,12 @@ func (m *DevMailer) SendPasswordResetEmail(ctx context.Context, to, url string) 
 	return nil
 }
 
+// SendSetPasswordEmail logs the set-password (invite) link for to. It never fails.
+func (m *DevMailer) SendSetPasswordEmail(ctx context.Context, to, url string) error {
+	m.logger().InfoContext(ctx, "auth: set-password email (dev mode, not sent)", "to", to, "url", url)
+	return nil
+}
+
 // SendEmailChangeNotice logs the email change notice for to. It never fails.
 func (m *DevMailer) SendEmailChangeNotice(ctx context.Context, to, newEmail string) error {
 	m.logger().InfoContext(ctx, "auth: email change notice (dev mode, not sent)", "to", to, "newEmail", newEmail)

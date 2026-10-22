@@ -34,6 +34,8 @@ const (
 	DefaultSessionTTL        = 7 * 24 * time.Hour
 	DefaultSessionUpdateAge  = 24 * time.Hour
 	DefaultFreshAge          = 24 * time.Hour
+	DefaultInviteTTL         = 72 * time.Hour
+	DefaultTrustDeviceTTL    = 30 * 24 * time.Hour
 	DefaultMinPasswordLength = 8
 	DefaultMaxPasswordLength = 128
 	// VerificationTokenTTL is how long an email verification link stays valid.
@@ -59,6 +61,11 @@ type Config struct {
 	ClientIPHeader    string        // header set by the trusted proxy carrying the client IP (e.g. "X-Forwarded-For"); empty uses the TCP peer
 	Logger            *slog.Logger  // default slog.Default()
 	MailTimeout       time.Duration // timeout for sending one email (default 30s)
+
+	CookiePrefix string           // cookie name prefix (default "better-auth"): a second instance in the same browser needs its own
+	AppName      string           // TOTP issuer default (default: BaseURL host)
+	TwoFactor    *TwoFactorConfig // nil turns 2FA off: endpoints answer 404, sign-in is unchanged
+	InviteTTL    time.Duration    // how long a set-password (invite) link stays valid (default 72h)
 }
 
 // MobileTrustedOrigins returns the deep-link origins of the Expo app: its
@@ -79,6 +86,8 @@ type Mailer interface {
 	// SendEmailChangeNotice tells the current address that a change to
 	// newEmail was requested (the confirmation link goes to newEmail).
 	SendEmailChangeNotice(ctx context.Context, to, newEmail string) error
+	// SendSetPasswordEmail invites to to choose a password (single-use link).
+	SendSetPasswordEmail(ctx context.Context, to, url string) error
 }
 
 // User is a row of the "user" table, serialised like Better Auth's user object.
@@ -162,6 +171,28 @@ func New(cfg Config, pool *pgxpool.Pool, mailer Mailer) (*Auth, error) {
 	}
 	if cfg.MailTimeout <= 0 {
 		cfg.MailTimeout = 30 * time.Second
+	}
+	if cfg.CookiePrefix == "" {
+		cfg.CookiePrefix = "better-auth"
+	}
+	if strings.ContainsAny(cfg.CookiePrefix, " ;,=\"\t") {
+		return nil, fmt.Errorf("auth: CookiePrefix %q is not a valid cookie name", cfg.CookiePrefix)
+	}
+	if cfg.AppName == "" {
+		cfg.AppName = base.Hostname()
+	}
+	if cfg.InviteTTL <= 0 {
+		cfg.InviteTTL = DefaultInviteTTL
+	}
+	if tf := cfg.TwoFactor; tf != nil {
+		copied := *tf
+		if copied.Issuer == "" {
+			copied.Issuer = cfg.AppName
+		}
+		if copied.TrustDeviceTTL == 0 {
+			copied.TrustDeviceTTL = DefaultTrustDeviceTTL
+		}
+		cfg.TwoFactor = &copied
 	}
 
 	a := &Auth{

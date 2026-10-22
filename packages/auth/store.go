@@ -2,7 +2,10 @@ package auth
 
 import (
 	"context"
+	"crypto/hmac"
+	"encoding/json"
 	"errors"
+	"slices"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -150,14 +153,45 @@ func (s *store) createSession(ctx context.Context, sess Session) error {
 }
 
 // sessionWithUser loads a session and its user by token, expired or not.
-func (s *store) sessionWithUser(ctx context.Context, token string) (Session, User, error) {
+// sessionWithUser loads a session, its user and the user's ban, by token,
+// expired or not.
+func (s *store) sessionWithUser(ctx context.Context, token string) (Session, User, ban, error) {
 	var sess Session
+	var b ban
 	u, err := scanUser(s.pool.QueryRow(ctx, `
-		SELECT `+userColumns+`, s."id", s."expiresAt", s."token", s."createdAt", s."updatedAt", s."ipAddress", s."userAgent", s."userId"
+		SELECT `+userColumns+`, s."id", s."expiresAt", s."token", s."createdAt", s."updatedAt", s."ipAddress", s."userAgent", s."userId",
+			u."banned", u."banExpires"
 		FROM "session" s JOIN "user" u ON u."id" = s."userId"
 		WHERE s."token" = $1`, token),
-		&sess.ID, &sess.ExpiresAt, &sess.Token, &sess.CreatedAt, &sess.UpdatedAt, &sess.IPAddress, &sess.UserAgent, &sess.UserID)
-	return sess, u, err
+		&sess.ID, &sess.ExpiresAt, &sess.Token, &sess.CreatedAt, &sess.UpdatedAt, &sess.IPAddress, &sess.UserAgent, &sess.UserID,
+		&b.banned, &b.expires)
+	return sess, u, b, err
+}
+
+// ban is a user's admin-plugin ban state.
+type ban struct {
+	banned  bool
+	expires *time.Time
+}
+
+// active reports whether the ban still applies at now; an expired ban does not.
+func (b ban) active(now time.Time) bool {
+	return b.banned && (b.expires == nil || b.expires.After(now))
+}
+
+func (s *store) banOf(ctx context.Context, userID string) (ban, error) {
+	var b ban
+	err := s.pool.QueryRow(ctx, `SELECT "banned", "banExpires" FROM "user" WHERE "id" = $1`, userID).Scan(&b.banned, &b.expires)
+	return b, notFound(err)
+}
+
+// liftExpiredBan clears a ban whose expiry has passed (Better Auth lifts it
+// lazily the same way).
+func (s *store) liftExpiredBan(ctx context.Context, userID string, now time.Time) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE "user" SET "banned" = false, "banReason" = NULL, "banExpires" = NULL, "updatedAt" = $2
+		WHERE "id" = $1 AND "banned" AND "banExpires" IS NOT NULL AND "banExpires" <= $2`, userID, now)
+	return err
 }
 
 func (s *store) extendSession(ctx context.Context, id string, expiresAt, now time.Time) error {
@@ -358,4 +392,168 @@ func (s *store) changePassword(ctx context.Context, q querier, userID, oldHash, 
 		return errNotFound
 	}
 	return nil
+}
+
+// twoFactorRow is a user's "twoFactor" row.
+type twoFactorRow struct {
+	secret      string
+	backupCodes []string
+	verified    bool
+	lockedUntil *time.Time
+	lastStep    int64
+}
+
+func (s *store) twoFactor(ctx context.Context, userID string) (twoFactorRow, error) {
+	var r twoFactorRow
+	var codes string
+	err := s.pool.QueryRow(ctx, `
+		SELECT "secret", "backupCodes", "verified", "lockedUntil", "lastUsedStep" FROM "twoFactor" WHERE "userId" = $1`,
+		userID).Scan(&r.secret, &codes, &r.verified, &r.lockedUntil, &r.lastStep)
+	if err != nil {
+		return twoFactorRow{}, notFound(err)
+	}
+	if err := json.Unmarshal([]byte(codes), &r.backupCodes); err != nil {
+		return twoFactorRow{}, err
+	}
+	return r, nil
+}
+
+// startTwoFactor stores a new, unverified secret and backup codes for the
+// user, replacing an earlier unverified enrolment. It returns errAlreadyEnabled
+// when a verified one exists.
+func (s *store) startTwoFactor(ctx context.Context, userID, secret string, codes []string, now time.Time) error {
+	raw, err := json.Marshal(codes)
+	if err != nil {
+		return err
+	}
+	tag, err := s.pool.Exec(ctx, `
+		INSERT INTO "twoFactor" ("id", "secret", "backupCodes", "userId", "verified", "createdAt", "updatedAt")
+		VALUES ($1, $2, $3, $4, false, $5, $5)
+		ON CONFLICT ("userId") DO UPDATE SET
+			"secret" = EXCLUDED."secret", "backupCodes" = EXCLUDED."backupCodes", "lastUsedStep" = 0,
+			"failedVerificationCount" = 0, "lockedUntil" = NULL, "updatedAt" = EXCLUDED."updatedAt"
+		WHERE NOT "twoFactor"."verified"`,
+		generateID(32), secret, string(raw), userID, now)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return errAlreadyEnabled
+	}
+	return nil
+}
+
+var errAlreadyEnabled = errors.New("auth: two-factor already enabled")
+
+// acceptTOTPStep records step as used if it is newer than the last accepted
+// one, verifying the enrolment and enabling 2FA on the user the first time.
+// It returns errNotFound for a replayed (or older) step.
+func (s *store) acceptTOTPStep(ctx context.Context, userID string, step int64, now time.Time) error {
+	return s.tx(ctx, func(q querier) error {
+		tag, err := q.Exec(ctx, `
+			UPDATE "twoFactor" SET "lastUsedStep" = $2, "verified" = true, "failedVerificationCount" = 0,
+				"lockedUntil" = NULL, "updatedAt" = $3
+			WHERE "userId" = $1 AND "lastUsedStep" < $2`, userID, step, now)
+		if err != nil {
+			return err
+		}
+		if tag.RowsAffected() == 0 {
+			return errNotFound
+		}
+		_, err = q.Exec(ctx, `UPDATE "user" SET "twoFactorEnabled" = true, "updatedAt" = $2 WHERE "id" = $1 AND NOT "twoFactorEnabled"`, userID, now)
+		return err
+	})
+}
+
+// useBackupCode removes hash from the user's verified backup codes. It
+// returns errNotFound when the code is not (or no longer) there.
+func (s *store) useBackupCode(ctx context.Context, userID, hash string, now time.Time) error {
+	return s.tx(ctx, func(q querier) error {
+		var raw string
+		err := q.QueryRow(ctx, `SELECT "backupCodes" FROM "twoFactor" WHERE "userId" = $1 AND "verified" FOR UPDATE`, userID).Scan(&raw)
+		if err != nil {
+			return notFound(err)
+		}
+		var codes []string
+		if err := json.Unmarshal([]byte(raw), &codes); err != nil {
+			return err
+		}
+		i := slices.IndexFunc(codes, func(c string) bool { return hmac.Equal([]byte(c), []byte(hash)) })
+		if i < 0 {
+			return errNotFound
+		}
+		left, err := json.Marshal(slices.Delete(codes, i, i+1))
+		if err != nil {
+			return err
+		}
+		_, err = q.Exec(ctx, `
+			UPDATE "twoFactor" SET "backupCodes" = $2, "failedVerificationCount" = 0, "lockedUntil" = NULL, "updatedAt" = $3
+			WHERE "userId" = $1`, userID, string(left), now)
+		return err
+	})
+}
+
+// setBackupCodes replaces a verified enrolment's backup codes.
+func (s *store) setBackupCodes(ctx context.Context, userID string, codes []string, now time.Time) error {
+	raw, err := json.Marshal(codes)
+	if err != nil {
+		return err
+	}
+	tag, err := s.pool.Exec(ctx, `UPDATE "twoFactor" SET "backupCodes" = $2, "updatedAt" = $3 WHERE "userId" = $1 AND "verified"`, userID, string(raw), now)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return errNotFound
+	}
+	return nil
+}
+
+// recordTwoFactorFailure counts a wrong code and locks the user's second
+// factor for lockFor once maxFailures is reached.
+func (s *store) recordTwoFactorFailure(ctx context.Context, userID string, maxFailures int, lockFor time.Duration, now time.Time) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE "twoFactor" SET
+			"failedVerificationCount" = "failedVerificationCount" + 1,
+			"lockedUntil" = CASE WHEN "failedVerificationCount" + 1 >= $2 THEN $3::timestamptz ELSE "lockedUntil" END,
+			"updatedAt" = $4
+		WHERE "userId" = $1`, userID, maxFailures, now.Add(lockFor), now)
+	return err
+}
+
+// disableTwoFactor removes the user's enrolment and trusted devices.
+func (s *store) disableTwoFactor(ctx context.Context, userID string, now time.Time) error {
+	return s.tx(ctx, func(q querier) error {
+		if _, err := q.Exec(ctx, `DELETE FROM "twoFactor" WHERE "userId" = $1`, userID); err != nil {
+			return err
+		}
+		if _, err := q.Exec(ctx, `UPDATE "user" SET "twoFactorEnabled" = false, "updatedAt" = $2 WHERE "id" = $1`, userID, now); err != nil {
+			return err
+		}
+		return s.deleteTrustedDevices(ctx, q, userID)
+	})
+}
+
+// twoFactorEnabled reports the user's twoFactorEnabled flag.
+func (s *store) twoFactorEnabled(ctx context.Context, userID string) (bool, error) {
+	var on bool
+	err := s.pool.QueryRow(ctx, `SELECT "twoFactorEnabled" FROM "user" WHERE "id" = $1`, userID).Scan(&on)
+	return on, notFound(err)
+}
+
+const (
+	challengePrefix   = "2fa:"
+	trustDevicePrefix = "trust-device:"
+)
+
+// deleteTrustedDevices forgets every "trust this device" of a user.
+func (s *store) deleteTrustedDevices(ctx context.Context, q querier, userID string) error {
+	_, err := q.Exec(ctx, `DELETE FROM "verification" WHERE "identifier" LIKE 'trust-device:%' AND "value" = $1`, userID)
+	return err
+}
+
+// deleteChallenges cancels a user's pending 2FA sign-ins.
+func (s *store) deleteChallenges(ctx context.Context, q querier, userID string) error {
+	_, err := q.Exec(ctx, `DELETE FROM "verification" WHERE "identifier" LIKE '2fa:%' AND ("value" = $1 OR "value" = 'setup:' || $1)`, userID)
+	return err
 }

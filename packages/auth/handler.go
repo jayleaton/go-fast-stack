@@ -30,6 +30,13 @@ func (a *Auth) Handler() http.Handler {
 	mux.HandleFunc("GET "+BasePath+"/list-sessions", a.handleListSessions)
 	mux.HandleFunc("POST "+BasePath+"/revoke-session", a.handleRevokeSession)
 	mux.HandleFunc("POST "+BasePath+"/revoke-other-sessions", a.handleRevokeOtherSessions)
+	mux.HandleFunc("POST "+BasePath+"/set-password", a.handleSetPassword)
+	mux.HandleFunc("POST "+BasePath+"/two-factor/enable", a.handleTwoFactorEnable)
+	mux.HandleFunc("POST "+BasePath+"/two-factor/get-totp-uri", a.handleTwoFactorURI)
+	mux.HandleFunc("POST "+BasePath+"/two-factor/verify-totp", a.handleTwoFactorVerify(TwoFactorMethodTOTP))
+	mux.HandleFunc("POST "+BasePath+"/two-factor/verify-backup-code", a.handleTwoFactorVerify(TwoFactorMethodBackup))
+	mux.HandleFunc("POST "+BasePath+"/two-factor/generate-backup-codes", a.handleTwoFactorBackupCodes)
+	mux.HandleFunc("POST "+BasePath+"/two-factor/disable", a.handleTwoFactorDisable)
 	mux.HandleFunc("GET "+BasePath+"/ok", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	})
@@ -94,6 +101,9 @@ func (a *Auth) handleSignUp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user, sess, err := a.SignUpEmail(r.Context(), in)
+	if a.writeChallenge(w, err) {
+		return
+	}
 	if err != nil {
 		a.writeError(w, r, err)
 		return
@@ -117,6 +127,9 @@ func (a *Auth) handleSignIn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user, sess, err := a.SignInEmail(r.Context(), in)
+	if a.writeChallenge(w, err) {
+		return
+	}
 	if err != nil {
 		a.writeError(w, r, err)
 		return

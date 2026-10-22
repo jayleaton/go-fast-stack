@@ -58,6 +58,9 @@ func (a *Auth) ChangePassword(ctx context.Context, userID, currentPassword, newP
 			return err
 		}
 		if revokeOtherSessions {
+			if err := a.store.deleteTrustedDevices(ctx, q, userID); err != nil {
+				return err
+			}
 			return a.store.deleteOtherSessions(ctx, q, userID, currentSessionID)
 		}
 		return nil
@@ -156,6 +159,9 @@ func (a *Auth) confirmEmailChange(ctx context.Context, c verificationClaims) (Us
 	}
 	if current, sess, ok := UserFrom(ctx); ok && current.ID == user.ID {
 		return user, sess, nil
+	}
+	if needs, err := a.needsSecondFactor(ctx, user.ID); err != nil || needs {
+		return user, Session{}, err // an email link is no second factor: sign in normally
 	}
 	sess, err := a.createSession(ctx, user.ID)
 	if err != nil {

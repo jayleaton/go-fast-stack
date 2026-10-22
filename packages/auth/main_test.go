@@ -79,6 +79,41 @@ func runWithDatabase(m *testing.M, dsn string) (int, error) {
 	return m.Run(), nil
 }
 
+// newDatabase creates an empty database on the test server for one test,
+// dropped when it ends, and returns a pool on it.
+func newDatabase(t *testing.T) *pgxpool.Pool {
+	t.Helper()
+	needDB(t)
+	ctx := context.Background()
+	dsn := os.Getenv("TEST_DATABASE_URL")
+	if dsn == "" {
+		dsn = os.Getenv("DATABASE_URL")
+	}
+	admin, err := pgx.Connect(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	name := "auth_extra_" + strings.ToLower(generateID(12))
+	if _, err := admin.Exec(ctx, "CREATE DATABASE "+name); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := pgxpool.ParseConfig(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.ConnConfig.Database = name
+	pool, err := pgxpool.NewWithConfig(ctx, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		pool.Close()
+		_, _ = admin.Exec(context.Background(), "DROP DATABASE "+name+" WITH (FORCE)")
+		_ = admin.Close(context.Background())
+	})
+	return pool
+}
+
 func needDB(t *testing.T) {
 	t.Helper()
 	if testPool == nil {
@@ -111,6 +146,13 @@ func (m *captureMailer) SendPasswordResetEmail(_ context.Context, to, url string
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.sent = append(m.sent, sentMail{"reset", to, url})
+	return nil
+}
+
+func (m *captureMailer) SendSetPasswordEmail(_ context.Context, to, url string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.sent = append(m.sent, sentMail{"set-password", to, url})
 	return nil
 }
 
@@ -267,7 +309,7 @@ func wantCode(t *testing.T, rec *httptest.ResponseRecorder, status int, code str
 // sessionCookie returns the session cookie set by rec, or nil.
 func sessionCookie(rec *httptest.ResponseRecorder) *http.Cookie {
 	for _, c := range rec.Result().Cookies() {
-		if strings.HasSuffix(c.Name, sessionCookieName) {
+		if strings.HasSuffix(c.Name, ".session_token") {
 			return c
 		}
 	}

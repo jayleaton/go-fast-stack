@@ -12,7 +12,7 @@ import (
 // Cookie names follow Better Auth ("better-auth.session_token", with the
 // __Secure- prefix on https) so existing clients keep working.
 const (
-	sessionCookieName = "better-auth.session_token"
+	sessionCookieName = "better-auth.session_token" // with the default CookiePrefix
 	securePrefix      = "__Secure-"
 )
 
@@ -20,11 +20,13 @@ type ctxKey struct{}
 
 // requestMeta is what Middleware attaches to the request context.
 type requestMeta struct {
-	ip, userAgent string
-	token         string // session token presented by the client, valid or not
-	user          User
-	session       Session
-	ok            bool
+	ip, userAgent  string
+	token          string // session token presented by the client, valid or not
+	twoFactorToken string // pending 2FA sign-in (two_factor cookie)
+	trustToken     string // "trust this device" (trust_device cookie)
+	user           User
+	session        Session
+	ok             bool
 }
 
 func metaFrom(ctx context.Context) *requestMeta {
@@ -40,43 +42,59 @@ func UserFrom(ctx context.Context) (User, Session, bool) {
 	return User{}, Session{}, false
 }
 
-func (a *Auth) cookieName() string {
+// cookie returns the full name of one of this instance's cookies:
+// "<CookiePrefix>.<name>", with the __Secure- prefix on https.
+func (a *Auth) cookie(name string) string {
+	full := a.cfg.CookiePrefix + "." + name
 	if a.secure {
-		return securePrefix + sessionCookieName
+		return securePrefix + full
 	}
-	return sessionCookieName
+	return full
 }
 
-// SetSessionCookie writes the signed session cookie for s (HttpOnly,
-// SameSite=Lax, Secure on https, expiring with the session).
-func (a *Auth) SetSessionCookie(w http.ResponseWriter, s Session) {
-	maxAge := int(s.ExpiresAt.Sub(a.now()).Seconds())
-	if maxAge <= 0 {
-		a.ClearSessionCookie(w)
-		return
-	}
-	http.SetCookie(w, &http.Cookie{ //nolint:gosec // Secure follows the BaseURL scheme so http dev servers work
-		Name:     a.cookieName(),
-		Value:    encodeCookieValue(a.signValue(s.Token)),
+func (a *Auth) cookieName() string { return a.cookie("session_token") }
+
+// setSignedCookie writes an HttpOnly, SameSite=Lax cookie holding a signed
+// value; maxAge <= 0 expires it.
+func (a *Auth) setSignedCookie(w http.ResponseWriter, name, value string, maxAge int) {
+	c := &http.Cookie{ //nolint:gosec // Secure follows the BaseURL scheme so http dev servers work
+		Name:     name,
 		Path:     "/",
 		MaxAge:   maxAge,
 		HttpOnly: true,
 		Secure:   a.secure,
 		SameSite: http.SameSiteLaxMode,
-	})
+	}
+	if maxAge > 0 {
+		c.Value = encodeCookieValue(a.signValue(value))
+	} else {
+		c.MaxAge = -1
+	}
+	http.SetCookie(w, c)
+}
+
+// signedCookie returns the verified value of a signed cookie, or "".
+func (a *Auth) signedCookie(r *http.Request, name string) string {
+	c, err := r.Cookie(name)
+	if err != nil {
+		return ""
+	}
+	v, ok := a.verifySigned(c.Value)
+	if !ok {
+		return ""
+	}
+	return v
+}
+
+// SetSessionCookie writes the signed session cookie for s (HttpOnly,
+// SameSite=Lax, Secure on https, expiring with the session).
+func (a *Auth) SetSessionCookie(w http.ResponseWriter, s Session) {
+	a.setSignedCookie(w, a.cookieName(), s.Token, int(s.ExpiresAt.Sub(a.now()).Seconds()))
 }
 
 // ClearSessionCookie expires the session cookie.
 func (a *Auth) ClearSessionCookie(w http.ResponseWriter) {
-	http.SetCookie(w, &http.Cookie{ //nolint:gosec // Secure follows the BaseURL scheme so http dev servers work
-		Name:     a.cookieName(),
-		Value:    "",
-		Path:     "/",
-		MaxAge:   -1,
-		HttpOnly: true,
-		Secure:   a.secure,
-		SameSite: http.SameSiteLaxMode,
-	})
+	a.setSignedCookie(w, a.cookieName(), "", 0)
 }
 
 // encodeCookieValue percent-encodes the base64 signature characters like
@@ -154,6 +172,10 @@ func (a *Auth) Middleware(next http.Handler) http.Handler {
 			return
 		}
 		meta := &requestMeta{ip: a.clientIP(r), userAgent: r.UserAgent(), token: a.sessionToken(r)}
+		if a.cfg.TwoFactor != nil {
+			meta.twoFactorToken = a.signedCookie(r, a.cookie(twoFactorCookieName))
+			meta.trustToken = a.signedCookie(r, a.cookie(trustDeviceCookieName))
+		}
 		if meta.token != "" {
 			user, sess, err := a.loadSession(r.Context(), meta.token)
 			switch {
@@ -211,11 +233,15 @@ type loadedSession struct {
 // loadSession returns the live session for token, deleting it when expired
 // and extending it when it is older than SessionUpdateAge.
 func (a *Auth) loadSession(ctx context.Context, token string) (User, loadedSession, error) {
-	sess, user, err := a.store.sessionWithUser(ctx, token)
+	sess, user, b, err := a.store.sessionWithUser(ctx, token)
 	if err != nil {
 		return User{}, loadedSession{}, err
 	}
 	now := a.now()
+	if b.active(now) {
+		// BanUser revokes sessions; this also covers any created meanwhile.
+		return User{}, loadedSession{}, errNotFound
+	}
 	if !sess.ExpiresAt.After(now) {
 		if err := a.store.deleteSession(ctx, token); err != nil {
 			a.log.ErrorContext(ctx, "auth: deleting expired session failed", "err", err)
@@ -235,6 +261,9 @@ func (a *Auth) loadSession(ctx context.Context, token string) (User, loadedSessi
 
 // createSession starts a session for userID, recording the client from ctx.
 func (a *Auth) createSession(ctx context.Context, userID string) (Session, error) {
+	if err := a.checkBan(ctx, userID); err != nil {
+		return Session{}, err
+	}
 	now := a.now()
 	s := Session{
 		ID:        generateID(32),
@@ -253,4 +282,21 @@ func (a *Auth) createSession(ctx context.Context, userID string) (Session, error
 		}
 	}
 	return s, a.store.createSession(ctx, s)
+}
+
+// checkBan returns ErrBannedUser while userID is banned, lifting a ban whose
+// expiry has passed. Every way of getting a session goes through it.
+func (a *Auth) checkBan(ctx context.Context, userID string) error {
+	b, err := a.store.banOf(ctx, userID)
+	if err != nil {
+		return err
+	}
+	now := a.now()
+	if b.active(now) {
+		return ErrBannedUser
+	}
+	if b.banned {
+		return a.store.liftExpiredBan(ctx, userID, now)
+	}
+	return nil
 }

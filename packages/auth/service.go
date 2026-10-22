@@ -101,6 +101,11 @@ func (a *Auth) SignUpEmail(ctx context.Context, in SignUpInput) (User, Session, 
 		a.sendVerification(ctx, email, a.credFingerprint(&hash), in.CallbackURL)
 		return user, Session{}, nil
 	}
+	if c, err := a.secondFactor(ctx, user.ID); err != nil {
+		return User{}, Session{}, err
+	} else if c != nil {
+		return user, Session{}, c // TwoFactorConfig.Required: enrol before the first session
+	}
 	sess, err := a.createSession(ctx, user.ID)
 	if err != nil {
 		return User{}, Session{}, err
@@ -148,6 +153,11 @@ func (a *Auth) SignInEmail(ctx context.Context, in SignInInput) (User, Session, 
 	}
 	if a.cfg.RequireEmailVerification && !user.EmailVerified {
 		return User{}, Session{}, ErrEmailNotVerified
+	}
+	if c, err := a.secondFactor(ctx, user.ID); err != nil {
+		return User{}, Session{}, err
+	} else if c != nil {
+		return User{}, Session{}, c
 	}
 	sess, err := a.createSession(ctx, user.ID)
 	if err != nil {
@@ -233,49 +243,64 @@ func (a *Auth) resetTokenValid(ctx context.Context, token string) (bool, error) 
 }
 
 // ResetPassword spends a reset token, sets the new password and revokes every
-// session, every other outstanding reset link and any pending email change of
-// the user, all in one transaction. Used, expired or unknown
-// tokens return ErrInvalidToken.
+// session, every other outstanding reset link, any pending email change,
+// pending 2FA sign-in and trusted device of the user, all in one transaction.
+// Used, expired or unknown tokens return ErrInvalidToken. It does not sign in;
+// CompleteSetPassword does.
 func (a *Auth) ResetPassword(ctx context.Context, token, newPassword string) error {
+	_, err := a.setPassword(ctx, token, newPassword, false)
+	return err
+}
+
+// setPassword is ResetPassword returning the user id; verifyEmail also marks
+// the email verified (invites: the link proves the inbox).
+func (a *Auth) setPassword(ctx context.Context, token, newPassword string, verifyEmail bool) (string, error) {
 	if err := a.rateLimit(ctx, "reset-password", RuleResetPassword); err != nil {
-		return err
+		return "", err
 	}
 	if !isTokenString(token) {
-		return ErrInvalidToken
+		return "", ErrInvalidToken
 	}
 	if err := a.checkPasswordLength(newPassword); err != nil {
-		return err
+		return "", err
 	}
 	hash, err := hashPassword(newPassword, a.argon)
 	if err != nil {
-		return err
+		return "", err
 	}
 	now := a.now()
-	return a.store.tx(ctx, func(q querier) error {
-		userID, err := a.store.consumeVerification(ctx, q, "reset-password:"+token, now)
+	var userID string
+	err = a.store.tx(ctx, func(q querier) error {
+		id, err := a.store.consumeVerification(ctx, q, "reset-password:"+token, now)
 		if errors.Is(err, errNotFound) {
 			return ErrInvalidToken
 		}
 		if err != nil {
 			return err
 		}
-		if _, err := a.store.userByID(ctx, q, userID); err != nil {
+		userID = id
+		if _, err := a.store.userByID(ctx, q, id); err != nil {
 			if errors.Is(err, errNotFound) {
 				return ErrUserNotFound
 			}
 			return err
 		}
-		if err := a.store.deleteUserSessions(ctx, q, userID); err != nil {
-			return err
+		for _, revoke := range []func(context.Context, querier, string) error{
+			a.store.deleteUserSessions, a.store.deleteResetTokens, a.store.deleteEmailChanges,
+			a.store.deleteChallenges, a.store.deleteTrustedDevices,
+		} {
+			if err := revoke(ctx, q, id); err != nil {
+				return err
+			}
 		}
-		if err := a.store.deleteResetTokens(ctx, q, userID); err != nil {
-			return err
+		if verifyEmail {
+			if _, err := q.Exec(ctx, `UPDATE "user" SET "emailVerified" = true, "updatedAt" = $2 WHERE "id" = $1`, id, now); err != nil {
+				return err
+			}
 		}
-		if err := a.store.deleteEmailChanges(ctx, q, userID); err != nil {
-			return err
-		}
-		return a.store.setCredentialPassword(ctx, q, userID, hash, now)
+		return a.store.setCredentialPassword(ctx, q, id, hash, now)
 	})
+	return userID, err
 }
 
 // VerifyEmail checks an email verification token, marks the email verified
@@ -336,6 +361,9 @@ func (a *Auth) verifyAddress(ctx context.Context, claims verificationClaims) (Us
 	user = verified
 	if err := a.store.deleteUserSessions(ctx, a.store.pool, user.ID); err != nil {
 		return User{}, Session{}, err
+	}
+	if needs, err := a.needsSecondFactor(ctx, user.ID); err != nil || needs {
+		return user, Session{}, err // an email link is no second factor: sign in normally
 	}
 	sess, err := a.createSession(ctx, user.ID)
 	if err != nil {
