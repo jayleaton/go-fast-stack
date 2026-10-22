@@ -48,7 +48,7 @@ func TestMain(m *testing.M) {
 
 func runWithDatabase(m *testing.M, dsn string) (int, error) {
 	ctx := context.Background()
-	admin, err := pgx.Connect(ctx, dsn)
+	admin, err := connectWhenReady(ctx, dsn)
 	if err != nil {
 		return 0, err
 	}
@@ -110,6 +110,28 @@ func newDatabase(t *testing.T) *pgxpool.Pool {
 		_ = admin.Close(context.Background())
 	})
 	return pool
+}
+
+// connectWhenReady connects to dsn, retrying for up to 30s while the server
+// is not accepting connections yet. A freshly started Postgres container runs
+// initdb with a socket-only server and then restarts, so a readiness check
+// over the socket can pass while TCP connections are still refused or reset;
+// the first test binary to connect would then fail before any test runs.
+func connectWhenReady(ctx context.Context, dsn string) (*pgx.Conn, error) {
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		conn, err := pgx.Connect(ctx, dsn)
+		if err == nil {
+			if err = conn.Ping(ctx); err == nil {
+				return conn, nil
+			}
+			_ = conn.Close(ctx)
+		}
+		if time.Now().After(deadline) || ctx.Err() != nil {
+			return nil, fmt.Errorf("postgres not ready after 30s: %w", err)
+		}
+		time.Sleep(200 * time.Millisecond) // readiness poll for the server, not test timing
+	}
 }
 
 func needDB(t *testing.T) {
