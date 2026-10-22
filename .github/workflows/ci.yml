@@ -18,7 +18,7 @@ on:
         type: boolean
         default: false
   push:
-    branches: [main]
+    branches: [main, 'scratch/foundation-trim-push-*'] # TEMP scratch: main-like push proof
   merge_group:
   # Refreshes the caches PRs restore (pushes to main that reuse a PR's result
   # do not); skipped when main has not moved since the last saved cache.
@@ -153,7 +153,7 @@ jobs:
           if [ "$EVENT" = merge_group ] || [ "$EVENT" = workflow_dispatch ]; then mobile=true; fi
           if [ "$SKIP" = true ]; then go=false mobile=false deploy=false; fi
           save=false
-          case $EVENT in workflow_dispatch | schedule) save=true ;; push) [ "$GITHUB_REF" = refs/heads/main ] && save=true ;; esac
+          case $EVENT in workflow_dispatch | schedule) save=true ;; push) case $GITHUB_REF in refs/heads/main | refs/heads/scratch/foundation-trim-push-*) save=true ;; esac ;; # TEMP scratch esac
           echo "go=$go" >> "$GITHUB_OUTPUT"; echo "mobile=${mobile:-false}" >> "$GITHUB_OUTPUT"
           echo "deploy=${deploy:-false}" >> "$GITHUB_OUTPUT"; echo "save=$save" >> "$GITHUB_OUTPUT"
           echo "skip=${SKIP:-false}" >> "$GITHUB_OUTPUT"
