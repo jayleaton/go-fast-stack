@@ -218,26 +218,6 @@ jobs:
     env:
       TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable
     steps:
-      # Pulling postgres:18-alpine took 10-20 s on runners, so the image is
-      # cached (refreshed weekly) and loaded in the background from the first
-      # step; the server starts only once a DB-backed package is affected.
-      - name: Postgres image cache key
-        id: pg-image
-        run: echo "week=$(date -u +%G%V)" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache/restore@v6
-        id: pg-image-cache
-        with:
-          path: ~/.cache/pg-image.tar
-          key: v1-pg-image-18-alpine-${{ steps.pg-image.outputs.week }}
-          restore-keys: v1-pg-image-18-alpine-
-      - name: Load Postgres image
-        run: |
-          if [ -f ~/.cache/pg-image.tar ]; then
-            nohup docker load -q -i ~/.cache/pg-image.tar > "$RUNNER_TEMP/pull.log" 2>&1 &
-          else
-            nohup docker pull -q postgres:18-alpine > "$RUNNER_TEMP/pull.log" 2>&1 &
-          fi
-
       # Depth 2: a PR checkout is the merge commit, and HEAD^1 is the base.
       - uses: actions/checkout@v7
         with:
@@ -285,14 +265,15 @@ jobs:
 
       # Only when an affected package's tests use it; boots in the background
       # while the build runs. tmpfs and no fsync: test data is throwaway.
+      # Only when an affected package's tests use it; boots in the background
+      # while caches restore and the build runs. tmpfs and no fsync: test data
+      # is throwaway.
       - name: Start Postgres
         if: steps.affected.outputs.db == 'true'
         run: |
-          # In the background, once the image load above has finished.
-          nohup bash -c 'for _ in $(seq 1 300); do docker image inspect postgres:18-alpine >/dev/null 2>&1 && break; sleep 0.2; done
-            docker run -d --name pg -p 5432:5432 -e POSTGRES_PASSWORD=postgres \
-              --tmpfs /var/lib/postgresql postgres:18-alpine \
-              -c fsync=off -c synchronous_commit=off -c full_page_writes=off -c max_connections=200' \
+          nohup docker run -d --name pg -p 5432:5432 -e POSTGRES_PASSWORD=postgres \
+            --tmpfs /var/lib/postgresql postgres:18-alpine \
+            -c fsync=off -c synchronous_commit=off -c full_page_writes=off -c max_connections=200 \
             > "$RUNNER_TEMP/pg.log" 2>&1 &
 
       # After Postgres starts, so it boots while this restores and the build runs.
@@ -315,39 +296,38 @@ jobs:
         if: steps.affected.outputs.full == 'true'
         run: ./scripts/check-test-probes.sh
 
-      # TCP, not the unix socket: the image's first-boot init server answers
-      # on the socket only and is then restarted.
-      - name: Wait for Postgres
-        if: steps.affected.outputs.db == 'true'
-        run: |
-          for _ in $(seq 1 120); do
-            docker exec pg pg_isready -h 127.0.0.1 -U postgres >/dev/null 2>&1 && exit 0
-            sleep 0.5
-          done
-          cat "$RUNNER_TEMP/pull.log" "$RUNNER_TEMP/pg.log"; docker logs pg; exit 1
-
       - name: Test
         if: steps.affected.outputs.packages != ''
         env:
           PACKAGES: ${{ steps.affected.outputs.packages }}
           FULL: ${{ steps.affected.outputs.full }}
+          DB: ${{ steps.affected.outputs.db }}
         run: |
           mkdir -p .cache
-          go test -race -coverprofile=.cache/coverage.out $PACKAGES # word splitting intended
+          # Test binaries wait for Postgres themselves (-exec wrapper), so
+          # compiling them overlaps its boot. Checked inside the container over
+          # TCP: docker's port proxy accepts host connections before Postgres
+          # listens, and the image's first-boot init server answers on the unix
+          # socket only.
+          exec_flag=()
+          if [ "$DB" = true ]; then
+            cat > "$RUNNER_TEMP/wait-db" <<'SH'
+          #!/usr/bin/env bash
+          for _ in $(seq 1 480); do
+            docker exec pg pg_isready -q -h 127.0.0.1 -U postgres 2>/dev/null && exec "$@"
+            sleep 0.25
+          done
+          echo "postgres did not start:" >&2; cat "$RUNNER_TEMP/pg.log" >&2; docker logs pg >&2; exit 1
+          SH
+            chmod +x "$RUNNER_TEMP/wait-db"
+            exec_flag=(-exec "$RUNNER_TEMP/wait-db")
+          fi
+          go test -race "${exec_flag[@]}" -coverprofile=.cache/coverage.out $PACKAGES # word splitting intended
           if [ "$FULL" = true ]; then
             ./scripts/check-coverage.sh .cache/coverage.out
           else
             TESTED="$PACKAGES" ./scripts/check-coverage.sh .cache/coverage.out
           fi
-
-      - name: Save Postgres image
-        if: (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && steps.pg-image-cache.outputs.cache-hit != 'true'
-        run: docker save postgres:18-alpine -o ~/.cache/pg-image.tar || echo "image not available; not cached"
-      - uses: actions/cache/save@v6
-        if: (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && steps.pg-image-cache.outputs.cache-hit != 'true'
-        with:
-          path: ~/.cache/pg-image.tar
-          key: v1-pg-image-18-alpine-${{ steps.pg-image.outputs.week }}
 
       - uses: actions/cache/save@v6
         if: (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main'))
