@@ -69,7 +69,7 @@ lint-layering: ## Prove forbidden imports (code and tests) fail lint
 	./scripts/check-layering.sh
 
 .PHONY: lint-tests
-lint-tests: ## Prove misplaced test files and coverage drops fail
+lint-tests: ## Prove misplaced test files, coverage drops and slow tests fail (PROFILE=<coverprofile> reuses a test run)
 	./scripts/check-test-probes.sh
 
 # go test -json through scripts/testbudget: plain go test output, the slowest
@@ -96,7 +96,7 @@ ci: ## Run the same checks as CI
 	$(MAKE) lint test
 	@# Alone: their temporary probe files would leak into the other checks under make -j.
 	$(MAKE) lint-layering
-	$(MAKE) lint-tests
+	$(MAKE) lint-tests PROFILE=.cache/coverage.out # the probes reuse make test's profile
 	$(MAKE) deploy-check
 
 .PHONY: affected

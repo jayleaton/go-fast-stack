@@ -49,7 +49,7 @@ Each checkout gets its own compose project and database ports, derived from its 
 | `make dev` | run the server with `.env` |
 | `make test` | `go test -race ./...` against this checkout's throwaway tmpfs Postgres (or `TEST_DATABASE_URL`), then per-package and per-test time budgets and per-boundary coverage floors |
 | `make lint` | gofmt + golangci-lint (layering and test-import rules) + test file locations |
-| `make lint-layering` / `make lint-tests` | prove the layering, test-location and coverage rules still reject planted violations |
+| `make lint-layering` / `make lint-tests` | prove the layering, test-location, coverage and test-time rules still reject planted violations |
 | `make ci` | everything CI runs |
 | `make generate` | sqlc, mocks (`go generate`) and templ code generation |
 | `make css` | rebuild both apps' `app.css` (pinned Tailwind standalone CLI) |
