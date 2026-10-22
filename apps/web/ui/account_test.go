@@ -343,6 +343,7 @@ func TestLiveStream(t *testing.T) {
 // TestLiveStreamAccountDeleted: deleting the account on another device sends
 // every open dashboard home.
 func TestLiveStreamAccountDeleted(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t, config.Features{})
 	srv := httptest.NewServer(e.h)
 	defer srv.Close()

@@ -59,6 +59,7 @@ func addresses(g map[string]any) []string {
 }
 
 func TestCheckedInPlatformYAMLIsValid(t *testing.T) {
+	t.Parallel()
 	cfg, err := platform.Load("../platform.yaml")
 	if err != nil {
 		t.Fatal(err)
@@ -70,6 +71,7 @@ func TestCheckedInPlatformYAMLIsValid(t *testing.T) {
 }
 
 func TestParseDefaults(t *testing.T) {
+	t.Parallel()
 	cfg := parse(t, minimal)
 	if !slices.Equal(cfg.Environments, platform.Environments{"production"}) || cfg.Branch != "main" || cfg.Secrets.Provider != platform.ProviderDoppler {
 		t.Fatalf("defaults: %+v", cfg)
@@ -85,6 +87,7 @@ func TestParseDefaults(t *testing.T) {
 }
 
 func TestParseEnvironmentProfiles(t *testing.T) {
+	t.Parallel()
 	for _, in := range []string{"staging,production", "[staging, production]", "staging, production"} {
 		cfg := parse(t, minimal+"environments: "+in+"\n")
 		if !slices.Equal(cfg.Environments, platform.Environments{"staging", "production"}) {
@@ -99,6 +102,7 @@ func TestParseEnvironmentProfiles(t *testing.T) {
 }
 
 func TestParseReportsEveryProblem(t *testing.T) {
+	t.Parallel()
 	_, err := platform.Parse([]byte(`version: 2
 project: ""
 repo: not-a-repo
@@ -120,6 +124,7 @@ unmanaged_variables: ["a/b/c"]
 }
 
 func TestPreviewsNeedStaging(t *testing.T) {
+	t.Parallel()
 	if _, err := platform.Parse([]byte(minimal + "previews: true\n")); err == nil {
 		t.Fatal("previews copying production accepted")
 	}
@@ -129,12 +134,14 @@ func TestPreviewsNeedStaging(t *testing.T) {
 }
 
 func TestParseRejectsUnknownKeys(t *testing.T) {
+	t.Parallel()
 	if _, err := platform.Parse([]byte(minimal + "admn: true\n")); err == nil {
 		t.Fatal("typo accepted")
 	}
 }
 
 func TestBuildWebOnly(t *testing.T) {
+	t.Parallel()
 	g := graph(t, parse(t, minimal), "production")
 	if got := addresses(g); !slices.Equal(got, []string{"database.postgres", "service.web"}) {
 		t.Fatalf("resources: %v", got)
@@ -180,6 +187,7 @@ func TestBuildWebOnly(t *testing.T) {
 }
 
 func TestBuildAdmin(t *testing.T) {
+	t.Parallel()
 	cfg := parse(t, minimal+"admin: true\nenvironments: staging,qa,production\nadmin_bootstrap_email: ops@acme.dev\n")
 	for _, env := range cfg.Environments {
 		g := graph(t, cfg, env)
@@ -204,12 +212,14 @@ func TestBuildAdmin(t *testing.T) {
 }
 
 func TestBuildUnknownEnvironment(t *testing.T) {
+	t.Parallel()
 	if _, err := parse(t, minimal).Build("staging"); err == nil {
 		t.Fatal("built an environment not in platform.yaml")
 	}
 }
 
 func TestBuildPerEnvironmentBranch(t *testing.T) {
+	t.Parallel()
 	cfg := parse(t, minimal+"environments: staging,production\nbranches: { production: release }\n")
 	if b := resource(t, graph(t, cfg, "production"), "service.web")["source"].(map[string]any)["branch"]; b != "release" {
 		t.Fatalf("production branch %v", b)
@@ -220,6 +230,7 @@ func TestBuildPerEnvironmentBranch(t *testing.T) {
 }
 
 func TestBuildUploadModeHasNoSource(t *testing.T) {
+	t.Parallel()
 	cfg := parse(t, "version: 1\nproject: acme\nrepo: \"\"\n")
 	if !cfg.Upload() {
 		t.Fatal("empty repo is upload mode")
@@ -234,6 +245,7 @@ func TestBuildUploadModeHasNoSource(t *testing.T) {
 }
 
 func TestBuildRegionPinsEveryService(t *testing.T) {
+	t.Parallel()
 	g := graph(t, parse(t, minimal+"region: europe-west4\n"), "production")
 	web := resource(t, g, "service.web")["deploy"].(map[string]any)
 	if web["multiRegionConfig"].(map[string]any)["europe-west4"].(map[string]any)["numReplicas"] != float64(1) {
@@ -246,6 +258,7 @@ func TestBuildRegionPinsEveryService(t *testing.T) {
 }
 
 func TestSecretVarsFollowProvider(t *testing.T) {
+	t.Parallel()
 	has := func(cfg platform.Config, service, name string) bool {
 		return slices.ContainsFunc(cfg.SecretVars(), func(s platform.Secret) bool { return s.Service == service && s.Name == name })
 	}

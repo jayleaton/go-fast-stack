@@ -111,6 +111,7 @@ func TestWelcomeCopyMatches(t *testing.T) {
 // a user agent with only a browser or only a system, none at all, and a user
 // without a name or email.
 func TestSessionAndAccountFallbacks(t *testing.T) {
+	t.Parallel()
 	firefox, linux := "Mozilla/5.0 Gecko/20100101 Firefox/131.0", "X11; Linux x86_64"
 	sessions := []services.Session{{ID: "a", UserAgent: &firefox}, {ID: "b", UserAgent: &linux}, {ID: "c"}}
 	html := renderIn(t, i18n.En, view.State{Authenticated: true}, SessionsCard(sessions, Status{}))

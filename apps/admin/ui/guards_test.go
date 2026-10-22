@@ -23,6 +23,7 @@ var (
 // (packages/uikit/theme.css): templates use the semantic color utilities,
 // never raw palette classes, and dark: only to swap icons.
 func TestTemplatesUseThemeTokens(t *testing.T) {
+	t.Parallel()
 	scanned := 0
 	for _, root := range []string{".", "../../../packages/uikit"} {
 		err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
