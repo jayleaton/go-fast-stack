@@ -130,9 +130,19 @@ func (a *Auth) handleSignOut(w http.ResponseWriter, r *http.Request) {
 		a.writeError(w, r, err)
 		return
 	}
-	if err := a.SignOut(r.Context(), metaFrom(r.Context()).token); err != nil {
-		a.writeError(w, r, err)
-		return
+	// Revoke the presented session and, when a bearer token and a cookie
+	// both came in, the cookie's session too.
+	tokens := []string{metaFrom(r.Context()).token}
+	if c, err := r.Cookie(a.cookieName()); err == nil {
+		if t, ok := a.verifySigned(c.Value); ok && isTokenString(t) {
+			tokens = append(tokens, t)
+		}
+	}
+	for _, t := range tokens {
+		if err := a.SignOut(r.Context(), t); err != nil {
+			a.writeError(w, r, err)
+			return
+		}
 	}
 	a.ClearSessionCookie(w)
 	writeJSON(w, http.StatusOK, map[string]bool{"success": true})

@@ -96,14 +96,49 @@ func (s *store) setCredentialPassword(ctx context.Context, q querier, userID, ha
 	return err
 }
 
-// markEmailVerified flips emailVerified for an unverified user. It returns
-// errNotFound when the email is unknown or already verified, so only one of
-// several concurrent verifications wins.
-func (s *store) markEmailVerified(ctx context.Context, email string, now time.Time) (User, error) {
-	return scanUser(s.pool.QueryRow(ctx, `
-		UPDATE "user" u SET "emailVerified" = true, "updatedAt" = $2
-		WHERE u."email" = $1 AND NOT u."emailVerified"
-		RETURNING `+userColumns, email, now))
+// verifyEmail marks an unverified user's email verified if check accepts
+// their current password hash. The user row is locked, so it cannot race a
+// password replacement. It returns errNotFound when the email is unknown or
+// already verified, so only one of several concurrent verifications wins.
+func (s *store) verifyEmail(ctx context.Context, email string, now time.Time, check func(hash *string) error) (User, error) {
+	var out User
+	err := s.tx(ctx, func(q querier) error {
+		var hash *string
+		u, err := scanUser(q.QueryRow(ctx, `
+			SELECT `+userColumns+`, a."password"
+			FROM "user" u
+			LEFT JOIN "account" a ON a."userId" = u."id" AND a."providerId" = $2 AND a."accountId" = u."id"
+			WHERE u."email" = $1 AND NOT u."emailVerified"
+			FOR UPDATE OF u`, email, credentialProvider), &hash)
+		if err != nil {
+			return err
+		}
+		if err := check(hash); err != nil {
+			return err
+		}
+		u.EmailVerified, u.UpdatedAt = true, now
+		_, err = q.Exec(ctx, `UPDATE "user" SET "emailVerified" = true, "updatedAt" = $2 WHERE "id" = $1`, u.ID, now)
+		out = u
+		return err
+	})
+	return out, err
+}
+
+// replaceUnverifiedPassword sets a new password on an account whose email is
+// still unverified and drops its sessions. It returns errNotFound when the
+// account is verified (or gone).
+func (s *store) replaceUnverifiedPassword(ctx context.Context, email, hash string, now time.Time) error {
+	return s.tx(ctx, func(q querier) error {
+		var id string
+		err := q.QueryRow(ctx, `SELECT "id" FROM "user" WHERE "email" = $1 AND NOT "emailVerified" FOR UPDATE`, email).Scan(&id)
+		if err != nil {
+			return notFound(err)
+		}
+		if err := s.deleteUserSessions(ctx, q, id); err != nil {
+			return err
+		}
+		return s.setCredentialPassword(ctx, q, id, hash, now)
+	})
 }
 
 func (s *store) createSession(ctx context.Context, sess Session) error {
@@ -184,6 +219,12 @@ func (s *store) consumeVerification(ctx context.Context, q querier, identifier s
 		return "", errNotFound
 	}
 	return value, nil
+}
+
+// deleteResetTokens removes every outstanding password reset token of a user.
+func (s *store) deleteResetTokens(ctx context.Context, q querier, userID string) error {
+	_, err := q.Exec(ctx, `DELETE FROM "verification" WHERE "identifier" LIKE 'reset-password:%' AND "value" = $1`, userID)
+	return err
 }
 
 // deleteExpiredVerifications removes stale verification rows.

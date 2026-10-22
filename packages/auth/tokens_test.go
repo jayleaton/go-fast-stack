@@ -119,9 +119,9 @@ func TestVerificationToken(t *testing.T) {
 	a := unitAuth()
 	now := time.Unix(1_800_000_000, 0)
 	a.now = func() time.Time { return now }
-	tok := a.signVerificationToken("User@Example.com", 24*time.Hour)
-	if got, err := a.parseVerificationToken(tok); err != nil || got != "user@example.com" {
-		t.Fatalf("parse = %q %v", got, err)
+	tok := a.signVerificationToken("User@Example.com", "fp", 24*time.Hour)
+	if got, cred, err := a.parseVerificationToken(tok); err != nil || got != "user@example.com" || cred != "fp" {
+		t.Fatalf("parse = %q %q %v", got, cred, err)
 	}
 
 	enc := base64.RawURLEncoding.EncodeToString
@@ -147,13 +147,13 @@ func TestVerificationToken(t *testing.T) {
 		"empty":           "",
 	}
 	for name, in := range cases {
-		if _, err := a.parseVerificationToken(in); !errors.Is(err, ErrInvalidToken) {
+		if _, _, err := a.parseVerificationToken(in); !errors.Is(err, ErrInvalidToken) {
 			t.Errorf("%s: err = %v, want ErrInvalidToken", name, err)
 		}
 	}
 
 	now = now.Add(24 * time.Hour)
-	if _, err := a.parseVerificationToken(tok); !errors.Is(err, errTokenExpired) {
+	if _, _, err := a.parseVerificationToken(tok); !errors.Is(err, errTokenExpired) {
 		t.Fatalf("expired err = %v", err)
 	}
 }
@@ -203,11 +203,11 @@ func FuzzParseBearer(f *testing.F) {
 
 func FuzzParseVerificationToken(f *testing.F) {
 	a := unitAuth()
-	f.Add(a.signVerificationToken("a@example.com", time.Hour))
+	f.Add(a.signVerificationToken("a@example.com", "", time.Hour))
 	f.Add("a.b.c")
 	f.Add("")
 	f.Fuzz(func(t *testing.T, in string) {
-		email, err := a.parseVerificationToken(in)
+		email, _, err := a.parseVerificationToken(in)
 		if err == nil && (email == "" || email != strings.ToLower(email)) {
 			t.Fatalf("parse(%q) = %q", in, email)
 		}
@@ -232,6 +232,7 @@ func TestMatchesOrigin(t *testing.T) {
 		{"https://example.com.evil.test", "https://*.example.com", false, false},
 		{"https://a.example.com", "*.example.com", false, true},
 		{"not a url", "*.example.com", false, false},
+		{"javascript://x.example.com/%0aalert(1)", "*.example.com", true, false},
 		{"exp://192.168.1.2:8081", "exp://**", false, true},
 		{"exp://192.168.1.2:8081/--/path", "exp://**", false, true},
 		{"exps://x", "exp://**", false, false},
@@ -258,6 +259,24 @@ func TestMatchesOrigin(t *testing.T) {
 	for _, c := range cases {
 		if got := matchesOrigin(c.url, c.pattern, c.relative); got != c.want {
 			t.Errorf("matchesOrigin(%q, %q, %v) = %v, want %v", c.url, c.pattern, c.relative, got, c.want)
+		}
+	}
+}
+
+func TestNormalizeIP(t *testing.T) {
+	cases := map[string]string{
+		"203.0.113.9":               "203.0.113.9",
+		"::ffff:203.0.113.9":        "203.0.113.9",
+		"2001:db8::1":               "2001:db8::/64",
+		"2001:DB8:0:0:ffff::2":      "2001:db8::/64",
+		"2001:db8:0:1::1":           "2001:db8:0:1::/64",
+		"fe80::1%eth0":              "fe80::/64",
+		"not-an-ip":                 "",
+		"203.0.113.9, 198.51.100.1": "",
+	}
+	for in, want := range cases {
+		if got := normalizeIP(in); got != want {
+			t.Errorf("normalizeIP(%q) = %q, want %q", in, got, want)
 		}
 	}
 }

@@ -136,8 +136,10 @@ func matchesOrigin(v, pattern string, allowRelative bool) bool {
 			}
 			return re.MatchString(v)
 		}
+		// Host-only patterns are for web origins: refuse javascript: and
+		// other schemes that happen to have a matching host.
 		u, err := url.Parse(v)
-		if err != nil || u.Host == "" {
+		if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
 			return false
 		}
 		return re.MatchString(strings.ToLower(u.Host))
@@ -203,6 +205,11 @@ func (a *Auth) validateOrigin(r *http.Request, force bool) error {
 		return nil
 	}
 	origin := requestOrigin(r)
+	if origin == "null" && r.Header.Get("Sec-Fetch-Site") == "same-origin" {
+		// Privacy contexts send "null" for same-origin requests; Better Auth
+		// then trusts the browser's same-origin verdict.
+		return nil
+	}
 	if origin == "" || origin == "null" {
 		return ErrMissingOrigin
 	}

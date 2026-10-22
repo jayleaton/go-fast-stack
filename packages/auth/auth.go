@@ -113,6 +113,7 @@ type Auth struct {
 	dummyHash  string
 	now        func() time.Time
 	mail       sync.WaitGroup
+	mailMu     sync.RWMutex // sendMail holds it shared so Wait never races an Add
 }
 
 // New validates cfg and returns an Auth backed by pool. Run Migrate first.
@@ -174,10 +175,13 @@ func New(cfg Config, pool *pgxpool.Pool, mailer Mailer) (*Auth, error) {
 }
 
 // Shutdown waits for emails still being sent in the background, or for ctx.
+// Requests arriving meanwhile block before queueing mail until it returns.
 func (a *Auth) Shutdown(ctx context.Context) error {
 	done := make(chan struct{})
 	go func() {
+		a.mailMu.Lock()
 		a.mail.Wait()
+		a.mailMu.Unlock()
 		close(done)
 	}()
 	select {
@@ -191,6 +195,8 @@ func (a *Auth) Shutdown(ctx context.Context) error {
 // sendMail sends in the background so responses take the same time whether
 // or not an email went out (no account enumeration by timing).
 func (a *Auth) sendMail(ctx context.Context, kind, to string, send func(ctx context.Context) error) {
+	a.mailMu.RLock()
+	defer a.mailMu.RUnlock()
 	a.mail.Go(func() {
 		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), a.cfg.MailTimeout)
 		defer cancel()

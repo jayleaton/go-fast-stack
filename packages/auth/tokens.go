@@ -107,21 +107,34 @@ func isTokenString(s string) bool {
 }
 
 // Email verification tokens are stateless HS256 JWTs signed with the secret,
-// as in Better Auth: {"email": ..., "iat": ..., "exp": ...}.
+// as in Better Auth: {"email": ..., "iat": ..., "exp": ...}. They also carry
+// "cred", a fingerprint of the password hash the link was issued for, so a
+// link stops working when someone else's sign-up replaces that password.
 
 var jwtHeader = base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"HS256","typ":"JWT"}`))
 
 type verificationClaims struct {
 	Email    string `json:"email"`
 	UpdateTo string `json:"updateTo,omitempty"`
+	Cred     string `json:"cred,omitempty"`
 	IssuedAt int64  `json:"iat"`
 	Expires  int64  `json:"exp"`
 }
 
-func (a *Auth) signVerificationToken(email string, ttl time.Duration) string {
+// credFingerprint identifies a password hash without revealing it ("" for
+// users without a password).
+func (a *Auth) credFingerprint(hash *string) string {
+	if hash == nil || *hash == "" {
+		return ""
+	}
+	return base64.RawURLEncoding.EncodeToString(a.mac("credential:" + *hash)[:16])
+}
+
+func (a *Auth) signVerificationToken(email, cred string, ttl time.Duration) string {
 	now := a.now()
-	payload, _ := json.Marshal(verificationClaims{
+	payload, _ := json.Marshal(verificationClaims{ //nolint:gosec // cred is a keyed fingerprint, not a secret
 		Email:    strings.ToLower(email),
+		Cred:     cred,
 		IssuedAt: now.Unix(),
 		Expires:  now.Add(ttl).Unix(),
 	})
@@ -131,42 +144,43 @@ func (a *Auth) signVerificationToken(email string, ttl time.Duration) string {
 
 var errTokenExpired = errors.New("token expired")
 
-// parseVerificationToken verifies the JWT and returns its email. It returns
-// errTokenExpired for an expired but otherwise valid token.
-func (a *Auth) parseVerificationToken(token string) (string, error) {
+// parseVerificationToken verifies the JWT and returns its email and credential
+// fingerprint. It returns errTokenExpired for an expired but otherwise valid
+// token.
+func (a *Auth) parseVerificationToken(token string) (email, cred string, err error) {
 	parts := strings.Split(token, ".")
 	if len(parts) != 3 || len(token) > 2048 {
-		return "", ErrInvalidToken
+		return "", "", ErrInvalidToken
 	}
 	rawHeader, err := base64.RawURLEncoding.DecodeString(parts[0])
 	if err != nil {
-		return "", ErrInvalidToken
+		return "", "", ErrInvalidToken
 	}
 	var header struct {
 		Alg string `json:"alg"`
 	}
 	if json.Unmarshal(rawHeader, &header) != nil || header.Alg != "HS256" {
-		return "", ErrInvalidToken
+		return "", "", ErrInvalidToken
 	}
 	sig, err := base64.RawURLEncoding.DecodeString(parts[2])
 	if err != nil || !hmac.Equal(sig, a.mac(parts[0]+"."+parts[1])) {
-		return "", ErrInvalidToken
+		return "", "", ErrInvalidToken
 	}
 	rawClaims, err := base64.RawURLEncoding.DecodeString(parts[1])
 	if err != nil {
-		return "", ErrInvalidToken
+		return "", "", ErrInvalidToken
 	}
 	var claims verificationClaims
 	if json.Unmarshal(rawClaims, &claims) != nil || claims.Email == "" || claims.Expires == 0 {
-		return "", ErrInvalidToken
+		return "", "", ErrInvalidToken
 	}
 	// Change-email tokens (updateTo) belong to a flow this package does not
 	// implement yet; refuse them rather than half-handle them.
 	if claims.UpdateTo != "" {
-		return "", ErrInvalidToken
+		return "", "", ErrInvalidToken
 	}
 	if a.now().Unix() >= claims.Expires {
-		return "", errTokenExpired
+		return "", "", errTokenExpired
 	}
-	return strings.ToLower(claims.Email), nil
+	return strings.ToLower(claims.Email), claims.Cred, nil
 }

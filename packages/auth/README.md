@@ -12,16 +12,16 @@ ported one at a time.
 | Area | Behaviour |
 |---|---|
 | Tables | `user`, `session`, `account`, `verification` with Better Auth columns (`timestamptz`). Own goose migrations in `migrations/`, version table `goose_auth`, own advisory lock. |
-| Sign-up | `POST /api/auth/sign-up/email` `{name,email,password,image?,callbackURL?}` → `{token,user}`. Emails are lowercased. Passwords 8–128 characters. When verification is required: no session (`token: null`), a link is emailed, and a duplicate email gets the same success response (no enumeration). Otherwise a duplicate gets `422 USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL`. |
+| Sign-up | `POST /api/auth/sign-up/email` `{name,email,password,image?,callbackURL?}` → `{token,user}`. Emails are lowercased. Passwords 8–128 characters. When verification is required: no session (`token: null`), a link is emailed, and a duplicate email gets the same success response (no enumeration). A duplicate of a still-unverified account replaces its password and emails a new link, which voids the old one (see security notes). Otherwise a duplicate gets `422 USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL`. |
 | Sign-in | `POST /api/auth/sign-in/email` `{email,password,callbackURL?}` → `{redirect,token,url?,user}`. Unknown email, missing credential and wrong password all give `401 INVALID_EMAIL_OR_PASSWORD` after the same argon2id work (a dummy hash is checked for unknown emails). Unverified users get `403 EMAIL_NOT_VERIFIED` when verification is required, but only after the password matched. |
 | Sessions | DB rows, 7-day TTL, extended once a day on use, checked on every request (no cookie cache, so revocation is immediate). Expired rows are deleted on read. |
-| Sign-out | `POST /api/auth/sign-out` → `{success:true}`. Deletes the row and clears the cookie. |
+| Sign-out | `POST /api/auth/sign-out` → `{success:true}`. Deletes the presented session (the bearer one and the cookie one when both are sent) and clears the cookie. |
 | Get session | `GET /api/auth/get-session` → `{session,user}` or `null`, `Cache-Control: no-store`. |
 | Verification | `GET /api/auth/verify-email?token=&callbackURL=`: stateless HS256 JWT (`{email,iat,exp}`, 24 h), same format as Better Auth. Verifies, signs in (autoSignInAfterVerification) and redirects to `callbackURL`. Errors redirect with `?error=CODE`, or give `401 {code}` without a callback. After the email is verified, the link no longer signs anyone in. `POST /api/auth/send-verification-email` `{email,callbackURL?}` resends it. |
-| Password reset | `POST /api/auth/request-password-reset` `{email,redirectTo}` always gives the same response. The emailed link `GET /api/auth/reset-password/{token}?callbackURL=` redirects to `redirectTo?token=` (or `?error=INVALID_TOKEN`). `POST /api/auth/reset-password` `{token,newPassword}`: in one transaction, the token is consumed (single use, 1 h), every session of the user is revoked and the password is set. |
+| Password reset | `POST /api/auth/request-password-reset` `{email,redirectTo}` always gives the same response. `redirectTo` is required, because without it the emailed link would lead nowhere. The emailed link `GET /api/auth/reset-password/{token}?callbackURL=` redirects to `redirectTo?token=` (or `?error=INVALID_TOKEN`). `POST /api/auth/reset-password` `{token,newPassword}`: in one transaction, the token is consumed (single use, 1 h), every session and every other outstanding reset link of the user is revoked, and the password is set. |
 | Bearer | `Authorization: Bearer <token>` with the raw session token (response body) or the signed token (`set-auth-token` header), on the same session rows. Bearer wins over the cookie. |
 | CSRF | Better Auth's origin check. State-changing requests that carry cookies need an `Origin`/`Referer` (or Expo's `expo-origin`) matching `BaseURL` or `TrustedOrigins`. Sign-in/up also use Fetch Metadata: a cross-site navigation is blocked and browser requests need a trusted origin. Cookie-less clients (mobile, bearer) cannot be forged by a browser and pass. `callbackURL`/`redirectTo` must be trusted or a safe relative path (open-redirect protection). POST bodies must be `application/json`. |
-| Rate limits | Per client IP and endpoint, Better Auth's defaults: sign-in/sign-up 3 per 10 s, request-password-reset/send-verification-email 3 per 60 s, reset-password 3 per 10 s. `429 {code:"TOO_MANY_REQUESTS"}` with `X-Retry-After`. In-memory by default; pass any `RateLimiter` (e.g. Valkey) for several instances. |
+| Rate limits | Per client IP (IPv6 reduced to its /64, IPv4-mapped addresses unmapped, as Better Auth does) and endpoint, Better Auth's defaults: sign-in/sign-up 3 per 10 s, request-password-reset/send-verification-email 3 per 60 s, reset-password 3 per 10 s. `429 {code:"TOO_MANY_REQUESTS"}` with `X-Retry-After`. In-memory by default; pass any `RateLimiter` (e.g. Valkey) for several instances. |
 | Mail | `Mailer` interface. `NewDevMailer` logs the links, `NewResendMailer(apiKey, from)` sends through the Resend HTTP API with the original templates (`templates/`). Emails are sent in the background, so response times don't reveal whether an address exists. Call `Shutdown` after the HTTP server has stopped to let them finish. |
 
 JSON endpoints return Better Auth shapes (`{"code","message"}` on error), not the
@@ -96,14 +96,26 @@ token. Don't wrap static file routes with it.
 - **Secret**: `AUTH_SECRET` (at least 32 bytes) signs cookies and verification
   JWTs. Rotating it signs everyone out and invalidates pending verification
   links. Reset links are database rows and survive rotation.
-- **Verification links** are stateless and stay valid for 24 h, but they only
-  sign someone in while the email is still unverified (the update is
-  atomic, so concurrent clicks yield one session). As in Better Auth, a GET
-  link that signs in can be used for login CSRF into the attacker's own
-  account.
+- **Verification links** are stateless JWTs that stay valid for 24 h, but they
+  only sign someone in while the email is still unverified. The update locks
+  the user row, so concurrent clicks yield one session. Verifying revokes the
+  account's other sessions. As in Better Auth, a GET link that signs in can be
+  used for login CSRF into the attacker's own account.
+- **Squatted sign-ups** (pre-account takeover): with verification required,
+  someone can register another person's address with their own password.
+  Every link carries a `cred` claim, a keyed fingerprint of the password hash
+  it was issued for, and only verifies while that hash is current. When the
+  real owner signs up, their password replaces the squatter's and the
+  squatter's link stops working. One residual case remains: if the squatter
+  signs up again *after* the owner, the owner's inbox gets a link for the
+  squatter's password. Clicking that newest link verifies the account under a
+  password the owner doesn't know, and a password reset recovers it.
 - **Client IP**: set `ClientIPHeader` only behind a proxy that writes that
-  header. The right-most value is used (the one the proxy appended).
-  Otherwise the TCP peer is used.
+  header. The right-most value is used (the one the proxy appended), and an
+  invalid value falls back to the TCP peer.
+- **Origin `null`** is accepted only together with `Sec-Fetch-Site: same-origin`,
+  as in Better Auth. Host-only wildcard origins (`*.example.com`) match
+  http(s) URLs only.
 - **Not ported yet**: change-email tokens (`updateTo`, rejected), `rememberMe`
   (not used by the original UI), cookie cache, secondary storage, form-encoded
   sign-in.

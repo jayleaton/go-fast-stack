@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"crypto/hmac"
 	"errors"
 	"net/mail"
 	"net/url"
@@ -39,8 +40,11 @@ func normalizeEmail(email string) (string, error) {
 // SignUpEmail creates a user with a credential account. Without required
 // email verification it signs them in and returns the session. With it, it
 // sends a verification link and returns a zero Session; signing up with an
-// existing email then also succeeds with a synthetic user (and no email), so
-// the response does not reveal which emails are registered.
+// existing email then also succeeds with a synthetic user, so the response
+// does not reveal which emails are registered. If that account is still
+// unverified, nobody has proven they own it: the new password replaces the
+// old one and a fresh link goes to the inbox. That stops a squatter who signed
+// up with someone else's email from keeping access after the owner verifies.
 func (a *Auth) SignUpEmail(ctx context.Context, in SignUpInput) (User, Session, error) {
 	if err := a.rateLimit(ctx, "sign-up", RuleSignIn); err != nil {
 		return User{}, Session{}, err
@@ -58,16 +62,22 @@ func (a *Auth) SignUpEmail(ctx context.Context, in SignUpInput) (User, Session, 
 
 	now := a.now()
 	user := User{ID: generateID(32), Name: in.Name, Email: email, Image: in.Image, CreatedAt: now, UpdatedAt: now}
-	duplicate := func() (User, Session, error) {
-		if a.cfg.RequireEmailVerification {
-			return user, Session{}, nil
-		}
-		return User{}, Session{}, ErrUserAlreadyExists
-	}
 	// Hash before looking up so both branches cost the same.
 	hash, err := hashPassword(in.Password, a.argon)
 	if err != nil {
 		return User{}, Session{}, err
+	}
+	duplicate := func() (User, Session, error) {
+		if !a.cfg.RequireEmailVerification {
+			return User{}, Session{}, ErrUserAlreadyExists
+		}
+		err := a.store.replaceUnverifiedPassword(ctx, email, hash, now)
+		if err == nil {
+			a.sendVerification(ctx, email, a.credFingerprint(&hash), in.CallbackURL)
+		} else if !errors.Is(err, errNotFound) {
+			return User{}, Session{}, err
+		}
+		return user, Session{}, nil
 	}
 	if _, err := a.store.userByEmail(ctx, email); err == nil {
 		return duplicate()
@@ -88,7 +98,7 @@ func (a *Auth) SignUpEmail(ctx context.Context, in SignUpInput) (User, Session, 
 	}
 
 	if a.cfg.RequireEmailVerification {
-		a.sendVerification(ctx, email, in.CallbackURL)
+		a.sendVerification(ctx, email, a.credFingerprint(&hash), in.CallbackURL)
 		return user, Session{}, nil
 	}
 	sess, err := a.createSession(ctx, user.ID)
@@ -174,6 +184,9 @@ func (a *Auth) RequestPasswordReset(ctx context.Context, email, redirectTo strin
 	if err := a.rateLimit(ctx, "request-password-reset", RuleEmailSending); err != nil {
 		return err
 	}
+	if redirectTo == "" {
+		return ErrInvalidRedirectURL // the emailed link would lead nowhere
+	}
 	if err := a.checkCallbackURL(redirectTo, ErrInvalidRedirectURL); err != nil {
 		return err
 	}
@@ -192,15 +205,16 @@ func (a *Auth) RequestPasswordReset(ctx context.Context, email, redirectTo strin
 	if err != nil {
 		return err
 	}
-	if err := a.store.deleteExpiredVerifications(ctx, now); err != nil {
-		a.log.WarnContext(ctx, "auth: cleaning verification rows failed", "err", err)
-	}
 	token := generateID(24)
 	if err := a.store.createVerification(ctx, "reset-password:"+token, user.ID, now.Add(ResetPasswordTokenTTL), now); err != nil {
 		return err
 	}
 	link := a.authURL("/reset-password/"+token) + "?callbackURL=" + url.QueryEscape(redirectTo)
 	a.sendMail(ctx, "password-reset", user.Email, func(ctx context.Context) error {
+		// Cleanup runs here, off the request path, so it adds no timing signal.
+		if err := a.store.deleteExpiredVerifications(ctx, now); err != nil {
+			a.log.WarnContext(ctx, "auth: cleaning verification rows failed", "err", err)
+		}
 		return a.mailer.SendPasswordResetEmail(ctx, user.Email, link)
 	})
 	return nil
@@ -219,7 +233,8 @@ func (a *Auth) resetTokenValid(ctx context.Context, token string) (bool, error) 
 }
 
 // ResetPassword spends a reset token, sets the new password and revokes every
-// session of the user, all in one transaction. Used, expired or unknown
+// session and every other outstanding reset link of the user, all in one
+// transaction. Used, expired or unknown
 // tokens return ErrInvalidToken.
 func (a *Auth) ResetPassword(ctx context.Context, token, newPassword string) error {
 	if err := a.rateLimit(ctx, "reset-password", RuleResetPassword); err != nil {
@@ -253,16 +268,21 @@ func (a *Auth) ResetPassword(ctx context.Context, token, newPassword string) err
 		if err := a.store.deleteUserSessions(ctx, q, userID); err != nil {
 			return err
 		}
+		if err := a.store.deleteResetTokens(ctx, q, userID); err != nil {
+			return err
+		}
 		return a.store.setCredentialPassword(ctx, q, userID, hash, now)
 	})
 }
 
 // VerifyEmail checks an email verification token, marks the email verified
 // and signs the user in (autoSignInAfterVerification). Tokens expire after 24
-// hours (ErrTokenExpired). Once the email is verified the token no longer
-// signs anyone in: it returns the user with a zero Session.
+// hours (ErrTokenExpired), and are void (ErrInvalidToken) once the account's
+// password changed after they were issued. Verifying revokes the account's
+// other sessions. Once the email is verified the token no longer signs anyone
+// in: it returns the user with a zero Session.
 func (a *Auth) VerifyEmail(ctx context.Context, token string) (User, Session, error) {
-	email, err := a.parseVerificationToken(token)
+	email, cred, err := a.parseVerificationToken(token)
 	if errors.Is(err, errTokenExpired) {
 		return User{}, Session{}, ErrTokenExpired
 	}
@@ -276,7 +296,12 @@ func (a *Auth) VerifyEmail(ctx context.Context, token string) (User, Session, er
 	if err != nil {
 		return User{}, Session{}, err
 	}
-	verified, err := a.store.markEmailVerified(ctx, email, a.now())
+	verified, err := a.store.verifyEmail(ctx, email, a.now(), func(hash *string) error {
+		if !hmac.Equal([]byte(cred), []byte(a.credFingerprint(hash))) {
+			return ErrInvalidToken
+		}
+		return nil
+	})
 	if errors.Is(err, errNotFound) {
 		return user, Session{}, nil // already verified
 	}
@@ -284,8 +309,8 @@ func (a *Auth) VerifyEmail(ctx context.Context, token string) (User, Session, er
 		return User{}, Session{}, err
 	}
 	user = verified
-	if current, sess, ok := UserFrom(ctx); ok && current.ID == user.ID {
-		return user, sess, nil
+	if err := a.store.deleteUserSessions(ctx, a.store.pool, user.ID); err != nil {
+		return User{}, Session{}, err
 	}
 	sess, err := a.createSession(ctx, user.ID)
 	if err != nil {
@@ -308,31 +333,32 @@ func (a *Auth) SendVerificationEmail(ctx context.Context, email, callbackURL str
 	if err != nil {
 		return err
 	}
-	if current, _, ok := UserFrom(ctx); ok {
+	current, _, signedIn := UserFrom(ctx)
+	if signedIn {
 		if current.Email != email {
 			return ErrEmailMismatch
 		}
 		if current.EmailVerified {
 			return ErrEmailAlreadyVerified
 		}
-		a.sendVerification(ctx, email, callbackURL)
-		return nil
 	}
-	user, err := a.store.userByEmail(ctx, email)
+	user, hash, err := a.store.userWithPassword(ctx, email)
 	if err != nil && !errors.Is(err, errNotFound) {
 		return err
 	}
 	if err == nil && !user.EmailVerified {
-		a.sendVerification(ctx, email, callbackURL)
+		a.sendVerification(ctx, email, a.credFingerprint(hash), callbackURL)
 	}
 	return nil
 }
 
-func (a *Auth) sendVerification(ctx context.Context, email, callbackURL string) {
+// sendVerification emails a verification link bound to the credential
+// fingerprint cred.
+func (a *Auth) sendVerification(ctx context.Context, email, cred, callbackURL string) {
 	if callbackURL == "" {
 		callbackURL = "/"
 	}
-	link := a.authURL("/verify-email") + "?token=" + a.signVerificationToken(email, VerificationTokenTTL) +
+	link := a.authURL("/verify-email") + "?token=" + a.signVerificationToken(email, cred, VerificationTokenTTL) +
 		"&callbackURL=" + url.QueryEscape(callbackURL)
 	a.sendMail(ctx, "verification", email, func(ctx context.Context) error {
 		return a.mailer.SendVerificationEmail(ctx, email, link)

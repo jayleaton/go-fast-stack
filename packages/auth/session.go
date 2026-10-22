@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"net/netip"
 	"strings"
 )
 
@@ -103,22 +104,42 @@ func (a *Auth) sessionToken(r *http.Request) string {
 	return token
 }
 
-// clientIP returns the client address: the right-most entry of the
-// configured proxy header (the one the trusted proxy appended), else the
-// TCP peer.
+// clientIP returns the normalised client address: the right-most entry of
+// the configured proxy header (the one the trusted proxy appended) when it is
+// a valid IP, else the TCP peer.
 func (a *Auth) clientIP(r *http.Request) string {
 	if a.cfg.ClientIPHeader != "" {
 		if v := r.Header.Values(a.cfg.ClientIPHeader); len(v) > 0 {
 			parts := strings.Split(v[len(v)-1], ",")
-			if ip := strings.TrimSpace(parts[len(parts)-1]); ip != "" {
+			if ip := normalizeIP(strings.TrimSpace(parts[len(parts)-1])); ip != "" {
 				return ip
 			}
 		}
 	}
-	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
-		return host
+	host := r.RemoteAddr
+	if h, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		host = h
 	}
-	return r.RemoteAddr
+	if ip := normalizeIP(host); ip != "" {
+		return ip
+	}
+	return host
+}
+
+// normalizeIP canonicalises an address like Better Auth's normalizeIP:
+// IPv4-mapped IPv6 becomes IPv4 and IPv6 is reduced to its /64, since one
+// client usually owns a whole /64 and could otherwise rotate past rate limits.
+// It returns "" for anything that is not an IP.
+func normalizeIP(s string) string {
+	addr, err := netip.ParseAddr(s)
+	if err != nil {
+		return ""
+	}
+	addr = addr.Unmap().WithZone("")
+	if addr.Is6() {
+		return netip.PrefixFrom(addr, 64).Masked().String()
+	}
+	return addr.String()
 }
 
 // Middleware loads the session from the cookie or "Authorization: Bearer"

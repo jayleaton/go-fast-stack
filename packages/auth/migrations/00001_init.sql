@@ -51,6 +51,7 @@ CREATE TABLE "verification" (
     "updatedAt"  timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX "verification_identifier_idx" ON "verification" ("identifier");
+CREATE INDEX "verification_expiresAt_idx" ON "verification" ("expiresAt");
 
 -- +goose Down
 DROP TABLE "verification";

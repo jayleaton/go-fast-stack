@@ -213,15 +213,21 @@ func TestEmailVerificationFlow(t *testing.T) {
 	wantCode(t, h.signIn(email, "password123"), http.StatusForbidden, "EMAIL_NOT_VERIFIED")
 	wantCode(t, h.signIn(email, "wrong-password"), http.StatusUnauthorized, "INVALID_EMAIL_OR_PASSWORD")
 
-	// Duplicate sign-up does not reveal the account and sends nothing.
-	rec = h.signUp(email, "password123")
+	// A duplicate sign-up of the unverified account gets the same generic
+	// response; it resets the password and sends a new link that replaces
+	// the first one.
+	rec = h.do("POST", BasePath+"/sign-up/email", map[string]any{
+		"name": "V", "email": email, "password": "password123", "callbackURL": "/auth/verify-email/success",
+	}, nil)
 	wantStatus(t, rec, http.StatusOK)
 	if b := jsonBody(t, rec); b["token"] != nil {
 		t.Fatalf("duplicate sign-up = %v", b)
 	}
-	if got := len(h.mails()); got != 1 {
-		t.Fatalf("duplicate sign-up sent mail (%d total)", got)
+	if mails = h.mails(); len(mails) != 2 {
+		t.Fatalf("mails = %+v", mails)
 	}
+	wantCode(t, h.do("GET", BasePath+"/verify-email?token="+mustQuery(t, link, "token"), nil, nil), http.StatusUnauthorized, "INVALID_TOKEN")
+	link = mails[1].url
 
 	// Following the link verifies, signs in and redirects to the callback.
 	rec = h.do("GET", pathOf(t, link), nil, nil)
@@ -254,8 +260,8 @@ func TestVerifyEmailRejectsBadTokens(t *testing.T) {
 	wantCode(t, h.do("GET", BasePath+"/verify-email?token="+token+"x", nil, nil), http.StatusUnauthorized, "INVALID_TOKEN")
 	wantCode(t, h.do("GET", BasePath+"/verify-email", nil, nil), http.StatusUnauthorized, "INVALID_TOKEN")
 	other := &Auth{cfg: Config{Secret: strings.Repeat("z", 40)}, now: time.Now}
-	wantCode(t, h.do("GET", BasePath+"/verify-email?token="+other.signVerificationToken(email, time.Hour), nil, nil), http.StatusUnauthorized, "INVALID_TOKEN")
-	wantCode(t, h.do("GET", BasePath+"/verify-email?token="+h.a.signVerificationToken(uniqueEmail(t), time.Hour), nil, nil), http.StatusUnauthorized, "USER_NOT_FOUND")
+	wantCode(t, h.do("GET", BasePath+"/verify-email?token="+other.signVerificationToken(email, "", time.Hour), nil, nil), http.StatusUnauthorized, "INVALID_TOKEN")
+	wantCode(t, h.do("GET", BasePath+"/verify-email?token="+h.a.signVerificationToken(uniqueEmail(t), "", time.Hour), nil, nil), http.StatusUnauthorized, "USER_NOT_FOUND")
 	wantCode(t, h.do("GET", BasePath+"/verify-email?token="+token+"&callbackURL=https://evil.test/", nil, nil), http.StatusForbidden, "INVALID_CALLBACK_URL")
 
 	h.clock.Advance(VerificationTokenTTL + time.Minute)
@@ -460,6 +466,8 @@ func TestOriginCheck(t *testing.T) {
 		{"mobile scheme", hdr{"Cookie": cookie, "Origin": "betterstack://"}, http.StatusOK},
 		{"expo dev", hdr{"Cookie": cookie, "Expo-Origin": "exp://192.168.1.20:8081"}, http.StatusOK},
 		{"no cookies", hdr{"Origin": "https://evil.test"}, http.StatusOK},
+		{"null same-origin", hdr{"Cookie": cookie, "Origin": "null", "Sec-Fetch-Site": "same-origin"}, http.StatusOK},
+		{"null cross-site", hdr{"Cookie": cookie, "Origin": "null", "Sec-Fetch-Site": "cross-site"}, http.StatusForbidden},
 	}
 	for _, c := range cases {
 		if got := signOut(c.headers); got != c.want {
@@ -674,9 +682,9 @@ func TestRateLimitedEndpoints(t *testing.T) {
 	rec = h.do("POST", BasePath+"/sign-in/email", map[string]any{"email": email, "password": "password123"}, nil)
 	wantStatus(t, rec, http.StatusTooManyRequests)
 	for range 3 {
-		wantStatus(t, h.do("POST", BasePath+"/request-password-reset", map[string]any{"email": email}, nil), http.StatusOK)
+		wantStatus(t, h.do("POST", BasePath+"/request-password-reset", map[string]any{"email": email, "redirectTo": "/r"}, nil), http.StatusOK)
 	}
-	wantStatus(t, h.do("POST", BasePath+"/request-password-reset", map[string]any{"email": email}, nil), http.StatusTooManyRequests)
+	wantStatus(t, h.do("POST", BasePath+"/request-password-reset", map[string]any{"email": email, "redirectTo": "/r"}, nil), http.StatusTooManyRequests)
 
 	// Service calls outside Middleware have no client IP and are not limited.
 	for range 5 {
@@ -741,4 +749,79 @@ func TestImportedBetterAuthUserSignsInAndIsRehashed(t *testing.T) {
 		t.Fatalf("hash not upgraded: %q", stored)
 	}
 	wantStatus(t, h.signIn(email, "hunter2hunter2"), http.StatusOK)
+}
+
+func TestSquattedSignUpIsReclaimedByEmailOwner(t *testing.T) {
+	h := newHarness(t, func(c *Config) { c.RequireEmailVerification = true })
+	victim := uniqueEmail(t)
+	link := func(i int) string { return pathOf(t, h.mails()[i].url) }
+
+	// An attacker registers the victim's address first; the link goes to the victim.
+	wantStatus(t, h.signUp(victim, "attacker-pass"), http.StatusOK)
+	attackerLink := link(0)
+	// The victim signs up too: same generic response, their password wins,
+	// and they get a fresh link.
+	wantStatus(t, h.signUp(victim, "victim-pass"), http.StatusOK)
+	if n := len(h.mails()); n != 2 {
+		t.Fatalf("mails = %d, want 2", n)
+	}
+	// The link issued for the attacker's password is void.
+	if rec := h.do("GET", attackerLink, nil, nil); rec.Header().Get("Location") != "/?error=INVALID_TOKEN" || sessionCookie(rec) != nil {
+		t.Fatalf("attacker link: %d %q", rec.Code, rec.Header().Get("Location"))
+	}
+	victimLink := ""
+	for _, m := range h.mails()[1:] {
+		victimLink = pathOf(t, m.url)
+	}
+	rec := h.do("GET", victimLink, nil, nil)
+	wantStatus(t, rec, http.StatusFound)
+	if sessionCookie(rec) == nil {
+		t.Fatal("verification did not sign the owner in")
+	}
+	wantCode(t, h.signIn(victim, "attacker-pass"), http.StatusUnauthorized, "INVALID_EMAIL_OR_PASSWORD")
+	wantStatus(t, h.signIn(victim, "victim-pass"), http.StatusOK)
+
+	// Once verified, a sign-up with the address changes nothing.
+	wantStatus(t, h.signUp(victim, "attacker-again"), http.StatusOK)
+	wantCode(t, h.signIn(victim, "attacker-again"), http.StatusUnauthorized, "INVALID_EMAIL_OR_PASSWORD")
+	if n := len(h.mails()); n != 2 {
+		t.Fatalf("verified duplicate sent mail (%d total)", n)
+	}
+}
+
+func TestResetRevokesOtherResetLinks(t *testing.T) {
+	h := newHarness(t, nil)
+	email := uniqueEmail(t)
+	wantStatus(t, h.signUp(email, "old-password"), http.StatusOK)
+	ctx := context.Background()
+	for range 2 {
+		if err := h.a.RequestPasswordReset(ctx, email, "/r"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var tokens []string
+	for _, m := range h.mails() {
+		tokens = append(tokens, mustQuery(t, h.do("GET", pathOf(t, m.url), nil, nil).Header().Get("Location"), "token"))
+	}
+	if err := h.a.ResetPassword(ctx, tokens[0], "new-password"); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.a.ResetPassword(ctx, tokens[1], "attacker-password"); !errors.Is(err, ErrInvalidToken) {
+		t.Fatalf("second outstanding link still works: %v", err)
+	}
+	if err := h.a.RequestPasswordReset(ctx, email, ""); !errors.Is(err, ErrInvalidRedirectURL) {
+		t.Fatalf("empty redirectTo err = %v", err)
+	}
+}
+
+func TestSignOutWithBearerAndCookieRevokesBoth(t *testing.T) {
+	h := newHarness(t, nil)
+	email := uniqueEmail(t)
+	cookie := cookieHeader(t, h.signUp(email, "password123"))
+	token := jsonBody(t, h.signIn(email, "password123"))["token"].(string)
+	rec := h.do("POST", BasePath+"/sign-out", nil, hdr{"Authorization": "Bearer " + token, "Cookie": cookie, "Origin": testBase})
+	wantStatus(t, rec, http.StatusOK)
+	if h.getSession(hdr{"Cookie": cookie}) != nil || h.getSession(hdr{"Authorization": "Bearer " + token}) != nil {
+		t.Fatal("a session survived sign-out")
+	}
 }
