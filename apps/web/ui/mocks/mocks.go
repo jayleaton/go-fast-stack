@@ -44,6 +44,20 @@ func (m *MockAuth) EXPECT() *MockAuthMockRecorder {
 	return m.recorder
 }
 
+// CheckCallbackURL mocks base method.
+func (m *MockAuth) CheckCallbackURL(callbackURL string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CheckCallbackURL", callbackURL)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CheckCallbackURL indicates an expected call of CheckCallbackURL.
+func (mr *MockAuthMockRecorder) CheckCallbackURL(callbackURL any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CheckCallbackURL", reflect.TypeOf((*MockAuth)(nil).CheckCallbackURL), callbackURL)
+}
+
 // ClearSessionCookie mocks base method.
 func (m *MockAuth) ClearSessionCookie(w http.ResponseWriter) {
 	m.ctrl.T.Helper()

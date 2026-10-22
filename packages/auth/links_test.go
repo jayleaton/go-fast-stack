@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/url"
 	"strings"
@@ -138,13 +139,30 @@ func TestVerificationLinkShapes(t *testing.T) {
 		}
 	}
 
-	// Absolute and deep-link callbacks keep the API link.
+	// Absolute and deep-link callbacks open the page too, which hands them
+	// back through CheckCallbackURL.
 	for _, callback := range []string{testBase + "/done", "betterstack://verified"} {
 		_, link := signUp(h, callback)
-		wantAPILink(t, link, "/verify-email", callback)
-		rec := h.do("GET", pathOf(t, link), nil, nil)
-		if loc := rec.Header().Get("Location"); loc != callback || sessionCookie(rec) == nil {
-			t.Fatalf("%s: %d %q", callback, rec.Code, loc)
+		token := mustQuery(t, link, "token")
+		if link != testBase+verifyPage+"?token="+url.QueryEscape(token)+"&callbackURL="+url.QueryEscape(callback) {
+			t.Fatalf("%s: link = %s", callback, link)
+		}
+		if err := h.a.CheckCallbackURL(callback); err != nil {
+			t.Fatalf("%s not trusted: %v", callback, err)
+		}
+
+		// An old API link forwards to the page without spending the token.
+		rec := h.do("GET", "/api/auth/verify-email?token="+url.QueryEscape(token)+"&callbackURL="+url.QueryEscape(callback), nil, nil)
+		if loc := rec.Header().Get("Location"); rec.Code != http.StatusFound || loc != link || sessionCookie(rec) != nil {
+			t.Fatalf("%s: GET %d %q", callback, rec.Code, loc)
+		}
+		if _, sess, err := h.a.VerifyEmail(ctx, token); err != nil || sess.Token == "" {
+			t.Fatalf("%s: token spent by GET: %v", callback, err)
+		}
+	}
+	for _, bad := range []string{"", "https://evil.example/x", "evil://x", "//evil.example"} {
+		if err := h.a.CheckCallbackURL(bad); !errors.Is(err, ErrInvalidCallbackURL) {
+			t.Errorf("CheckCallbackURL(%q) = %v", bad, err)
 		}
 	}
 }
@@ -157,13 +175,15 @@ func TestChangeEmailLinkShapes(t *testing.T) {
 	cookie := h.loginCookie(email)
 	id := h.userID(hdr{"Cookie": cookie})
 
-	// Absolute and deep-link callbacks keep the API link.
+	// Absolute and deep-link callbacks open the page too.
 	for _, callback := range []string{testBase + "/account", "betterstack://account"} {
 		next := uniqueEmail(t)
 		if err := h.a.ChangeEmail(ctx, id, next, callback); err != nil {
 			t.Fatal(err)
 		}
-		wantAPILink(t, h.lastMail("verification", next), "/verify-email", callback)
+		if link := h.lastMail("verification", next); !strings.HasPrefix(link, testBase+verifyPage+"?token=") || mustQuery(t, link, "callbackURL") != callback {
+			t.Fatalf("%s: change-email link = %s", callback, link)
+		}
 	}
 
 	// Relative: the app page, which spends the token in-process.

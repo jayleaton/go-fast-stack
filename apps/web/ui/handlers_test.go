@@ -145,9 +145,18 @@ func TestVerifyEmail(t *testing.T) {
 	assertSSE(t, e.do(http.MethodPost, config.AppRoutes.VerifyEmail, url.Values{"email": {"new@example.com"}}, datastar, lang("ja")),
 		`id="resend"`, "{_cooldown: 300}", ja("pages.verifyEmail.verificationEmailSent"))
 
-	page := e.do(http.MethodGet, config.AppRoutes.VerifyEmailSuccess+"?token=abc", nil)
-	if !strings.Contains(page.Body.String(), "@post(&#39;/auth/verify-email/success?token=abc&#39;)") {
-		t.Fatal("success page does not post the token on load")
+	// Opening the link spends nothing: the page asks for a click, carrying
+	// the token and callback only as hidden fields (no VerifyEmail call is
+	// expected here).
+	page := e.do(http.MethodGet, config.AppRoutes.VerifyEmailSuccess+"?token=abc&callbackURL=%2Fdashboard%2Faccount", nil)
+	body := page.Body.String()
+	if !strings.Contains(body, `<input type="hidden" name="token" value="abc">`) ||
+		!strings.Contains(body, `<input type="hidden" name="callbackURL" value="/dashboard/account">`) ||
+		!strings.Contains(body, en("pages.verifyEmail.confirmButton")) || strings.Count(body, "abc") != 1 || strings.Contains(body, `data-init="@post`) {
+		t.Fatalf("confirm page:\n%s", body)
+	}
+	if body := e.do(http.MethodGet, config.AppRoutes.VerifyEmailSuccess, nil).Body.String(); !strings.Contains(body, en("pages.verifyEmail.invalidToken")) {
+		t.Error("a link without a token is not shown as invalid")
 	}
 
 	// auth's own link handler redirects here with ?error=<code> on failure.
@@ -158,17 +167,27 @@ func TestVerifyEmail(t *testing.T) {
 		}
 	}
 
+	// The confirming POST spends the token and continues to the callback.
 	e.auth.EXPECT().VerifyEmail(gomock.Any(), "abc").Return(demoUser, demoSession, nil)
 	e.auth.EXPECT().SetSessionCookie(gomock.Any(), demoSession)
-	assertSSE(t, e.do(http.MethodPost, config.AppRoutes.VerifyEmailSuccess+"?token=abc", nil, datastar), `id="verify-result"`, en("pages.verifyEmail.emailVerifiedSuccessfully"))
+	assertSSE(t, e.do(http.MethodPost, config.AppRoutes.VerifyEmailSuccess, url.Values{"token": {"abc"}, "callbackURL": {"/dashboard/account"}}, datastar),
+		`id="verify-result"`, en("pages.verifyEmail.emailVerifiedSuccessfully"), "window.location.assign(&#39;/dashboard/account&#39;)")
+
+	// The mobile app's deep link is followed only when auth trusts it.
+	for callback, want := range map[string]string{"betterstack://verified": "betterstack://verified", "evil://x": config.AppRoutes.Dashboard} {
+		e.auth.EXPECT().VerifyEmail(gomock.Any(), "abc").Return(demoUser, ui.Session{}, nil)
+		trusted := error(nil)
+		if callback != want {
+			trusted = errors.New("untrusted")
+		}
+		e.auth.EXPECT().CheckCallbackURL(callback).Return(trusted)
+		assertSSE(t, e.do(http.MethodPost, config.AppRoutes.VerifyEmailSuccess, url.Values{"token": {"abc"}, "callbackURL": {callback}}, datastar),
+			"window.location.assign(&#39;"+want+"&#39;)")
+	}
 
 	e.auth.EXPECT().VerifyEmail(gomock.Any(), "abc").Return(ui.User{}, ui.Session{}, authErr(t, "pages.verifyEmail.invalidToken"))
-	assertSSE(t, e.do(http.MethodPost, config.AppRoutes.VerifyEmailSuccess+"?token=abc", nil, datastar), en("pages.verifyEmail.verificationFailed"), en("pages.verifyEmail.invalidToken"))
-
-	// Landing without a token: auth's own link already verified (or not).
-	assertSSE(t, e.do(http.MethodPost, config.AppRoutes.VerifyEmailSuccess, nil, datastar), en("pages.verifyEmail.emailVerificationCompletedButLoginFailed"))
-	e.signedIn("sess-1")
-	assertSSE(t, e.do(http.MethodPost, config.AppRoutes.VerifyEmailSuccess, nil, datastar), en("pages.verifyEmail.emailVerifiedSuccessfully"))
+	assertSSE(t, e.do(http.MethodPost, config.AppRoutes.VerifyEmailSuccess, url.Values{"token": {"abc"}}, datastar), en("pages.verifyEmail.verificationFailed"), en("pages.verifyEmail.invalidToken"))
+	assertSSE(t, e.do(http.MethodPost, config.AppRoutes.VerifyEmailSuccess, url.Values{}, datastar), en("pages.verifyEmail.invalidToken"))
 }
 
 func TestLogout(t *testing.T) {

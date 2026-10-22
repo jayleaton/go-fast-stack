@@ -42,7 +42,7 @@ func Bootstrap(get func(key string) string, o BootstrapOptions) (*Manager, []err
 	opts := Options{
 		Keys: o.Keys,
 		Validate: func(s Snapshot) error {
-			return errors.Join(validate(func(n string) string { v, _ := s.Get(n); return strings.TrimSpace(v.Reveal()) })...)
+			return errors.Join(validate(func(n string) string { v, _ := s.Get(n); return strings.TrimSpace(v.v) })...)
 		},
 	}
 	var err error

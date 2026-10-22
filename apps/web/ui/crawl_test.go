@@ -64,6 +64,8 @@ var leaks = []*regexp.Regexp{
 var (
 	scriptTag = regexp.MustCompile(`<script\b[^>]*>`)
 	nonceAttr = regexp.MustCompile(`\snonce="([^"]+)"`)
+	dataInit  = regexp.MustCompile(`\sdata-init="([^"]*)"`)
+	autoPost  = regexp.MustCompile(`@(post|put|patch|delete)\(`)
 	dataAttr  = regexp.MustCompile(`\sdata-[\w:.\-]+="([^"]*)"`)
 	// jsBreakout is the probe's quote closing a JS string: not escaped.
 	jsBreakout = regexp.MustCompile(`(^|[^\\])'\+XSSPROBE\+'`)
@@ -102,7 +104,7 @@ var crawlTargets = []crawlTarget{
 	{"GET " + config.AppRoutes.VerifyEmailSuccess, append([]string{
 		config.AppRoutes.VerifyEmailSuccess, config.AppRoutes.VerifyEmailSuccess + "?error=INVALID_TOKEN",
 	}, verifyProbes...)},
-	{"POST " + config.AppRoutes.VerifyEmailSuccess, verifyProbes},
+	{"POST " + config.AppRoutes.VerifyEmailSuccess, []string{config.AppRoutes.VerifyEmailSuccess}},
 	{"GET " + config.AppRoutes.Dashboard, []string{config.AppRoutes.Dashboard}},
 	{"GET " + routes.DashboardLive, []string{routes.DashboardLive + "?tab=crawl"}},
 	{"GET " + config.AppRoutes.Account, []string{config.AppRoutes.Account, config.AppRoutes.EmailChanged}},
@@ -120,11 +122,11 @@ var crawlTargets = []crawlTarget{
 // callbackURL tries to leave the site.
 var verifyProbes = []string{
 	config.AppRoutes.VerifyEmailSuccess + "?token=verify-tok&callbackURL=%2Fdashboard",
-	config.AppRoutes.VerifyEmailSuccess + "?token=" + url.QueryEscape(xssProbe) + "&callbackURL=" + url.QueryEscape(xssProbe),
-	config.AppRoutes.VerifyEmailSuccess + "?token=t&callbackURL=%2F%09%2F" + evil,
-	config.AppRoutes.VerifyEmailSuccess + "?token=t&callbackURL=%2F%0A%2F" + evil,
-	config.AppRoutes.VerifyEmailSuccess + "?token=t&callbackURL=%2F%5C" + evil,
-	config.AppRoutes.VerifyEmailSuccess + "?token=t&callbackURL=https%3A%2F%2F" + evil,
+	config.AppRoutes.VerifyEmailSuccess + "?token=" + url.QueryEscape(xssProbe+"-tok") + "&callbackURL=" + url.QueryEscape("cb-"+xssProbe),
+	config.AppRoutes.VerifyEmailSuccess + "?token=probe-tok-7c1&callbackURL=%2F%09%2F" + evil,
+	config.AppRoutes.VerifyEmailSuccess + "?token=probe-tok-7c1&callbackURL=%2F%0A%2F" + evil,
+	config.AppRoutes.VerifyEmailSuccess + "?token=probe-tok-7c1&callbackURL=%2F%5C" + evil,
+	config.AppRoutes.VerifyEmailSuccess + "?token=probe-tok-7c1&callbackURL=https%3A%2F%2F" + evil,
 	config.AppRoutes.VerifyEmailSuccess + "?callbackURL=%2F%09%2F" + evil,
 }
 
@@ -135,6 +137,7 @@ var crawlForm = url.Values{
 	"name": {xssProbe}, "image": {""}, "newEmail": {"new@example.com"},
 	"currentPassword": {"password123"}, "newPassword": {"password456"}, "revokeOtherSessions": {"on"},
 	"sessionId": {"sess-2"}, "token": {"reset-tok"}, "locale": {"ja"}, "next": {"/\t/" + evil},
+	"callbackURL": {"/\t/" + evil},
 }
 
 func TestCrawlCoversEveryRoute(t *testing.T) {
@@ -191,7 +194,7 @@ func TestCrawlExposesNothing(t *testing.T) {
 				for _, path := range c.paths {
 					for _, ds := range []bool{false, true} {
 						name := strings.Join([]string{method, path, state(failing, "failing", "ok"), state(signedIn, "signed-in", "anonymous"), state(ds, "datastar", "plain")}, " ")
-						checkResponse(t, name, crawl(h, method, path, ds))
+						checkResponse(t, name, method, path, crawl(h, method, path, ds))
 					}
 				}
 			}
@@ -223,24 +226,30 @@ func crawlUI(t *testing.T, failing, signedIn bool) http.Handler {
 		{ID: "sess-2", CreatedAt: time.Now(), ExpiresAt: time.Now().Add(time.Hour), IPAddress: &ip, UserAgent: &agent},
 	}
 
-	a.EXPECT().SignUpEmail(gomock.Any(), gomock.Any()).Return(user, sess, fail).AnyTimes()
-	a.EXPECT().SignInEmail(gomock.Any(), gomock.Any()).Return(user, sess, fail).AnyTimes()
-	a.EXPECT().SignOut(gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
-	a.EXPECT().RequestPasswordReset(gomock.Any(), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
-	a.EXPECT().ResetPassword(gomock.Any(), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
-	a.EXPECT().VerifyEmail(gomock.Any(), gomock.Any()).Return(user, sess, fail).AnyTimes()
-	a.EXPECT().SendVerificationEmail(gomock.Any(), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
-	a.EXPECT().SetSessionCookie(gomock.Any(), gomock.Any()).AnyTimes()
-	a.EXPECT().ClearSessionCookie(gomock.Any()).AnyTimes()
+	a.EXPECT().SignUpEmail(notOnGET(t, "SignUpEmail"), gomock.Any()).Return(user, sess, fail).AnyTimes()
+	a.EXPECT().SignInEmail(notOnGET(t, "SignInEmail"), gomock.Any()).Return(user, sess, fail).AnyTimes()
+	a.EXPECT().SignOut(notOnGET(t, "SignOut"), gomock.Any()).Return(fail).AnyTimes()
+	a.EXPECT().RequestPasswordReset(notOnGET(t, "RequestPasswordReset"), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
+	a.EXPECT().ResetPassword(notOnGET(t, "ResetPassword"), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
+	a.EXPECT().VerifyEmail(notOnGET(t, "VerifyEmail"), gomock.Any()).Return(user, sess, fail).AnyTimes()
+	a.EXPECT().SendVerificationEmail(notOnGET(t, "SendVerificationEmail"), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
+	a.EXPECT().CheckCallbackURL(gomock.Any()).DoAndReturn(func(cb string) error {
+		if cb == "betterstack://verified" { // the mobile app's deep link
+			return nil
+		}
+		return errors.New("untrusted callback")
+	}).AnyTimes()
+	a.EXPECT().SetSessionCookie(notOnGET(t, "SetSessionCookie"), gomock.Any()).AnyTimes()
+	a.EXPECT().ClearSessionCookie(notOnGET(t, "ClearSessionCookie")).AnyTimes()
 
 	u.EXPECT().GetProfile(gomock.Any(), gomock.Any(), gomock.Any()).Return(services.User(user), fail).AnyTimes()
-	u.EXPECT().UpdateProfile(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(services.User(user), fail).AnyTimes()
-	u.EXPECT().RequestEmailChange(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
-	u.EXPECT().ChangePassword(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
+	u.EXPECT().UpdateProfile(notOnGET(t, "UpdateProfile"), gomock.Any(), gomock.Any(), gomock.Any()).Return(services.User(user), fail).AnyTimes()
+	u.EXPECT().RequestEmailChange(notOnGET(t, "RequestEmailChange"), gomock.Any(), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
+	u.EXPECT().ChangePassword(notOnGET(t, "ChangePassword"), gomock.Any(), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
 	u.EXPECT().ListSessions(gomock.Any(), gomock.Any(), gomock.Any()).Return(sessions, fail).AnyTimes()
-	u.EXPECT().RevokeSession(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
-	u.EXPECT().RevokeOtherSessions(gomock.Any(), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
-	u.EXPECT().DeleteAccount(gomock.Any(), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
+	u.EXPECT().RevokeSession(notOnGET(t, "RevokeSession"), gomock.Any(), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
+	u.EXPECT().RevokeOtherSessions(notOnGET(t, "RevokeOtherSessions"), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
+	u.EXPECT().DeleteAccount(notOnGET(t, "DeleteAccount"), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
 	u.EXPECT().DataSummary(gomock.Any(), gomock.Any(), gomock.Any()).Return(services.UserDataSummary{User: services.User(user), Sessions: 2}, fail).AnyTimes()
 
 	return ui.New(ui.Deps{
@@ -255,12 +264,30 @@ func crawlUI(t *testing.T, failing, signedIn bool) http.Handler {
 	}).Handler()
 }
 
+// crawlMethod is the method of the request being crawled (tests run the
+// crawl sequentially).
+var crawlMethod string
+
+// notOnGET matches any argument but fails the test when a state-changing
+// port is called while a GET is served: mail scanners and link previews
+// fetch links, so opening a page (an emailed link above all) must never
+// spend a token, sign in or change anything.
+func notOnGET(t *testing.T, port string) gomock.Matcher {
+	return gomock.Cond(func(any) bool {
+		if crawlMethod == http.MethodGet {
+			t.Errorf("GET called %s: only a POST may change state", port)
+		}
+		return true
+	})
+}
+
 // crawl sends what a browser would. Streams are cut after their first write.
 func crawl(h http.Handler, method, path string, ds bool) *httptest.ResponseRecorder {
 	var body io.Reader
 	if method == http.MethodPost {
 		body = strings.NewReader(crawlForm.Encode())
 	}
+	crawlMethod = method
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	r := httptest.NewRequestWithContext(ctx, method, "https://app.example"+path, body)
@@ -293,7 +320,7 @@ func (f *firstEvent) Flush() {
 	}
 }
 
-func checkResponse(t *testing.T, name string, rec *httptest.ResponseRecorder) {
+func checkResponse(t *testing.T, name, method, path string, rec *httptest.ResponseRecorder) {
 	t.Helper()
 	h, body := rec.Header(), rec.Body.String()
 	for _, re := range leaks {
@@ -335,12 +362,34 @@ func checkResponse(t *testing.T, name string, rec *httptest.ResponseRecorder) {
 	for k, want := range map[string]string{
 		"X-Content-Type-Options":     "nosniff",
 		"X-Frame-Options":            "DENY",
-		"Referrer-Policy":            "strict-origin",
 		"Strict-Transport-Security":  "max-age=63072000; includeSubDomains",
 		"Cross-Origin-Opener-Policy": "same-origin",
 	} {
 		if got := h.Get(k); got != want {
 			t.Errorf("%s: %s = %q, want %q", name, k, got, want)
+		}
+	}
+	// An emailed token in the URL: never sent on as a Referer, and rendered
+	// only as the page's own hidden token field.
+	tok := ""
+	if u, err := url.Parse(path); err == nil && method == http.MethodGet {
+		tok = u.Query().Get("token")
+	}
+	if rp := h.Get("Referrer-Policy"); (tok != "" && rp != "no-referrer") || (rp != "no-referrer" && rp != "strict-origin") {
+		t.Errorf("%s: Referrer-Policy = %q", name, rp)
+	}
+	if tok != "" {
+		esc := html.EscapeString(tok)
+		field := `<input type="hidden" name="token" value="` + esc + `">`
+		enc := url.QueryEscape(tok)
+		if strings.Count(body, esc) != strings.Count(body, field) || (enc != esc && strings.Contains(body, enc)) {
+			t.Errorf("%s: token rendered outside its hidden field", name)
+		}
+	}
+	// Nothing posts on load: a page acts only when the person submits it.
+	for _, v := range dataInit.FindAllStringSubmatch(body, -1) {
+		if autoPost.MatchString(html.UnescapeString(v[1])) {
+			t.Errorf("%s: data-init sends a request on load: %s", name, v[0])
 		}
 	}
 	if !strings.Contains(h.Get("Permissions-Policy"), "camera=()") {

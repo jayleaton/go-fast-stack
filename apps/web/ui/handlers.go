@@ -110,6 +110,7 @@ func (u *UI) forgotPassword(w http.ResponseWriter, r *http.Request) {
 }
 
 func (u *UI) resetPasswordPage(w http.ResponseWriter, r *http.Request) {
+	u.tokenPage(w)
 	u.render(w, r, http.StatusOK, ResetPasswordPage(r.URL.Query().Get("token"), AuthForm{}, false))
 }
 
@@ -168,6 +169,7 @@ func (u *UI) resendVerification(w http.ResponseWriter, r *http.Request) {
 }
 
 func (u *UI) verifyEmailSuccessPage(w http.ResponseWriter, r *http.Request) {
+	u.tokenPage(w)
 	q := r.URL.Query()
 	// auth's own link handler lands here with ?error=<code> when it failed.
 	if code := q.Get("error"); code != "" {
@@ -178,41 +180,52 @@ func (u *UI) verifyEmailSuccessPage(w http.ResponseWriter, r *http.Request) {
 }
 
 // verifyEmail spends the token of a verification or change-email link (auth
-// emails them to this page) and signs the opener in, then continues to the
-// link's callbackURL when it is a path on this site, else the dashboard.
-// Without a token auth's own link endpoint already verified and set the
-// session cookie before redirecting here, so only the session is checked.
+// emails them to this page; the person confirmed with this POST) and signs
+// the opener in, then continues to the link's callbackURL when it is a path
+// on this site or a callback auth trusts, else the dashboard.
 func (u *UI) verifyEmail(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	token, callback := r.URL.Query().Get("token"), r.URL.Query().Get("callbackURL")
-	result := VerifyEmailSucceeded(verifyNext(callback))
-	status := http.StatusOK
-	if token != "" {
-		_, s, err := u.auth.VerifyEmail(ctx, token)
-		switch {
-		case err == nil:
-			if s.Token != "" {
-				u.auth.SetSessionCookie(w, s)
-			}
-		case errors.Is(err, auth.ErrInvalidToken), errors.Is(err, auth.ErrTokenExpired):
-			result, status = VerifyEmailFailed(i18n.T(ctx, "pages.verifyEmail.invalidToken")), http.StatusUnprocessableEntity
-		default:
-			result, status = VerifyEmailFailed(u.errorMessage(ctx, err)), http.StatusUnprocessableEntity
-		}
-	} else if _, _, ok := u.userFrom(ctx); !ok {
-		result = VerifyEmailFailed(i18n.T(ctx, "pages.verifyEmail.emailVerificationCompletedButLoginFailed"))
+	token, callback := r.PostFormValue("token"), r.PostFormValue("callbackURL")
+	if token == "" {
+		result := VerifyEmailFailed(i18n.T(ctx, "pages.verifyEmail.invalidToken"))
+		u.patch(w, r, http.StatusUnprocessableEntity, VerifyEmailSuccessPage(token, callback, result), result)
+		return
+	}
+	result, status := VerifyEmailSucceeded(u.verifyNext(callback)), http.StatusOK
+	_, s, err := u.auth.VerifyEmail(ctx, token)
+	switch {
+	case errors.Is(err, auth.ErrInvalidToken), errors.Is(err, auth.ErrTokenExpired):
+		result, status = VerifyEmailFailed(i18n.T(ctx, "pages.verifyEmail.invalidToken")), http.StatusUnprocessableEntity
+	case err != nil:
+		result, status = VerifyEmailFailed(u.errorMessage(ctx, err)), http.StatusUnprocessableEntity
+	case s.Token != "":
+		u.auth.SetSessionCookie(w, s)
 	}
 	u.patch(w, r, status, VerifyEmailSuccessPage(token, callback, result), result)
 }
 
 // verifyNext is where a verified link continues: its callbackURL when that
-// is another page on this site, else the dashboard.
-func verifyNext(callback string) string {
+// is another page on this site or a callback auth trusts (the mobile app's
+// deep link), else the dashboard.
+func (u *UI) verifyNext(callback string) string {
+	if callback != "" && !strings.HasPrefix(callback, "/") && u.auth.CheckCallbackURL(callback) == nil {
+		return callback
+	}
 	next := safeNext(callback)
 	if next == config.AppRoutes.Home || strings.HasPrefix(next, config.AppRoutes.VerifyEmailSuccess) {
 		return config.AppRoutes.Dashboard
 	}
 	return next
+}
+
+// tokenPage marks a page that carries an emailed token: never sent on as a
+// Referer behind https. (Over plain http the default strict-origin stays: a
+// no-referrer page posts with Origin: null, and without Fetch Metadata the
+// cross-origin protection could not tell it from a forged post.)
+func (u *UI) tokenPage(w http.ResponseWriter) {
+	if u.secure {
+		w.Header().Set("Referrer-Policy", "no-referrer")
+	}
 }
 
 func (u *UI) dashboard(w http.ResponseWriter, r *http.Request) {

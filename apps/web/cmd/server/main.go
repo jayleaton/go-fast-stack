@@ -27,6 +27,7 @@ import (
 	"github.com/jayleaton/ai-patterns-go/packages/auth"
 	"github.com/jayleaton/ai-patterns-go/packages/database"
 	"github.com/jayleaton/ai-patterns-go/packages/secrets"
+	"github.com/jayleaton/ai-patterns-go/packages/secrets/reveal"
 )
 
 // migrations run in order: auth owns "user", app tables reference it.
@@ -80,7 +81,7 @@ func migrate(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	pool, err := database.Open(ctx, url.Reveal())
+	pool, err := database.Open(ctx, reveal.Value(url))
 	if err != nil {
 		return err
 	}
@@ -169,7 +170,7 @@ func newPool(ctx context.Context, cfg config.Config, log *slog.Logger) (*databas
 	if err != nil {
 		return nil, err
 	}
-	pool, err := database.OpenPool(ctx, url.Reveal(), database.PoolOptions{
+	pool, err := database.OpenPool(ctx, reveal.Value(url), database.PoolOptions{
 		Probe:  database.MigratedProbe(map[string]fs.FS{auth.MigrationTable: auth.Migrations, database.MigrationTable: database.Migrations}),
 		Logger: log,
 	})
@@ -184,7 +185,7 @@ func newPool(ctx context.Context, cfg config.Config, log *slog.Logger) (*databas
 		}
 		ctx, cancel := context.WithTimeout(ctx, rotationTimeout) // shutdown aborts a rotation in progress
 		defer cancel()
-		if err := pool.Swap(ctx, v.Reveal()); err != nil {
+		if err := pool.Swap(ctx, reveal.Value(v)); err != nil {
 			return err // the old pool stays; retried after the next fetch
 		}
 		log.Info("database: DATABASE_URL rotated", "from", applied, "to", v.Fingerprint())
@@ -207,7 +208,7 @@ func newAuth(ctx context.Context, cfg config.Config, pool *database.Pool, log *s
 			log.Warn("RESEND_API_KEY not set: auth email links are logged, not sent")
 			return nil
 		}
-		mailer.Swap(auth.NewResendMailer(key.Reveal(), cfg.FromEmail))
+		mailer.Swap(auth.NewResendMailer(reveal.Value(key), cfg.FromEmail))
 		log.Info("mailer: resend client built", "secrets_provider", cfg.Secrets.Provider(), "resend_api_key", key.Fingerprint())
 		return nil
 	})
@@ -215,7 +216,7 @@ func newAuth(ctx context.Context, cfg config.Config, pool *database.Pool, log *s
 	if err != nil {
 		return nil, err
 	}
-	current, previous, revoked := keys.Reveal()
+	current, previous, revoked := reveal.Keyring(keys)
 	authn, err := auth.New(auth.Config{
 		Secret:                   current,
 		PreviousSecrets:          previous,
@@ -240,7 +241,7 @@ func newAuth(ctx context.Context, cfg config.Config, pool *database.Pool, log *s
 		}
 		ctx, cancel := context.WithTimeout(ctx, rotationTimeout) // shutdown aborts a rotation in progress
 		defer cancel()
-		current, previous, revoked := k.Reveal()
+		current, previous, revoked := reveal.Keyring(k)
 		if err := authn.SetSecrets(ctx, auth.Secrets{Current: current, Previous: previous, Revoked: revoked}); err != nil {
 			return err // the old keyring stays; retried after the next fetch
 		}

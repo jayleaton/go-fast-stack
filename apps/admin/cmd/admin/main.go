@@ -27,6 +27,7 @@ import (
 	"github.com/jayleaton/ai-patterns-go/packages/database"
 	"github.com/jayleaton/ai-patterns-go/packages/database/adminrepo"
 	"github.com/jayleaton/ai-patterns-go/packages/secrets"
+	"github.com/jayleaton/ai-patterns-go/packages/secrets/reveal"
 )
 
 const shutdownTimeout = 15 * time.Second
@@ -89,7 +90,7 @@ func migrate(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	adminPool, err := database.Open(ctx, url.Reveal())
+	adminPool, err := database.Open(ctx, reveal.Value(url))
 	if err != nil {
 		return err
 	}
@@ -131,7 +132,7 @@ func invite(ctx context.Context, cfg config.Config, log *slog.Logger, email stri
 	if err != nil {
 		return err
 	}
-	adminPool, err := database.Open(ctx, url.Reveal())
+	adminPool, err := database.Open(ctx, reveal.Value(url))
 	if err != nil {
 		return err
 	}
@@ -247,7 +248,7 @@ func livePool(ctx context.Context, log *slog.Logger, name string, url func() (se
 	if err != nil {
 		return nil, err
 	}
-	pool, err := database.OpenPool(ctx, u.Reveal(), database.PoolOptions{Probe: database.MigratedProbe(migrated), Logger: log})
+	pool, err := database.OpenPool(ctx, reveal.Value(u), database.PoolOptions{Probe: database.MigratedProbe(migrated), Logger: log})
 	if err != nil {
 		return nil, err
 	}
@@ -259,7 +260,7 @@ func livePool(ctx context.Context, log *slog.Logger, name string, url func() (se
 		}
 		ctx, cancel := context.WithTimeout(ctx, rotationTimeout) // shutdown aborts a rotation in progress
 		defer cancel()
-		if err := pool.Swap(ctx, v.Reveal()); err != nil {
+		if err := pool.Swap(ctx, reveal.Value(v)); err != nil {
 			return err // the old pool stays; retried after the next fetch
 		}
 		log.Info("database: URL rotated", "database", name, "from", applied, "to", v.Fingerprint())
@@ -282,7 +283,7 @@ func newAdminAuth(ctx context.Context, cfg config.Config, adminPool auth.DB, log
 			log.Warn("RESEND_API_KEY not set: admin invite links are logged, not sent")
 			return nil
 		}
-		mailer.Swap(auth.NewResendMailer(key.Reveal(), cfg.FromEmail))
+		mailer.Swap(auth.NewResendMailer(reveal.Value(key), cfg.FromEmail))
 		log.Info("mailer: resend client built", "resend_api_key", key.Fingerprint())
 		return nil
 	})
@@ -290,7 +291,7 @@ func newAdminAuth(ctx context.Context, cfg config.Config, adminPool auth.DB, log
 	if err != nil {
 		return nil, err
 	}
-	current, previous, revoked := keys.Reveal()
+	current, previous, revoked := reveal.Keyring(keys)
 	admins, err := auth.New(auth.Config{
 		Secret:          current,
 		PreviousSecrets: previous,
@@ -318,7 +319,7 @@ func newAdminAuth(ctx context.Context, cfg config.Config, adminPool auth.DB, log
 		}
 		ctx, cancel := context.WithTimeout(ctx, rotationTimeout)
 		defer cancel()
-		current, previous, revoked := k.Reveal()
+		current, previous, revoked := reveal.Keyring(k)
 		if err := admins.SetSecrets(ctx, auth.Secrets{Current: current, Previous: previous, Revoked: revoked}); err != nil {
 			return err // the old keyring stays; retried after the next fetch
 		}

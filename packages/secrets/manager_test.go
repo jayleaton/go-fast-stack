@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jayleaton/ai-patterns-go/packages/secrets"
+	"github.com/jayleaton/ai-patterns-go/packages/secrets/reveal"
 )
 
 const key = "RESEND_API_KEY"
@@ -33,7 +34,7 @@ func get(t *testing.T, m *secrets.Manager, name string) string {
 	if err != nil {
 		t.Fatalf("Get(%s): %v", name, err)
 	}
-	return v.Reveal()
+	return reveal.Value(v)
 }
 
 func TestRotationPickedUpWithinOneInterval(t *testing.T) {
@@ -149,7 +150,7 @@ func TestInvalidSnapshotRejected(t *testing.T) {
 				m := start(t, dopplerFor(f), secrets.Options{
 					Required: []string{key}, Logger: log,
 					Validate: func(s secrets.Snapshot) error {
-						if v, _ := s.Get(key); !strings.HasPrefix(v.Reveal(), "re_") {
+						if v, _ := s.Get(key); !strings.HasPrefix(reveal.Value(v), "re_") {
 							return errors.New(key + " must start with re_")
 						}
 						return nil

@@ -176,6 +176,16 @@ func (a *Auth) isTrusted(v string, allowRelative bool) bool {
 
 // checkCallbackURL validates a client-supplied redirect target (open-redirect
 // protection). Empty is allowed.
+// CheckCallbackURL reports whether v may be redirected to after an emailed
+// link: a safe relative path, or a URL on a trusted origin or deep-link
+// scheme (Config.TrustedOrigins). It returns ErrInvalidCallbackURL otherwise.
+func (a *Auth) CheckCallbackURL(v string) error {
+	if v == "" {
+		return ErrInvalidCallbackURL
+	}
+	return a.checkCallbackURL(v, ErrInvalidCallbackURL)
+}
+
 func (a *Auth) checkCallbackURL(v string, errValue *Error) error {
 	if v == "" || a.isTrusted(v, true) {
 		return nil

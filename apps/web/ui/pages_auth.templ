@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"net/url"
 
 	"github.com/jayleaton/ai-patterns-go/apps/web/ui/i18n"
 	"github.com/jayleaton/ai-patterns-go/apps/web/internal/config"
@@ -227,48 +226,34 @@ templ ResendBlock(email string, s ResendState) {
 	</div>
 }
 
-// VerifyEmailSuccessPage lands from the verification link. It renders the
-// spinner, then verifies with a Datastar POST (so link scanners doing GETs
-// cannot consume the token) and streams the result in.
+// VerifyEmailSuccessPage lands from the verification link. Opening it never
+// spends the token (mail scanners and link previews fetch links): the person
+// confirms with a POST, which verifies and streams the result in. The token
+// and the link's callbackURL travel only as hidden form fields.
 templ VerifyEmailSuccessPage(token, next string, result templ.Component) {
 	@view.Layout(i18n.T(ctx, "pages.verifyEmail.title")) {
 		@view.AuthShell() {
 			if result != nil {
 				@result
+			} else if token == "" {
+				@VerifyEmailFailed(i18n.T(ctx, "pages.verifyEmail.invalidToken"))
 			} else {
-				<div id={ verifyResultID } class="text-center" data-init={ view.Post(verifyURL(token, next)) }>
-					@view.StatusIcon("loading")
-					<h2 class={ view.HeadingClass }>{ i18n.T(ctx, "pages.verifyEmail.verifyingEmail") }</h2>
-					<p class={ view.SubheadingClass }>{ i18n.T(ctx, "pages.verifyEmail.pleaseWait") }</p>
-					<noscript>
-						<form class="mt-6" method="post" action={ templ.SafeURL(verifyURL(token, next)) }>
-							<button type="submit" class={ view.PrimaryButtonClass }>{ i18n.T(ctx, "common.continue") }</button>
-						</form>
-					</noscript>
+				<div id={ verifyResultID } class="text-center">
+					<h2 class={ view.HeadingClass }>{ i18n.T(ctx, "pages.verifyEmail.confirmTitle") }</h2>
+					<p class={ view.SubheadingClass }>{ i18n.T(ctx, "pages.verifyEmail.confirmDescription") }</p>
+					<form class="mt-6" method="post" action={ templ.SafeURL(config.AppRoutes.VerifyEmailSuccess) } data-on:submit={ view.PostForm(config.AppRoutes.VerifyEmailSuccess) } data-indicator:_verifying>
+						<input type="hidden" name="token" value={ token }/>
+						<input type="hidden" name="callbackURL" value={ next }/>
+						@view.SubmitButton(i18n.T(ctx, "pages.verifyEmail.confirmButton"), i18n.T(ctx, "pages.verifyEmail.verifyingEmail"), "_verifying")
+					</form>
 				</div>
 			}
 		}
 	}
 }
 
-// verifyURL carries the token and where to continue (the link's
-// callbackURL) in the query of the verification POST.
-func verifyURL(token, next string) string {
-	q := url.Values{}
-	if token != "" {
-		q.Set("token", token)
-	}
-	if next != "" {
-		q.Set("callbackURL", next)
-	}
-	if len(q) == 0 {
-		return config.AppRoutes.VerifyEmailSuccess
-	}
-	return config.AppRoutes.VerifyEmailSuccess + "?" + q.Encode()
-}
-
-// VerifyEmailSucceeded continues to next (a safe relative path) after a
-// moment.
+// VerifyEmailSucceeded continues to next (a safe relative path, or a
+// callback auth trusts such as the mobile app's deep link) after a moment.
 templ VerifyEmailSucceeded(next string) {
 	<div id={ verifyResultID } class="text-center" data-init={ "setTimeout(() => " + view.Assign(next) + ", 1500)" }>
 		@view.StatusIcon("success")

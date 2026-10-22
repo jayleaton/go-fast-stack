@@ -60,6 +60,7 @@ func (u *UI) challenge(w http.ResponseWriter, r *http.Request, err error) bool {
 }
 
 func (u *UI) setPasswordPage(w http.ResponseWriter, r *http.Request) {
+	u.tokenPage(w)
 	u.render(w, r, http.StatusOK, SetPasswordPage(r.URL.Query().Get("token"), AuthForm{}))
 }
 
@@ -225,4 +226,15 @@ func (u *UI) setLocale(w http.ResponseWriter, r *http.Request) {
 	}
 	i18n.SetCookie(w, l, u.secure)
 	http.Redirect(w, r, safeNext(r.PostFormValue("next")), http.StatusSeeOther)
+}
+
+// tokenPage marks a page that carries an emailed token (the invite link):
+// never sent on as a Referer behind https. Opening it spends nothing; the
+// POST does. (Over plain http the default strict-origin stays: a no-referrer
+// page posts with Origin: null, and without Fetch Metadata the cross-origin
+// protection could not tell it from a forged post.)
+func (u *UI) tokenPage(w http.ResponseWriter) {
+	if u.secure {
+		w.Header().Set("Referrer-Policy", "no-referrer")
+	}
 }

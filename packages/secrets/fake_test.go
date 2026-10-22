@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/jayleaton/ai-patterns-go/packages/secrets"
+	"github.com/jayleaton/ai-patterns-go/packages/secrets/reveal"
 )
 
 const testToken = "dp.st.test_token_value"
@@ -152,7 +153,7 @@ type recorder struct {
 func (r *recorder) hook(v secrets.Secret) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.seen = append(r.seen, v.Reveal())
+	r.seen = append(r.seen, reveal.Value(v))
 	return nil
 }
 
