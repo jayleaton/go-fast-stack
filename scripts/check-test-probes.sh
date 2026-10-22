@@ -49,6 +49,17 @@ else
 fi
 rm -f "${planted[@]}"
 
+# A test in a subpackage of a tree boundary (apps/web/ui/**) is accepted.
+nested=apps/web/ui/zz_probe/zz_probe_test.go
+mkdir -p "$(dirname "$nested")"; dirs+=("$(dirname "$nested")"); paths+=("$nested")
+printf 'package zz_probe_test\n' > "$nested"
+if out=$(./scripts/check-test-boundaries.sh 2>&1); then
+  pass "test file in a tree boundary is accepted: $nested"
+else
+  fail "test file in a tree boundary is rejected: $nested"; echo "$out"
+fi
+rm -f "$nested"
+
 # Coverage.
 probe=apps/web/internal/services/zz_probe.go
 profile=.cache/probe.out
