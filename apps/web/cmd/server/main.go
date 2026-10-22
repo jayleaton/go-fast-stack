@@ -70,7 +70,7 @@ func main() {
 }
 
 func migrate(ctx context.Context, cfg config.Config, log *slog.Logger) error {
-	pool, err := database.Open(ctx, cfg.DatabaseURL)
+	pool, err := database.Open(ctx, cfg.DatabaseURL.Reveal())
 	if err != nil {
 		return err
 	}
@@ -91,7 +91,7 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	}
 	defer cfg.Secrets.Stop()
 
-	pool, err := database.Open(ctx, cfg.DatabaseURL)
+	pool, err := database.Open(ctx, cfg.DatabaseURL.Reveal())
 	if err != nil {
 		return err
 	}
@@ -164,20 +164,24 @@ func newAuth(cfg config.Config, pool *pgxpool.Pool, log *slog.Logger) (*auth.Aut
 		return nil
 	})
 	return auth.New(auth.Config{
-		Secret:                   cfg.AuthSecret,
+		Secret:                   cfg.AuthSecret.Reveal(),
 		BaseURL:                  cfg.PublicURL.String(),
 		RequireEmailVerification: cfg.Features.EmailVerification,
 		TrustedOrigins:           slices.Concat(cfg.TrustedOrigins, auth.MobileTrustedOrigins(!cfg.Features.MobileDevOrigins)),
 		LoginPath:                config.AppRoutes.Login,
+		VerifyEmailPath:          config.AppRoutes.VerifyEmailSuccess,
 		ClientIPHeader:           cfg.ClientIPHeader,
 		Logger:                   log,
 	}, pool, mailer)
 }
 
+// newLogger redacts credentials from every record (secrets.NewRedactingHandler);
+// outside production it keeps the dev mailer's links readable.
 func newLogger(env config.Env) *slog.Logger {
 	opts := &slog.HandlerOptions{Level: slog.LevelInfo}
+	redact := secrets.RedactOptions{KeepDevMailLinks: env != config.Production}
 	if env == config.Production {
-		return slog.New(slog.NewJSONHandler(os.Stdout, opts))
+		return slog.New(secrets.NewRedactingHandler(slog.NewJSONHandler(os.Stdout, opts), redact))
 	}
-	return slog.New(slog.NewTextHandler(os.Stdout, opts))
+	return slog.New(secrets.NewRedactingHandler(slog.NewTextHandler(os.Stdout, opts), redact))
 }

@@ -246,12 +246,12 @@ func TestDecodeBody(t *testing.T) {
 	}
 	// Wrong types name the field and the type it must be.
 	types := []struct{ method, path, body, msg string }{
-		{"POST", config.UserPath("u1", "/ban"), `{"banReason":1}`, "banReason must be string"},
-		{"POST", config.UserPath("u1", "/ban"), `{"banReason":"spam","banExpiresIn":"1h"}`, "banExpiresIn must be int64"},
-		{"POST", config.UserPath("u1", "/ban"), `{"banReason":"spam","banExpiresIn":1.5}`, "banExpiresIn must be int64"},
-		{"PUT", config.UserPath("u1", "/role"), `{"role":["admin"]}`, "role must be string"},
-		{"POST", r.AdminInvites, `{"email":true}`, "email must be string"},
-		{"POST", r.AdminInvites, `{"email":"a@b.co","name":{}}`, "name must be string"},
+		{"POST", config.UserPath("u1", "/ban"), `{"banReason":1}`, "banReason must be a string"},
+		{"POST", config.UserPath("u1", "/ban"), `{"banReason":"spam","banExpiresIn":"1h"}`, "banExpiresIn must be an integer"},
+		{"POST", config.UserPath("u1", "/ban"), `{"banReason":"spam","banExpiresIn":1.5}`, "banExpiresIn must be an integer"},
+		{"PUT", config.UserPath("u1", "/role"), `{"role":["admin"]}`, "role must be a string"},
+		{"POST", r.AdminInvites, `{"email":true}`, "email must be a string"},
+		{"POST", r.AdminInvites, `{"email":"a@b.co","name":{}}`, "name must be a string"},
 	}
 	for _, c := range types {
 		_, h := newRouter(t)

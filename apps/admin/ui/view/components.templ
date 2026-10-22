@@ -58,7 +58,7 @@ templ Input(f Field) {
 templ SubmitButton(label, loadingLabel, signal string) {
 	<button type="submit" class={ PrimaryButtonClass } data-attr:disabled={ "$" + signal }>
 		<span data-show={ "!$" + signal }>{ label }</span>
-		<span style="display: none" data-show={ "$" + signal }>{ loadingLabel }</span>
+		<span class="hidden" data-class:hidden={ "!$" + signal }>{ loadingLabel }</span>
 	</button>
 }
 

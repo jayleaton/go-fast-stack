@@ -227,6 +227,7 @@ func SetCookie(w http.ResponseWriter, l Locale, secure bool) {
 		Value:    string(l),
 		Path:     "/",
 		MaxAge:   60 * 60 * 24 * 365,
+		HttpOnly: true, // only the server reads it
 		Secure:   secure,
 		SameSite: http.SameSiteLaxMode,
 	})

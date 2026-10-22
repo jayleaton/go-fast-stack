@@ -63,11 +63,25 @@ type Config struct {
 	Logger            *slog.Logger  // default slog.Default()
 	MailTimeout       time.Duration // timeout for sending one email (default 30s)
 
-	CookiePrefix  string           // cookie name prefix (default "better-auth"): a second instance in the same browser needs its own
-	AppName       string           // TOTP issuer default (default: BaseURL host)
-	TwoFactor     *TwoFactorConfig // nil turns 2FA off: endpoints answer 404, sign-in is unchanged
-	InviteTTL     time.Duration    // how long a set-password (invite) link stays valid (default 72h)
-	DisableSignUp bool             // refuse public sign-up (SignUpEmail, POST /sign-up/email); CreateUserWithoutPassword still works
+	CookiePrefix string // cookie name prefix (default "better-auth"): a second instance in the same browser needs its own
+	// HostOnlyCookies names cookies "__Host-<CookiePrefix>.…" on https instead
+	// of Better Auth's "__Secure-…": the browser then binds them to this exact
+	// host (no Domain, Path=/, Secure), so a sibling subdomain cannot set or
+	// shadow them. Only for instances without Better Auth clients (the admin app).
+	HostOnlyCookies bool
+	AppName         string           // TOTP issuer default (default: BaseURL host)
+	TwoFactor       *TwoFactorConfig // nil turns 2FA off: endpoints answer 404, sign-in is unchanged
+	InviteTTL       time.Duration    // how long a set-password (invite) link stays valid (default 72h)
+	DisableSignUp   bool             // refuse public sign-up (SignUpEmail, POST /sign-up/email); CreateUserWithoutPassword still works
+
+	// VerifyEmailPath is an app page (a root-relative path, no query) that
+	// spends verification and change-email tokens itself (Auth.VerifyEmail)
+	// and then continues to the callbackURL it is given. When set, emailed
+	// verification links with a relative callbackURL open
+	// <BaseURL><VerifyEmailPath>?token=..&callbackURL=.. instead of
+	// GET /api/auth/verify-email, so browsers never touch the JSON API.
+	// Absolute and deep-link callbacks (mobile) keep the API link.
+	VerifyEmailPath string
 }
 
 // MobileTrustedOrigins returns the deep-link origins of the Expo app: its
@@ -186,6 +200,9 @@ func New(cfg Config, pool *pgxpool.Pool, mailer Mailer) (*Auth, error) {
 	if cfg.InviteTTL <= 0 {
 		cfg.InviteTTL = DefaultInviteTTL
 	}
+	if p := cfg.VerifyEmailPath; p != "" && (!isSafeRelativeURL(p) || strings.ContainsAny(p, "?#")) {
+		return nil, fmt.Errorf("auth: VerifyEmailPath must be a root-relative path without query, got %q", p)
+	}
 	if tf := cfg.TwoFactor; tf != nil {
 		copied := *tf
 		if copied.Issuer == "" {
@@ -250,4 +267,32 @@ func (a *Auth) sendMail(ctx context.Context, kind, to string, send func(ctx cont
 // authURL returns an absolute URL under BasePath, e.g. authURL("/verify-email").
 func (a *Auth) authURL(path string) string {
 	return a.baseOrigin + BasePath + path
+}
+
+// passwordLink is the emailed reset or set-password link for token. A
+// relative redirectTo is an app page that spends the token in-process, so
+// the link opens it directly (<BaseURL><redirectTo>?token=) and the browser
+// never touches the JSON API. Absolute and deep-link targets (mobile, other
+// trusted origins) go through GET /reset-password/{token}, which checks the
+// token and redirects to them with ?token=.
+func (a *Auth) passwordLink(token, redirectTo string) string {
+	if isSafeRelativeURL(redirectTo) {
+		return a.baseOrigin + a.withQuery(redirectTo, "token", token)
+	}
+	return a.authURL("/reset-password/"+token) + "?callbackURL=" + url.QueryEscape(redirectTo)
+}
+
+// verificationLink is the emailed verification or change-email link for
+// token. With Config.VerifyEmailPath set and a relative callbackURL (default
+// "/") it opens that app page, which spends the token and continues to
+// callbackURL; otherwise GET /verify-email does both.
+func (a *Auth) verificationLink(token, callbackURL string) string {
+	if callbackURL == "" {
+		callbackURL = "/"
+	}
+	base := a.authURL("/verify-email")
+	if a.cfg.VerifyEmailPath != "" && isSafeRelativeURL(callbackURL) {
+		base = a.baseOrigin + a.cfg.VerifyEmailPath
+	}
+	return base + "?token=" + url.QueryEscape(token) + "&callbackURL=" + url.QueryEscape(callbackURL)
 }

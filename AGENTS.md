@@ -29,6 +29,8 @@ The template's value is its layers. Do not route around them.
 - Env is read once, in `config.Load`, and validated at boot. Nothing else calls `os.Getenv`. Secrets that must rotate without a redeploy are the one exception to "read once": `config.Load` builds a `packages/secrets` manager from `SECRETS_PROVIDER`, and consumers get those values only through typed accessors on `config.Secrets` (`OnResendAPIKey`), wired in `cmd/server`. Services and transports never import `packages/secrets` (depguard); they get the client a secret enables through a port.
 - `packages/auth` owns the `user`, `session`, `account` and `verification` tables (Better Auth names). App migrations may add tables that reference `"user"(id)`, and repositories may update non-credential user columns (`name`, `image`). Auth migrations run before app migrations (`goose_auth`, then `goose_app`).
 - `apps/web/internal/server` and `cmd/server` are the only places that wire packages together.
+- **The browser only talks to the UI.** Pages and Datastar actions return HTML (fragments over SSE); the JSON API is for the mobile app and servers, and `server` answers browser requests to it (and `/healthz`) with a bare 404. Never link to, fetch or render an `/api/` path, a JSON payload, a token or internal error text from the UI. Emailed auth links for the UI land on UI pages (`auth.Config.VerifyEmailPath`, relative `redirectTo`).
+- **Templates are CSP-clean.** `ui.Handler` sends a nonce CSP with no `unsafe-*`: no inline `style=`/`on*=` attributes or inline scripts (Datastar `data-*` expressions are fine; hide with `class="hidden"` + `data-class:hidden`). Never bypass templ's escaping (`templ.Raw`, `templ.Unsafe*`: `TestNoUnescapedOutput` rejects them): Datastar runs any injected `data-*` expression with the page nonce, so escaping is the XSS defence, not the CSP. Redirect targets from a request go through `safeNext`. A new UI route must be added to `crawlTargets` in `apps/*/ui/crawl_test.go`, which fails until it is.
 
 ## Hit every layer
 
@@ -88,7 +90,7 @@ Mocks are generated, never written: `//go:generate go tool mockgen -source=<file
 
 ## Admin app
 
-`apps/admin` is optional and copies the web app's layers exactly: `packages/database/adminrepo` (sqlc) and adapters over `packages/auth` → `apps/admin/internal/services` → `apps/admin/internal/api` (`/api/admin/v1`) and `apps/admin/ui`, wired in `apps/admin/internal/server` and `apps/admin/cmd/admin` (`admin serve | migrate | invite <email>`). Config, routes and validators are its own (`apps/admin/internal/{config,validate}`).
+`apps/admin` is optional and copies the web app's layers exactly: `packages/database/adminrepo` (sqlc) and adapters over `packages/auth` → `apps/admin/internal/services` → `apps/admin/internal/api` (`/api/admin/v1`, not mounted by `cmd/admin`: the UI calls the services in-process) and `apps/admin/ui`, wired in `apps/admin/internal/server` and `apps/admin/cmd/admin` (`admin serve | migrate | invite <email>`). Config, routes and validators are its own (`apps/admin/internal/{config,validate}`).
 
 - **Two databases.** The admin database (`ADMIN_DATABASE_URL`) holds a second `packages/auth` instance (admins: `goose_auth`, cookie prefix `admin`) and `admin_audit_log` (`goose_admin`). The app database (`DATABASE_URL`) holds the users it administers, reached through `auth.UserAdmin` (packages/auth owns those tables, ban rules and session revocation) and read-only `adminrepo.Stats`.
 - **Isolation is enforced.** `apps/web/**` never imports `apps/admin` or `adminrepo`; `apps/admin/**` never imports `apps/web` (copy patterns, not code, so either app can be deleted); admin transports never import `packages/auth` either: they declare UI-owned ports and `server` adapts auth to them. `make lint-layering` proves every rule both ways.
@@ -110,7 +112,13 @@ Copy the user account flow; it is the reference for every service and repository
 
 ## Adding a secret
 
-1. **Can it rotate live?** Only if its consumer can rebuild in place: an API key for an outbound client, yes. A database password needs a probed pool swap; a signing key needs a keyring with overlap. If not, it is a plain env var in `config.Load` (and README "Secrets" says why it isn't live).
+Secrets never reach templates, SSE, JSON or logs:
+
+- **Typed.** A credential in `config.Config` (or anywhere) is a `secrets.Secret`, never a `string` (`DatabaseURL`, `AuthSecret`, `DOPPLER_TOKEN`...): it prints, logs and marshals as `[redacted]`. Validate with `Len`, `IsZero`, `Equal`. Each `config_test.go` proves a loaded `Config` prints nothing secret.
+- **Revealed only in `cmd`.** `.Reveal()` is called in `apps/*/cmd` where the client is built (`database.Open`, `auth.Config`, `NewResendMailer`) and in `packages/secrets`; forbidigo rejects it anywhere else. UIs and JSON APIs never import `packages/secrets`, and a UI never imports its app's JSON API (depguard; `make lint-layering` probes each rule).
+- **Redacting logger.** Both binaries log through `secrets.NewRedactingHandler`: values of credential-named keys (password, secret, token, api_key, authorization, cookie, dsn, database_url, otp, backup codes...) and, in any string, `Bearer` tokens, URL passwords, token/code/key query values, emailed-link tokens and Cookie headers become `[redacted]`. Outside production it keeps the dev mailer's `url` readable. It is a net, not a licence: log `Fingerprint()`.
+
+1. **Can it rotate live?** Only if its consumer can rebuild in place: an API key for an outbound client, yes. A database password needs a probed pool swap; a signing key needs a keyring with overlap. If not, it is a plain env var in `config.Load`, loaded as a `secrets.Secret` (and README "Secrets" says why it isn't live).
 2. **Live secret.** Add the name to `liveSecrets` in `apps/web/internal/config/secrets.go` and a typed accessor next to `OnResendAPIKey`; list it in `Options.Required` for the environments that need it. `config.Load` must still fail at boot with the env provider when it is missing.
 3. **Consumer.** In `cmd/server`, register the hook: build the new client and swap it in atomically (see `auth.SwapMailer`); on a zero value fall back or keep the old client; return an error to keep the previous client (the manager retries it after each later fetch). A hook must not call back into the manager (`OnChange`, `Refresh`, `Stop`). Log `v.Fingerprint()`, never the value. Never cache the value elsewhere.
 4. **Tests and docs.** Cover the swap at the consumer's boundary (like `TestSwapMailerUsesTheLatestMailer`), add the name to `.env.example` and README "Secrets", and add it to every Doppler config.
@@ -127,12 +135,12 @@ Copy the user account flow; it is the reference for every service and repository
 
 - `apps/web/cmd/server`: the binary (`server serve`, `server migrate`).
 - `apps/web/internal/config`: env config, `AppRoutes`/`APIRoutes`, `Features`.
-- `apps/web/internal/server`: middleware, `/healthz`, the mounts (auth at `/api/auth/`, API, UI at `/`), and the adapters from `packages/auth` to service ports (`CallerFrom`, `AccountCredentials`).
+- `apps/web/internal/server`: middleware (`apiOnly` hides the API and `/healthz` from browsers), `/healthz`, the mounts (auth at `/api/auth/`, API, UI at `/`), and the adapters from `packages/auth` to service ports (`CallerFrom`, `AccountCredentials`).
 - `apps/web/internal/api`: JSON transport `/api/core/v1`: envelope, route wrapper, handlers, the service ports they call; `api/mocks` (generated) and `api/apitest` (mock session) for handler tests.
 - `apps/web/internal/services`: business rules and the ports they need; `services/mocks` (generated) for service tests. `apps/web/internal/validate`: input types.
-- `apps/web/ui`: templ pages, Datastar handlers, i18n, static assets.
+- `apps/web/ui`: templ pages, Datastar handlers, i18n, static assets, and the browser security headers (`security.go`).
 - `packages/database`: pool, `migrations/` (goose, embedded), `queries/` (sqlc input), `sqlc/` (generated, never edit), repositories, `model/`, `dbtest/`.
-- `packages/secrets`: live secrets: `Manager` (polling, validation, last-good cache, staleness, change hooks) and providers (`Env`, `Doppler`; Infisical/1Password stubs behind build tags). Self-contained; never reads the env.
+- `packages/secrets`: live secrets: `Manager` (polling, validation, last-good cache, staleness, change hooks) and providers (`Env`, `Doppler`; Infisical/1Password stubs behind build tags), `Secret`, and the redacting log handler. Self-contained; never reads the env.
 - `packages/auth`: Better Auth–style auth: its own migrations, queries, endpoints (Better Auth paths and response shapes, not the envelope), sessions, mailers. Self-contained: it never imports `apps/` or `packages/database` (depguard).
 - `apps/mobile-app`: the Expo app, which talks to the JSON API with bearer tokens.
 - `apps/admin`: the optional admin dashboard (see "Admin app"); `packages/database/adminrepo`: its data layer (audit log, stats; migrations, queries and sqlc output under it).

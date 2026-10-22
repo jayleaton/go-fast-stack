@@ -214,7 +214,7 @@ templ ResendBlock(email string, s ResendState) {
 				}
 				data-attr:disabled="$_sending || $_cooldown > 0"
 			>
-				<span data-show="$_sending" style="display: none">{ i18n.T(ctx, "pages.verifyEmail.sending") }</span>
+				<span class="hidden" data-class:hidden="!$_sending">{ i18n.T(ctx, "pages.verifyEmail.sending") }</span>
 				<span
 					data-show="!$_sending"
 					data-text={ cooldownLabel(i18n.T(ctx, "pages.verifyEmail.resendIn"), i18n.T(ctx, "pages.verifyEmail.resendVerificationEmail")) }
@@ -230,18 +230,18 @@ templ ResendBlock(email string, s ResendState) {
 // VerifyEmailSuccessPage lands from the verification link. It renders the
 // spinner, then verifies with a Datastar POST (so link scanners doing GETs
 // cannot consume the token) and streams the result in.
-templ VerifyEmailSuccessPage(token string, result templ.Component) {
+templ VerifyEmailSuccessPage(token, next string, result templ.Component) {
 	@view.Layout(i18n.T(ctx, "pages.verifyEmail.title")) {
 		@view.AuthShell() {
 			if result != nil {
 				@result
 			} else {
-				<div id={ verifyResultID } class="text-center" data-init={ view.Post(verifyURL(token)) }>
+				<div id={ verifyResultID } class="text-center" data-init={ view.Post(verifyURL(token, next)) }>
 					@view.StatusIcon("loading")
 					<h2 class={ view.HeadingClass }>{ i18n.T(ctx, "pages.verifyEmail.verifyingEmail") }</h2>
 					<p class={ view.SubheadingClass }>{ i18n.T(ctx, "pages.verifyEmail.pleaseWait") }</p>
 					<noscript>
-						<form class="mt-6" method="post" action={ templ.SafeURL(verifyURL(token)) }>
+						<form class="mt-6" method="post" action={ templ.SafeURL(verifyURL(token, next)) }>
 							<button type="submit" class={ view.PrimaryButtonClass }>{ i18n.T(ctx, "common.continue") }</button>
 						</form>
 					</noscript>
@@ -251,21 +251,31 @@ templ VerifyEmailSuccessPage(token string, result templ.Component) {
 	}
 }
 
-// verifyURL carries the token in the query of the verification POST.
-func verifyURL(token string) string {
-	if token == "" {
+// verifyURL carries the token and where to continue (the link's
+// callbackURL) in the query of the verification POST.
+func verifyURL(token, next string) string {
+	q := url.Values{}
+	if token != "" {
+		q.Set("token", token)
+	}
+	if next != "" {
+		q.Set("callbackURL", next)
+	}
+	if len(q) == 0 {
 		return config.AppRoutes.VerifyEmailSuccess
 	}
-	return config.AppRoutes.VerifyEmailSuccess + "?" + url.Values{"token": {token}}.Encode()
+	return config.AppRoutes.VerifyEmailSuccess + "?" + q.Encode()
 }
 
-templ VerifyEmailSucceeded() {
-	<div id={ verifyResultID } class="text-center" data-init={ "setTimeout(() => window.location.assign('" + config.AppRoutes.Dashboard + "'), 1500)" }>
+// VerifyEmailSucceeded continues to next (a safe relative path) after a
+// moment.
+templ VerifyEmailSucceeded(next string) {
+	<div id={ verifyResultID } class="text-center" data-init={ "setTimeout(() => " + view.Assign(next) + ", 1500)" }>
 		@view.StatusIcon("success")
 		<h2 class={ view.HeadingClass }>{ i18n.T(ctx, "pages.verifyEmail.emailVerifiedSuccessfully") }</h2>
 		<p class={ view.SubheadingClass }>{ i18n.T(ctx, "pages.verifyEmail.accountVerifiedRedirect") }</p>
 		<div class="mt-6">
-			<a href={ templ.SafeURL(config.AppRoutes.Dashboard) } class={ view.SuccessButtonClass }>{ i18n.T(ctx, "pages.verifyEmail.continueToDashboard") }</a>
+			<a href={ templ.SafeURL(next) } class={ view.SuccessButtonClass }>{ i18n.T(ctx, "pages.verifyEmail.continueToDashboard") }</a>
 		</div>
 	</div>
 }

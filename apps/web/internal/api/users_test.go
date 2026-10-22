@@ -235,6 +235,22 @@ func TestDecode(t *testing.T) {
 	}
 }
 
+// TestDecodeNamesJSONTypes: a wrong type is described in JSON terms, never
+// with the Go type it decodes into.
+func TestDecodeNamesJSONTypes(t *testing.T) {
+	for body, want := range map[string]string{
+		`{"name":1}`:      "name must be a string",
+		`{"name":["x"]}`:  "name must be a string",
+		`{"image":false}`: "image must be a string",
+	} {
+		_, h := newRouter(t)
+		res := apitest.Do(t, h, apitest.AsUser(ada), "PATCH", r.Me, body)
+		if res.Status != 400 || res.Details["body"] != want {
+			t.Errorf("%s: %d %v, want body %q", body, res.Status, res.Details, want)
+		}
+	}
+}
+
 // TestEmailCallbackDefault: without a callbackURL the link lands on the
 // account page.
 func TestEmailCallbackDefault(t *testing.T) {

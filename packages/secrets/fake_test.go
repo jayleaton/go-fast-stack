@@ -117,7 +117,7 @@ func (t inMemory) RoundTrip(r *http.Request) (*http.Response, error) {
 }
 
 func dopplerFor(f *fakeDoppler) *secrets.Doppler {
-	return &secrets.Doppler{Token: testToken, APIURL: "http://doppler.fake", HTTPClient: &http.Client{Transport: inMemory{f}}}
+	return &secrets.Doppler{Token: secrets.NewSecret(testToken), APIURL: "http://doppler.fake", HTTPClient: &http.Client{Transport: inMemory{f}}}
 }
 
 // logBuffer is a concurrency-safe log sink.

@@ -39,13 +39,13 @@ func main() {
 	fakeAuth := Auth{S: store}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET "+confirmEmailPath, store.ConfirmEmail)
-	ui.New(ui.Deps{
+	mux.Handle("/", ui.New(ui.Deps{
 		Auth:     fakeAuth,
 		Users:    Users{S: store},
 		UserFrom: fakeAuth.UserFrom,
 		Features: config.Features{EmailVerification: *verify, TemplateWelcome: *welcome},
 		Logger:   log,
-	}).Routes(mux)
+	}).Handler())
 
 	srv := &http.Server{
 		Addr:              *addr,

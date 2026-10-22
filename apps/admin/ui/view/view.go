@@ -101,7 +101,7 @@ func jsPath(p string) string {
 const themeToggle = `const root = document.documentElement;` +
 	` const dark = root.classList.contains('dark') || (!root.classList.contains('light') && window.matchMedia('(prefers-color-scheme: dark)').matches);` +
 	` root.classList.toggle('dark', !dark); root.classList.toggle('light', dark);` +
-	` document.cookie = 'theme=' + (dark ? 'light' : 'dark') + '; path=/; max-age=31536000; samesite=lax'`
+	` document.cookie = 'theme=' + (dark ? 'light' : 'dark') + '; path=/; max-age=31536000; samesite=lax' + (location.protocol === 'https:' ? '; secure' : '')`
 
 // Shared Tailwind classes, copied from the original pages.
 const (

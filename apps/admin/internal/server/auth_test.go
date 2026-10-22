@@ -216,8 +216,9 @@ func (w *wired) do(method, path, body, bearer string, wantStatus int, out any) s
 }
 
 // inviteAdmin runs the CLI path (bootstrap + invite as the operator), then
-// sets the password from the emailed link through the admin auth endpoints.
-// It returns the admin's bearer token.
+// sets the password from the emailed link (it opens the UI's /set-password
+// page) through the audited auth endpoint the opt-in API mounts. It returns
+// the admin's bearer token.
 func (w *wired) inviteAdmin(email, password string) string {
 	w.t.Helper()
 	ctx := context.Background()
@@ -238,9 +239,11 @@ func (w *wired) inviteAdmin(email, password string) string {
 	if err != nil {
 		w.t.Fatal(err)
 	}
-	token := link.Path[strings.LastIndex(link.Path, "/")+1:]
+	if link.Path != config.AppRoutes.SetPassword || link.Query().Get("token") == "" {
+		w.t.Fatalf("invite link %s does not open the set-password page", link)
+	}
 	var res struct{ Token string }
-	w.do("POST", "/api/auth/set-password", `{"token":"`+token+`","newPassword":"`+password+`"}`, "", 200, &res)
+	w.do("POST", "/api/auth/set-password", `{"token":"`+link.Query().Get("token")+`","newPassword":"`+password+`"}`, "", 200, &res)
 	if res.Token == "" {
 		w.t.Fatal("set-password returned no session token")
 	}
@@ -376,7 +379,7 @@ func TestAdminManagement(t *testing.T) {
 	_ = w.admins.Shutdown(context.Background()) // flush the invite email
 	link, _ := url.Parse(w.mail.link(t, "eve@example.com"))
 	var set struct{ Token string }
-	w.do("POST", "/api/auth/set-password", `{"token":"`+link.Path[strings.LastIndex(link.Path, "/")+1:]+`","newPassword":"eve-password-1"}`, "", 200, &set)
+	w.do("POST", "/api/auth/set-password", `{"token":"`+link.Query().Get("token")+`","newPassword":"eve-password-1"}`, "", 200, &set)
 	eveToken := set.Token
 
 	w.do("POST", config.AdminPath(rootID, "/disable"), "", root, 400, nil) // yourself
@@ -434,15 +437,15 @@ func TestAuthEvents(t *testing.T) {
 			challenge = c.Name + "=" + c.Value
 		}
 	}
-	if rec := w.raw("POST", "/api/auth/two-factor/verify-totp", `{"code":"000000"}`, "Cookie", challenge, "Origin", adminOrigin); rec.Code == 200 {
+	if rec := w.raw("POST", "/api/auth/two-factor/verify-totp", `{"code":"000000"}`, "Cookie", challenge, "Expo-Origin", adminOrigin); rec.Code == 200 {
 		t.Fatalf("wrong code accepted: %s", rec.Body)
 	}
-	rec = w.raw("POST", "/api/auth/two-factor/verify-totp", `{"code":"`+totp(t, setup.Secret, 1)+`"}`, "Cookie", challenge, "Origin", adminOrigin)
+	rec = w.raw("POST", "/api/auth/two-factor/verify-totp", `{"code":"`+totp(t, setup.Secret, 1)+`"}`, "Cookie", challenge, "Expo-Origin", adminOrigin)
 	var signedIn struct{ Token string }
 	if err := json.Unmarshal(rec.Body.Bytes(), &signedIn); rec.Code != 200 || err != nil || signedIn.Token == "" {
 		t.Fatalf("verify-totp: %d %s", rec.Code, rec.Body)
 	}
-	if rec := w.raw("POST", "/api/auth/sign-out", "", "Authorization", "Bearer "+signedIn.Token, "Origin", adminOrigin); rec.Code != 200 {
+	if rec := w.raw("POST", "/api/auth/sign-out", "", "Authorization", "Bearer "+signedIn.Token, "Expo-Origin", adminOrigin); rec.Code != 200 {
 		t.Fatalf("sign-out: %d %s", rec.Code, rec.Body)
 	}
 

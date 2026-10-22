@@ -54,11 +54,16 @@ func URL(name string) string {
 }
 
 // Handler serves the embedded assets under routes.Static. Requests carrying
-// the content version are cached immutably.
+// the content version are cached immutably. Only the embedded files are
+// served: no directory listings, 404 for anything else.
 func Handler() http.Handler {
 	files := http.StripPrefix(routes.Static, http.FileServerFS(FS))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		name := strings.TrimPrefix(r.URL.Path, routes.Static)
+		if _, ok := versions[name]; !ok {
+			http.NotFound(w, r)
+			return
+		}
 		if v := r.URL.Query().Get("v"); v != "" && v == versions[name] {
 			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 		} else {

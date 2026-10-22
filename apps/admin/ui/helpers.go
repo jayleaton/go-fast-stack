@@ -334,15 +334,6 @@ func backupSignals(on bool) string {
 	return fmt.Sprintf("{_backup: %t}", on)
 }
 
-// displayIf is the initial style of a data-show element, so it is right
-// before Datastar runs.
-func displayIf(show bool) string {
-	if show {
-		return ""
-	}
-	return "display: none"
-}
-
 func codeInputmode(backup bool) string {
 	if backup {
 		return "text"

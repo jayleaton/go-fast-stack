@@ -3,7 +3,6 @@ package auth
 import (
 	"context"
 	"errors"
-	"net/url"
 	"strings"
 )
 
@@ -49,9 +48,10 @@ func (a *Auth) CreateUserWithoutPassword(ctx context.Context, in CreateUserInput
 
 // IssueSetPasswordLink emails the user a single-use "set your password" link,
 // valid for Config.InviteTTL. It replaces any earlier invite or reset link.
-// The link is the reset-password link (GET /api/auth/reset-password/{token}),
-// redirecting to redirectTo (a trusted URL or relative path) with ?token=;
-// that page then calls CompleteSetPassword (POST /api/auth/set-password).
+// The link is built like a reset link (see passwordLink): a relative
+// redirectTo is opened directly with ?token=, a trusted absolute URL through
+// GET /api/auth/reset-password/{token}. That page then calls
+// CompleteSetPassword (or POST /api/auth/set-password).
 func (a *Auth) IssueSetPasswordLink(ctx context.Context, userID, redirectTo string) error {
 	if redirectTo == "" {
 		return ErrInvalidRedirectURL
@@ -80,7 +80,7 @@ func (a *Auth) IssueSetPasswordLink(ctx context.Context, userID, redirectTo stri
 	if err != nil {
 		return err
 	}
-	link := a.authURL("/reset-password/"+token) + "?callbackURL=" + url.QueryEscape(redirectTo)
+	link := a.passwordLink(token, redirectTo)
 	a.sendMail(ctx, "set-password", user.Email, func(ctx context.Context) error {
 		return a.mailer.SendSetPasswordEmail(ctx, user.Email, link)
 	})

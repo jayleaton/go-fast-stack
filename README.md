@@ -12,19 +12,18 @@ make migrate    # auth migrations, then app migrations
 make dev        # http://<this-machine>:3000, reachable over LAN/Tailscale
 ```
 
-Try the API. In development email verification is off and verification/reset links are logged by the server instead of emailed:
+Try the API (it is for the mobile app and servers: a browser gets a 404, see [Security](#security)). In development email verification is off and verification/reset links are logged by the server instead of emailed:
 
 ```sh
 curl localhost:3000/healthz
-# Sign up (Better Auth endpoint and response shape); keeps the session cookie.
-curl -c jar -H 'Content-Type: application/json' \
+# Sign up (Better Auth endpoint and response shape); the body carries the session token.
+curl -H 'Content-Type: application/json' \
   -d '{"name":"Ada","email":"ada@example.com","password":"password123"}' \
   localhost:3000/api/auth/sign-up/email
-curl -b jar localhost:3000/api/core/v1/users/me
-curl -b jar -H 'Origin: http://localhost:3000' -X PATCH -d '{"name":"Ada Lovelace"}' localhost:3000/api/core/v1/users/me
-# Mobile clients send the token from the sign-in/sign-up body as a bearer token.
+# Clients send that token as a bearer token.
 curl -H "Authorization: Bearer <token>" localhost:3000/api/core/v1/users/me
-curl -b jar -H 'Origin: http://localhost:3000' -X POST localhost:3000/api/auth/sign-out
+curl -H "Authorization: Bearer <token>" -X PATCH -d '{"name":"Ada Lovelace"}' localhost:3000/api/core/v1/users/me
+curl -H "Authorization: Bearer <token>" -X POST localhost:3000/api/auth/sign-out
 ```
 
 The signed-in user's account lives under `/api/core/v1/users/me` (all JSON, envelope `{"data", "error"}`):
@@ -93,7 +92,7 @@ Secrets that can change while the server runs come from one place, `SECRETS_PROV
 
 **When the provider misbehaves.** No valid first snapshot means the server does not boot (the deploy fails; the previous one keeps serving). Once running, a failed or invalid fetch (malformed body, missing `RESEND_API_KEY` in production) never replaces the last good values; the manager retries with backoff (5 s doubling, capped at min(5 min, max staleness ÷ 3), honouring `Retry-After`). After `SECRETS_MAX_STALENESS` without a good fetch, `/healthz` answers 503 `secrets stale` and every failed poll logs an error. Clients already built keep their last good key. `/healthz` is a readiness check: don't wire it to a liveness probe that restarts the process, because a fresh process can't load secrets during the outage either.
 
-**Logs never contain values.** A secret prints as `[redacted]` everywhere (fmt, slog, JSON). Logs name changed keys and show a fingerprint (an HMAC under a random per-process key: it shows a change within one process, nothing more).
+**Logs never contain values.** A secret prints as `[redacted]` everywhere (fmt, slog, JSON), and so does every credential in config (`DATABASE_URL`, `AUTH_SECRET`, `DOPPLER_TOKEN`, the admin app's too); only the binaries' `cmd` packages reveal them, to build clients. Logs name changed keys and show a fingerprint (an HMAC under a random per-process key: it shows a change within one process, nothing more). Both binaries also redact every log record: password, token, API key, cookie and DSN fields, `Authorization`/`Cookie`/`Set-Cookie` headers, `Bearer` tokens, URL passwords, token/code query values and the token in emailed links. In development the dev mailer's links stay readable so you can copy them; in production they are redacted too.
 
 **Local development.** Keep `SECRETS_PROVIDER=env` and `.env`, or run `doppler run -- make dev` to inject a dev config as env at startup. To try live rotation locally, put a dev-config service token in `.env` with `SECRETS_PROVIDER=doppler`.
 
@@ -106,6 +105,19 @@ Secrets that can change while the server runs come from one place, `SECRETS_PROV
 | `SECRETS_MAX_STALENESS` | `15m` | at least twice the interval |
 
 Infisical and 1Password adapters are stubs with an implementation plan (`packages/secrets/infisical.go`, `onepassword.go`, outside the default build).
+
+## Security
+
+The browser only ever talks to the UI: server-rendered pages, Datastar actions that answer with HTML fragments over SSE, and the embedded static assets. Nothing it receives names the JSON API.
+
+- **The JSON API is not for browsers.** `/api/auth/*`, `/api/core/*` and `/healthz` answer any request that carries browser headers (`Sec-Fetch-*`, `Origin`, `Referer`, or `Accept: text/html`) with the same bare 404 as an unknown path, and never send CORS headers. A wrong method is a 404 too (no `405` + `Allow`). The mobile app (native fetch) and servers send none of these. The one exception: a top-level navigation to auth's two link endpoints when an emailed link's callback is a deep link or another origin (mobile); they only redirect, and an error they would answer as JSON is the same 404. Emailed links for the web UI open its pages directly.
+- **The admin app has no JSON API on the network.** Its UI calls the services and its auth instance in-process; `/api/admin/v1` exists as code (`apps/admin/internal/api`, tested) but `cmd/admin` mounts none of it and no admin auth endpoint. To let scripts call it, pass its routers as `server.Deps.API` (browsers still get a 404).
+- **Headers on every UI response:** a nonce-based CSP (`script-src 'self' 'nonce-…'`, `style-src 'self'`, `frame-ancestors 'none'`, no `unsafe-*`: Datastar compiles expressions into nonced scripts from `<html data-nonce>`), `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy: strict-origin`, `Permissions-Policy`, COOP/CORP, `Cache-Control: no-store` on pages and SSE, and HSTS behind https. Templates never use inline `style=` or `on*=` attributes (show/hide with `class="hidden"` + `data-class:hidden`). The CSP keeps out foreign scripts, styles, frames and form targets, but it is not the XSS defence: Datastar runs every `data-*` expression it finds with the page's nonce, so injected markup would run. templ's escaping is the defence; nothing may bypass it (`templ.Raw`, `templ.Unsafe*`, `templ.SafeScript*`, ...), and redirect targets from the query go through `safeNext`.
+- **Errors are generic.** Panics answer a plain 500 (the envelope on the API); unknown service errors show "Something went wrong" and are logged; validation messages name JSON types, never Go types.
+- **Cookies** are `HttpOnly`, `SameSite=Lax` and `Secure` behind https; the admin session uses the `__Host-` prefix (the web app keeps Better Auth's `__Secure-` names for the mobile client).
+- **Secrets** are `secrets.Secret` values from config to the client that uses them (see [Secrets](#secrets)); logs are redacted.
+
+Enforced by tests and lint, not review: each UI has an exposure crawl (`apps/*/ui/crawl_test.go`) that requests every registered route in every state, with markup and off-site redirect probes in user data and the query, and fails on `/api/` references, canary secrets, internal error text, Go type names, JSON, inline script/style, unescaped probes, off-site navigation, unsafe cookies or a missing header, and fails when a new route is not crawled; `TestNoUnescapedOutput` rejects templ's unescaped-output helpers in UI sources; `server_test.go` proves browsers get 404s from the API; depguard keeps UIs from importing their JSON API or `packages/secrets`, and forbidigo keeps `Secret.Reveal` in `cmd` (`make lint-layering` proves both bite).
 
 ## Admin dashboard (optional)
 

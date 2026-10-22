@@ -7,6 +7,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/jayleaton/ai-patterns-go/apps/web/internal/api"
@@ -41,32 +42,42 @@ type Deps struct {
 	UI      http.Handler // apps/web/ui routes, mounted at "/"; nil until the UI lands
 }
 
-// New returns the root handler.
+// New returns the root handler. The JSON API (auth and core) and /healthz
+// are for the mobile app and server-to-server clients only: browser requests
+// get the same bare 404 as an unknown path (apiOnly), so the web UI's pages
+// and network log never touch them. The UI calls services in-process and
+// guards its own actions against cross-origin posts.
 func New(d Deps) http.Handler {
+	apiMux := http.NewServeMux()
+	apiMux.Handle(config.APIRoutes.Auth, d.Auth.Handler())
+	d.Users.Routes(apiMux)
+
+	var public string
+	if d.Config.PublicURL != nil {
+		public = d.Config.PublicURL.Scheme + "://" + d.Config.PublicURL.Host
+	}
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET "+config.APIRoutes.Healthz, healthz(d.DB, d.Secrets))
-	mux.Handle(config.APIRoutes.Auth, d.Auth.Handler())
-	d.Users.Routes(mux)
+	mux.Handle("GET "+config.APIRoutes.Healthz, apiOnly(healthz(d.DB, d.Secrets), public))
+	mux.Handle(apiPrefix, apiOnly(hideMethods(apiMux), public))
+	// Without this, ServeMux would answer /api with a 307 to /api/ for anyone,
+	// telling a browser the subtree exists.
+	mux.Handle(strings.TrimSuffix(apiPrefix, "/"), http.NotFoundHandler())
 	if d.UI != nil {
 		mux.Handle("/", d.UI)
 	}
+	return securityHeaders(logRequests(d.Log, recoverPanics(d.Log, d.Auth.Middleware(mux))))
+}
 
-	// Browsers send Sec-Fetch-Site/Origin; bearer-token clients (mobile) send
-	// neither and pass through.
-	csrf := http.NewCrossOriginProtection()
-	csrf.SetDenyHandler(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		api.WriteError(w, http.StatusForbidden, "Cross-origin request rejected", nil)
-	}))
-	for _, o := range d.Config.TrustedOrigins {
-		if err := csrf.AddTrustedOrigin(o); err != nil {
-			d.Log.Warn("trusted origin ignored by CSRF protection", "origin", o, "err", err)
-		}
-	}
-
-	var h http.Handler = mux
-	h = d.Auth.Middleware(h)
-	h = csrf.Handler(h)
-	return logRequests(d.Log, recoverPanics(d.Log, h))
+// securityHeaders covers what the UI does not answer (the API, /healthz,
+// bare 404s): never sniffed, framed or stored. The UI sets its own, fuller set.
+func securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("Cache-Control", "no-store")
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("X-Frame-Options", "DENY")
+		next.ServeHTTP(w, r)
+	})
 }
 
 // healthz is a readiness check: 503 when the database is down or live

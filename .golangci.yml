@@ -32,6 +32,12 @@ linters:
         - pattern: ^auth\.Auth\.Users$
           pkg: ^github\.com/jayleaton/ai-patterns-go/packages/auth$
           msg: user administration (ban, roles, any user's sessions) is for apps/admin only
+        # Credentials travel as secrets.Secret (prints "[redacted]"); only the
+        # cmd packages, where clients are built, and packages/secrets itself
+        # read the value (exclusions below). Validation uses Len/IsZero/Equal.
+        - pattern: ^secrets\.Secret\.Reveal$
+          pkg: ^github\.com/jayleaton/ai-patterns-go/packages/secrets$
+          msg: secrets are revealed only where a client is built (apps/*/cmd); pass secrets.Secret everywhere else
     # Layering: packages/database -> services -> transports (api, ui), for
     # apps/web and apps/admin alike. See AGENTS.md "Architecture".
     depguard:
@@ -128,6 +134,22 @@ linters:
               desc: admin transports call services (services.AuditEntry etc.), never adminrepo or sqlc
             - pkg: github.com/jayleaton/ai-patterns-go/packages/auth
               desc: admin transports use their own ports; the adapters over packages/auth live in apps/admin/internal/server
+            - pkg: github.com/jayleaton/ai-patterns-go/packages/secrets
+              desc: secrets never reach templates, SSE or JSON; cmd/admin reveals them where clients are built
+        # The browser UI never talks to or renders the JSON API: both
+        # transports call services in-process, side by side.
+        ui-not-api:
+          files:
+            - "**/apps/web/ui/**"
+          deny:
+            - pkg: github.com/jayleaton/ai-patterns-go/apps/web/internal/api
+              desc: the browser UI never talks to or renders the JSON API; call the service
+        admin-ui-not-api:
+          files:
+            - "**/apps/admin/ui/**"
+          deny:
+            - pkg: github.com/jayleaton/ai-patterns-go/apps/admin/internal/api
+              desc: the browser UI never talks to or renders the JSON API; call the service
         admin-services:
           files:
             - "**/apps/admin/internal/services/**"
@@ -254,6 +276,10 @@ linters:
         linters: [noctx]
       - path: (apps/admin|packages/auth)/
         linters: [forbidigo]
+        text: is for apps/admin only
+      - path: (apps/[^/]+/cmd|packages/secrets)/
+        linters: [forbidigo]
+        text: secrets are revealed only where a client is built
 
 formatters:
   enable:

@@ -138,21 +138,21 @@ templ adminActions(a services.Admin) {
 			<form method="post" action={ templ.SafeURL(routes.Admin(routes.AdminEnable, a.ID)) } data-on:submit={ view.PostForm(routes.Admin(routes.AdminEnable, a.ID)) } data-indicator:_enabling>
 				<button type="submit" class={ view.SecondaryButtonClass } data-attr:disabled="$_enabling">
 					<span data-show="!$_enabling">{ i18n.T(ctx, "pages.admins.enable") }</span>
-					<span style="display: none" data-show="$_enabling">{ i18n.T(ctx, "common.loading") }</span>
+					<span class="hidden" data-class:hidden="!$_enabling">{ i18n.T(ctx, "common.loading") }</span>
 				</button>
 			</form>
 		} else {
 			<form method="post" action={ templ.SafeURL(routes.Admin(routes.AdminDisable, a.ID)) } data-on:submit={ view.PostForm(routes.Admin(routes.AdminDisable, a.ID)) } data-indicator:_disabling>
 				<button type="submit" class={ view.SecondaryButtonClass } data-attr:disabled="$_disabling">
 					<span data-show="!$_disabling">{ i18n.T(ctx, "pages.admins.disable") }</span>
-					<span style="display: none" data-show="$_disabling">{ i18n.T(ctx, "common.loading") }</span>
+					<span class="hidden" data-class:hidden="!$_disabling">{ i18n.T(ctx, "common.loading") }</span>
 				</button>
 			</form>
 		}
 		<form method="post" action={ templ.SafeURL(routes.Admin(routes.AdminRemove, a.ID)) } data-on:submit={ view.ConfirmPostForm(i18n.Tf(ctx, "pages.admins.confirmRemove", a.Email), routes.Admin(routes.AdminRemove, a.ID)) } data-indicator:_removing>
 			<button type="submit" class={ view.DangerButtonClass } data-attr:disabled="$_removing">
 				<span data-show="!$_removing">{ i18n.T(ctx, "pages.admins.remove") }</span>
-				<span style="display: none" data-show="$_removing">{ i18n.T(ctx, "common.loading") }</span>
+				<span class="hidden" data-class:hidden="!$_removing">{ i18n.T(ctx, "common.loading") }</span>
 			</button>
 		</form>
 	</div>
@@ -188,7 +188,7 @@ templ AuditPage(d AuditData) {
 				</div>
 				<button type="submit" class={ view.InlineButtonClass } data-attr:disabled="$_filtering">
 					<span data-show="!$_filtering">{ i18n.T(ctx, "pages.users.filters.apply") }</span>
-					<span style="display: none" data-show="$_filtering">{ i18n.T(ctx, "common.loading") }</span>
+					<span class="hidden" data-class:hidden="!$_filtering">{ i18n.T(ctx, "common.loading") }</span>
 				</button>
 			</form>
 			<div class="mt-6">

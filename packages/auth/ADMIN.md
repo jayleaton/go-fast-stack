@@ -112,7 +112,9 @@ func (a *Auth) IssueSetPasswordLink(ctx context.Context, userID, redirectTo stri
 func (a *Auth) CompleteSetPassword(ctx context.Context, token, newPassword string) (User, Session, error) // may return *TwoFactorChallenge{SetupRequired: true}
 ```
 
-The emailed link is `GET /api/auth/reset-password/{token}?callbackURL=<redirectTo>` (redirects to `redirectTo?token=`); the page posts
+The emailed link is built like a reset link: a relative `redirectTo` (the admin app's `/set-password`) is linked directly as
+`<BaseURL><redirectTo>?token=`, so the browser never touches the JSON API; an absolute or deep-link `redirectTo` gets
+`GET /api/auth/reset-password/{token}?callbackURL=<redirectTo>` (redirects to `redirectTo?token=`). The page calls `CompleteSetPassword` or posts
 `POST /api/auth/set-password {token, newPassword}` → `{token, user}` or the 2FA challenge body above. `ResetPassword` also accepts these tokens.
 `Mailer` gains `SendSetPasswordEmail(ctx, to, url string) error`.
 

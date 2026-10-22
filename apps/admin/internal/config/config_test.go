@@ -1,8 +1,14 @@
 package config
 
 import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"log/slog"
 	"strings"
 	"testing"
+
+	"github.com/jayleaton/ai-patterns-go/packages/secrets"
 )
 
 func env(kv map[string]string) func(string) string {
@@ -79,5 +85,37 @@ func TestLoadRefusesSharedSecretsAndDatabases(t *testing.T) {
 	_, err := Load(env(kv))
 	if err == nil || !strings.Contains(err.Error(), "differ from the app's AUTH_SECRET") || !strings.Contains(err.Error(), "different database") {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+// A loaded Config prints, logs and marshals without its credentials, so
+// logging it (or a struct holding it) can never leak them.
+func TestConfigNeverPrintsSecrets(t *testing.T) {
+	values := []string{"apppass-4242", "adminpass-5353", "admin-secret-" + strings.Repeat("z", 32), "re_resend_9999"}
+	kv := valid()
+	kv["DATABASE_URL"] = "postgres://app:" + values[0] + "@db/app"
+	kv["ADMIN_DATABASE_URL"] = "postgres://admin:" + values[1] + "@db/admin"
+	kv["ADMIN_AUTH_SECRET"] = values[2]
+	kv["RESEND_API_KEY"] = values[3]
+	cfg, err := Load(env(kv))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.AuthSecret.Equal(secrets.NewSecret(values[2])) || !cfg.ResendAPIKey.Equal(secrets.NewSecret(values[3])) || cfg.AdminDatabaseURL.Equal(cfg.DatabaseURL) {
+		t.Fatal("credentials not loaded")
+	}
+	var logged bytes.Buffer
+	slog.New(slog.NewTextHandler(&logged, nil)).Info("cfg", "cfg", cfg)
+	slog.New(slog.NewJSONHandler(&logged, nil)).Info("cfg", "cfg", cfg)
+	j, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, out := range []string{fmt.Sprintf("%v %+v %#v", cfg, cfg, cfg), logged.String(), string(j)} {
+		for _, v := range values {
+			if strings.Contains(out, v) {
+				t.Errorf("config output contains %q: %s", v, out)
+			}
+		}
 	}
 }

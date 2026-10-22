@@ -65,7 +65,7 @@ templ UsersPage(d UsersData) {
 				@view.Select("role", i18n.T(ctx, "pages.users.role"), roleFilterOptions(ctx), d.Filters.Role)
 				<button type="submit" class={ view.InlineButtonClass } data-attr:disabled="$_searching">
 					<span data-show="!$_searching">{ i18n.T(ctx, "pages.users.filters.apply") }</span>
-					<span style="display: none" data-show="$_searching">{ i18n.T(ctx, "common.loading") }</span>
+					<span class="hidden" data-class:hidden="!$_searching">{ i18n.T(ctx, "common.loading") }</span>
 				</button>
 			</form>
 			<div class="mt-6">
@@ -179,7 +179,7 @@ templ UserProfile(usr services.User) {
 			</div>
 			<button type="submit" class={ view.InlineButtonClass } data-attr:disabled="$_settingRole">
 				<span data-show="!$_settingRole">{ i18n.T(ctx, "common.save") }</span>
-				<span style="display: none" data-show="$_settingRole">{ i18n.T(ctx, "common.saving") }</span>
+				<span class="hidden" data-class:hidden="!$_settingRole">{ i18n.T(ctx, "common.saving") }</span>
 			</button>
 		</form>
 	</div>
@@ -200,7 +200,7 @@ templ UserBan(usr services.User) {
 			<form class="mt-4" method="post" action={ templ.SafeURL(routes.User(routes.UserUnban, usr.ID)) } data-on:submit={ view.PostForm(routes.User(routes.UserUnban, usr.ID)) } data-indicator:_unbanning>
 				<button type="submit" class={ view.SecondaryButtonClass } data-attr:disabled="$_unbanning">
 					<span data-show="!$_unbanning">{ i18n.T(ctx, "pages.user.ban.unban") }</span>
-					<span style="display: none" data-show="$_unbanning">{ i18n.T(ctx, "common.loading") }</span>
+					<span class="hidden" data-class:hidden="!$_unbanning">{ i18n.T(ctx, "common.loading") }</span>
 				</button>
 			</form>
 		} else {
@@ -220,7 +220,7 @@ templ UserBan(usr services.User) {
 						{ i18n.T(ctx, "pages.user.ban.submit") }
 					}
 				</span>
-				<span style="display: none" data-show="$_banning">{ i18n.T(ctx, "common.loading") }</span>
+				<span class="hidden" data-class:hidden="!$_banning">{ i18n.T(ctx, "common.loading") }</span>
 			</button>
 		</form>
 	</div>
@@ -235,7 +235,7 @@ templ UserSessions(userID string, sessions []services.Session) {
 				<form method="post" action={ templ.SafeURL(routes.User(routes.UserSessions, userID)) } data-on:submit={ view.PostForm(routes.User(routes.UserSessions, userID)) } data-indicator:_revoking-all>
 					<button type="submit" class={ view.DangerButtonClass } data-attr:disabled="$_revokingAll">
 						<span data-show="!$_revokingAll">{ i18n.T(ctx, "pages.user.sessions.revokeAll") }</span>
-						<span style="display: none" data-show="$_revokingAll">{ i18n.T(ctx, "common.loading") }</span>
+						<span class="hidden" data-class:hidden="!$_revokingAll">{ i18n.T(ctx, "common.loading") }</span>
 					</button>
 				</form>
 			}
@@ -265,7 +265,7 @@ templ UserSessions(userID string, sessions []services.Session) {
 									<form method="post" action={ templ.SafeURL(routes.Session(userID, s.ID)) } data-on:submit={ view.PostForm(routes.Session(userID, s.ID)) } data-indicator:_revoking>
 										<button type="submit" class={ view.SecondaryButtonClass } data-attr:disabled="$_revoking">
 											<span data-show="!$_revoking">{ i18n.T(ctx, "pages.user.sessions.revoke") }</span>
-											<span style="display: none" data-show="$_revoking">{ i18n.T(ctx, "common.loading") }</span>
+											<span class="hidden" data-class:hidden="!$_revoking">{ i18n.T(ctx, "common.loading") }</span>
 										</button>
 									</form>
 								</td>

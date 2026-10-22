@@ -61,9 +61,14 @@ func Get(path string) string {
 	return fmt.Sprintf("@get('%s')", jsPath(path))
 }
 
+// Assign is the expression that navigates to path (a safe relative path).
+func Assign(path string) string {
+	return fmt.Sprintf("window.location.assign('%s')", jsPath(path))
+}
+
 // jsPath keeps a server path safe inside a single-quoted JS string.
 func jsPath(p string) string {
-	return strings.NewReplacer(`\`, `\\`, `'`, `\'`).Replace(p)
+	return strings.NewReplacer(`\`, `\\`, `'`, `\'`, "\n", `\n`, "\r", `\r`, "\u2028", `\u2028`, "\u2029", `\u2029`).Replace(p)
 }
 
 // themeToggle flips the effective theme, persists it in the theme cookie and
@@ -71,7 +76,7 @@ func jsPath(p string) string {
 const themeToggle = `const root = document.documentElement;` +
 	` const dark = root.classList.contains('dark') || (!root.classList.contains('light') && window.matchMedia('(prefers-color-scheme: dark)').matches);` +
 	` root.classList.toggle('dark', !dark); root.classList.toggle('light', dark);` +
-	` document.cookie = 'theme=' + (dark ? 'light' : 'dark') + '; path=/; max-age=31536000; samesite=lax'`
+	` document.cookie = 'theme=' + (dark ? 'light' : 'dark') + '; path=/; max-age=31536000; samesite=lax' + (location.protocol === 'https:' ? '; secure' : '')`
 
 // Shared Tailwind classes, copied from the original pages.
 const (

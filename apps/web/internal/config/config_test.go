@@ -1,6 +1,10 @@
 package config
 
 import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"log/slog"
 	"strings"
 	"testing"
 
@@ -78,10 +82,10 @@ func TestLoadSecretsProvider(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer cfg.Secrets.Stop()
-	var got string
-	cfg.Secrets.OnResendAPIKey(func(v secrets.Secret) error { got = v.Reveal(); return nil })
-	if got != "re_env" || cfg.Secrets.Healthy() != nil || cfg.Secrets.Status().Keys != 1 {
-		t.Fatalf("resend key = %q, status = %+v", got, cfg.Secrets.Status())
+	var got secrets.Secret
+	cfg.Secrets.OnResendAPIKey(func(v secrets.Secret) error { got = v; return nil })
+	if !got.Equal(secrets.NewSecret("re_env")) || cfg.Secrets.Healthy() != nil || cfg.Secrets.Status().Keys != 1 {
+		t.Fatalf("resend key = %s, status = %+v", got.Fingerprint(), cfg.Secrets.Status())
 	}
 
 	cfg, err = Load(env(with(map[string]string{"SECRETS_PROVIDER": "doppler", "DOPPLER_TOKEN": "dp.st.x", "SECRETS_REFRESH_INTERVAL": "30s"})))
@@ -107,6 +111,40 @@ func TestLoadSecretsProvider(t *testing.T) {
 		}
 		if err != nil && strings.Contains(err.Error(), "hunter2") {
 			t.Errorf("error echoes credentials: %v", err)
+		}
+	}
+}
+
+// A loaded Config prints, logs and marshals without its credentials, so
+// logging it (or a struct holding it) can never leak them.
+func TestConfigNeverPrintsSecrets(t *testing.T) {
+	values := []string{"dbpass-4242", "auth-secret-" + strings.Repeat("z", 32), "re_resend_9999", "dp.st.doppler_7777"}
+	cfg, err := Load(env(map[string]string{
+		"PUBLIC_URL":       "http://dev-box:3000",
+		"DATABASE_URL":     "postgres://app:" + values[0] + "@db:5432/app",
+		"AUTH_SECRET":      values[1],
+		"RESEND_API_KEY":   values[2],
+		"SECRETS_PROVIDER": "doppler",
+		"DOPPLER_TOKEN":    values[3],
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.DatabaseURL.Equal(secrets.NewSecret("postgres://app:"+values[0]+"@db:5432/app")) || !cfg.AuthSecret.Equal(secrets.NewSecret(values[1])) {
+		t.Fatal("credentials not loaded")
+	}
+	var logged bytes.Buffer
+	slog.New(slog.NewTextHandler(&logged, nil)).Info("cfg", "cfg", cfg)
+	slog.New(slog.NewJSONHandler(&logged, nil)).Info("cfg", "cfg", cfg)
+	j, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, out := range []string{fmt.Sprintf("%v %+v %#v", cfg, cfg, cfg), logged.String(), string(j)} {
+		for _, v := range values {
+			if strings.Contains(out, v) {
+				t.Errorf("config output contains %q: %s", v, out)
+			}
 		}
 	}
 }
