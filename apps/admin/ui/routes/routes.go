@@ -16,6 +16,9 @@ const (
 	UserSessions    = "/users/{id}/sessions/revoke"
 	UserSession     = "/users/{id}/sessions/{sessionId}/revoke"
 	AdminInvite     = "/admins/invite"
+	AdminDisable    = "/admins/{id}/disable"
+	AdminEnable     = "/admins/{id}/enable"
+	AdminRemove     = "/admins/{id}/remove"
 )
 
 // User returns the concrete path of a user action pattern for id
@@ -27,4 +30,10 @@ func User(pattern, id string) string {
 // Session returns the concrete path of UserSession.
 func Session(userID, sessionID string) string {
 	return "/users/" + url.PathEscape(userID) + "/sessions/" + url.PathEscape(sessionID) + "/revoke"
+}
+
+// Admin returns the concrete path of an admin action pattern for id
+// (AdminDisable, AdminEnable, AdminRemove).
+func Admin(pattern, id string) string {
+	return "/admins/" + url.PathEscape(id) + pattern[len("/admins/{id}"):]
 }

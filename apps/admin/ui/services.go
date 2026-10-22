@@ -24,6 +24,9 @@ type Users interface {
 type Admins interface {
 	ListAdmins(ctx context.Context, actor services.Actor) ([]services.Admin, error)
 	InviteAdmin(ctx context.Context, actor services.Actor, in validate.CreateAdminInvite) (services.Admin, error)
+	DisableAdmin(ctx context.Context, actor services.Actor, adminID string) error
+	EnableAdmin(ctx context.Context, actor services.Actor, adminID string) error
+	RemoveAdmin(ctx context.Context, actor services.Actor, adminID string) error
 }
 
 // Audit is the audit log service (*services.AuditService).

@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/jayleaton/ai-patterns-go/apps/admin/internal/config"
@@ -20,10 +21,10 @@ func (u *UI) adminsPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		u.render(w, r, statusOf(err), AdminsPage(AdminsData{Error: u.errorMessage(ctx, err)}))
+		u.render(w, r, statusOf(err), AdminsPage(AdminsData{SelfID: a.AdminID, Error: u.errorMessage(ctx, err)}))
 		return
 	}
-	u.render(w, r, http.StatusOK, AdminsPage(AdminsData{Admins: admins}))
+	u.render(w, r, http.StatusOK, AdminsPage(AdminsData{Admins: admins, SelfID: a.AdminID}))
 }
 
 // inviteAdmin creates the admin (or re-sends a pending invite) and emails
@@ -53,7 +54,7 @@ func (u *UI) inviteAdmin(w http.ResponseWriter, r *http.Request) {
 		if lerr != nil {
 			u.log.WarnContext(ctx, "ui: list admins after failed invite", "err", lerr)
 		}
-		u.render(w, r, http.StatusUnprocessableEntity, AdminsPage(AdminsData{Admins: admins, Invite: inv}))
+		u.render(w, r, http.StatusUnprocessableEntity, AdminsPage(AdminsData{Admins: admins, SelfID: a.AdminID, Invite: inv}))
 		return
 	}
 	if !isDatastar(r) {
@@ -67,7 +68,60 @@ func (u *UI) inviteAdmin(w http.ResponseWriter, r *http.Request) {
 		u.patchOnly(w, r, InviteCard(inv))
 		return
 	}
-	u.patchOnly(w, r, AdminsTable(admins), InviteCard(inv))
+	u.patchOnly(w, r, AdminsTable(admins, a.AdminID), InviteCard(inv))
+}
+
+func (u *UI) disableAdmin(w http.ResponseWriter, r *http.Request) {
+	u.adminAction(w, r, "pages.admins.status.disabled", u.admins.DisableAdmin)
+}
+
+func (u *UI) enableAdmin(w http.ResponseWriter, r *http.Request) {
+	u.adminAction(w, r, "pages.admins.status.enabled", u.admins.EnableAdmin)
+}
+
+func (u *UI) removeAdmin(w http.ResponseWriter, r *http.Request) {
+	u.adminAction(w, r, "pages.admins.status.removed", u.admins.RemoveAdmin)
+}
+
+// adminAction runs one mutation on the admin in the path. A Datastar request
+// gets the refreshed admins table plus a status alert (or just an error
+// alert); a plain post gets a 303 back to the admins page, or the full page
+// with the error.
+func (u *UI) adminAction(w http.ResponseWriter, r *http.Request, doneKey string, do func(ctx context.Context, a services.Actor, adminID string) error) {
+	a, ok := u.signedInAction(w, r)
+	if !ok {
+		return
+	}
+	ctx := r.Context()
+	err := do(ctx, a, r.PathValue("id"))
+	if u.needsTwoFactor(w, r, err) {
+		return
+	}
+	if err != nil {
+		st := Status{Error: true, Message: u.errorMessage(ctx, err)}
+		if isDatastar(r) {
+			u.patchOnly(w, r, AdminsStatus(st))
+			return
+		}
+		admins, lerr := u.admins.ListAdmins(ctx, a)
+		if lerr != nil {
+			u.log.WarnContext(ctx, "ui: list admins after failed action", "err", lerr)
+		}
+		u.render(w, r, http.StatusUnprocessableEntity, AdminsPage(AdminsData{Admins: admins, SelfID: a.AdminID, Status: st}))
+		return
+	}
+	if !isDatastar(r) {
+		http.Redirect(w, r, config.AppRoutes.Admins, http.StatusSeeOther)
+		return
+	}
+	st := Status{Message: i18n.T(ctx, doneKey)}
+	admins, err := u.admins.ListAdmins(ctx, a)
+	if err != nil {
+		u.log.WarnContext(ctx, "ui: reload admins after action", "err", err)
+		u.patchOnly(w, r, AdminsStatus(st))
+		return
+	}
+	u.patchOnly(w, r, AdminsTable(admins, a.AdminID), AdminsStatus(st))
 }
 
 func (u *UI) auditPage(w http.ResponseWriter, r *http.Request) {

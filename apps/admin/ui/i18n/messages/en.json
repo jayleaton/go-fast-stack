@@ -75,7 +75,7 @@
       "required": "This dashboard requires two-factor authentication. Set it up to continue.",
       "passwordLabel": "Current password",
       "start": "Start setup",
-      "scan": "Add this account to your authenticator app, then enter the code it shows.",
+      "scan": "Scan the QR code with your authenticator app, or add the key below by hand, then enter the code it shows.",
       "openApp": "Open in authenticator app",
       "manualEntry": "Or enter this key manually:",
       "backupCodes": "Backup codes",
@@ -83,7 +83,8 @@
       "codeLabel": "Code from the app",
       "confirm": "Turn on two-factor authentication",
       "done": "Two-factor authentication is now on.",
-      "alreadyOn": "Two-factor authentication is on for your account."
+      "alreadyOn": "Two-factor authentication is on for your account.",
+      "qrLabel": "QR code for your authenticator app"
     },
     "users": {
       "title": "Users",
@@ -164,6 +165,18 @@
         "name": "Name (optional)",
         "submit": "Send invite",
         "sending": "Sending..."
+      },
+      "disabled": "Disabled",
+      "you": "You",
+      "actions": "Actions",
+      "disable": "Disable",
+      "enable": "Enable",
+      "remove": "Remove",
+      "confirmRemove": "Remove {0}? They lose access to the dashboard right away. This cannot be undone.",
+      "status": {
+        "disabled": "Admin disabled and signed out everywhere.",
+        "enabled": "Admin enabled. They can sign in again.",
+        "removed": "Admin removed."
       }
     },
     "audit": {
@@ -183,7 +196,20 @@
         "userRevokeSession": "Revoked session",
         "userRevokeSessions": "Revoked all sessions",
         "adminInvite": "Invited admin",
-        "adminBootstrap": "Created first admin"
+        "adminBootstrap": "Created first admin",
+        "adminDisable": "Disabled admin",
+        "adminEnable": "Enabled admin",
+        "adminRemove": "Removed admin",
+        "adminSignIn": "Signed in",
+        "adminSignOut": "Signed out",
+        "adminTwoFactorFailed": "Failed two-factor code"
+      },
+      "signInMethod": "Method: {0}",
+      "failures": "Failed attempts in a row: {0}",
+      "methods": {
+        "password": "password",
+        "twoFactor": "password + two-factor",
+        "setPassword": "set-password link"
       }
     },
     "analytics": {
@@ -215,6 +241,11 @@
     "twoFactorRequired": "Two-factor authentication is required.",
     "forbidden": "You are not allowed to do that.",
     "invalidInput": "Please check your input and try again.",
-    "somethingWentWrong": "Something went wrong. Please try again."
+    "somethingWentWrong": "Something went wrong. Please try again.",
+    "adminNotFound": "Admin not found.",
+    "adminSelf": "You cannot disable or remove yourself.",
+    "lastAdmin": "The last active admin cannot be disabled or removed.",
+    "adminDisabled": "This admin is already disabled.",
+    "adminNotDisabled": "This admin is not disabled."
   }
 }

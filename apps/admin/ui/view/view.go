@@ -5,6 +5,7 @@ package view
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -66,6 +67,13 @@ func PostForm(path string) string {
 	return fmt.Sprintf("@post('%s', {contentType: 'form'})", jsPath(path))
 }
 
+// ConfirmPostForm is PostForm behind a browser confirm(message): cancelling
+// sends nothing (Datastar always prevents a form's native submit). Without
+// JS the form posts as is.
+func ConfirmPostForm(message, path string) string {
+	return "confirm(" + jsString(message) + ") && " + PostForm(path)
+}
+
 // Post is the Datastar action that posts the page's signals as JSON.
 func Post(path string) string {
 	return fmt.Sprintf("@post('%s')", jsPath(path))
@@ -74,6 +82,13 @@ func Post(path string) string {
 // Get is the Datastar action for a GET SSE stream.
 func Get(path string) string {
 	return fmt.Sprintf("@get('%s')", jsPath(path))
+}
+
+// jsString quotes s as a JS string literal. JSON is valid JS, and the
+// encoder escapes <, > and & too.
+func jsString(s string) string {
+	b, _ := json.Marshal(s) // a string always encodes
+	return string(b)
 }
 
 // jsPath keeps a server path safe inside a single-quoted JS string.

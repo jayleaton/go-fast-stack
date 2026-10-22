@@ -75,7 +75,7 @@
       "required": "このダッシュボードでは二要素認証が必須です。続行するには設定してください。",
       "passwordLabel": "現在のパスワード",
       "start": "設定を開始",
-      "scan": "このアカウントを認証アプリに追加し、表示されたコードを入力してください。",
+      "scan": "認証アプリでQRコードを読み取るか、下のキーを手動で追加してから、表示されたコードを入力してください。",
       "openApp": "認証アプリで開く",
       "manualEntry": "または、このキーを手動で入力してください:",
       "backupCodes": "バックアップコード",
@@ -83,7 +83,8 @@
       "codeLabel": "アプリに表示されたコード",
       "confirm": "二要素認証を有効にする",
       "done": "二要素認証が有効になりました。",
-      "alreadyOn": "このアカウントでは二要素認証が有効です。"
+      "alreadyOn": "このアカウントでは二要素認証が有効です。",
+      "qrLabel": "認証アプリ用のQRコード"
     },
     "users": {
       "title": "ユーザー",
@@ -164,6 +165,18 @@
         "name": "名前（任意）",
         "submit": "招待を送信",
         "sending": "送信中..."
+      },
+      "disabled": "無効化済み",
+      "you": "あなた",
+      "actions": "操作",
+      "disable": "無効化",
+      "enable": "有効化",
+      "remove": "削除",
+      "confirmRemove": "{0} を削除しますか？ダッシュボードにすぐアクセスできなくなります。この操作は取り消せません。",
+      "status": {
+        "disabled": "管理者を無効化し、すべてのセッションからサインアウトさせました。",
+        "enabled": "管理者を有効化しました。再びサインインできます。",
+        "removed": "管理者を削除しました。"
       }
     },
     "audit": {
@@ -183,7 +196,20 @@
         "userRevokeSession": "セッションを無効化",
         "userRevokeSessions": "全セッションを無効化",
         "adminInvite": "管理者を招待",
-        "adminBootstrap": "最初の管理者を作成"
+        "adminBootstrap": "最初の管理者を作成",
+        "adminDisable": "管理者を無効化",
+        "adminEnable": "管理者を有効化",
+        "adminRemove": "管理者を削除",
+        "adminSignIn": "サインイン",
+        "adminSignOut": "サインアウト",
+        "adminTwoFactorFailed": "二要素認証コードの誤り"
+      },
+      "signInMethod": "方法: {0}",
+      "failures": "連続失敗回数: {0}",
+      "methods": {
+        "password": "パスワード",
+        "twoFactor": "パスワード + 二要素認証",
+        "setPassword": "パスワード設定リンク"
       }
     },
     "analytics": {
@@ -215,6 +241,11 @@
     "twoFactorRequired": "二要素認証が必要です。",
     "forbidden": "この操作は許可されていません。",
     "invalidInput": "入力内容を確認して、もう一度お試しください。",
-    "somethingWentWrong": "問題が発生しました。もう一度お試しください。"
+    "somethingWentWrong": "問題が発生しました。もう一度お試しください。",
+    "adminNotFound": "管理者が見つかりません。",
+    "adminSelf": "自分自身を無効化または削除することはできません。",
+    "lastAdmin": "最後の有効な管理者は無効化または削除できません。",
+    "adminDisabled": "この管理者はすでに無効化されています。",
+    "adminNotDisabled": "この管理者は無効化されていません。"
   }
 }
