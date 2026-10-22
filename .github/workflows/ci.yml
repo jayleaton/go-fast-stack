@@ -1,7 +1,10 @@
 # Single required check for branch protection and the merge queue: `ci-ok`.
 # Other jobs may be skipped by path filters; ci-ok treats skipped as success.
-# Draft PRs run nothing: mark ready for review to run CI (merge_group, push to
-# main and workflow_dispatch always run everything).
+# Draft PRs run no checks: mark ready for review to run CI (merge_group, push
+# to main and workflow_dispatch always run everything). GitHub cannot filter
+# drafts at the trigger, so a draft push still starts a run; its final job
+# reports as "ci (draft, not run)", never as ci-ok, so it cannot stand in for
+# the required check on that SHA.
 name: CI
 
 on:
@@ -12,17 +15,58 @@ on:
     branches: [main]
   merge_group:
 
+# Draft and real runs use separate groups: a skipped draft run (e.g. a push
+# landing a second before "ready for review") must never cancel the real run.
+# Only PR runs cancel superseded ones; a cancelled run's ci-ok still runs and
+# fails, so an old SHA never keeps a green required check. Pushes to main,
+# merge queue and manual runs always finish.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.workflow }}-${{ github.ref }}-${{ github.event.pull_request.draft && 'draft' || 'run' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
 
 jobs:
+  # Runs started by a draft-PR event only. When a push and "ready for review"
+  # land together, GitHub can attach the ready_for_review run to the previous
+  # head, leaving this SHA with only the draft run. So: if the PR is ready by
+  # now and no other CI run covers this SHA, this run does the real checks.
+  draft:
+    if: github.event_name == 'pull_request' && github.event.pull_request.draft
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions:
+      actions: read
+      pull-requests: read
+    outputs:
+      run: ${{ steps.check.outputs.run }}
+    steps:
+      - id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+          WORKFLOW: ${{ github.workflow }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          run=false
+          if [ "$(gh pr view "$PR" --json isDraft --jq .isDraft)" = false ]; then
+            # The ready_for_review run may still be being created; give it time
+            # so both runs don't do the full checks.
+            sleep 15
+            others=$(gh api "repos/$GH_REPO/actions/runs?head_sha=$SHA&event=pull_request" \
+              | jq --arg wf "$WORKFLOW" --argjson id "$RUN_ID" '[.workflow_runs[] | select(.name == $wf and .id != $id)] | length')
+            [ "$others" = 0 ] && run=true
+          fi
+          echo "PR #$PR ready-now run=$run"
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+
   # PRs only: push to main and merge_group always run everything.
   changes:
-    if: github.event_name == 'pull_request' && github.event.pull_request.draft == false
+    needs: draft
+    if: ${{ !cancelled() && github.event_name == 'pull_request' && (!github.event.pull_request.draft || needs.draft.outputs.run == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 2
     permissions:
@@ -56,7 +100,7 @@ jobs:
   # One job, not lint/test in parallel: a second runner's checkout + setup-go + cache restore (~20 s) outweighs warm lint time on a repo this size.
   go:
     needs: changes
-    if: ${{ !cancelled() && (github.event_name != 'pull_request' || (github.event.pull_request.draft == false && needs.changes.outputs.go == 'true')) }}
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.go == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     services:
@@ -130,7 +174,7 @@ jobs:
   # (pnpm test:contract) needs Go + Docker and runs locally.
   mobile:
     needs: changes
-    if: ${{ !cancelled() && (github.event_name != 'pull_request' || (github.event.pull_request.draft == false && needs.changes.outputs.mobile == 'true')) }}
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.mobile == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     defaults:
@@ -156,14 +200,17 @@ jobs:
       - run: pnpm exec expo install --check
       - run: pnpm test
 
+  # Always runs (a skipped job would show its raw name expression). In a run
+  # that stayed a draft it reports as "ci (draft, not run)", not ci-ok.
   ci-ok:
-    if: ${{ always() && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) }}
-    needs: [changes, go, mobile]
+    name: ${{ github.event.pull_request.draft && needs.draft.outputs.run != 'true' && 'ci (draft, not run)' || 'ci-ok' }}
+    if: always()
+    needs: [draft, changes, go, mobile]
     runs-on: ubuntu-latest
     timeout-minutes: 1
     steps:
       - name: Fail if any job failed or was cancelled
         if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
         run: |
-          echo 'changes=${{ needs.changes.result }} go=${{ needs.go.result }} mobile=${{ needs.mobile.result }}'
+          echo 'draft=${{ needs.draft.result }} changes=${{ needs.changes.result }} go=${{ needs.go.result }} mobile=${{ needs.mobile.result }}'
           exit 1
