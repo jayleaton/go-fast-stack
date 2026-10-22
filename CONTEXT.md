@@ -22,7 +22,8 @@ Use these words when talking about this repo, in code review, commits and agent 
 | caller | the signed-in user + session for a request, read from context (`auth.UserFrom`) | `api.Caller` |
 | actor | the caller as a service sees it (`services.Actor`) | `apps/web/internal/services/` |
 | routes config | `AppRoutes` (pages), `APIRoutes` (endpoints) | `apps/web/internal/config/routes.go` |
-| feature toggles | `config.Features`: email verification, template welcome, dev auth | `apps/web/internal/config/features.go` |
-| dev auth fake | signs every dev request in as a seeded user until auth is wired | `apps/web/internal/server/devauth/` |
+| feature toggles | `config.Features`: email verification, template welcome, Expo dev origins | `apps/web/internal/config/features.go` |
+| session | a row in `"session"`; the signed `better-auth.session_token` cookie (web) or `Authorization: Bearer <token>` (mobile) points at it | `packages/auth/` |
+| dev mailer | logs auth email links instead of sending them (no `RESEND_API_KEY`) | `packages/auth/mailer.go` |
 | sandbox database | the Docker Postgres from `make db-up`; the only database you may break | `docker-compose.yml` |
 | Datastar | the SSE-first hypermedia library the UI uses (core only, no Pro) | `apps/web/ui/` |
