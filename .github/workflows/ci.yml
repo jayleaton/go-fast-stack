@@ -53,6 +53,9 @@ jobs:
         run: |
           run=false
           if [ "$(gh pr view "$PR" --json isDraft --jq .isDraft)" = false ]; then
+            # The ready_for_review run may still be being created; give it time
+            # so both runs don't do the full checks.
+            sleep 15
             others=$(gh api "repos/$GH_REPO/actions/runs?head_sha=$SHA&event=pull_request" \
               | jq --arg wf "$WORKFLOW" --argjson id "$RUN_ID" '[.workflow_runs[] | select(.name == $wf and .id != $id)] | length')
             [ "$others" = 0 ] && run=true
