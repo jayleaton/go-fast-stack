@@ -133,7 +133,7 @@ func Layout(title string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "\"></script></head><body class=\"bg-white text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100\"><div class=\"relative min-h-screen\"><header class=\"sticky top-0 z-50 border-b border-neutral-200/80 bg-white/80 backdrop-blur-md dark:border-neutral-800/80 dark:bg-neutral-950/80\"><nav aria-label=\"Global\" class=\"mx-auto flex max-w-3xl items-center justify-end gap-2 px-4 py-3 md:px-6\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "\"></script></head><body class=\"bg-white text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100\"><div class=\"relative min-h-screen\"><header class=\"sticky top-0 z-50 border-b border-neutral-200/80 bg-white/80 backdrop-blur-md dark:border-neutral-800/80 dark:bg-neutral-950/80\"><nav aria-label=\"Global\" class=\"mx-auto flex w-full max-w-6xl items-center justify-end gap-2 px-4 py-3 md:px-6\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
