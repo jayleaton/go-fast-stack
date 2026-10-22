@@ -207,6 +207,10 @@ jobs:
 
       # The probes prove the lint and test rules still bite; their inputs
       # (scripts/, .golangci.yml) always force a full run.
+      - name: Coverage floors name real packages
+        if: steps.affected.outputs.full == 'true'
+        run: ./scripts/check-coverage.sh --exist
+
       - name: Layering rules
         if: steps.affected.outputs.full == 'true'
         run: ./scripts/check-layering.sh
@@ -221,7 +225,13 @@ jobs:
             ~/.cache/golangci-lint
           key: v4-golint-${{ runner.os }}-${{ github.sha }}
 
+  # Two shards: private-repo runners have 2 vCPUs and race-compiling the
+  # affected packages is CPU-bound, so splitting them halves the Test step.
   test:
+    name: test (${{ matrix.shard }})
+    strategy:
+      matrix:
+        shard: [0, 1]
     needs: draft
     if: ${{ !cancelled() && (github.event_name != 'pull_request' || !github.event.pull_request.draft || needs.draft.outputs.run == 'true') }}
     runs-on: ubuntu-latest
@@ -284,11 +294,18 @@ jobs:
         env:
           AFFECTED_FULL: ${{ github.event_name != 'pull_request' && '1' || '' }}
 
-      # Only when an affected package's tests use it. It boots while the build
-      # cache restores and tests compile; only test binaries wait for it (see
-      # Test). tmpfs and no fsync: test data is throwaway.
+      - name: Shard
+        if: steps.affected.outputs.packages != ''
+        id: shard
+        run: ./scripts/ci-shard.sh "${{ matrix.shard }}" 2
+        env:
+          PACKAGES: ${{ steps.affected.outputs.packages }}
+
+      # Only when this shard has a package whose tests use it. It boots while
+      # the build cache restores and tests compile; only those test binaries
+      # wait for it (see Test). tmpfs and no fsync: test data is throwaway.
       - name: Start Postgres
-        if: steps.affected.outputs.db == 'true'
+        if: steps.shard.outputs.db_dirs != ''
         run: |
           nohup docker run -d --name pg -p 5432:5432 -e POSTGRES_PASSWORD=postgres \
             --tmpfs /var/lib/postgresql postgres:18-alpine \
@@ -300,19 +317,18 @@ jobs:
         with:
           path: |
             ~/.cache/go-build
-          key: v4-gotest-${{ runner.os }}-${{ github.sha }}
-          restore-keys: v4-gotest-${{ runner.os }}-
+          key: v4-gotest-${{ matrix.shard }}-${{ runner.os }}-${{ github.sha }}
+          restore-keys: v4-gotest-${{ matrix.shard }}-${{ runner.os }}-
 
       - name: Test boundary probes
-        if: steps.affected.outputs.full == 'true'
+        if: steps.affected.outputs.full == 'true' && matrix.shard == 0
         run: ./scripts/check-test-probes.sh
 
       - name: Test
-        if: steps.affected.outputs.packages != ''
+        if: steps.shard.outputs.packages != ''
         env:
-          PACKAGES: ${{ steps.affected.outputs.packages }}
-          FULL: ${{ steps.affected.outputs.full }}
-          DB: ${{ steps.affected.outputs.db }}
+          PACKAGES: ${{ steps.shard.outputs.packages }}
+          DB_DIRS: ${{ steps.shard.outputs.db_dirs }}
         run: |
           mkdir -p .cache
           # With -coverprofile, go test also compiles packages without tests,
@@ -323,42 +339,43 @@ jobs:
           # listens, and the image's first-boot init server answers on the unix
           # socket only.
           exec_flag=()
-          if [ "$DB" = true ]; then
+          if [ -n "$DB_DIRS" ]; then
+            # go test runs each binary in its package directory.
             cat > "$RUNNER_TEMP/wait-db" <<'SH'
           #!/usr/bin/env bash
-          for _ in $(seq 1 480); do
-            docker exec pg pg_isready -q -h 127.0.0.1 -U postgres 2>/dev/null && exec "$@"
-            sleep 0.25
-          done
-          echo "postgres did not start:" >&2; cat "$RUNNER_TEMP/pg.log" >&2; docker logs pg >&2; exit 1
+          if [[ " $DB_DIRS " == *" $PWD "* ]]; then
+            for _ in $(seq 1 480); do
+              docker exec pg pg_isready -q -h 127.0.0.1 -U postgres 2>/dev/null && exec "$@"
+              sleep 0.25
+            done
+            echo "postgres did not start:" >&2; cat "$RUNNER_TEMP/pg.log" >&2; docker logs pg >&2; exit 1
+          fi
+          exec "$@"
           SH
             chmod +x "$RUNNER_TEMP/wait-db"
             exec_flag=(-exec "$RUNNER_TEMP/wait-db")
           fi
           go test -race "${exec_flag[@]}" -coverprofile=.cache/coverage.out $PACKAGES # word splitting intended
-          if [ "$FULL" = true ]; then
-            ./scripts/check-coverage.sh .cache/coverage.out
-          else
-            TESTED="$PACKAGES" ./scripts/check-coverage.sh .cache/coverage.out
-          fi
+          # Floors of this shard's packages; the shards together cover all.
+          TESTED="$PACKAGES" ./scripts/check-coverage.sh .cache/coverage.out
 
       - uses: actions/cache/save@v6
         if: (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main'))
         with:
           path: |
             ~/.cache/go-build
-          key: v4-gotest-${{ runner.os }}-${{ github.sha }}
+          key: v4-gotest-${{ matrix.shard }}-${{ runner.os }}-${{ github.sha }}
       # "!" exclusions in the cache paths did not apply, so trim explicitly:
       # zips (~125 MB incl. the 71 MB toolchain zip) and dependency testdata.
       - name: Trim module cache
-        if: (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && steps.mod-cache.outputs.cache-hit != 'true'
+        if: (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && steps.mod-cache.outputs.cache-hit != 'true' && matrix.shard == 0
         run: |
           chmod -R u+w ~/go/pkg/mod
           find ~/go/pkg/mod/cache/download -name '*.zip' -delete
           find ~/go/pkg/mod -mindepth 2 -type d -name testdata -prune -exec rm -rf {} +
           du -sh ~/go/pkg/mod
       - uses: actions/cache/save@v6
-        if: (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && steps.mod-cache.outputs.cache-hit != 'true'
+        if: (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && steps.mod-cache.outputs.cache-hit != 'true' && matrix.shard == 0
         with:
           path: |
             ~/go/pkg/mod
