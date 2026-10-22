@@ -41,8 +41,11 @@ type Deps struct {
 	Log    *slog.Logger
 	DBs    map[string]Pinger // by name, every one must answer /healthz
 	Auth   Auth
-	API    []Router
-	UI     http.Handler // apps/admin/ui routes, mounted at "/"
+	// AuthEvents audits sign-ins, sign-outs and failed 2FA on the JSON auth
+	// endpoints; nil leaves them unaudited (tests).
+	AuthEvents *AuthEvents
+	API        []Router
+	UI         http.Handler // apps/admin/ui routes, mounted at "/"
 }
 
 // authRoutes are the admin auth endpoints mounted: sign-in (with the 2FA
@@ -65,7 +68,7 @@ var authRoutes = []string{
 func New(d Deps) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET "+config.APIRoutes.Healthz, healthz(d.DBs))
-	authHandler := d.Auth.Handler()
+	authHandler := d.AuthEvents.Handler(d.Auth.Handler())
 	for _, p := range authRoutes {
 		mux.Handle(p, authHandler)
 	}
