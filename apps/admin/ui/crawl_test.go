@@ -106,6 +106,9 @@ var crawlTargets = []crawlTarget{
 	{"POST " + routes.UserSession, []string{routes.Session("u1", "us1")}},
 	{"GET " + config.AppRoutes.Admins, []string{config.AppRoutes.Admins}},
 	{"POST " + routes.AdminInvite, []string{routes.AdminInvite}},
+	{"POST " + routes.AdminDisable, []string{routes.Admin(routes.AdminDisable, "a2")}},
+	{"POST " + routes.AdminEnable, []string{routes.Admin(routes.AdminEnable, "a2")}},
+	{"POST " + routes.AdminRemove, []string{routes.Admin(routes.AdminRemove, "a2")}},
 	{"GET " + config.AppRoutes.Audit, []string{config.AppRoutes.Audit, config.AppRoutes.Audit + "?targetId=u1", config.AppRoutes.Audit + "?targetId=" + url.QueryEscape(xssProbe)}},
 	{"GET " + config.AppRoutes.Analytics, []string{config.AppRoutes.Analytics}},
 	{"POST " + routes.Logout, []string{routes.Logout}},
@@ -234,6 +237,9 @@ func crawlUI(t *testing.T, failing, signedIn bool) http.Handler {
 	us.EXPECT().RevokeSessions(gomock.Any(), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
 	ad.EXPECT().ListAdmins(gomock.Any(), gomock.Any()).Return([]services.Admin{{ID: "a1", Name: "Root " + xssProbe, Email: "root@example.com", CreatedAt: now, TwoFactorEnabled: true, HasPassword: true}}, fail).AnyTimes()
 	ad.EXPECT().InviteAdmin(gomock.Any(), gomock.Any(), gomock.Any()).Return(services.Admin{ID: "a2", Email: "new@example.com", CreatedAt: now}, fail).AnyTimes()
+	ad.EXPECT().DisableAdmin(gomock.Any(), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
+	ad.EXPECT().EnableAdmin(gomock.Any(), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
+	ad.EXPECT().RemoveAdmin(gomock.Any(), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
 	au.EXPECT().List(gomock.Any(), gomock.Any(), gomock.Any()).Return(audit, fail).AnyTimes()
 	an.EXPECT().Overview(gomock.Any(), gomock.Any()).Return(services.Overview{TotalUsers: 3, VerifiedUsers: 2, BannedUsers: 1, GeneratedAt: now}, fail).AnyTimes()
 

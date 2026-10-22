@@ -24,6 +24,11 @@ func (p pinger) Ping(context.Context) error { return p.err }
 type noAuth struct{}
 
 func (noAuth) Middleware(next http.Handler) http.Handler { return next }
+func (noAuth) Handler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		api.WriteError(w, http.StatusNotImplemented, "not implemented", nil)
+	})
+}
 
 func nobody(context.Context) (api.Caller, bool) { return api.Caller{}, false }
 
@@ -104,19 +109,44 @@ func TestMountsAndMiddleware(t *testing.T) {
 }
 
 // The UI runs sign-in, set-password and 2FA through packages/auth
-// in-process, so no admin auth endpoint is on the network: none can bypass
-// the audit log or be probed.
-func TestNoAuthEndpointsAreMounted(t *testing.T) {
-	for _, h := range []http.Handler{newHandler(map[string]Pinger{"app": pinger{}}, stubUI), withAPI()} {
-		for _, p := range []string{
-			"POST sign-in/email", "POST sign-out", "GET get-session", "GET reset-password/tok?callbackURL=%2Fset-password",
-			"POST set-password", "POST two-factor/enable", "POST two-factor/verify-totp", "POST two-factor/verify-backup-code",
-			"POST sign-up/email", "POST change-password", "POST change-email", "POST revoke-other-sessions", "POST request-password-reset",
-		} {
-			method, path, _ := strings.Cut(p, " ")
-			if rec := serve(h, httptest.NewRequest(method, "/api/auth/"+path, strings.NewReader(`{}`))); rec.Code != http.StatusNotFound {
-				t.Errorf("%s /api/auth/%s: %d, want 404", method, path, rec.Code)
-			}
+// in-process, so by default no admin auth endpoint is on the network. With
+// the opt-in JSON API only the allowlist is mounted (for scripts' bearer
+// tokens), hidden from browsers; endpoints that would bypass the audit log
+// never are.
+func TestAuthEndpoints(t *testing.T) {
+	allowed := []string{
+		"POST sign-in/email", "POST sign-out", "GET get-session", "POST set-password",
+		"POST two-factor/enable", "POST two-factor/verify-totp", "POST two-factor/verify-backup-code",
+	}
+	never := []string{
+		"GET reset-password/tok?callbackURL=%2Fset-password", "POST sign-up/email", "POST change-password",
+		"POST change-email", "POST revoke-other-sessions", "POST request-password-reset", "POST two-factor/disable",
+	}
+	req := func(p string, browser bool) *http.Request {
+		method, path, _ := strings.Cut(p, " ")
+		r := httptest.NewRequest(method, "/api/auth/"+path, strings.NewReader(`{}`))
+		if browser {
+			r.Header.Set("Sec-Fetch-Site", "same-origin")
+		}
+		return r
+	}
+	byDefault, api := newHandler(map[string]Pinger{"app": pinger{}}, stubUI), withAPI()
+	for _, p := range append(allowed, never...) {
+		if rec := serve(byDefault, req(p, false)); rec.Code != http.StatusNotFound {
+			t.Errorf("default %s: %d, want 404", p, rec.Code)
+		}
+		if rec := serve(api, req(p, true)); rec.Code != http.StatusNotFound {
+			t.Errorf("with API, browser %s: %d, want 404", p, rec.Code)
+		}
+	}
+	for _, p := range allowed {
+		if rec := serve(api, req(p, false)); rec.Code != http.StatusNotImplemented {
+			t.Errorf("with API, script %s: %d, want the auth handler (501)", p, rec.Code)
+		}
+	}
+	for _, p := range never {
+		if rec := serve(api, req(p, false)); rec.Code != http.StatusNotFound {
+			t.Errorf("with API, script %s: %d, want 404", p, rec.Code)
 		}
 	}
 }

@@ -378,7 +378,7 @@ func TestAdminManagement(t *testing.T) {
 	_ = w.admins.Shutdown(context.Background()) // flush the invite email
 	link, _ := url.Parse(w.mail.link(t, "eve@example.com"))
 	var set struct{ Token string }
-	w.do("POST", "/api/auth/set-password", `{"token":"`+link.Path[strings.LastIndex(link.Path, "/")+1:]+`","newPassword":"eve-password-1"}`, "", 200, &set)
+	w.do("POST", "/api/auth/set-password", `{"token":"`+link.Query().Get("token")+`","newPassword":"eve-password-1"}`, "", 200, &set)
 	eveToken := set.Token
 
 	w.do("POST", config.AdminPath(rootID, "/disable"), "", root, 400, nil) // yourself
@@ -436,15 +436,15 @@ func TestAuthEvents(t *testing.T) {
 			challenge = c.Name + "=" + c.Value
 		}
 	}
-	if rec := w.raw("POST", "/api/auth/two-factor/verify-totp", `{"code":"000000"}`, "Cookie", challenge, "Origin", adminOrigin); rec.Code == 200 {
+	if rec := w.raw("POST", "/api/auth/two-factor/verify-totp", `{"code":"000000"}`, "Cookie", challenge, "Expo-Origin", adminOrigin); rec.Code == 200 {
 		t.Fatalf("wrong code accepted: %s", rec.Body)
 	}
-	rec = w.raw("POST", "/api/auth/two-factor/verify-totp", `{"code":"`+totp(t, setup.Secret, 1)+`"}`, "Cookie", challenge, "Origin", adminOrigin)
+	rec = w.raw("POST", "/api/auth/two-factor/verify-totp", `{"code":"`+totp(t, setup.Secret, 1)+`"}`, "Cookie", challenge, "Expo-Origin", adminOrigin)
 	var signedIn struct{ Token string }
 	if err := json.Unmarshal(rec.Body.Bytes(), &signedIn); rec.Code != 200 || err != nil || signedIn.Token == "" {
 		t.Fatalf("verify-totp: %d %s", rec.Code, rec.Body)
 	}
-	if rec := w.raw("POST", "/api/auth/sign-out", "", "Authorization", "Bearer "+signedIn.Token, "Origin", adminOrigin); rec.Code != 200 {
+	if rec := w.raw("POST", "/api/auth/sign-out", "", "Authorization", "Bearer "+signedIn.Token, "Expo-Origin", adminOrigin); rec.Code != 200 {
 		t.Fatalf("sign-out: %d %s", rec.Code, rec.Body)
 	}
 
