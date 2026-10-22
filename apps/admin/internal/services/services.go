@@ -47,6 +47,8 @@ const (
 	KindNotFound
 	KindConflict
 	KindRateLimited
+	// KindUnavailable: a dependency the action needs is down; nothing changed.
+	KindUnavailable
 )
 
 // Error is a business-rule failure whose Message is safe to show to callers.
@@ -111,9 +113,57 @@ func (p Policy) authorize(a Actor) error {
 	return nil
 }
 
-// audit writes e for actor. The action already happened in another database,
-// so a failed write is returned as an internal error (never swallowed): the
-// caller sees the request fail and the log line names what is missing.
+// ErrAuditUnavailable refuses a mutation whose intent could not be written:
+// admin changes fail closed, so nothing happens without an audit record.
+var ErrAuditUnavailable = &Error{KindUnavailable, "The audit log is unavailable, so nothing was changed. Try again later."}
+
+// mutate runs change as an audited admin mutation that fails closed:
+//
+//  1. the intent is appended (status pending) — if that fails, change never
+//     runs and the caller gets ErrAuditUnavailable;
+//  2. change runs;
+//  3. the outcome is appended: succeeded, or failed with a safe reason.
+//
+// If step 3 fails after a successful change, the pending row still proves
+// the attempt (the UI shows "outcome unknown", AuditReconciler resolves it
+// later) and the caller gets an internal error saying the change WAS applied,
+// so it is logged loudly by the transport. A failed change whose outcome
+// could not be written returns the change's own error.
+func mutate(ctx context.Context, log AuditLog, actor Actor, e NewAuditEntry, change func() error) error {
+	e.ActorID, e.ActorEmail = actor.AdminID, actor.Email
+	id, err := log.Begin(ctx, e)
+	if err != nil {
+		return fmt.Errorf("%w: audit intent %s %s/%s: %w", ErrAuditUnavailable, e.Action, e.TargetType, e.TargetID, err)
+	}
+	changeErr := change()
+	outcome := AuditOutcome{Status: StatusSucceeded}
+	if changeErr != nil {
+		outcome = AuditOutcome{Status: StatusFailed, Reason: safeReason(changeErr)}
+	}
+	if err := log.Resolve(ctx, id, outcome); err != nil && changeErr == nil {
+		return fmt.Errorf("audit outcome of entry %d (%s %s/%s) NOT recorded; the change WAS applied and stays pending until reconciled: %w",
+			id, e.Action, e.TargetType, e.TargetID, err)
+	}
+	return changeErr
+}
+
+// ReasonInternal is the recorded reason of a failure that is not a service
+// error (the details are in the server log, never in the audit log).
+const ReasonInternal = "Internal error"
+
+// safeReason is what an outcome row may say about a failure: the service
+// error's message, never a raw database or driver error.
+func safeReason(err error) string {
+	var se *Error
+	if errors.As(err, &se) && se.Kind != KindInternal {
+		return se.Message
+	}
+	return ReasonInternal
+}
+
+// audit appends e for actor as a completed fact (sign-ins and other events
+// that are not admin mutations). A failed write is returned as an internal
+// error, never swallowed.
 func audit(ctx context.Context, log AuditLog, actor Actor, e NewAuditEntry) error {
 	e.ActorID, e.ActorEmail = actor.AdminID, actor.Email
 	if err := log.Append(ctx, e); err != nil {

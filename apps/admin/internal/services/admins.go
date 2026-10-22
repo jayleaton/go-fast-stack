@@ -93,34 +93,59 @@ func (s *AdminService) ListAdmins(ctx context.Context, actor Actor) ([]Admin, er
 }
 
 // InviteAdmin creates the admin (unless a pending invite exists, which is
-// sent again) and emails the set-password link.
+// sent again) and emails the set-password link, as one audited mutation. The
+// intent of a first invite targets the email: the admin has no id until the
+// change runs.
 func (s *AdminService) InviteAdmin(ctx context.Context, actor Actor, in validate.CreateAdminInvite) (Admin, error) {
 	if err := s.policy.authorize(actor); err != nil {
 		return Admin{}, err
 	}
-	a, resend, err := s.findOrCreate(ctx, in)
+	a, existed, err := s.find(ctx, in.Email)
 	if err != nil {
 		return Admin{}, err
 	}
-	if resend && a.HasPassword {
+	if existed && a.HasPassword {
 		return Admin{}, ErrAdminExists
 	}
-	if err := s.accounts.SendSetPasswordLink(ctx, a.ID); err != nil {
-		return Admin{}, err
-	}
-	details := map[string]string{}
-	if resend {
+	entry := NewAuditEntry{Action: ActionAdminInvite, TargetType: TargetAdmin, TargetID: in.Email, TargetLabel: in.Email, Details: map[string]string{}}
+	if existed {
 		// An existing admin (e.g. seeded by bootstrap) may never have been sent
 		// a link: it is a resend only if an earlier invite is on record.
-		prior, err := s.log.List(ctx, AuditQuery{Action: ActionAdminInvite, TargetID: a.ID, Limit: 1})
+		resend, err := s.invitedBefore(ctx, a)
 		if err != nil {
 			return Admin{}, err
 		}
-		if prior.Total > 0 {
-			details["resent"] = "true"
+		entry = adminEntry(ActionAdminInvite, a, map[string]string{})
+		if resend {
+			entry.Details["resent"] = "true"
 		}
 	}
-	return a, audit(ctx, s.log, actor, adminEntry(ActionAdminInvite, a, details))
+	err = mutate(ctx, s.log, actor, entry, func() error {
+		if !existed {
+			created, err := s.accounts.CreateAdmin(ctx, in.Email, in.Name)
+			if err != nil {
+				return err
+			}
+			a = created
+		}
+		return adminMissing(s.accounts.SendSetPasswordLink(ctx, a.ID))
+	})
+	if err != nil {
+		return Admin{}, err
+	}
+	return a, nil
+}
+
+// invitedBefore reports whether an invite for a is on record (under its id,
+// or its email for the first invite).
+func (s *AdminService) invitedBefore(ctx context.Context, a Admin) (bool, error) {
+	for _, target := range []string{a.ID, a.Email} {
+		prior, err := s.log.List(ctx, AuditQuery{Action: ActionAdminInvite, TargetID: target, Limit: 1})
+		if err != nil || prior.Total > 0 {
+			return err == nil, err
+		}
+	}
+	return false, nil
 }
 
 // DisableAdmin blocks the admin's sign-in and signs them out everywhere.
@@ -133,10 +158,9 @@ func (s *AdminService) DisableAdmin(ctx context.Context, actor Actor, adminID st
 	if a.Disabled {
 		return ErrAdminDisabled
 	}
-	if err := s.accounts.DisableAdmin(ctx, a.ID); err != nil {
-		return adminMissing(err)
-	}
-	return audit(ctx, s.log, actor, adminEntry(ActionAdminDisable, a, nil))
+	return mutate(ctx, s.log, actor, adminEntry(ActionAdminDisable, a, nil), func() error {
+		return adminMissing(s.accounts.DisableAdmin(ctx, a.ID))
+	})
 }
 
 // EnableAdmin lets a disabled admin sign in again.
@@ -151,10 +175,9 @@ func (s *AdminService) EnableAdmin(ctx context.Context, actor Actor, adminID str
 	if !a.Disabled {
 		return ErrAdminNotDisabled
 	}
-	if err := s.accounts.EnableAdmin(ctx, a.ID); err != nil {
-		return adminMissing(err)
-	}
-	return audit(ctx, s.log, actor, adminEntry(ActionAdminEnable, a, nil))
+	return mutate(ctx, s.log, actor, adminEntry(ActionAdminEnable, a, nil), func() error {
+		return adminMissing(s.accounts.EnableAdmin(ctx, a.ID))
+	})
 }
 
 // RemoveAdmin deletes the admin (or cancels a pending invite). Nobody removes
@@ -164,10 +187,9 @@ func (s *AdminService) RemoveAdmin(ctx context.Context, actor Actor, adminID str
 	if err != nil {
 		return err
 	}
-	if err := s.accounts.RemoveAdmin(ctx, a.ID); err != nil {
-		return adminMissing(err)
-	}
-	return audit(ctx, s.log, actor, adminEntry(ActionAdminRemove, a, nil))
+	return mutate(ctx, s.log, actor, adminEntry(ActionAdminRemove, a, nil), func() error {
+		return adminMissing(s.accounts.RemoveAdmin(ctx, a.ID))
+	})
 }
 
 // removable authorizes the actor and loads an admin they may disable or
@@ -220,30 +242,36 @@ func adminMissing(err error) error {
 // Bootstrap seeds the first admin (ADMIN_BOOTSTRAP_EMAIL) without a
 // password; `admin invite` then sends the link. Idempotent: an existing
 // admin is returned with created false. Only the operator (SystemActor) may
-// call it.
+// call it. Creating it is an audited mutation targeting the email.
 func (s *AdminService) Bootstrap(ctx context.Context, actor Actor, in validate.CreateAdminInvite) (a Admin, created bool, err error) {
 	if !actor.System {
 		return Admin{}, false, ErrForbidden
 	}
-	a, existed, err := s.findOrCreate(ctx, in)
+	a, existed, err := s.find(ctx, in.Email)
 	if err != nil || existed {
 		return a, false, err
 	}
-	return a, true, audit(ctx, s.log, actor, adminEntry(ActionAdminBootstrap, a, nil))
-}
-
-// findOrCreate returns the admin with in.Email, creating it when missing;
-// existed reports which.
-func (s *AdminService) findOrCreate(ctx context.Context, in validate.CreateAdminInvite) (a Admin, existed bool, err error) {
-	a, err = s.accounts.AdminByEmail(ctx, in.Email)
-	if err == nil {
-		return a, true, nil
-	}
-	if !errors.Is(err, ErrRecordNotFound) {
+	entry := NewAuditEntry{Action: ActionAdminBootstrap, TargetType: TargetAdmin, TargetID: in.Email, TargetLabel: in.Email}
+	err = mutate(ctx, s.log, actor, entry, func() error {
+		a, err = s.accounts.CreateAdmin(ctx, in.Email, in.Name)
+		return err
+	})
+	if err != nil {
 		return Admin{}, false, err
 	}
-	a, err = s.accounts.CreateAdmin(ctx, in.Email, in.Name)
-	return a, false, err
+	return a, true, nil
+}
+
+// find returns the admin with email; existed is false when there is none.
+func (s *AdminService) find(ctx context.Context, email string) (a Admin, existed bool, err error) {
+	a, err = s.accounts.AdminByEmail(ctx, email)
+	switch {
+	case err == nil:
+		return a, true, nil
+	case errors.Is(err, ErrRecordNotFound):
+		return Admin{}, false, nil
+	}
+	return Admin{}, false, err
 }
 
 func adminEntry(action string, a Admin, details map[string]string) NewAuditEntry {

@@ -157,14 +157,13 @@ func (s *UserService) BanUser(ctx context.Context, actor Actor, userID string, i
 	if in.BanExpiresIn != nil {
 		d = time.Duration(*in.BanExpiresIn) * time.Second
 	}
-	if err := s.dir.BanUser(ctx, userID, in.BanReason, d); err != nil {
-		return err
-	}
 	expires := "permanent"
 	if d > 0 {
 		expires = d.String()
 	}
-	return audit(ctx, s.log, actor, userEntry(ActionUserBan, u, map[string]string{"reason": in.BanReason, "expiresIn": expires}))
+	return mutate(ctx, s.log, actor, userEntry(ActionUserBan, u, map[string]string{"reason": in.BanReason, "expiresIn": expires}), func() error {
+		return s.dir.BanUser(ctx, userID, in.BanReason, d)
+	})
 }
 
 // UnbanUser lifts the user's ban.
@@ -176,10 +175,9 @@ func (s *UserService) UnbanUser(ctx context.Context, actor Actor, userID string)
 	if !u.Banned {
 		return ErrUserNotBanned
 	}
-	if err := s.dir.UnbanUser(ctx, userID); err != nil {
-		return err
-	}
-	return audit(ctx, s.log, actor, userEntry(ActionUserUnban, u, nil))
+	return mutate(ctx, s.log, actor, userEntry(ActionUserUnban, u, nil), func() error {
+		return s.dir.UnbanUser(ctx, userID)
+	})
 }
 
 // SetRole changes the user's app role to one of Roles.
@@ -197,10 +195,9 @@ func (s *UserService) SetRole(ctx context.Context, actor Actor, userID string, i
 	if u.Role == in.Role {
 		return ErrRoleUnchanged
 	}
-	if err := s.dir.SetRole(ctx, userID, in.Role); err != nil {
-		return err
-	}
-	return audit(ctx, s.log, actor, userEntry(ActionUserSetRole, u, map[string]string{"from": u.Role, "to": in.Role}))
+	return mutate(ctx, s.log, actor, userEntry(ActionUserSetRole, u, map[string]string{"from": u.Role, "to": in.Role}), func() error {
+		return s.dir.SetRole(ctx, userID, in.Role)
+	})
 }
 
 // RevokeSession signs the user out of one session.
@@ -209,10 +206,9 @@ func (s *UserService) RevokeSession(ctx context.Context, actor Actor, userID, se
 	if err != nil {
 		return err
 	}
-	if err := s.dir.RevokeSession(ctx, userID, sessionID); err != nil {
-		return err
-	}
-	return audit(ctx, s.log, actor, userEntry(ActionUserRevokeSession, u, map[string]string{"sessionId": sessionID}))
+	return mutate(ctx, s.log, actor, userEntry(ActionUserRevokeSession, u, map[string]string{"sessionId": sessionID}), func() error {
+		return s.dir.RevokeSession(ctx, userID, sessionID)
+	})
 }
 
 // RevokeSessions signs the user out everywhere.
@@ -221,10 +217,9 @@ func (s *UserService) RevokeSessions(ctx context.Context, actor Actor, userID st
 	if err != nil {
 		return err
 	}
-	if err := s.dir.RevokeUserSessions(ctx, userID); err != nil {
-		return err
-	}
-	return audit(ctx, s.log, actor, userEntry(ActionUserRevokeSessions, u, nil))
+	return mutate(ctx, s.log, actor, userEntry(ActionUserRevokeSessions, u, nil), func() error {
+		return s.dir.RevokeUserSessions(ctx, userID)
+	})
 }
 
 // target authorizes the actor and loads the user a mutation acts on, so a

@@ -186,6 +186,8 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	auditSvc := services.NewAuditService(auditLog, p)
 	analytics := services.NewAnalyticsService(adminrepo.NewStats(appPool), p)
 	callers := server.NewCallers(admins)
+	reconciler := services.NewAuditReconciler(auditLog, server.NewUserDirectory(auth.NewUserAdmin(appPool)), server.NewAdminAccounts(admins, adminrepo.NewAdmins(adminPool)))
+	go reconcileAudit(ctx, reconciler, cfg.AuditReconcileAfter, log)
 
 	handler := server.New(server.Deps{
 		Config:  cfg,
@@ -269,6 +271,33 @@ func livePool(ctx context.Context, log *slog.Logger, name string, url func() (se
 		return nil
 	})
 	return pool, nil
+}
+
+// reconcileInterval is how often stale pending audit entries are resolved
+// (also once at startup).
+const reconcileInterval = 5 * time.Minute
+
+// reconcileAudit resolves pending audit entries (admin changes whose outcome
+// was never written) from the current state, at startup and then every
+// reconcileInterval, until ctx ends.
+func reconcileAudit(ctx context.Context, r *services.AuditReconciler, after time.Duration, log *slog.Logger) {
+	tick := time.NewTicker(reconcileInterval)
+	defer tick.Stop()
+	for {
+		res, err := r.Reconcile(ctx, after)
+		if err != nil && ctx.Err() == nil {
+			log.Error("admin: audit reconcile incomplete; entries stay pending", "err", err, "skipped", res.Skipped)
+		}
+		if n := res.Succeeded + res.Failed + res.Unknown; n > 0 {
+			log.Warn("admin: resolved audit entries whose outcome was never written",
+				"succeeded", res.Succeeded, "failed", res.Failed, "unknown", res.Unknown)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-tick.C:
+		}
+	}
 }
 
 // newAdminAuth is the admin app's own packages/auth instance over the admin

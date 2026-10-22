@@ -48,8 +48,12 @@ type Config struct {
 	// session. Defaults to on in production.
 	RequireTwoFactor bool
 	AppName          string // shown in the header and as the TOTP issuer
-	FromEmail        string
-	ClientIPHeader   string // header the trusted proxy sets to the client IP; empty uses the TCP peer
+	// AuditReconcileAfter is how old a pending audit entry (an admin change
+	// whose outcome was never written) must be before the reconciler
+	// resolves it from the current state.
+	AuditReconcileAfter time.Duration
+	FromEmail           string
+	ClientIPHeader      string // header the trusted proxy sets to the client IP; empty uses the TCP peer
 }
 
 // Load reads and validates config. getenv is os.Getenv outside tests.
@@ -69,6 +73,10 @@ func Load(getenv func(string) string) (Config, error) {
 		AppName:        get("ADMIN_APP_NAME", "Admin"),
 		FromEmail:      get("FROM_EMAIL", "noreply@example.com"),
 		ClientIPHeader: get("CLIENT_IP_HEADER", ""),
+	}
+	var perr error
+	if cfg.AuditReconcileAfter, perr = time.ParseDuration(get("ADMIN_AUDIT_RECONCILE_AFTER", "2m")); perr != nil || cfg.AuditReconcileAfter < 10*time.Second {
+		errs = append(errs, fmt.Errorf("ADMIN_AUDIT_RECONCILE_AFTER must be a duration of at least 10s, got %q", get("ADMIN_AUDIT_RECONCILE_AFTER", "")))
 	}
 	switch cfg.Env {
 	case Development, Test, Production:
