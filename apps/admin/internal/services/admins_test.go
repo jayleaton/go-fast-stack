@@ -38,6 +38,7 @@ func adminAudit(actor services.Actor, action string, details map[string]string) 
 }
 
 func TestListAdmins(t *testing.T) {
+	t.Parallel()
 	svc, accounts, _ := newAdminService(t)
 
 	accounts.EXPECT().ListAdmins(ctx).Return([]services.Admin{pending}, nil)
@@ -59,6 +60,7 @@ func TestListAdmins(t *testing.T) {
 // failing change) of every mutation are in TestMutationsFailClosed.
 
 func TestInviteAdmin(t *testing.T) {
+	t.Parallel()
 	svc, accounts, log := newAdminService(t)
 	notFound := fmt.Errorf("get: %w", services.ErrRecordNotFound)
 
@@ -157,6 +159,7 @@ func TestInviteAdmin(t *testing.T) {
 }
 
 func TestAdminActive(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		a    services.Admin
 		want bool
@@ -168,6 +171,7 @@ func TestAdminActive(t *testing.T) {
 }
 
 func TestDisableAdmin(t *testing.T) {
+	t.Parallel()
 	svc, accounts, log := newAdminService(t)
 
 	gomock.InOrder(
@@ -218,6 +222,7 @@ func TestDisableAdmin(t *testing.T) {
 }
 
 func TestEnableAdmin(t *testing.T) {
+	t.Parallel()
 	svc, accounts, log := newAdminService(t)
 
 	gomock.InOrder(
@@ -244,6 +249,7 @@ func TestEnableAdmin(t *testing.T) {
 }
 
 func TestRemoveAdmin(t *testing.T) {
+	t.Parallel()
 	svc, accounts, log := newAdminService(t)
 
 	gomock.InOrder(
@@ -289,6 +295,7 @@ func TestRemoveAdmin(t *testing.T) {
 }
 
 func TestBootstrap(t *testing.T) {
+	t.Parallel()
 	svc, accounts, log := newAdminService(t)
 
 	// The intent targets the email: the admin is created inside the change.

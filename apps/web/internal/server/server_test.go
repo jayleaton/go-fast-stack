@@ -65,6 +65,7 @@ func serve(h http.Handler, req *http.Request) *httptest.ResponseRecorder {
 }
 
 func TestHealthz(t *testing.T) {
+	t.Parallel()
 	ok := serve(newHandler(pinger{}, nil), httptest.NewRequest(http.MethodGet, "/healthz", nil))
 	down := serve(newHandler(pinger{errors.New("down")}, nil), httptest.NewRequest(http.MethodGet, "/healthz", nil))
 	fresh := serve(newHandlerWith(pinger{}, secretsHealth{}, nil), httptest.NewRequest(http.MethodGet, "/healthz", nil))
@@ -78,6 +79,7 @@ func TestHealthz(t *testing.T) {
 }
 
 func TestMountsAndMiddleware(t *testing.T) {
+	t.Parallel()
 	ui := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/boom" {
 			panic("boom: /home/dev/secret.go:12")
@@ -114,6 +116,7 @@ func TestMountsAndMiddleware(t *testing.T) {
 // could send there (fetch, form post, preflight, typed-in URL) gets the bare
 // 404 of an unknown path, with no CORS headers.
 func TestAPIIsHiddenFromBrowsers(t *testing.T) {
+	t.Parallel()
 	h := newHandler(pinger{}, http.NotFoundHandler())
 	browser := map[string]func(*http.Request){
 		"same-origin fetch": func(r *http.Request) {
@@ -208,6 +211,7 @@ func TestAPIIsHiddenFromBrowsers(t *testing.T) {
 
 // Emailed reset links carry a credential in the path; logs keep the route only.
 func TestRequestLogsDropTokens(t *testing.T) {
+	t.Parallel()
 	var logs strings.Builder
 	h := New(Deps{
 		Log: slog.New(slog.NewTextHandler(&logs, nil)), DB: pinger{}, Auth: noAuth{},

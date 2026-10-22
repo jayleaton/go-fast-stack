@@ -36,6 +36,8 @@ type stringer struct{ s string }
 func (s *stringer) String() string { return s.s }
 
 func TestRedactingHandlerKeys(t *testing.T) {
+	t.Parallel()
+
 	for _, key := range []string{
 		"password", "new_password", "Passwd", "passphrase", "secret", "AUTH_SECRET", "client-secret",
 		"token", "session_token", "accessToken", "refresh.token", "csrfToken", "api_key", "apiKey", "X-API-Key", "APIKey", "apikey",
@@ -75,6 +77,8 @@ func TestRedactingHandlerKeys(t *testing.T) {
 // Names that mention a credential without holding one stay readable, as an
 // attribute key, as name=value in a message, and inside error text.
 func TestRedactingHandlerFalsePositives(t *testing.T) {
+	t.Parallel()
+
 	for _, name := range []string{
 		// Facts about a credential: a word after it marks metadata.
 		"set_password_page", "password_page", "reset_password_path", "token_ttl", "secret_name",
@@ -101,6 +105,8 @@ func TestRedactingHandlerFalsePositives(t *testing.T) {
 }
 
 func TestRedactString(t *testing.T) {
+	t.Parallel()
+
 	for _, tt := range []struct{ in, want string }{
 		{"Authorization: Bearer abc.def-ghi", "Authorization: [redacted]"},
 		{"sent Bearer eyJhbGciOi.x_y== to upstream", "sent Bearer [redacted] to upstream"},
@@ -146,6 +152,8 @@ func TestRedactString(t *testing.T) {
 }
 
 func TestRedactingHandlerValues(t *testing.T) {
+	t.Parallel()
+
 	link := "https://a.example/api/auth/reset-password/tok123?callbackURL=%2F"
 	out := redactLog(t, secrets.RedactOptions{}, func(l *slog.Logger) {
 		l.Info("dial postgres://u:pw1@h/db", // the message too
@@ -180,6 +188,8 @@ func TestRedactingHandlerValues(t *testing.T) {
 }
 
 func TestRedactingHandlerWithAttrsAndGroup(t *testing.T) {
+	t.Parallel()
+
 	out := redactLog(t, secrets.RedactOptions{}, func(l *slog.Logger) {
 		l.With("token", "tok1", "dsn", "postgres://u:pw2@h").WithGroup("g").Info("m", "access_token", "tok3", "ok", "visible")
 	})
@@ -198,6 +208,8 @@ func TestRedactingHandlerWithAttrsAndGroup(t *testing.T) {
 }
 
 func TestRedactingHandlerDevMailLinks(t *testing.T) {
+	t.Parallel()
+
 	link := "http://dev-box:3000/api/auth/reset-password/tok123?callbackURL=%2Freset"
 	mail := func(l *slog.Logger) {
 		// The exact shape packages/auth DevMailer logs.
@@ -219,6 +231,8 @@ func TestRedactingHandlerDevMailLinks(t *testing.T) {
 		}, false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			out := redactLog(t, tt.opts, tt.do)
 			if got := strings.Count(out, "tok123") == 2; got != tt.wantLink {
 				t.Errorf("link readable = %v, want %v: %s", got, tt.wantLink, out)
@@ -233,6 +247,8 @@ func TestRedactingHandlerDevMailLinks(t *testing.T) {
 // Maps log as groups and structs by their JSON, so a logged header set or
 // session never carries its credentials.
 func TestRedactingHandlerMapsAndStructs(t *testing.T) {
+	t.Parallel()
+
 	type session struct {
 		ID    string `json:"id"`
 		Token string `json:"token"`

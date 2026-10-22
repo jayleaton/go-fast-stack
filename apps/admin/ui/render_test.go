@@ -114,11 +114,13 @@ func renderCases() []renderCase {
 // locale and checks the heading text, that no key or placeholder leaked
 // through, the html lang, and the signed-in header.
 func TestPagesRenderInEveryLocale(t *testing.T) {
+	t.Parallel()
 	pages := renderCases()
 	for _, l := range i18n.Locales {
 		tr := i18n.Translator{Locale: l}
 		for _, p := range pages {
 			t.Run(string(l)+"/"+p.name, func(t *testing.T) {
+				t.Parallel()
 				html := renderIn(t, l, view.State{Authenticated: p.authed, Email: "root@example.com", Section: view.SectionUsers}, p.c)
 				if m := rawKey.FindString(html); m != "" {
 					t.Errorf("untranslated key %q in output", m)
@@ -149,6 +151,7 @@ func TestPagesRenderInEveryLocale(t *testing.T) {
 // TestFormsHaveLoadingIndicators keeps a Datastar indicator on every action
 // form (GET filter forms flip a signal on submit instead).
 func TestFormsHaveLoadingIndicators(t *testing.T) {
+	t.Parallel()
 	at := time.Now()
 	detail := services.UserDetail{User: services.User{ID: "u1", Banned: true}, Sessions: []services.Session{{ID: "s1", ExpiresAt: at}}}
 	for _, c := range []templ.Component{
@@ -188,34 +191,54 @@ func (w *hangUpAfter) WriteString(s string) (int, error) {
 	return len(s), nil
 }
 
+// oneByteBuffers are templ buffers that pass each write straight to the
+// connection, one per render case. A Buffer takes its size from the global
+// templruntime.DefaultBufferSize when it is first Reset and keeps it, so they
+// are made here, during package initialisation, before any test runs:
+// setting the global inside a test would race with the parallel tests'
+// renders.
+var oneByteBuffers = func() []*templruntime.Buffer {
+	size := templruntime.DefaultBufferSize
+	templruntime.DefaultBufferSize = 1
+	defer func() { templruntime.DefaultBufferSize = size }()
+	bufs := make([]*templruntime.Buffer, len(renderCases()))
+	for i := range bufs {
+		bufs[i] = &templruntime.Buffer{}
+		bufs[i].Reset(io.Discard)
+	}
+	return bufs
+}()
+
 // TestRenderStopsWhenClientHangsUp fails the connection at every write of
 // every page: Render must stop and return the write error (ui.render logs
 // it), never panic or swallow it. A 1-byte templ buffer makes each write
 // reach the connection.
 func TestRenderStopsWhenClientHangsUp(t *testing.T) {
-	size := templruntime.DefaultBufferSize
-	templruntime.DefaultBufferSize = 1
-	defer func() { templruntime.DefaultBufferSize = size }()
+	t.Parallel()
 	ctx := view.WithState(i18n.WithTranslator(context.Background(), i18n.Translator{Locale: i18n.En}), view.State{Authenticated: true})
-	for _, p := range renderCases() {
-		for n := 0; ; n++ {
-			b := &templruntime.Buffer{}
-			b.Reset(&hangUpAfter{n: n})
-			err := p.c.Render(ctx, b)
-			if err == nil {
-				break
+	for i, p := range renderCases() {
+		t.Run(p.name, func(t *testing.T) {
+			t.Parallel()
+			b := oneByteBuffers[i]
+			if b.Size() != 1 {
+				t.Fatalf("templ buffer of %d bytes, want 1", b.Size())
 			}
-			if !errors.Is(err, errHangUp) {
-				t.Fatalf("%s: write %d: %v", p.name, n, err)
+			for n := 0; ; n++ {
+				b.Reset(&hangUpAfter{n: n})
+				err := p.c.Render(ctx, b)
+				if err == nil {
+					break
+				}
+				if !errors.Is(err, errHangUp) {
+					t.Fatalf("write %d: %v", n, err)
+				}
 			}
-		}
-	}
-	canceled, cancel := context.WithCancel(ctx)
-	cancel()
-	for _, p := range renderCases() {
-		if err := p.c.Render(canceled, io.Discard); !errors.Is(err, context.Canceled) {
-			t.Errorf("%s rendered for a canceled request: %v", p.name, err)
-		}
+			canceled, cancel := context.WithCancel(ctx)
+			cancel()
+			if err := p.c.Render(canceled, io.Discard); !errors.Is(err, context.Canceled) {
+				t.Errorf("rendered for a canceled request: %v", err)
+			}
+		})
 	}
 }
 
@@ -223,6 +246,7 @@ func TestRenderStopsWhenClientHangsUp(t *testing.T) {
 // tone and a translated label, the pending hint, and reconciled reasons
 // chosen by status rather than shown as recorded.
 func TestAuditStatus(t *testing.T) {
+	t.Parallel()
 	tones := map[string]uikit.Tone{
 		services.StatusSucceeded: uikit.Success, services.StatusFailed: uikit.Error,
 		services.StatusPending: uikit.Warning, services.StatusUnknown: uikit.Neutral,
@@ -254,6 +278,7 @@ func TestAuditStatus(t *testing.T) {
 }
 
 func TestSection(t *testing.T) {
+	t.Parallel()
 	for path, want := range map[string]string{
 		"/users": view.SectionUsers, "/users/u1": view.SectionUsers, "/admins": view.SectionAdmins,
 		"/audit": view.SectionAudit, "/analytics": view.SectionAnalytics, "/login": "", "/usersx": "",
@@ -270,6 +295,7 @@ var qrRun = regexp.MustCompile(`M(\d+) (\d+)h(\d+)v1h-(\d+)z`)
 // TestTOTPQR redraws the SVG path module by module and compares it with the
 // encoder's matrix, quiet zone included.
 func TestTOTPQR(t *testing.T) {
+	t.Parallel()
 	uri := "otpauth://totp/Acme:root%40example.com?secret=JBSWY3DPEHPK3PXP&issuer=Acme"
 	q, ok := totpQR(uri)
 	if !ok {
@@ -328,6 +354,7 @@ func TestTOTPQR(t *testing.T) {
 // Remove asks in a dialog that names the admin (escaped), while the form
 // itself posts straight to the remove action, so it works without JS.
 func TestRemoveAdminAsksInADialog(t *testing.T) {
+	t.Parallel()
 	email := `o"brien's </script>&co@example.com`
 	html := renderIn(t, i18n.En, view.State{Authenticated: true}, AdminsPage(AdminsData{SelfID: "a1", Admins: []services.Admin{{ID: "a2", Email: email, HasPassword: true}}}))
 	for _, want := range []string{
@@ -346,6 +373,7 @@ func TestRemoveAdminAsksInADialog(t *testing.T) {
 
 // A failure recorded without a service error is translated, never shown raw.
 func TestAuditReasonInternal(t *testing.T) {
+	t.Parallel()
 	for _, l := range i18n.Locales {
 		ctx := i18n.WithTranslator(context.Background(), i18n.Translator{Locale: l})
 		if got, want := auditReason(ctx, services.ReasonInternal), i18n.T(ctx, "pages.audit.internalReason"); got != want || got == services.ReasonInternal && l != i18n.En {
@@ -357,6 +385,7 @@ func TestAuditReasonInternal(t *testing.T) {
 // The audit page says how its two kinds of entries are recorded: admin
 // changes fail closed, authentication events are best-effort.
 func TestAuditPageExplainsRecording(t *testing.T) {
+	t.Parallel()
 	for _, l := range i18n.Locales {
 		html := renderIn(t, l, view.State{Authenticated: true}, AuditPage(AuditData{}))
 		if !strings.Contains(html, templ.EscapeString(i18n.Translator{Locale: l}.T("pages.audit.howRecorded"))) {

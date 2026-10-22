@@ -95,6 +95,7 @@ func (h *harness) challenge(email, password string, extra ...string) string {
 }
 
 func TestTwoFactorEnrolmentAndSignIn(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, with2FA(false))
 	email := uniqueEmail(t)
 	signedIn := hdr{"Cookie": cookieHeader(t, h.signUp(email, "password123")), "Origin": testBase}
@@ -168,6 +169,7 @@ func TestTwoFactorEnrolmentAndSignIn(t *testing.T) {
 }
 
 func TestBackupCodesAreSingleUse(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, with2FA(false))
 	email := uniqueEmail(t)
 	setup, signedIn := h.enrol(email)
@@ -196,6 +198,7 @@ func TestBackupCodesAreSingleUse(t *testing.T) {
 }
 
 func TestTrustedDeviceAndDisable(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, with2FA(false))
 	email := uniqueEmail(t)
 	setup, signedIn := h.enrol(email)
@@ -235,6 +238,7 @@ func TestTrustedDeviceAndDisable(t *testing.T) {
 }
 
 func TestTwoFactorLockoutExpiryAndOff(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, with2FA(false))
 	ctx := context.Background()
 	email := uniqueEmail(t)
@@ -279,6 +283,7 @@ func TestTwoFactorLockoutExpiryAndOff(t *testing.T) {
 }
 
 func TestRequiredTwoFactorEnrolsBeforeTheFirstSession(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, with2FA(true))
 	email := uniqueEmail(t)
 

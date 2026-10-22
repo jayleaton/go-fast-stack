@@ -45,6 +45,7 @@ func pendingEntry(id int64, action, targetID, targetLabel string, details map[st
 
 // Every action is judged by the state its change should have produced.
 func TestReconcileVerdicts(t *testing.T) {
+	t.Parallel()
 	entryAt := time.Date(2026, 10, 22, 9, 0, 0, 0, time.UTC)
 	user := func(u services.User, sessions ...services.Session) func(p ports) {
 		return func(p ports) {
@@ -113,6 +114,7 @@ func TestReconcileVerdicts(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
 			r, p := newReconciler(t)
 			e := pendingEntry(entryID, c.action, c.target, labels[c.target], c.detail)
 			p.log.EXPECT().Pending(ctx, staleCutoff(), 100).Return([]services.AuditEntry{e}, nil)
@@ -141,6 +143,7 @@ func TestReconcileVerdicts(t *testing.T) {
 // An entry whose state cannot be read stays pending; the others are resolved
 // and the read errors are returned.
 func TestReconcileSkipsUnreadableState(t *testing.T) {
+	t.Parallel()
 	r, p := newReconciler(t)
 	errUsers := errors.New("app database down")
 	errAdmins := errors.New("admin database down")
@@ -170,6 +173,7 @@ func TestReconcileSkipsUnreadableState(t *testing.T) {
 
 // A failed outcome write stops the pass: the store is likely down.
 func TestReconcileStopsWhenResolveFails(t *testing.T) {
+	t.Parallel()
 	r, p := newReconciler(t)
 	errRead := errors.New("app database down")
 	entries := []services.AuditEntry{
@@ -193,6 +197,7 @@ func TestReconcileStopsWhenResolveFails(t *testing.T) {
 }
 
 func TestReconcilePendingFails(t *testing.T) {
+	t.Parallel()
 	r, p := newReconciler(t)
 	p.log.EXPECT().Pending(ctx, staleCutoff(), 100).Return(nil, errDB)
 	got, err := r.Reconcile(ctx, olderThan)
@@ -203,6 +208,7 @@ func TestReconcilePendingFails(t *testing.T) {
 }
 
 func TestReconcileNothingPending(t *testing.T) {
+	t.Parallel()
 	r, p := newReconciler(t)
 	p.log.EXPECT().Pending(ctx, staleCutoff(), 100).Return(nil, nil)
 	if got, err := r.Reconcile(ctx, olderThan); err != nil || got != (services.ReconcileResult{}) {
@@ -213,6 +219,7 @@ func TestReconcileNothingPending(t *testing.T) {
 // A full batch that made progress is followed by the next one, until a
 // batch comes back short.
 func TestReconcileBatches(t *testing.T) {
+	t.Parallel()
 	r, p := newReconciler(t)
 	batch := func(from, n int) []services.AuditEntry {
 		entries := make([]services.AuditEntry, n)
@@ -235,6 +242,7 @@ func TestReconcileBatches(t *testing.T) {
 // An unreadable entry in a full batch does not end the pass: the next read
 // asks for one more row (the skipped entry comes back first) and skips it.
 func TestReconcileReadsPastSkippedEntries(t *testing.T) {
+	t.Parallel()
 	r, p := newReconciler(t)
 	errRead := errors.New("app database down")
 	unreadable := pendingEntry(1, "user.ban", "u1", "ada@example.com", nil)

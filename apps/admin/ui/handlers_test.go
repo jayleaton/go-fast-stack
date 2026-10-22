@@ -201,6 +201,7 @@ var dashboardPages = []struct {
 }
 
 func TestPagesSignedOutRedirectToLogin(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	for _, p := range dashboardPages {
 		assertSeeOther(t, e.do("GET", p.path, nil), config.AppRoutes.Login)
@@ -209,6 +210,7 @@ func TestPagesSignedOutRedirectToLogin(t *testing.T) {
 }
 
 func TestPagesSignedIn(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	e.expectPages()
 	for _, l := range []string{"en", "ja"} {
@@ -233,6 +235,7 @@ func TestPagesSignedIn(t *testing.T) {
 }
 
 func TestPublicPages(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	for _, l := range []string{"en", "ja"} {
 		for _, p := range []string{config.AppRoutes.Login, config.AppRoutes.SetPassword + "?token=t", config.AppRoutes.SetPassword, config.AppRoutes.TwoFactor} {
@@ -256,6 +259,7 @@ func TestPublicPages(t *testing.T) {
 }
 
 func TestPagesTwoFactorRequired(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	e.users.EXPECT().ListUsers(gomock.Any(), gomock.Any(), gomock.Any()).Return(services.UserPage{}, services.ErrTwoFactorRequired)
 	e.users.EXPECT().GetUser(gomock.Any(), gomock.Any(), "u1").Return(services.UserDetail{}, services.ErrTwoFactorRequired)
@@ -268,6 +272,7 @@ func TestPagesTwoFactorRequired(t *testing.T) {
 }
 
 func TestPageServiceErrors(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	e.users.EXPECT().ListUsers(gomock.Any(), actor, gomock.Any()).Return(services.UserPage{}, services.ErrForbidden)
 	assertPage(t, e.do("GET", config.AppRoutes.Users, nil, signedIn, lang("ja")), http.StatusForbidden, "この操作は許可されていません。")
@@ -286,6 +291,7 @@ func TestPageServiceErrors(t *testing.T) {
 }
 
 func TestUsersListQuery(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	users := make([]services.User, 25)
 	for i := range users {
@@ -312,6 +318,7 @@ func TestUsersListQuery(t *testing.T) {
 }
 
 func TestAuditListQuery(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	e.audit.EXPECT().List(gomock.Any(), actor, validate.ListAuditLog{Action: services.ActionUserSetRole, TargetID: "u1", Limit: 25}).Return(services.AuditPage{
 		Entries: []services.AuditEntry{
@@ -327,6 +334,7 @@ func TestAuditListQuery(t *testing.T) {
 }
 
 func TestAnalyticsPage(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	e.analytics.EXPECT().Overview(gomock.Any(), actor).Return(services.Overview{TotalUsers: 1234, VerifiedUsers: 1000, BannedUsers: 7, NewUsers7d: 55, ActiveSessions: 321, GeneratedAt: created}, nil)
 	assertPage(t, e.do("GET", config.AppRoutes.Analytics, nil, signedIn), http.StatusOK, ">1234<", ">1000<", ">7<", ">55<", ">321<", "Jan 2, 2026 03:04 UTC", "placeholder")
@@ -335,6 +343,7 @@ func TestAnalyticsPage(t *testing.T) {
 // --- sign-in flows ---
 
 func TestLogin(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	form := url.Values{"email": {" root@example.com "}, "password": {"pw"}}
 
@@ -354,6 +363,7 @@ func TestLogin(t *testing.T) {
 }
 
 func TestSignInChallenges(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	form := url.Values{"email": {"root@example.com"}, "password": {"pw"}}
 	second := &ui.TwoFactorChallenge{Token: "c1", Methods: []string{"totp"}}
@@ -378,6 +388,7 @@ func TestSignInChallenges(t *testing.T) {
 }
 
 func TestSetPassword(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	pw := func(token, p, c string) url.Values {
 		return url.Values{"token": {token}, "password": {p}, "confirmPassword": {c}}
@@ -399,6 +410,7 @@ func TestSetPassword(t *testing.T) {
 }
 
 func TestTwoFactor(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	page := e.do("GET", config.AppRoutes.TwoFactor, nil).Body.String()
 	for _, w := range []string{`autocomplete="one-time-code"`, `inputmode="numeric"`, `name="method" value="backup_code"`, `name="trustDevice"`, "data-indicator:_loading"} {
@@ -436,6 +448,7 @@ const (
 var totp = ui.TOTPSetup{Secret: "JBSWY3DPEHPK3PXP", URI: "otpauth://totp/Acme:root?secret=JBSWY3DPEHPK3PXP", BackupCodes: []string{"aaaa-1111", "bbbb-2222"}}
 
 func TestTwoFactorSetupSignedOut(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	e.auth.EXPECT().StartTwoFactorSetup(gomock.Any()).Return(totp, nil)
 	assertPage(t, e.do("GET", config.AppRoutes.TwoFactorSetup, nil), http.StatusOK,
@@ -479,6 +492,7 @@ func TestTwoFactorSetupSignedOut(t *testing.T) {
 }
 
 func TestTwoFactorSetupSignedIn(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t, func(d *ui.Deps) { d.RequireTwoFactor = true })
 	noTwoFA := ui.Admin{ID: "a1", Email: "root@example.com"}
 	noTwoFAActor := as(noTwoFA)
@@ -503,6 +517,7 @@ func TestTwoFactorSetupSignedIn(t *testing.T) {
 }
 
 func TestLogout(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	e.auth.EXPECT().SignOut(gomock.Any(), "tok-1").Return(nil)
 	e.auth.EXPECT().ClearSessionCookie(gomock.Any())
@@ -550,8 +565,10 @@ func userActions() []userAction {
 }
 
 func TestUserActions(t *testing.T) {
+	t.Parallel()
 	for _, a := range userActions() {
 		t.Run(a.name, func(t *testing.T) {
+			t.Parallel()
 			e := newEnv(t)
 			// no session
 			assertRedirectScript(t, e.do("POST", a.path, a.form, datastar), config.AppRoutes.Login)
@@ -603,6 +620,7 @@ func TestUserActions(t *testing.T) {
 }
 
 func TestUserActionsInvalidInput(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	cases := []struct {
 		path string
@@ -633,6 +651,7 @@ func TestUserActionsInvalidInput(t *testing.T) {
 // --- admins ---
 
 func TestInviteAdmin(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	form := url.Values{"email": {" New@Example.com "}, "name": {"Nia"}}
 	assertRedirectScript(t, e.do("POST", routes.AdminInvite, form, datastar), config.AppRoutes.Login)
@@ -672,6 +691,7 @@ func TestInviteAdmin(t *testing.T) {
 }
 
 func TestAdminsPageRowActions(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	e.admins.EXPECT().ListAdmins(gomock.Any(), actor).Return([]services.Admin{
 		{ID: "a1", Email: "root@example.com", HasPassword: true, TwoFactorEnabled: true},
@@ -720,12 +740,14 @@ func adminActions() []adminAction {
 }
 
 func TestAdminActions(t *testing.T) {
+	t.Parallel()
 	refreshed := []services.Admin{
 		{ID: "a1", Email: "root@example.com", HasPassword: true},
 		{ID: "a2", Email: "other@example.com", HasPassword: true, Disabled: true},
 	}
 	for _, a := range adminActions() {
 		t.Run(a.name, func(t *testing.T) {
+			t.Parallel()
 			e := newEnv(t)
 			path := a.path("a2")
 			// no session
@@ -793,6 +815,7 @@ func TestAdminActions(t *testing.T) {
 }
 
 func TestAdminActionsRejectCrossOrigin(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	for _, a := range adminActions() {
 		rec := e.do("POST", a.path("a2"), url.Values{}, signedIn, func(r *http.Request) { r.Header.Set("Sec-Fetch-Site", "cross-site") })
@@ -803,6 +826,7 @@ func TestAdminActionsRejectCrossOrigin(t *testing.T) {
 }
 
 func TestAuditAdminActions(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	entry := func(action string, d map[string]string) services.AuditEntry {
 		return services.AuditEntry{Action: action, ActorEmail: "root@example.com", TargetType: services.TargetAdmin, TargetID: "a2", TargetLabel: "other@example.com", Details: d, CreatedAt: created}
@@ -841,6 +865,7 @@ func TestAuditAdminActions(t *testing.T) {
 // unknown" with what that means; known failure reasons and the reconciler's
 // reasons are translated, anything else shows as recorded.
 func TestAuditStatuses(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	entry := func(status, reason string, reconciled bool) services.AuditEntry {
 		return services.AuditEntry{Action: services.ActionUserBan, ActorEmail: "root@example.com", TargetType: services.TargetUser, TargetID: "u1", TargetLabel: "ada@example.com", CreatedAt: created, Status: status, Reason: reason, Reconciled: reconciled}
@@ -891,6 +916,7 @@ func TestAuditStatuses(t *testing.T) {
 // --- shell ---
 
 func TestLocaleSwitch(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	rec := e.do("POST", routes.Locale, url.Values{"locale": {"ja"}, "next": {"/users?x=1"}})
 	assertSeeOther(t, rec, "/users?x=1")
@@ -914,6 +940,7 @@ func TestLocaleSwitch(t *testing.T) {
 }
 
 func TestActionsRejectCrossOrigin(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	rec := e.do("POST", config.AppRoutes.Login, url.Values{"email": {"root@example.com"}, "password": {"pw"}}, func(r *http.Request) {
 		r.Header.Set("Sec-Fetch-Site", "cross-site")
@@ -924,6 +951,7 @@ func TestActionsRejectCrossOrigin(t *testing.T) {
 }
 
 func TestNewRequiresDeps(t *testing.T) {
+	t.Parallel()
 	defer func() {
 		if recover() == nil {
 			t.Fatal("New without UserFrom did not panic")
@@ -934,6 +962,7 @@ func TestNewRequiresDeps(t *testing.T) {
 }
 
 func TestDefaultAppName(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t, func(d *ui.Deps) { d.AppName = ""; d.Logger = nil })
 	assertPage(t, e.do("GET", config.AppRoutes.Login, nil), http.StatusOK, "— Admin</title>")
 }

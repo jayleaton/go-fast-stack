@@ -18,6 +18,8 @@ import (
 // These run the Doppler adapter over a real socket (httptest.Server).
 
 func TestDopplerDownloadOverHTTP(t *testing.T) {
+	t.Parallel()
+
 	f := newFake(map[string]string{key: "re_live", "DOPPLER_CONFIG": "prd"})
 	var gotAccept string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -59,31 +61,40 @@ func TestDopplerDownloadOverHTTP(t *testing.T) {
 }
 
 func TestDopplerErrors(t *testing.T) {
-	f := newFake(map[string]string{key: "re_secret_in_body"})
-	srv := httptest.NewServer(f)
-	defer srv.Close()
-	at := func(token string) *secrets.Doppler {
-		return &secrets.Doppler{Token: secrets.NewSecret(token), APIURL: srv.URL, HTTPClient: srv.Client()}
+	t.Parallel()
+
+	// Each subtest gets its own fake and server, so they run in parallel.
+	at := func(token string) func(*httptest.Server) *secrets.Doppler {
+		return func(srv *httptest.Server) *secrets.Doppler {
+			return &secrets.Doppler{Token: secrets.NewSecret(token), APIURL: srv.URL, HTTPClient: srv.Client()}
+		}
+	}
+	fixed := func(d *secrets.Doppler) func(*httptest.Server) *secrets.Doppler {
+		return func(*httptest.Server) *secrets.Doppler { return d }
 	}
 
 	tests := []struct {
 		name  string
-		setup func()
-		d     *secrets.Doppler
+		setup func(*fakeDoppler)
+		d     func(*httptest.Server) *secrets.Doppler
 		want  string
 	}{
-		{"missing token", func() {}, at(""), "missing token"},
-		{"bad token", func() {}, at("dp.st.wrong_token"), "token rejected (401 Unauthorized)"},
-		{"server error", func() { f.fail(500, "") }, at(testToken), "unexpected status 500"},
-		{"oversize", func() { f.setRaw(`{"A":"` + strings.Repeat("x", 1<<20) + `"}`) }, at(testToken), "larger than"},
-		{"unreachable", func() {}, &secrets.Doppler{Token: secrets.NewSecret(testToken), APIURL: "http://user:pass@127.0.0.1:1"}, "doppler: request"},
-		{"bad url", func() {}, &secrets.Doppler{Token: secrets.NewSecret(testToken), APIURL: "http://[::1"}, "build request"},
+		{"missing token", func(*fakeDoppler) {}, at(""), "missing token"},
+		{"bad token", func(*fakeDoppler) {}, at("dp.st.wrong_token"), "token rejected (401 Unauthorized)"},
+		{"server error", func(f *fakeDoppler) { f.fail(500, "") }, at(testToken), "unexpected status 500"},
+		{"oversize", func(f *fakeDoppler) { f.setRaw(`{"A":"` + strings.Repeat("x", 1<<20) + `"}`) }, at(testToken), "larger than"},
+		{"unreachable", func(*fakeDoppler) {}, fixed(&secrets.Doppler{Token: secrets.NewSecret(testToken), APIURL: "http://user:pass@127.0.0.1:1"}), "doppler: request"},
+		{"bad url", func(*fakeDoppler) {}, fixed(&secrets.Doppler{Token: secrets.NewSecret(testToken), APIURL: "http://[::1"}), "build request"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			f.set(map[string]string{key: "re_secret_in_body"})
-			tt.setup()
-			_, err := tt.d.Fetch(t.Context(), secrets.Snapshot{})
+			t.Parallel()
+
+			f := newFake(map[string]string{key: "re_secret_in_body"})
+			srv := httptest.NewServer(f)
+			defer srv.Close()
+			tt.setup(f)
+			_, err := tt.d(srv).Fetch(t.Context(), secrets.Snapshot{})
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("err = %v, want %q", err, tt.want)
 			}
@@ -97,6 +108,8 @@ func TestDopplerErrors(t *testing.T) {
 }
 
 func TestDopplerRateLimit(t *testing.T) {
+	t.Parallel()
+
 	f := newFake(map[string]string{key: "re_a"})
 	srv := httptest.NewServer(f)
 	defer srv.Close()
@@ -121,6 +134,8 @@ func TestDopplerRateLimit(t *testing.T) {
 }
 
 func TestSecretNeverPrints(t *testing.T) {
+	t.Parallel()
+
 	s := secrets.NewSecret("re_plain_value")
 	var sb strings.Builder
 	slog.New(slog.NewJSONHandler(&sb, nil)).Info("x", "s", s, "group", slog.GroupValue(slog.Any("s", s)))
@@ -168,6 +183,8 @@ func TestSecretNeverPrints(t *testing.T) {
 }
 
 func TestDopplerDoesNotFollowRedirects(t *testing.T) {
+	t.Parallel()
+
 	var followed bool
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/elsewhere" {

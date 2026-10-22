@@ -10,6 +10,7 @@ import (
 )
 
 func TestAuditList(t *testing.T) {
+	t.Parallel()
 	p := newPorts(t)
 	svc := services.NewAuditService(p.log, services.Policy{RequireTwoFactor: true})
 	in := validate.ListAuditLog{Action: "user.ban", TargetID: "u1", Limit: 10, Offset: 20}

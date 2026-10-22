@@ -14,13 +14,14 @@ import (
 )
 
 func TestMigrateIsIdempotent(t *testing.T) {
-	needDB(t)
+	t.Parallel()
+	pool := newDatabase(t) // already migrated (a clone of the template)
 	ctx := context.Background()
-	if err := Migrate(ctx, testPool); err != nil {
+	if err := Migrate(ctx, pool); err != nil {
 		t.Fatal(err)
 	}
 	var version int64
-	if err := testPool.QueryRow(ctx, `SELECT max(version_id) FROM goose_auth`).Scan(&version); err != nil {
+	if err := pool.QueryRow(ctx, `SELECT max(version_id) FROM goose_auth`).Scan(&version); err != nil {
 		t.Fatal(err)
 	}
 	files, _ := fs.Glob(Migrations, "*.sql")
@@ -29,13 +30,14 @@ func TestMigrateIsIdempotent(t *testing.T) {
 	}
 	for _, table := range []string{"user", "session", "account", "verification"} {
 		var exists bool
-		if err := testPool.QueryRow(ctx, `SELECT to_regclass($1) IS NOT NULL`, `"`+table+`"`).Scan(&exists); err != nil || !exists {
+		if err := pool.QueryRow(ctx, `SELECT to_regclass($1) IS NOT NULL`, `"`+table+`"`).Scan(&exists); err != nil || !exists {
 			t.Fatalf("table %q missing (err %v)", table, err)
 		}
 	}
 }
 
 func TestNewValidatesConfig(t *testing.T) {
+	t.Parallel()
 	needDB(t)
 	cases := map[string]Config{
 		"short secret":          {Secret: "short", BaseURL: testBase},
@@ -62,6 +64,7 @@ func TestNewValidatesConfig(t *testing.T) {
 }
 
 func TestCookieSessionLifecycle(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, nil)
 	email := uniqueEmail(t)
 
@@ -121,6 +124,7 @@ func TestCookieSessionLifecycle(t *testing.T) {
 }
 
 func TestBearerSession(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, nil)
 	email := uniqueEmail(t)
 	wantStatus(t, h.signUp(email, "password123"), http.StatusOK)
@@ -164,6 +168,7 @@ func TestBearerSession(t *testing.T) {
 }
 
 func TestSignInRejectsBadCredentials(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, nil)
 	email := uniqueEmail(t)
 	wantStatus(t, h.signUp(email, "password123"), http.StatusOK)
@@ -177,6 +182,7 @@ func TestSignInRejectsBadCredentials(t *testing.T) {
 }
 
 func TestSignUpValidation(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, nil)
 	wantCode(t, h.signUp(uniqueEmail(t), "short"), http.StatusBadRequest, "PASSWORD_TOO_SHORT")
 	wantCode(t, h.signUp(uniqueEmail(t), strings.Repeat("é", 129)), http.StatusBadRequest, "PASSWORD_TOO_LONG")
@@ -197,6 +203,7 @@ func TestSignUpValidation(t *testing.T) {
 }
 
 func TestEmailVerificationFlow(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, func(c *Config) { c.RequireEmailVerification = true })
 	email := uniqueEmail(t)
 
@@ -258,6 +265,7 @@ func TestEmailVerificationFlow(t *testing.T) {
 }
 
 func TestVerifyEmailRejectsBadTokens(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, func(c *Config) { c.RequireEmailVerification = true })
 	email := uniqueEmail(t)
 	wantStatus(t, h.signUp(email, "password123"), http.StatusOK)
@@ -285,6 +293,7 @@ func TestVerifyEmailRejectsBadTokens(t *testing.T) {
 }
 
 func TestSendVerificationEmail(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, func(c *Config) { c.RequireEmailVerification = true })
 	unverified := uniqueEmail(t)
 	wantStatus(t, h.signUp(unverified, "password123"), http.StatusOK)
@@ -319,6 +328,7 @@ func TestSendVerificationEmail(t *testing.T) {
 }
 
 func TestPasswordResetFlow(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, nil)
 	email := uniqueEmail(t)
 	wantStatus(t, h.signUp(email, "old-password"), http.StatusOK)
@@ -372,6 +382,7 @@ func TestPasswordResetFlow(t *testing.T) {
 }
 
 func TestPasswordResetTokenExpires(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, nil)
 	email := uniqueEmail(t)
 	wantStatus(t, h.signUp(email, "old-password"), http.StatusOK)
@@ -394,6 +405,7 @@ func TestPasswordResetTokenExpires(t *testing.T) {
 }
 
 func TestPasswordResetTokenIsSingleUseUnderConcurrency(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, nil)
 	email := uniqueEmail(t)
 	wantStatus(t, h.signUp(email, "old-password"), http.StatusOK)
@@ -422,6 +434,7 @@ func TestPasswordResetTokenIsSingleUseUnderConcurrency(t *testing.T) {
 }
 
 func TestRedirectTargetsMustBeTrusted(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, nil)
 	email := uniqueEmail(t)
 	wantStatus(t, h.signUp(email, "password123"), http.StatusOK)
@@ -448,6 +461,7 @@ func TestRedirectTargetsMustBeTrusted(t *testing.T) {
 }
 
 func TestOriginCheck(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, nil)
 	email := uniqueEmail(t)
 	cookie := cookieHeader(t, h.signUp(email, "password123"))
@@ -517,6 +531,7 @@ type httpResult struct {
 }
 
 func TestSessionRefreshAndExpiry(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, nil)
 	rec := h.signUp(uniqueEmail(t), "password123")
 	cookie := cookieHeader(t, rec)
@@ -573,6 +588,7 @@ func TestSessionRefreshAndExpiry(t *testing.T) {
 }
 
 func TestRequireUserAndUserFrom(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, func(c *Config) { c.LoginPath = "/sign-in" })
 	email := uniqueEmail(t)
 	cookie := cookieHeader(t, h.signUp(email, "password123"))
@@ -607,6 +623,7 @@ func TestRequireUserAndUserFrom(t *testing.T) {
 }
 
 func TestServiceMethodsForHTMLTransport(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, nil)
 	ctx := context.Background()
 	email := uniqueEmail(t)
@@ -655,6 +672,7 @@ func TestServiceMethodsForHTMLTransport(t *testing.T) {
 // HostOnlyCookies: on https every cookie of the instance is __Host- (Path=/,
 // no Domain, Secure), and the __Secure- name is not read.
 func TestHostOnlyCookies(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, func(c *Config) { c.BaseURL = "https://admin.test"; c.CookiePrefix = "admin"; c.HostOnlyCookies = true })
 	rec := h.signUp(uniqueEmail(t), "password123")
 	c := sessionCookie(rec)
@@ -675,6 +693,7 @@ func TestHostOnlyCookies(t *testing.T) {
 }
 
 func TestSecureCookieOnHTTPS(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, func(c *Config) { c.BaseURL = "https://app.test" })
 	rec := h.signUp(uniqueEmail(t), "password123")
 	c := sessionCookie(rec)
@@ -691,6 +710,7 @@ func TestSecureCookieOnHTTPS(t *testing.T) {
 }
 
 func TestRateLimitedEndpoints(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, func(c *Config) { c.RateLimiter = NewMemoryRateLimiter() })
 	email := uniqueEmail(t)
 	for i := range 3 {
@@ -721,6 +741,7 @@ func TestRateLimitedEndpoints(t *testing.T) {
 }
 
 func TestClientIPFromTrustedProxyHeader(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, func(c *Config) { c.ClientIPHeader = "X-Forwarded-For" })
 	rec := h.do("POST", BasePath+"/sign-up/email", map[string]any{"name": "ip", "email": uniqueEmail(t), "password": "password123"},
 		hdr{"X-Forwarded-For": "6.6.6.6, 203.0.113.9", "User-Agent": "test-agent"})
@@ -732,6 +753,7 @@ func TestClientIPFromTrustedProxyHeader(t *testing.T) {
 }
 
 func TestOKEndpoint(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, nil)
 	rec := h.do("GET", BasePath+"/ok", nil, nil)
 	wantStatus(t, rec, http.StatusOK)
@@ -752,6 +774,7 @@ func mustQuery(t *testing.T, link, key string) string {
 const betterAuthHash = "0123456789abcdef0123456789abcdef:79729cb5bb1f0806ff13d495dfbe112886f07473fd22165fdad4415930961e224a5c3911b65af1d06f9d38cca6b0eb1a39717181f0abf4f30ff2ddb3bfc5d985"
 
 func TestImportedBetterAuthUserSignsInAndIsRehashed(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, nil)
 	ctx := context.Background()
 	email := uniqueEmail(t)
@@ -778,6 +801,7 @@ func TestImportedBetterAuthUserSignsInAndIsRehashed(t *testing.T) {
 }
 
 func TestSquattedSignUpIsReclaimedByEmailOwner(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, func(c *Config) { c.RequireEmailVerification = true })
 	victim := uniqueEmail(t)
 	link := func(i int) string { return pathOf(t, h.mails()[i].url) }
@@ -816,6 +840,7 @@ func TestSquattedSignUpIsReclaimedByEmailOwner(t *testing.T) {
 }
 
 func TestResetRevokesOtherResetLinks(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, nil)
 	email := uniqueEmail(t)
 	wantStatus(t, h.signUp(email, "old-password"), http.StatusOK)
@@ -841,6 +866,7 @@ func TestResetRevokesOtherResetLinks(t *testing.T) {
 }
 
 func TestSignOutWithBearerAndCookieRevokesBoth(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, nil)
 	email := uniqueEmail(t)
 	cookie := cookieHeader(t, h.signUp(email, "password123"))

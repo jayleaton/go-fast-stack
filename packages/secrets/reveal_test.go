@@ -11,6 +11,8 @@ import (
 )
 
 func TestRevealValue(t *testing.T) {
+	t.Parallel()
+
 	if got := reveal.Value(secrets.NewSecret("re_round_trip")); got != "re_round_trip" {
 		t.Fatalf("round trip: %q", got)
 	}
@@ -27,6 +29,8 @@ func TestRevealValue(t *testing.T) {
 // Keyring) could be called through an interface, outside the reach of
 // depguard.
 func TestNoMethodReturnsTheValue(t *testing.T) {
+	t.Parallel()
+
 	const value = "re_method_probe"
 	sec := secrets.NewSecret(value)
 	for _, s := range []reflect.Value{

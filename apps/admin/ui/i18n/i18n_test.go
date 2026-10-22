@@ -20,6 +20,7 @@ var keyLiteral = regexp.MustCompile(`"((?:common|components|pages|errors)\.[A-Za
 // TestUsedKeysExistInEveryLocale fails when a template or handler uses a key
 // that any locale is missing.
 func TestUsedKeysExistInEveryLocale(t *testing.T) {
+	t.Parallel()
 	used := map[string][]string{} // key -> files
 	root := ".."                  // apps/admin/ui
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
@@ -61,6 +62,7 @@ func TestUsedKeysExistInEveryLocale(t *testing.T) {
 
 // TestLocalesHaveSameKeys keeps every locale complete, not just the used keys.
 func TestLocalesHaveSameKeys(t *testing.T) {
+	t.Parallel()
 	want := Keys(DefaultLocale)
 	for _, l := range Locales {
 		got := Keys(l)
@@ -83,6 +85,7 @@ func TestLocalesHaveSameKeys(t *testing.T) {
 }
 
 func TestNegotiate(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name, cookie, accept string
 		want                 Locale
@@ -99,6 +102,7 @@ func TestNegotiate(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
 			r := httptest.NewRequest(http.MethodGet, "/", nil)
 			if c.accept != "" {
 				r.Header.Set("Accept-Language", c.accept)
@@ -114,12 +118,14 @@ func TestNegotiate(t *testing.T) {
 }
 
 func TestMissingKeyRendersKey(t *testing.T) {
+	t.Parallel()
 	if got := (Translator{Locale: Ja}).T("pages.nope"); got != "pages.nope" {
 		t.Fatalf("got %q", got)
 	}
 }
 
 func TestTf(t *testing.T) {
+	t.Parallel()
 	tr := Translator{Locale: Ja}
 	if got := tr.Tf("pages.admins.inviteSent", "a@b.c"); got != "a@b.c に招待を送信しました" {
 		t.Fatalf("ja: %q", got)
@@ -132,6 +138,7 @@ func TestTf(t *testing.T) {
 // TestPlaceholdersMatch keeps the placeholders of a message the same in
 // every locale, so Tf fills them all.
 func TestPlaceholdersMatch(t *testing.T) {
+	t.Parallel()
 	ph := regexp.MustCompile(`\{[0-9]\}`)
 	for _, k := range Keys(DefaultLocale) {
 		want := ph.FindAllString(Translator{Locale: DefaultLocale}.T(k), -1)
@@ -147,6 +154,7 @@ func TestPlaceholdersMatch(t *testing.T) {
 }
 
 func TestDates(t *testing.T) {
+	t.Parallel()
 	d := time.Date(2026, 3, 4, 5, 6, 0, 0, time.UTC)
 	if got := (Translator{Locale: Ja}).DateTime(d); got != "2026年3月4日 05:06 UTC" {
 		t.Errorf("ja: %q", got)

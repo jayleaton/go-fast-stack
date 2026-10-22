@@ -68,6 +68,7 @@ func serve(h http.Handler, req *http.Request) *httptest.ResponseRecorder {
 }
 
 func TestHealthzPingsEveryDatabase(t *testing.T) {
+	t.Parallel()
 	get := func(dbs map[string]Pinger) *httptest.ResponseRecorder {
 		return serve(newHandler(dbs, nil), httptest.NewRequest(http.MethodGet, config.APIRoutes.Healthz, nil))
 	}
@@ -97,6 +98,7 @@ type staleSecrets struct{}
 func (staleSecrets) Healthy() error { return errors.New("stale") }
 
 func TestMountsAndMiddleware(t *testing.T) {
+	t.Parallel()
 	h := newHandler(map[string]Pinger{"app": pinger{}}, stubUI)
 	cases := []struct {
 		name    string
@@ -125,6 +127,7 @@ func TestMountsAndMiddleware(t *testing.T) {
 // tokens), hidden from browsers; endpoints that would bypass the audit log
 // never are.
 func TestAuthEndpoints(t *testing.T) {
+	t.Parallel()
 	allowed := []string{
 		"POST sign-in/email", "POST sign-out", "GET get-session", "POST set-password",
 		"POST two-factor/enable", "POST two-factor/verify-totp", "POST two-factor/verify-backup-code",
@@ -165,6 +168,7 @@ func TestAuthEndpoints(t *testing.T) {
 // When a deployment mounts the JSON API it is for scripts only: browsers
 // get the bare 404 of an unknown path, and so does a wrong method.
 func TestOptInAPIIsHiddenFromBrowsers(t *testing.T) {
+	t.Parallel()
 	h := withAPI()
 	for _, path := range []string{config.APIRoutes.Users, config.APIRoutes.Admins, config.APIRoutes.Audit, config.APIRoutes.Analytics} {
 		if rec := serve(h, httptest.NewRequest(http.MethodGet, path, nil)); rec.Code != http.StatusUnauthorized || !strings.Contains(rec.Body.String(), `"Unauthorized"`) {
@@ -195,6 +199,7 @@ func TestOptInAPIIsHiddenFromBrowsers(t *testing.T) {
 // Emailed set-password links carry a credential in the path; logs keep the
 // route only.
 func TestRequestLogsDropTokens(t *testing.T) {
+	t.Parallel()
 	var logs strings.Builder
 	h := New(Deps{Log: slog.New(slog.NewTextHandler(&logs, nil)), DBs: map[string]Pinger{}, Auth: noAuth{}})
 	serve(h, httptest.NewRequest(http.MethodGet, "/api/auth/reset-password/s3cret-token?callbackURL=%2Fset-password", nil))

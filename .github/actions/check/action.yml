@@ -105,10 +105,6 @@ runs:
       run: ./scripts/check-layering.sh
       env:
         GOLANGCI_LINT: golangci-lint
-    - name: Test boundary probes
-      if: inputs.mode != 'db' && inputs.full == 'true'
-      shell: bash
-      run: ./scripts/check-test-probes.sh
 
     # ---- tests ----
     # With -coverprofile go test also compiles packages without tests (lint
@@ -142,8 +138,21 @@ runs:
           chmod +x "$RUNNER_TEMP/wait-db"
           exec_flag=(-exec "$RUNNER_TEMP/wait-db")
         fi
-        go test -race "${exec_flag[@]}" -coverprofile=.cache/coverage.out $PACKAGES # word splitting intended
+        # testbudget prints plain go test output, the slowest tests, and fails
+        # a package or test over its time budget (AGENTS.md "Fast tests").
+        set -o pipefail
+        go test -race -json "${exec_flag[@]}" -coverprofile=.cache/coverage.out $PACKAGES | # word splitting intended
+          go run ./scripts/testbudget
         TESTED="$PACKAGES" ./scripts/check-coverage.sh .cache/coverage.out
+
+    # After the tests: the coverage probes plant their uncovered statements in
+    # the run's profile (this job tested every probed package on a full run).
+    - name: Test boundary probes
+      if: inputs.mode != 'db' && inputs.full == 'true'
+      shell: bash
+      run: ./scripts/check-test-probes.sh
+      env:
+        PROFILE: .cache/coverage.out
 
     - uses: actions/cache/save@v6
       if: inputs.save == 'true' && inputs.packages != '' && inputs.mode == 'all'

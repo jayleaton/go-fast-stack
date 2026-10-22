@@ -31,6 +31,7 @@ func selfAudit(id, email, action string, details map[string]string) services.New
 // No policy check by design: the events describe authentication itself, so
 // even an admin without 2FA is recorded.
 func TestSignedIn(t *testing.T) {
+	t.Parallel()
 	svc, log := newAuthEventService(t)
 
 	for _, method := range []string{services.SignInPassword, services.SignInTwoFactor, services.SignInSetPassword} {
@@ -45,6 +46,7 @@ func TestSignedIn(t *testing.T) {
 }
 
 func TestSignedOut(t *testing.T) {
+	t.Parallel()
 	svc, log := newAuthEventService(t)
 
 	log.EXPECT().Append(ctx, selfAudit("a1", "grace@example.com", "admin.sign_out", nil)).Return(nil)
@@ -57,6 +59,7 @@ func TestSignedOut(t *testing.T) {
 }
 
 func TestTwoFactorFailed(t *testing.T) {
+	t.Parallel()
 	svc, log := newAuthEventService(t)
 
 	// Attributed to the admin of the pending sign-in, with auth's reason.

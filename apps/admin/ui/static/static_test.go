@@ -10,6 +10,7 @@ import (
 )
 
 func TestDatastarPin(t *testing.T) {
+	t.Parallel()
 	b, err := FS.ReadFile(DatastarFile)
 	if err != nil {
 		t.Fatal(err)
@@ -24,6 +25,7 @@ func TestDatastarPin(t *testing.T) {
 }
 
 func TestHandlerCaching(t *testing.T) {
+	t.Parallel()
 	h := Handler()
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, URL(CSSFile), nil))

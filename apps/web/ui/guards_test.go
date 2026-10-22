@@ -29,6 +29,7 @@ var keyLiteral = regexp.MustCompile(`"((?:common|components|pages|errors)\.[A-Za
 // TestUsedKeysExistInEveryLocale fails when a template or handler uses a key
 // that any locale is missing.
 func TestUsedKeysExistInEveryLocale(t *testing.T) {
+	t.Parallel()
 	used := map[string][]string{} // key -> files
 	root := "."
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
@@ -70,6 +71,7 @@ func TestUsedKeysExistInEveryLocale(t *testing.T) {
 
 // TestLocalesHaveSameKeys keeps every locale complete, not just the used keys.
 func TestLocalesHaveSameKeys(t *testing.T) {
+	t.Parallel()
 	want := i18n.Keys(i18n.DefaultLocale)
 	for _, l := range i18n.Locales {
 		got := i18n.Keys(l)
@@ -92,6 +94,7 @@ func TestLocalesHaveSameKeys(t *testing.T) {
 }
 
 func TestNegotiate(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name, cookie, accept string
 		want                 i18n.Locale
@@ -108,6 +111,7 @@ func TestNegotiate(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
 			r := httptest.NewRequest(http.MethodGet, "/", nil)
 			if c.accept != "" {
 				r.Header.Set("Accept-Language", c.accept)
@@ -123,12 +127,14 @@ func TestNegotiate(t *testing.T) {
 }
 
 func TestMissingKeyRendersKey(t *testing.T) {
+	t.Parallel()
 	if got := (i18n.Translator{Locale: i18n.Ja}).T("pages.nope"); got != "pages.nope" {
 		t.Fatalf("got %q", got)
 	}
 }
 
 func TestDatastarPin(t *testing.T) {
+	t.Parallel()
 	b, err := static.FS.ReadFile(static.DatastarFile)
 	if err != nil {
 		t.Fatal(err)
@@ -143,6 +149,7 @@ func TestDatastarPin(t *testing.T) {
 }
 
 func TestHandlerCaching(t *testing.T) {
+	t.Parallel()
 	h := static.Handler()
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, static.URL(static.CSSFile), nil))
@@ -170,6 +177,7 @@ var (
 // (packages/uikit/theme.css): templates use the semantic color utilities,
 // never raw palette classes, and dark: only to swap icons.
 func TestTemplatesUseThemeTokens(t *testing.T) {
+	t.Parallel()
 	scanned := 0
 	for _, root := range []string{".", "../../../packages/uikit"} {
 		err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {

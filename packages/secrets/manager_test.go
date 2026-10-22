@@ -15,8 +15,9 @@ import (
 
 const key = "RESEND_API_KEY"
 
-// Every test runs in a synctest bubble: time.Sleep advances a fake clock once
-// the Manager's goroutine is idle, so polling is exercised without real waits.
+// Every test runs in a synctest bubble: advance (time.Sleep) moves a fake
+// clock once the Manager's goroutine is idle, so polling is exercised without
+// real waits.
 
 func start(t *testing.T, p secrets.Provider, o secrets.Options) *secrets.Manager {
 	t.Helper()
@@ -38,6 +39,8 @@ func get(t *testing.T, m *secrets.Manager, name string) string {
 }
 
 func TestRotationPickedUpWithinOneInterval(t *testing.T) {
+	t.Parallel()
+
 	synctest.Test(t, func(t *testing.T) {
 		f := newFake(map[string]string{key: "re_old", "OTHER": "x"})
 		log, _ := newLogger()
@@ -53,7 +56,7 @@ func TestRotationPickedUpWithinOneInterval(t *testing.T) {
 		}
 
 		f.set(map[string]string{key: "re_new"})
-		time.Sleep(secrets.DefaultInterval + secrets.DefaultInterval/10) // one interval plus max jitter
+		advance(secrets.DefaultInterval + secrets.DefaultInterval/10) // one interval plus max jitter
 		synctest.Wait()
 
 		if got := get(t, m, key); got != "re_new" {
@@ -68,7 +71,7 @@ func TestRotationPickedUpWithinOneInterval(t *testing.T) {
 		}
 
 		// Unchanged config: conditional request, 304, no hook call.
-		time.Sleep(2 * (secrets.DefaultInterval + secrets.DefaultInterval/10))
+		advance(2 * (secrets.DefaultInterval + secrets.DefaultInterval/10))
 		synctest.Wait()
 		if _, notMod := f.stats(); notMod != 2 {
 			t.Fatalf("304s = %d, want 2", notMod)
@@ -80,13 +83,15 @@ func TestRotationPickedUpWithinOneInterval(t *testing.T) {
 }
 
 func TestProviderDownKeepsLastGoodUntilMaxStaleness(t *testing.T) {
+	t.Parallel()
+
 	synctest.Test(t, func(t *testing.T) {
 		f := newFake(map[string]string{key: "re_good"})
 		log, logs := newLogger()
 		m := start(t, dopplerFor(f), secrets.Options{Required: []string{key}, Logger: log})
 		f.fail(503, "")
 
-		time.Sleep(secrets.DefaultMaxStaleness - time.Minute)
+		advance(secrets.DefaultMaxStaleness - time.Minute)
 		synctest.Wait()
 		if got := get(t, m, key); got != "re_good" {
 			t.Fatalf("during outage Get = %q", got)
@@ -98,7 +103,7 @@ func TestProviderDownKeepsLastGoodUntilMaxStaleness(t *testing.T) {
 			t.Fatalf("status during outage = %+v", st)
 		}
 
-		time.Sleep(2 * time.Minute)
+		advance(2 * time.Minute)
 		synctest.Wait()
 		if err := m.Healthy(); !errors.Is(err, secrets.ErrStale) {
 			t.Fatalf("Healthy past max staleness = %v, want ErrStale", err)
@@ -110,7 +115,7 @@ func TestProviderDownKeepsLastGoodUntilMaxStaleness(t *testing.T) {
 			t.Fatal("staleness not reported in status")
 		}
 		// The next failed poll (within MaxBackoff) logs it as an error.
-		time.Sleep(secrets.DefaultMaxBackoff + secrets.DefaultMaxBackoff/10)
+		advance(secrets.DefaultMaxBackoff + secrets.DefaultMaxBackoff/10)
 		synctest.Wait()
 		if !strings.Contains(logs.String(), "past max staleness") {
 			t.Fatal("staleness not logged")
@@ -118,7 +123,7 @@ func TestProviderDownKeepsLastGoodUntilMaxStaleness(t *testing.T) {
 
 		// Backoff is bounded: recovery is seen within MaxBackoff (+ jitter).
 		f.recover()
-		time.Sleep(secrets.DefaultMaxBackoff + secrets.DefaultMaxBackoff/10)
+		advance(secrets.DefaultMaxBackoff + secrets.DefaultMaxBackoff/10)
 		synctest.Wait()
 		if err := m.Healthy(); err != nil {
 			t.Fatalf("after recovery: %v", err)
@@ -130,6 +135,8 @@ func TestProviderDownKeepsLastGoodUntilMaxStaleness(t *testing.T) {
 }
 
 func TestInvalidSnapshotRejected(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name, raw, want string
 	}{
@@ -144,6 +151,8 @@ func TestInvalidSnapshotRejected(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			synctest.Test(t, func(t *testing.T) {
 				f := newFake(map[string]string{key: "re_good"})
 				log, logs := newLogger()
@@ -171,7 +180,7 @@ func TestInvalidSnapshotRejected(t *testing.T) {
 					t.Fatalf("invalid snapshot was published: %q", got)
 				}
 				// The poll loop keeps rejecting it without publishing.
-				time.Sleep(secrets.DefaultInterval + secrets.DefaultInterval/10)
+				advance(secrets.DefaultInterval + secrets.DefaultInterval/10)
 				synctest.Wait()
 				if got := rec.values(); len(got) != 1 || get(t, m, key) != "re_good" {
 					t.Fatalf("hook saw %v", got)
@@ -185,13 +194,15 @@ func TestInvalidSnapshotRejected(t *testing.T) {
 }
 
 func TestRetryAfterIsHonored(t *testing.T) {
+	t.Parallel()
+
 	synctest.Test(t, func(t *testing.T) {
 		f := newFake(map[string]string{key: "re_a"})
 		log, _ := newLogger()
 		start(t, dopplerFor(f), secrets.Options{Logger: log})
 		f.fail(429, "120")
 
-		time.Sleep(10 * time.Minute)
+		advance(10 * time.Minute)
 		synctest.Wait()
 		times := f.requestTimes() // [Start, first poll (429), retry, ...]
 		if len(times) < 3 {
@@ -204,13 +215,15 @@ func TestRetryAfterIsHonored(t *testing.T) {
 }
 
 func TestBackoffIsBounded(t *testing.T) {
+	t.Parallel()
+
 	synctest.Test(t, func(t *testing.T) {
 		f := newFake(map[string]string{key: "re_a"})
 		log, _ := newLogger()
 		start(t, dopplerFor(f), secrets.Options{Logger: log, MaxBackoff: time.Minute, MaxStaleness: time.Hour})
 		f.fail(503, "")
 
-		time.Sleep(30 * time.Minute)
+		advance(30 * time.Minute)
 		synctest.Wait()
 		times := f.requestTimes()
 		var gaps []time.Duration
@@ -230,6 +243,8 @@ func TestBackoffIsBounded(t *testing.T) {
 }
 
 func TestStartFailsWithoutValidSnapshot(t *testing.T) {
+	t.Parallel()
+
 	synctest.Test(t, func(t *testing.T) {
 		f := newFake(map[string]string{"OTHER": "x"})
 		log, _ := newLogger()
@@ -268,6 +283,8 @@ func TestStartFailsWithoutValidSnapshot(t *testing.T) {
 }
 
 func TestHooks(t *testing.T) {
+	t.Parallel()
+
 	synctest.Test(t, func(t *testing.T) {
 		f := newFake(map[string]string{key: "re_1", "OPTIONAL": "o"})
 		log, logs := newLogger()
@@ -305,6 +322,8 @@ func TestHooks(t *testing.T) {
 }
 
 func TestStopEndsPolling(t *testing.T) {
+	t.Parallel()
+
 	synctest.Test(t, func(t *testing.T) {
 		f := newFake(map[string]string{key: "re_a"})
 		log, _ := newLogger()
@@ -315,7 +334,7 @@ func TestStopEndsPolling(t *testing.T) {
 			t.Fatalf("values not readable after Stop: %q", got)
 		}
 		calls, _ := f.stats()
-		time.Sleep(time.Hour)
+		advance(time.Hour)
 		synctest.Wait()
 		if got, _ := f.stats(); got != calls {
 			t.Fatalf("polled after Stop: %d calls, want %d", got, calls)
@@ -335,6 +354,8 @@ func TestStopEndsPolling(t *testing.T) {
 }
 
 func TestEnvIsStartupOnly(t *testing.T) {
+	t.Parallel()
+
 	synctest.Test(t, func(t *testing.T) {
 		log, _ := newLogger()
 		m := secrets.NewManager(secrets.NewEnv(map[string]string{key: "re_env"}), secrets.Options{Required: []string{key}, Logger: log})
@@ -345,7 +366,7 @@ func TestEnvIsStartupOnly(t *testing.T) {
 			t.Fatal(err)
 		}
 		m.Stop()
-		time.Sleep(24 * time.Hour)
+		advance(24 * time.Hour)
 		if err := m.Healthy(); err != nil {
 			t.Fatalf("env went stale: %v", err)
 		}
@@ -361,6 +382,8 @@ func TestEnvIsStartupOnly(t *testing.T) {
 }
 
 func TestNoSecretValuesInLogs(t *testing.T) {
+	t.Parallel()
+
 	synctest.Test(t, func(t *testing.T) {
 		values := []string{"re_first_value", "re_second_value", "re_third_value", testToken}
 		f := newFake(map[string]string{key: values[0]})
@@ -376,13 +399,13 @@ func TestNoSecretValuesInLogs(t *testing.T) {
 		t.Cleanup(m.Stop)
 
 		f.set(map[string]string{key: values[1]}) // rotation
-		time.Sleep(time.Minute + 6*time.Second)
+		advance(time.Minute + 6*time.Second)
 		f.setRaw(`{"RESEND_API_KEY": ["` + values[2] + `"]}`) // malformed
-		time.Sleep(time.Minute + 6*time.Second)
+		advance(time.Minute + 6*time.Second)
 		f.fail(500, "") // the fake echoes the config in its error body
-		time.Sleep(20 * time.Minute)
+		advance(20 * time.Minute)
 		f.fail(401, "")
-		time.Sleep(10 * time.Minute)
+		advance(10 * time.Minute)
 		synctest.Wait()
 
 		out := logs.String()
@@ -403,6 +426,8 @@ func TestNoSecretValuesInLogs(t *testing.T) {
 }
 
 func TestFailedHookIsRetriedAfterTheNextFetch(t *testing.T) {
+	t.Parallel()
+
 	synctest.Test(t, func(t *testing.T) {
 		f := newFake(map[string]string{key: "re_1"})
 		log, _ := newLogger()
@@ -417,11 +442,11 @@ func TestFailedHookIsRetriedAfterTheNextFetch(t *testing.T) {
 			return flaky.hook(v)
 		})
 
-		time.Sleep(secrets.DefaultInterval + secrets.DefaultInterval/10) // unchanged poll: retry #1 fails
+		advance(secrets.DefaultInterval + secrets.DefaultInterval/10) // unchanged poll: retry #1 fails
 		synctest.Wait()
-		time.Sleep(secrets.DefaultInterval + secrets.DefaultInterval/10) // retry #2 succeeds
+		advance(secrets.DefaultInterval + secrets.DefaultInterval/10) // retry #2 succeeds
 		synctest.Wait()
-		time.Sleep(secrets.DefaultInterval + secrets.DefaultInterval/10) // nothing left to retry
+		advance(secrets.DefaultInterval + secrets.DefaultInterval/10) // nothing left to retry
 		synctest.Wait()
 		if got := flaky.values(); !slices.Equal(got, []string{"re_1"}) || calls != 3 {
 			t.Fatalf("flaky hook calls=%d saw %v", calls, got)

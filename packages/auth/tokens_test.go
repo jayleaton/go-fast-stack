@@ -35,6 +35,7 @@ func unitAuthWith(secret string) *Auth {
 }
 
 func TestGenerateID(t *testing.T) {
+	t.Parallel()
 	seen := map[string]bool{}
 	for range 1000 {
 		id := generateID(32)
@@ -49,6 +50,7 @@ func TestGenerateID(t *testing.T) {
 }
 
 func TestSignedValueFormat(t *testing.T) {
+	t.Parallel()
 	a := unitAuth()
 	signed := a.signValue("abc")
 	value, sig, _ := strings.Cut(signed, ".")
@@ -67,6 +69,7 @@ func TestSignedValueFormat(t *testing.T) {
 }
 
 func TestVerifySigned(t *testing.T) {
+	t.Parallel()
 	a := unitAuth()
 	good := a.signValue("tok123")
 	other := unitAuthWith(strings.Repeat("o", 40)).signValue("tok123")
@@ -97,6 +100,7 @@ func TestVerifySigned(t *testing.T) {
 }
 
 func TestParseBearer(t *testing.T) {
+	t.Parallel()
 	a := unitAuth()
 	tok := generateID(32)
 	cases := []struct {
@@ -127,6 +131,7 @@ func TestParseBearer(t *testing.T) {
 }
 
 func TestVerificationToken(t *testing.T) {
+	t.Parallel()
 	a := unitAuth()
 	now := time.Unix(1_800_000_000, 0)
 	a.now = func() time.Time { return now }
@@ -232,6 +237,7 @@ func FuzzParseVerificationToken(f *testing.F) {
 }
 
 func TestMatchesOrigin(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		url, pattern string
 		relative     bool
@@ -281,6 +287,7 @@ func TestMatchesOrigin(t *testing.T) {
 }
 
 func TestNormalizeIP(t *testing.T) {
+	t.Parallel()
 	cases := map[string]string{
 		"203.0.113.9":               "203.0.113.9",
 		"::ffff:203.0.113.9":        "203.0.113.9",
@@ -299,6 +306,7 @@ func TestNormalizeIP(t *testing.T) {
 }
 
 func TestMobileTrustedOrigins(t *testing.T) {
+	t.Parallel()
 	if got := MobileTrustedOrigins(true); len(got) != 1 || got[0] != "betterstack://" {
 		t.Fatalf("production = %v", got)
 	}
@@ -308,6 +316,7 @@ func TestMobileTrustedOrigins(t *testing.T) {
 }
 
 func TestPasswordHashing(t *testing.T) {
+	t.Parallel()
 	p := argonParams{Memory: 64, Time: 1, Threads: 1, SaltLen: 16, KeyLen: 32}
 	h1, err := hashPassword("hunter2hunter2", p)
 	if err != nil {
@@ -343,6 +352,7 @@ func TestPasswordHashing(t *testing.T) {
 }
 
 func TestBetterAuthScryptHash(t *testing.T) {
+	t.Parallel()
 	if ok, err := verifyPassword("hunter2hunter2", betterAuthHash); !ok || err != nil {
 		t.Fatalf("verify = %v %v", ok, err)
 	}
@@ -357,6 +367,7 @@ func TestBetterAuthScryptHash(t *testing.T) {
 }
 
 func TestPasswordHashDefaults(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("slow with -race")
 	}
@@ -374,6 +385,7 @@ func TestPasswordHashDefaults(t *testing.T) {
 }
 
 func TestPasswordLengthCountsCharacters(t *testing.T) {
+	t.Parallel()
 	a := unitAuth()
 	if err := a.checkPasswordLength("ééééééé"); !errors.Is(err, ErrPasswordTooShort) { // 7 chars, 14 bytes
 		t.Fatalf("err = %v", err)
@@ -384,6 +396,7 @@ func TestPasswordLengthCountsCharacters(t *testing.T) {
 }
 
 func TestMemoryRateLimiter(t *testing.T) {
+	t.Parallel()
 	m := NewMemoryRateLimiter()
 	now := time.Unix(0, 0)
 	m.now = func() time.Time { return now }
@@ -420,6 +433,7 @@ func (failingLimiter) Allow(context.Context, string, RateRule) (time.Duration, e
 }
 
 func TestRateLimiterFailureFailsOpen(t *testing.T) {
+	t.Parallel()
 	a := unitAuth()
 	a.limiter = failingLimiter{}
 	ctx := context.WithValue(context.Background(), ctxKey{}, &requestMeta{ip: "1.2.3.4"})
@@ -429,6 +443,7 @@ func TestRateLimiterFailureFailsOpen(t *testing.T) {
 }
 
 func TestErrorMapping(t *testing.T) {
+	t.Parallel()
 	if asError(&RateLimitError{RetryAfter: time.Second}) != ErrTooManyRequests {
 		t.Fatal("rate limit error not mapped")
 	}

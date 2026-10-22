@@ -47,12 +47,13 @@ Each checkout gets its own compose project and database ports, derived from its 
 | | |
 |---|---|
 | `make dev` | run the server with `.env` |
-| `make test` | `go test -race ./...` against this checkout's throwaway tmpfs Postgres (or `TEST_DATABASE_URL`), then per-boundary coverage floors |
+| `make test` | `go test -race ./...` against this checkout's throwaway tmpfs Postgres (or `TEST_DATABASE_URL`), then per-package and per-test time budgets and per-boundary coverage floors |
 | `make lint` | gofmt + golangci-lint (layering and test-import rules) + test file locations |
-| `make lint-layering` / `make lint-tests` | prove the layering, test-location and coverage rules still reject planted violations |
+| `make lint-layering` / `make lint-tests` | prove the layering, test-location, coverage and test-time rules still reject planted violations |
 | `make ci` | everything CI runs |
 | `make generate` | sqlc, mocks (`go generate`) and templ code generation |
 | `make css` | rebuild both apps' `app.css` (pinned Tailwind standalone CLI) |
+| `make bench-devloop` | timing tables for the dev loop: build per binary (with size and cold start), generators, lint per linter, probes, tests per package with and without `-race`; `BENCH_COLD=1` adds cold caches, `BENCH_BASE=<ref>` an A/B of the test run against that ref on the same machine |
 | `make build` / `make docker` | static binary / production image |
 | `make db-up` / `make db-down` | start / stop the local databases |
 | `make env` | print this checkout's compose project, ports and `DATABASE_URL` |

@@ -32,6 +32,7 @@ func renderIn(t *testing.T, l i18n.Locale, st view.State, c templ.Component) str
 // TestPagesRenderInEveryLocale renders each parity page (and its states) in
 // every locale and checks the heading text and that no key leaked through.
 func TestPagesRenderInEveryLocale(t *testing.T) {
+	t.Parallel()
 	user := User{ID: "u1", Name: "Ada", Email: "ada@example.com", CreatedAt: time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)}
 	ua := "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Version/18.0 Mobile/15E148 Safari/604.1"
 	sessions := []services.Session{{ID: "s1", Current: true, UserAgent: &ua}, {ID: "s2"}}
@@ -73,6 +74,7 @@ func TestPagesRenderInEveryLocale(t *testing.T) {
 		tr := i18n.Translator{Locale: l}
 		for _, p := range pages {
 			t.Run(string(l)+"/"+p.name, func(t *testing.T) {
+				t.Parallel()
 				html := renderIn(t, l, view.State{Authenticated: p.authed}, p.c)
 				if m := rawKey.FindString(html); m != "" {
 					t.Errorf("untranslated key %q in output", m)
@@ -94,6 +96,7 @@ func TestPagesRenderInEveryLocale(t *testing.T) {
 
 // TestWelcomeCopyMatches keeps the welcome copy complete in every locale.
 func TestWelcomeCopyMatches(t *testing.T) {
+	t.Parallel()
 	en := renderIn(t, i18n.En, view.State{}, welcome.LandingPage())
 	ja := renderIn(t, i18n.Ja, view.State{}, welcome.LandingPage())
 	if !strings.Contains(en, "A good first house for your project") || !strings.Contains(ja, "プロジェクトの、最初の家") {
@@ -108,6 +111,7 @@ func TestWelcomeCopyMatches(t *testing.T) {
 // a user agent with only a browser or only a system, none at all, and a user
 // without a name or email.
 func TestSessionAndAccountFallbacks(t *testing.T) {
+	t.Parallel()
 	firefox, linux := "Mozilla/5.0 Gecko/20100101 Firefox/131.0", "X11; Linux x86_64"
 	sessions := []services.Session{{ID: "a", UserAgent: &firefox}, {ID: "b", UserAgent: &linux}, {ID: "c"}}
 	html := renderIn(t, i18n.En, view.State{Authenticated: true}, SessionsCard(sessions, Status{}))

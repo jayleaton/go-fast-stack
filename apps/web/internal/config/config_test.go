@@ -17,6 +17,7 @@ func env(kv map[string]string) func(string) string {
 }
 
 func TestLoadDevelopmentDefaults(t *testing.T) {
+	t.Parallel()
 	cfg, err := Load(env(map[string]string{
 		"PUBLIC_URL":   "http://dev-box:3000/",
 		"DATABASE_URL": "postgres://x",
@@ -40,6 +41,7 @@ func TestLoadDevelopmentDefaults(t *testing.T) {
 }
 
 func TestLoadProductionRequiresProviders(t *testing.T) {
+	t.Parallel()
 	_, err := Load(env(map[string]string{"APP_ENV": "production", "PUBLIC_URL": "https://app.example.com/path"}))
 	if err == nil {
 		t.Fatal("want error")
@@ -52,6 +54,7 @@ func TestLoadProductionRequiresProviders(t *testing.T) {
 }
 
 func TestProductionFeatures(t *testing.T) {
+	t.Parallel()
 	f := FeaturesFor(Production)
 	if !f.EmailVerification || f.MobileDevOrigins {
 		t.Fatalf("production features = %+v", f)
@@ -59,6 +62,7 @@ func TestProductionFeatures(t *testing.T) {
 }
 
 func TestLoadSecretsProvider(t *testing.T) {
+	t.Parallel()
 	base := map[string]string{"PUBLIC_URL": "http://dev-box:3000", "DATABASE_URL": "postgres://x", "AUTH_SECRET": strings.Repeat("s", 32)}
 	with := func(kv map[string]string) map[string]string {
 		m := map[string]string{}
@@ -117,6 +121,7 @@ func TestLoadSecretsProvider(t *testing.T) {
 }
 
 func TestLoadLiveDatabaseAndAuthSecrets(t *testing.T) {
+	t.Parallel()
 	a, b := strings.Repeat("a", 32), strings.Repeat("b", 32)
 	cfg, err := Load(env(map[string]string{
 		"PUBLIC_URL": "http://dev-box:3000", "DATABASE_URL": "postgres://x",
@@ -172,6 +177,7 @@ func TestLoadLiveDatabaseAndAuthSecrets(t *testing.T) {
 // logging it (or a struct holding it) can never leak them, before or after
 // the secrets are loaded.
 func TestConfigNeverPrintsSecrets(t *testing.T) {
+	t.Parallel()
 	values := []string{"dbpass-4242", "auth-secret-" + strings.Repeat("z", 32), "re_resend_9999", "dp.st.doppler_7777"}
 	kv := map[string]string{
 		"PUBLIC_URL":     "http://dev-box:3000",

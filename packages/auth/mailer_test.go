@@ -21,6 +21,7 @@ type resendPayload struct {
 }
 
 func TestResendMailerSends(t *testing.T) {
+	t.Parallel()
 	const link = "https://app.example.test/api/auth/verify-email?token=abc&next=/dashboard"
 
 	tests := []struct {
@@ -73,6 +74,7 @@ func TestResendMailerSends(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			var got resendPayload
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.Method != http.MethodPost {
@@ -134,11 +136,12 @@ func TestResendMailerSends(t *testing.T) {
 }
 
 func TestResendMailerErrors(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnprocessableEntity)
 		_, _ = io.WriteString(w, `{"message":"invalid from address"}`)
 	}))
-	defer srv.Close()
+	t.Cleanup(srv.Close) // after the parallel subtests, not when this function returns
 
 	tests := []struct {
 		name    string
@@ -152,6 +155,7 @@ func TestResendMailerErrors(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			err := tt.mailer.SendPasswordResetEmail(context.Background(), "user@example.test", "https://app.example.test/reset")
 			if err == nil {
 				t.Fatal("expected error")
@@ -164,6 +168,7 @@ func TestResendMailerErrors(t *testing.T) {
 }
 
 func TestDevMailerLogsLink(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		send func(m *DevMailer) error
@@ -178,6 +183,7 @@ func TestDevMailerLogsLink(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			var buf bytes.Buffer
 			m := NewDevMailer(slog.New(slog.NewTextHandler(&buf, nil)))
 			if err := tt.send(m); err != nil {
@@ -194,12 +200,14 @@ func TestDevMailerLogsLink(t *testing.T) {
 }
 
 func TestNewDevMailerNilLogger(t *testing.T) {
+	t.Parallel()
 	if m := NewDevMailer(nil); m.Logger == nil {
 		t.Fatal("expected default logger")
 	}
 }
 
 func TestSwapMailerUsesTheLatestMailer(t *testing.T) {
+	t.Parallel()
 	var keys []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		keys = append(keys, r.Header.Get("Authorization"))

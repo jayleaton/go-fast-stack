@@ -141,6 +141,7 @@ var crawlForm = url.Values{
 }
 
 func TestCrawlCoversEveryRoute(t *testing.T) {
+	t.Parallel()
 	rec := &patternRecorder{}
 	ui.New(ui.Deps{Auth: mocks.NewMockAuth(gomock.NewController(t)), Users: mocks.NewMockUsers(gomock.NewController(t))}).Routes(rec)
 	var crawled []string
@@ -166,6 +167,7 @@ func TestCrawlCoversEveryRoute(t *testing.T) {
 var escapeHatch = regexp.MustCompile(`templ\.(Raw|Unsafe\w*|SafeScript\w*|SafeCSS\w*|JSUnsafeFuncCall|ComponentScript)\b`)
 
 func TestNoUnescapedOutput(t *testing.T) {
+	t.Parallel()
 	err := filepath.WalkDir(".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() || strings.HasSuffix(path, "_templ.go") || strings.HasSuffix(path, "_test.go") ||
 			(!strings.HasSuffix(path, ".templ") && !strings.HasSuffix(path, ".go")) {
@@ -186,17 +188,32 @@ func TestNoUnescapedOutput(t *testing.T) {
 }
 
 func TestCrawlExposesNothing(t *testing.T) {
+	t.Parallel()
+	// One handler (and mock controller) per state and method, built for the
+	// method it serves (notOnGET needs no shared state), keeps setup small;
+	// its routes run as parallel subtests so no single test is long.
 	for _, failing := range []bool{false, true} {
 		for _, signedIn := range []bool{false, true} {
-			h := crawlUI(t, failing, signedIn)
-			for _, c := range crawlTargets {
-				method, _, _ := strings.Cut(c.pattern, " ")
-				for _, path := range c.paths {
-					for _, ds := range []bool{false, true} {
-						name := strings.Join([]string{method, path, state(failing, "failing", "ok"), state(signedIn, "signed-in", "anonymous"), state(ds, "datastar", "plain")}, " ")
-						checkResponse(t, name, method, path, crawl(h, method, path, ds))
+			for _, method := range []string{http.MethodGet, http.MethodPost} {
+				st := state(failing, "failing", "ok") + "/" + state(signedIn, "signed-in", "anonymous")
+				t.Run(st+"/"+method, func(t *testing.T) {
+					t.Parallel()
+					h := crawlUI(t, method, failing, signedIn)
+					for _, c := range crawlTargets {
+						if m, _, _ := strings.Cut(c.pattern, " "); m != method {
+							continue
+						}
+						t.Run(c.pattern, func(t *testing.T) {
+							t.Parallel()
+							for _, path := range c.paths {
+								for _, ds := range []bool{false, true} {
+									name := strings.Join([]string{method, path, st, state(ds, "datastar", "plain")}, " ")
+									checkResponse(t, name, method, path, crawl(h, method, path, ds))
+								}
+							}
+						})
 					}
-				}
+				})
 			}
 		}
 	}
@@ -210,8 +227,9 @@ func state(b bool, yes, no string) string {
 }
 
 // crawlUI is the real UI handler over mocks that answer anything: test data,
-// or (failing) internal errors carrying canary text.
-func crawlUI(t *testing.T, failing, signedIn bool) http.Handler {
+// or (failing) internal errors carrying canary text. It serves only requests
+// with method, which notOnGET checks state-changing port calls against.
+func crawlUI(t *testing.T, method string, failing, signedIn bool) http.Handler {
 	ctrl := gomock.NewController(t)
 	a, u := mocks.NewMockAuth(ctrl), mocks.NewMockUsers(ctrl)
 	var fail error
@@ -226,30 +244,30 @@ func crawlUI(t *testing.T, failing, signedIn bool) http.Handler {
 		{ID: "sess-2", CreatedAt: time.Now(), ExpiresAt: time.Now().Add(time.Hour), IPAddress: &ip, UserAgent: &agent},
 	}
 
-	a.EXPECT().SignUpEmail(notOnGET(t, "SignUpEmail"), gomock.Any()).Return(user, sess, fail).AnyTimes()
-	a.EXPECT().SignInEmail(notOnGET(t, "SignInEmail"), gomock.Any()).Return(user, sess, fail).AnyTimes()
-	a.EXPECT().SignOut(notOnGET(t, "SignOut"), gomock.Any()).Return(fail).AnyTimes()
-	a.EXPECT().RequestPasswordReset(notOnGET(t, "RequestPasswordReset"), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
-	a.EXPECT().ResetPassword(notOnGET(t, "ResetPassword"), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
-	a.EXPECT().VerifyEmail(notOnGET(t, "VerifyEmail"), gomock.Any()).Return(user, sess, fail).AnyTimes()
-	a.EXPECT().SendVerificationEmail(notOnGET(t, "SendVerificationEmail"), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
+	a.EXPECT().SignUpEmail(notOnGET(t, method, "SignUpEmail"), gomock.Any()).Return(user, sess, fail).AnyTimes()
+	a.EXPECT().SignInEmail(notOnGET(t, method, "SignInEmail"), gomock.Any()).Return(user, sess, fail).AnyTimes()
+	a.EXPECT().SignOut(notOnGET(t, method, "SignOut"), gomock.Any()).Return(fail).AnyTimes()
+	a.EXPECT().RequestPasswordReset(notOnGET(t, method, "RequestPasswordReset"), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
+	a.EXPECT().ResetPassword(notOnGET(t, method, "ResetPassword"), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
+	a.EXPECT().VerifyEmail(notOnGET(t, method, "VerifyEmail"), gomock.Any()).Return(user, sess, fail).AnyTimes()
+	a.EXPECT().SendVerificationEmail(notOnGET(t, method, "SendVerificationEmail"), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
 	a.EXPECT().CheckCallbackURL(gomock.Any()).DoAndReturn(func(cb string) error {
 		if cb == "betterstack://verified" { // the mobile app's deep link
 			return nil
 		}
 		return errors.New("untrusted callback")
 	}).AnyTimes()
-	a.EXPECT().SetSessionCookie(notOnGET(t, "SetSessionCookie"), gomock.Any()).AnyTimes()
-	a.EXPECT().ClearSessionCookie(notOnGET(t, "ClearSessionCookie")).AnyTimes()
+	a.EXPECT().SetSessionCookie(notOnGET(t, method, "SetSessionCookie"), gomock.Any()).AnyTimes()
+	a.EXPECT().ClearSessionCookie(notOnGET(t, method, "ClearSessionCookie")).AnyTimes()
 
 	u.EXPECT().GetProfile(gomock.Any(), gomock.Any(), gomock.Any()).Return(services.User(user), fail).AnyTimes()
-	u.EXPECT().UpdateProfile(notOnGET(t, "UpdateProfile"), gomock.Any(), gomock.Any(), gomock.Any()).Return(services.User(user), fail).AnyTimes()
-	u.EXPECT().RequestEmailChange(notOnGET(t, "RequestEmailChange"), gomock.Any(), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
-	u.EXPECT().ChangePassword(notOnGET(t, "ChangePassword"), gomock.Any(), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
+	u.EXPECT().UpdateProfile(notOnGET(t, method, "UpdateProfile"), gomock.Any(), gomock.Any(), gomock.Any()).Return(services.User(user), fail).AnyTimes()
+	u.EXPECT().RequestEmailChange(notOnGET(t, method, "RequestEmailChange"), gomock.Any(), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
+	u.EXPECT().ChangePassword(notOnGET(t, method, "ChangePassword"), gomock.Any(), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
 	u.EXPECT().ListSessions(gomock.Any(), gomock.Any(), gomock.Any()).Return(sessions, fail).AnyTimes()
-	u.EXPECT().RevokeSession(notOnGET(t, "RevokeSession"), gomock.Any(), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
-	u.EXPECT().RevokeOtherSessions(notOnGET(t, "RevokeOtherSessions"), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
-	u.EXPECT().DeleteAccount(notOnGET(t, "DeleteAccount"), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
+	u.EXPECT().RevokeSession(notOnGET(t, method, "RevokeSession"), gomock.Any(), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
+	u.EXPECT().RevokeOtherSessions(notOnGET(t, method, "RevokeOtherSessions"), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
+	u.EXPECT().DeleteAccount(notOnGET(t, method, "DeleteAccount"), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
 	u.EXPECT().DataSummary(gomock.Any(), gomock.Any(), gomock.Any()).Return(services.UserDataSummary{User: services.User(user), Sessions: 2}, fail).AnyTimes()
 
 	return ui.New(ui.Deps{
@@ -264,17 +282,14 @@ func crawlUI(t *testing.T, failing, signedIn bool) http.Handler {
 	}).Handler()
 }
 
-// crawlMethod is the method of the request being crawled (tests run the
-// crawl sequentially).
-var crawlMethod string
-
 // notOnGET matches any argument but fails the test when a state-changing
-// port is called while a GET is served: mail scanners and link previews
-// fetch links, so opening a page (an emailed link above all) must never
-// spend a token, sign in or change anything.
-func notOnGET(t *testing.T, port string) gomock.Matcher {
+// port is called while a GET is served (method is the one method the
+// handler under test serves): mail scanners and link previews fetch links,
+// so opening a page (an emailed link above all) must never spend a token,
+// sign in or change anything.
+func notOnGET(t *testing.T, method, port string) gomock.Matcher {
 	return gomock.Cond(func(any) bool {
-		if crawlMethod == http.MethodGet {
+		if method == http.MethodGet {
 			t.Errorf("GET called %s: only a POST may change state", port)
 		}
 		return true
@@ -287,7 +302,6 @@ func crawl(h http.Handler, method, path string, ds bool) *httptest.ResponseRecor
 	if method == http.MethodPost {
 		body = strings.NewReader(crawlForm.Encode())
 	}
-	crawlMethod = method
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	r := httptest.NewRequestWithContext(ctx, method, "https://app.example"+path, body)
@@ -323,14 +337,7 @@ func (f *firstEvent) Flush() {
 func checkResponse(t *testing.T, name, method, path string, rec *httptest.ResponseRecorder) {
 	t.Helper()
 	h, body := rec.Header(), rec.Body.String()
-	for _, re := range leaks {
-		if strings.HasPrefix(h.Get("Content-Type"), "text/javascript") && re.String() != "CANARY" && re.String() != `/api/` {
-			continue // the Datastar bundle is pinned (TestDatastarPin); only check it for secrets and API paths
-		}
-		if m := re.FindString(body); m != "" {
-			t.Errorf("%s: body contains %q (%s)", name, m, re)
-		}
-	}
+	checkBody(t, name, h.Get("Content-Type"), body)
 	for k, vs := range h {
 		for _, v := range vs {
 			if strings.Contains(v, "CANARY") || strings.Contains(v, "/api/") {
@@ -422,25 +429,57 @@ func checkResponse(t *testing.T, name, method, path string, rec *httptest.Respon
 		}
 	}
 
-	// Injected markup stays text, and never breaks out of a JS string in a
-	// Datastar expression.
-	if strings.Contains(body, `<img data-init="XSSPROBE"`) {
-		t.Errorf("%s: probe rendered as a tag", name)
-	}
-	for _, v := range dataAttr.FindAllStringSubmatch(body, -1) {
-		if jsBreakout.MatchString(html.UnescapeString(v[1])) {
-			t.Errorf("%s: probe breaks out of a data-* expression: %s", name, v[0])
-		}
-	}
 	// Open-redirect probes never become a destination.
 	if loc := h.Get("Location"); strings.Contains(loc, evil) {
 		t.Errorf("%s: redirects to %s", name, loc)
+	}
+}
+
+// checkedBodies holds the bodies (content type + body) that passed checkBody.
+// Static assets come back byte-identical in every state and mode, and
+// re-scanning them is most of the crawl's time under -race; a failing body
+// is not stored, so it is reported for every response that carries it.
+var checkedBodies sync.Map
+
+// checkBody runs the checks that depend only on the response body.
+func checkBody(t *testing.T, name, contentType, body string) {
+	t.Helper()
+	key := contentType + "\x00" + body
+	if _, ok := checkedBodies.Load(key); ok {
+		return
+	}
+	ok := true
+	errorf := func(format string, args ...any) {
+		t.Helper()
+		ok = false
+		t.Errorf(format, args...)
+	}
+	for _, re := range leaks {
+		if strings.HasPrefix(contentType, "text/javascript") && re.String() != "CANARY" && re.String() != `/api/` {
+			continue // the Datastar bundle is pinned (TestDatastarPin); only check it for secrets and API paths
+		}
+		if m := re.FindString(body); m != "" {
+			errorf("%s: body contains %q (%s)", name, m, re)
+		}
+	}
+	// Injected markup stays text, and never breaks out of a JS string in a
+	// Datastar expression.
+	if strings.Contains(body, `<img data-init="XSSPROBE"`) {
+		errorf("%s: probe rendered as a tag", name)
+	}
+	for _, v := range dataAttr.FindAllStringSubmatch(body, -1) {
+		if jsBreakout.MatchString(html.UnescapeString(v[1])) {
+			errorf("%s: probe breaks out of a data-* expression: %s", name, v[0])
+		}
 	}
 	for _, m := range navTarget.FindAllStringSubmatch(html.UnescapeString(body), -1) {
 		// Browsers drop tabs and newlines and treat \ as /.
 		target := strings.NewReplacer("\t", "", "\n", "", "\r", "", `\\`, "/").Replace(m[1])
 		if strings.Contains(target, evil) && (strings.HasPrefix(target, "//") || strings.Contains(target, "://")) {
-			t.Errorf("%s: navigates off-site: %q", name, m[1])
+			errorf("%s: navigates off-site: %q", name, m[1])
 		}
+	}
+	if ok {
+		checkedBodies.Store(key, struct{}{})
 	}
 }

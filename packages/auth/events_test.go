@@ -54,6 +54,7 @@ func withEvents(l *eventLog, more ...func(*Config)) func(*Config) {
 }
 
 func TestEventsForAccountFlows(t *testing.T) {
+	t.Parallel()
 	log := &eventLog{}
 	h := newHarness(t, withEvents(log))
 	ctx := context.Background()
@@ -169,6 +170,7 @@ func TestEventsForAccountFlows(t *testing.T) {
 }
 
 func TestTwoFactorEventsNameTheChallengedUser(t *testing.T) {
+	t.Parallel()
 	log := &eventLog{}
 	h := newHarness(t, withEvents(log, with2FA(false)))
 	email := uniqueEmail(t)
@@ -202,6 +204,7 @@ func TestTwoFactorEventsNameTheChallengedUser(t *testing.T) {
 // TestEventsNeverCarrySecrets serialises every event of a busy session and
 // looks for the tokens, passwords and codes involved.
 func TestEventsNeverCarrySecrets(t *testing.T) {
+	t.Parallel()
 	log := &eventLog{}
 	h := newHarness(t, withEvents(log, with2FA(false)))
 	email := uniqueEmail(t)
@@ -224,6 +227,7 @@ func TestEventsNeverCarrySecrets(t *testing.T) {
 }
 
 func TestEventHandlerCannotBreakAuth(t *testing.T) {
+	t.Parallel()
 	// A panicking handler: auth keeps working and Shutdown still returns.
 	panicky := newHarness(t, func(c *Config) { c.Events = func(context.Context, Event) { panic("boom") } })
 	email := uniqueEmail(t)
@@ -344,6 +348,7 @@ func TestEventHandlerCannotBreakAuth(t *testing.T) {
 }
 
 func TestStandaloneUserAdminEvents(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, nil)
 	ctx := context.Background()
 	email := uniqueEmail(t)

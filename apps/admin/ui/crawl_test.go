@@ -127,6 +127,7 @@ var crawlForm = url.Values{
 }
 
 func TestCrawlCoversEveryRoute(t *testing.T) {
+	t.Parallel()
 	rec := &patternRecorder{}
 	ctrl := gomock.NewController(t)
 	ui.New(ui.Deps{
@@ -156,6 +157,7 @@ func TestCrawlCoversEveryRoute(t *testing.T) {
 var escapeHatch = regexp.MustCompile(`templ\.(Raw|Unsafe\w*|SafeScript\w*|SafeCSS\w*|JSUnsafeFuncCall|ComponentScript)\b`)
 
 func TestNoUnescapedOutput(t *testing.T) {
+	t.Parallel()
 	err := filepath.WalkDir(".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() || strings.HasSuffix(path, "_templ.go") || strings.HasSuffix(path, "_test.go") ||
 			(!strings.HasSuffix(path, ".templ") && !strings.HasSuffix(path, ".go")) {
@@ -176,17 +178,31 @@ func TestNoUnescapedOutput(t *testing.T) {
 }
 
 func TestCrawlExposesNothing(t *testing.T) {
+	t.Parallel()
+	// One handler (and mock controller) per state and method keeps setup
+	// small; its routes run as parallel subtests so no single test is long.
 	for _, failing := range []bool{false, true} {
 		for _, signedIn := range []bool{false, true} {
-			h := crawlUI(t, failing, signedIn)
-			for _, c := range crawlTargets {
-				method, _, _ := strings.Cut(c.pattern, " ")
-				for _, path := range c.paths {
-					for _, ds := range []bool{false, true} {
-						name := strings.Join([]string{method, path, state(failing, "failing", "ok"), state(signedIn, "signed-in", "anonymous"), state(ds, "datastar", "plain")}, " ")
-						checkResponse(t, name, method, path, crawl(h, method, path, ds))
+			for _, method := range []string{http.MethodGet, http.MethodPost} {
+				st := state(failing, "failing", "ok") + "/" + state(signedIn, "signed-in", "anonymous")
+				t.Run(st+"/"+method, func(t *testing.T) {
+					t.Parallel()
+					cr := crawlUI(t, method, failing, signedIn)
+					for _, c := range crawlTargets {
+						if m, _, _ := strings.Cut(c.pattern, " "); m != method {
+							continue
+						}
+						t.Run(c.pattern, func(t *testing.T) {
+							t.Parallel()
+							for _, path := range c.paths {
+								for _, ds := range []bool{false, true} {
+									name := strings.Join([]string{method, path, st, state(ds, "datastar", "plain")}, " ")
+									checkResponse(t, name, method, path, cr.crawl(method, path, ds))
+								}
+							}
+						})
 					}
-				}
+				})
 			}
 		}
 	}
@@ -199,9 +215,17 @@ func state(b bool, yes, no string) string {
 	return no
 }
 
+// crawler is one real UI handler that serves one method (notOnGET reads it).
+// Route subtests share it and send their requests concurrently.
+type crawler struct {
+	h      http.Handler
+	method string
+}
+
 // crawlUI is the real UI handler over mocks that answer anything: test data,
 // or (failing) internal errors carrying canary text.
-func crawlUI(t *testing.T, failing, signedIn bool) http.Handler {
+func crawlUI(t *testing.T, method string, failing, signedIn bool) *crawler {
+	cr := &crawler{method: method}
 	ctrl := gomock.NewController(t)
 	a := mocks.NewMockAuth(ctrl)
 	us, ad, au, an := mocks.NewMockUsers(ctrl), mocks.NewMockAdmins(ctrl), mocks.NewMockAudit(ctrl), mocks.NewMockAnalytics(ctrl)
@@ -218,37 +242,37 @@ func crawlUI(t *testing.T, failing, signedIn bool) http.Handler {
 	detail := services.UserDetail{User: user, Sessions: []services.Session{{ID: "us1", CreatedAt: now, ExpiresAt: now.Add(time.Hour), IPAddress: &ip, UserAgent: &agent}}}
 	audit := services.AuditPage{Total: 1, Limit: 50, Entries: []services.AuditEntry{{ID: 1, ActorID: "a1", ActorEmail: "root@example.com", Action: services.ActionUserBan, TargetType: "user", TargetID: "u1", TargetLabel: "ada " + xssProbe, Details: map[string]string{"reason": xssProbe}, CreatedAt: now}}}
 
-	a.EXPECT().SignIn(notOnGET(t, "SignIn"), gomock.Any(), gomock.Any()).Return(sess, fail).AnyTimes()
-	a.EXPECT().SignOut(notOnGET(t, "SignOut"), gomock.Any()).Return(fail).AnyTimes()
-	a.EXPECT().CompleteSetPassword(notOnGET(t, "CompleteSetPassword"), gomock.Any(), gomock.Any()).Return(sess, fail).AnyTimes()
-	a.EXPECT().VerifyTwoFactor(notOnGET(t, "VerifyTwoFactor"), gomock.Any()).Return(sess, "trust-tok", fail).AnyTimes()
+	a.EXPECT().SignIn(cr.notOnGET(t, "SignIn"), gomock.Any(), gomock.Any()).Return(sess, fail).AnyTimes()
+	a.EXPECT().SignOut(cr.notOnGET(t, "SignOut"), gomock.Any()).Return(fail).AnyTimes()
+	a.EXPECT().CompleteSetPassword(cr.notOnGET(t, "CompleteSetPassword"), gomock.Any(), gomock.Any()).Return(sess, fail).AnyTimes()
+	a.EXPECT().VerifyTwoFactor(cr.notOnGET(t, "VerifyTwoFactor"), gomock.Any()).Return(sess, "trust-tok", fail).AnyTimes()
 	// StartTwoFactorSetup runs on GET /two-factor/setup on purpose: it needs
 	// the HttpOnly challenge cookie a set-password or sign-in POST just set,
 	// which a link scanner never has, and is not behind an emailed link.
 	a.EXPECT().StartTwoFactorSetup(gomock.Any()).Return(setup, fail).AnyTimes()
-	a.EXPECT().EnableTwoFactor(notOnGET(t, "EnableTwoFactor"), gomock.Any(), gomock.Any()).Return(setup, fail).AnyTimes()
-	a.EXPECT().ConfirmTwoFactor(notOnGET(t, "ConfirmTwoFactor"), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
-	a.EXPECT().SetSessionCookie(notOnGET(t, "SetSessionCookie"), gomock.Any()).AnyTimes()
-	a.EXPECT().ClearSessionCookie(notOnGET(t, "ClearSessionCookie")).AnyTimes()
-	a.EXPECT().SetTwoFactorCookie(notOnGET(t, "SetTwoFactorCookie"), gomock.Any()).AnyTimes()
-	a.EXPECT().SetTrustDeviceCookie(notOnGET(t, "SetTrustDeviceCookie"), gomock.Any()).AnyTimes()
+	a.EXPECT().EnableTwoFactor(cr.notOnGET(t, "EnableTwoFactor"), gomock.Any(), gomock.Any()).Return(setup, fail).AnyTimes()
+	a.EXPECT().ConfirmTwoFactor(cr.notOnGET(t, "ConfirmTwoFactor"), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
+	a.EXPECT().SetSessionCookie(cr.notOnGET(t, "SetSessionCookie"), gomock.Any()).AnyTimes()
+	a.EXPECT().ClearSessionCookie(cr.notOnGET(t, "ClearSessionCookie")).AnyTimes()
+	a.EXPECT().SetTwoFactorCookie(cr.notOnGET(t, "SetTwoFactorCookie"), gomock.Any()).AnyTimes()
+	a.EXPECT().SetTrustDeviceCookie(cr.notOnGET(t, "SetTrustDeviceCookie"), gomock.Any()).AnyTimes()
 
 	us.EXPECT().ListUsers(gomock.Any(), gomock.Any(), gomock.Any()).Return(services.UserPage{Users: []services.User{user}, Total: 1, Limit: 50}, fail).AnyTimes()
 	us.EXPECT().GetUser(gomock.Any(), gomock.Any(), gomock.Any()).Return(detail, fail).AnyTimes()
-	us.EXPECT().BanUser(notOnGET(t, "BanUser"), gomock.Any(), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
-	us.EXPECT().UnbanUser(notOnGET(t, "UnbanUser"), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
-	us.EXPECT().SetRole(notOnGET(t, "SetRole"), gomock.Any(), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
-	us.EXPECT().RevokeSession(notOnGET(t, "RevokeSession"), gomock.Any(), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
-	us.EXPECT().RevokeSessions(notOnGET(t, "RevokeSessions"), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
+	us.EXPECT().BanUser(cr.notOnGET(t, "BanUser"), gomock.Any(), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
+	us.EXPECT().UnbanUser(cr.notOnGET(t, "UnbanUser"), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
+	us.EXPECT().SetRole(cr.notOnGET(t, "SetRole"), gomock.Any(), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
+	us.EXPECT().RevokeSession(cr.notOnGET(t, "RevokeSession"), gomock.Any(), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
+	us.EXPECT().RevokeSessions(cr.notOnGET(t, "RevokeSessions"), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
 	ad.EXPECT().ListAdmins(gomock.Any(), gomock.Any()).Return([]services.Admin{{ID: "a1", Name: "Root " + xssProbe, Email: "root@example.com", CreatedAt: now, TwoFactorEnabled: true, HasPassword: true}}, fail).AnyTimes()
-	ad.EXPECT().InviteAdmin(notOnGET(t, "InviteAdmin"), gomock.Any(), gomock.Any()).Return(services.Admin{ID: "a2", Email: "new@example.com", CreatedAt: now}, fail).AnyTimes()
-	ad.EXPECT().DisableAdmin(notOnGET(t, "DisableAdmin"), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
-	ad.EXPECT().EnableAdmin(notOnGET(t, "EnableAdmin"), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
-	ad.EXPECT().RemoveAdmin(notOnGET(t, "RemoveAdmin"), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
+	ad.EXPECT().InviteAdmin(cr.notOnGET(t, "InviteAdmin"), gomock.Any(), gomock.Any()).Return(services.Admin{ID: "a2", Email: "new@example.com", CreatedAt: now}, fail).AnyTimes()
+	ad.EXPECT().DisableAdmin(cr.notOnGET(t, "DisableAdmin"), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
+	ad.EXPECT().EnableAdmin(cr.notOnGET(t, "EnableAdmin"), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
+	ad.EXPECT().RemoveAdmin(cr.notOnGET(t, "RemoveAdmin"), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
 	au.EXPECT().List(gomock.Any(), gomock.Any(), gomock.Any()).Return(audit, fail).AnyTimes()
 	an.EXPECT().Overview(gomock.Any(), gomock.Any()).Return(services.Overview{TotalUsers: 3, VerifiedUsers: 2, BannedUsers: 1, GeneratedAt: now}, fail).AnyTimes()
 
-	return ui.New(ui.Deps{
+	cr.h = ui.New(ui.Deps{
 		Auth: a, Users: us, Admins: ad, Audit: au, Analytics: an,
 		UserFrom: func(context.Context) (ui.Admin, ui.Session, bool) {
 			return admin, sess, signedIn
@@ -257,19 +281,16 @@ func crawlUI(t *testing.T, failing, signedIn bool) http.Handler {
 		SecureCookies:    true,
 		Logger:           slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}).Handler()
+	return cr
 }
-
-// crawlMethod is the method of the request being crawled (tests run the
-// crawl sequentially).
-var crawlMethod string
 
 // notOnGET matches any argument but fails the test when a state-changing
 // port is called while a GET is served: mail scanners and link previews
 // fetch links, so opening a page (an emailed link above all) must never
 // spend a token, sign in or change anything.
-func notOnGET(t *testing.T, port string) gomock.Matcher {
+func (cr *crawler) notOnGET(t *testing.T, port string) gomock.Matcher {
 	return gomock.Cond(func(any) bool {
-		if crawlMethod == http.MethodGet {
+		if cr.method == http.MethodGet {
 			t.Errorf("GET called %s: only a POST may change state", port)
 		}
 		return true
@@ -277,12 +298,14 @@ func notOnGET(t *testing.T, port string) gomock.Matcher {
 }
 
 // crawl sends what a browser would. Streams are cut after their first write.
-func crawl(h http.Handler, method, path string, ds bool) *httptest.ResponseRecorder {
+func (cr *crawler) crawl(method, path string, ds bool) *httptest.ResponseRecorder {
 	var body io.Reader
 	if method == http.MethodPost {
 		body = strings.NewReader(crawlForm.Encode())
 	}
-	crawlMethod = method
+	if method != cr.method {
+		panic("crawler for " + cr.method + " asked to send " + method)
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	r := httptest.NewRequestWithContext(ctx, method, "https://admin.example"+path, body)
@@ -296,7 +319,7 @@ func crawl(h http.Handler, method, path string, ds bool) *httptest.ResponseRecor
 		r.Header.Set("Datastar-Request", "true")
 	}
 	rec := &firstEvent{ResponseRecorder: httptest.NewRecorder(), cancel: cancel}
-	h.ServeHTTP(rec, r)
+	cr.h.ServeHTTP(rec, r)
 	return rec.ResponseRecorder
 }
 
@@ -318,14 +341,7 @@ func (f *firstEvent) Flush() {
 func checkResponse(t *testing.T, name, method, path string, rec *httptest.ResponseRecorder) {
 	t.Helper()
 	h, body := rec.Header(), rec.Body.String()
-	for _, re := range leaks {
-		if strings.HasPrefix(h.Get("Content-Type"), "text/javascript") && re.String() != "CANARY" && re.String() != `/api/` {
-			continue // the Datastar bundle is pinned (TestDatastarPin); only check it for secrets and API paths
-		}
-		if m := re.FindString(body); m != "" {
-			t.Errorf("%s: body contains %q (%s)", name, m, re)
-		}
-	}
+	checkBody(t, name, h.Get("Content-Type"), body)
 	for k, vs := range h {
 		for _, v := range vs {
 			if strings.Contains(v, "CANARY") || strings.Contains(v, "/api/") {
@@ -417,25 +433,57 @@ func checkResponse(t *testing.T, name, method, path string, rec *httptest.Respon
 		}
 	}
 
-	// Injected markup stays text, and never breaks out of a JS string in a
-	// Datastar expression.
-	if strings.Contains(body, `<img data-init="XSSPROBE"`) {
-		t.Errorf("%s: probe rendered as a tag", name)
-	}
-	for _, v := range dataAttr.FindAllStringSubmatch(body, -1) {
-		if jsBreakout.MatchString(html.UnescapeString(v[1])) {
-			t.Errorf("%s: probe breaks out of a data-* expression: %s", name, v[0])
-		}
-	}
 	// Open-redirect probes never become a destination.
 	if loc := h.Get("Location"); strings.Contains(loc, evil) {
 		t.Errorf("%s: redirects to %s", name, loc)
+	}
+}
+
+// checkedBodies holds the bodies (content type + body) that passed checkBody.
+// Static assets come back byte-identical in every state and mode, and
+// re-scanning them is most of the crawl's time under -race; a failing body
+// is not stored, so it is reported for every response that carries it.
+var checkedBodies sync.Map
+
+// checkBody runs the checks that depend only on the response body.
+func checkBody(t *testing.T, name, contentType, body string) {
+	t.Helper()
+	key := contentType + "\x00" + body
+	if _, ok := checkedBodies.Load(key); ok {
+		return
+	}
+	ok := true
+	errorf := func(format string, args ...any) {
+		t.Helper()
+		ok = false
+		t.Errorf(format, args...)
+	}
+	for _, re := range leaks {
+		if strings.HasPrefix(contentType, "text/javascript") && re.String() != "CANARY" && re.String() != `/api/` {
+			continue // the Datastar bundle is pinned (TestDatastarPin); only check it for secrets and API paths
+		}
+		if m := re.FindString(body); m != "" {
+			errorf("%s: body contains %q (%s)", name, m, re)
+		}
+	}
+	// Injected markup stays text, and never breaks out of a JS string in a
+	// Datastar expression.
+	if strings.Contains(body, `<img data-init="XSSPROBE"`) {
+		errorf("%s: probe rendered as a tag", name)
+	}
+	for _, v := range dataAttr.FindAllStringSubmatch(body, -1) {
+		if jsBreakout.MatchString(html.UnescapeString(v[1])) {
+			errorf("%s: probe breaks out of a data-* expression: %s", name, v[0])
+		}
 	}
 	for _, m := range navTarget.FindAllStringSubmatch(html.UnescapeString(body), -1) {
 		// Browsers drop tabs and newlines and treat \ as /.
 		target := strings.NewReplacer("\t", "", "\n", "", "\r", "", `\\`, "/").Replace(m[1])
 		if strings.Contains(target, evil) && (strings.HasPrefix(target, "//") || strings.Contains(target, "://")) {
-			t.Errorf("%s: navigates off-site: %q", name, m[1])
+			errorf("%s: navigates off-site: %q", name, m[1])
 		}
+	}
+	if ok {
+		checkedBodies.Store(key, struct{}{})
 	}
 }

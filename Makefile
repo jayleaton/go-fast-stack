@@ -69,19 +69,23 @@ lint-layering: ## Prove forbidden imports (code and tests) fail lint
 	./scripts/check-layering.sh
 
 .PHONY: lint-tests
-lint-tests: ## Prove misplaced test files and coverage drops fail
+lint-tests: ## Prove misplaced test files, coverage drops and slow tests fail (PROFILE=<coverprofile> reuses a test run)
 	./scripts/check-test-probes.sh
 
+# go test -json through scripts/testbudget: plain go test output, the slowest
+# tests, and a failure when a package or test is over its time budget.
+GOTEST := set -o pipefail; $(GO) test -race -json -coverprofile=.cache/coverage.out ./... | $(GO) run ./scripts/testbudget
+
 .PHONY: test
-test: ## go test -race against this checkout's throwaway Postgres (or TEST_DATABASE_URL), then coverage floors
+test: ## go test -race against this checkout's throwaway Postgres (or TEST_DATABASE_URL), then time budgets and coverage floors
 	@mkdir -p .cache
 ifdef TEST_DATABASE_URL
-	$(GO) test -race -coverprofile=.cache/coverage.out ./...
+	bash -c '$(GOTEST)'
 else
 	@$(MAKE) --no-print-directory test-db-up
 	@port=$$($(COMPOSE) port postgres-test 5432 | sed 's/.*://'); \
 	  echo "test db: 127.0.0.1:$$port (project $(COMPOSE_PROJECT_NAME))"; \
-	  TEST_DATABASE_URL="postgres://postgres:postgres@127.0.0.1:$$port/postgres?sslmode=disable" $(GO) test -race -coverprofile=.cache/coverage.out ./...
+	  TEST_DATABASE_URL="postgres://postgres:postgres@127.0.0.1:$$port/postgres?sslmode=disable" bash -c '$(GOTEST)'
 endif
 	./scripts/check-coverage.sh .cache/coverage.out
 
@@ -92,12 +96,22 @@ ci: ## Run the same checks as CI
 	$(MAKE) lint test
 	@# Alone: their temporary probe files would leak into the other checks under make -j.
 	$(MAKE) lint-layering
-	$(MAKE) lint-tests
+	$(MAKE) lint-tests PROFILE=.cache/coverage.out # the probes reuse make test's profile
 	$(MAKE) deploy-check
 
 .PHONY: affected
 affected: ## Show what CI checks for this branch (packages affected vs origin/main)
 	./scripts/affected.sh
+
+.PHONY: bench-devloop
+bench-devloop: ## Print dev-loop timings: build, generate, lint, probes, tests per package (BENCH_COLD=1: also cold caches)
+ifdef TEST_DATABASE_URL
+	./scripts/bench-devloop.sh
+else
+	@$(MAKE) --no-print-directory test-db-up
+	@port=$$($(COMPOSE) port postgres-test 5432 | sed 's/.*://'); \
+	  TEST_DATABASE_URL="postgres://postgres:postgres@127.0.0.1:$$port/postgres?sslmode=disable" ./scripts/bench-devloop.sh
+endif
 
 .PHONY: migrate
 migrate: ## Run auth then app migrations against DATABASE_URL

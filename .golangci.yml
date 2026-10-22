@@ -14,8 +14,10 @@ linters:
     - misspell
     - nilerr
     - noctx
+    - paralleltest # fast tests: every test calls t.Parallel() (AGENTS.md "Fast tests")
     - rowserrcheck
     - sqlclosecheck
+    - tparallel
     - unconvert
     - usestdlibvars
     - wastedassign
@@ -32,6 +34,14 @@ linters:
         - pattern: ^auth\.Auth\.Users$
           pkg: ^github\.com/jayleaton/ai-patterns-go/packages/auth$
           msg: user administration (ban, roles, any user's sessions) is for apps/admin only
+        # Tests only (see exclusions): a test that sleeps is slow and flaky.
+        - pattern: ^time\.Sleep$
+          msg: tests never sleep; wait on a channel or condition, or use testing/synctest for a fake clock (AGENTS.md "Fast tests")
+    # Top-level tests must call t.Parallel(); a test that cannot (shared
+    # global state) says why with //nolint:paralleltest // <reason>.
+    # Subtests are parallel where they are slow; tparallel keeps it consistent.
+    paralleltest:
+      ignore-missing-subtests: true
     # Layering: packages/database -> services -> transports (api, ui), for
     # apps/web and apps/admin alike. See AGENTS.md "Architecture".
     depguard:
@@ -303,6 +313,9 @@ linters:
       - path: (apps/admin|packages/auth)/
         linters: [forbidigo]
         text: is for apps/admin only
+      - path-except: _test\.go
+        linters: [forbidigo]
+        text: tests never sleep
 
 formatters:
   enable:

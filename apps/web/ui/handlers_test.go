@@ -16,6 +16,7 @@ import (
 )
 
 func TestPages(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t, config.Features{TemplateWelcome: true})
 	pages := []string{
 		config.AppRoutes.Home, config.AppRoutes.Why, config.AppRoutes.Login, config.AppRoutes.Signup,
@@ -53,10 +54,12 @@ func TestPages(t *testing.T) {
 }
 
 func TestLogin(t *testing.T) {
+	t.Parallel()
 	form := url.Values{"email": {" demo@example.com "}, "password": {"password123"}}
 	in := ui.SignInInput{Email: "demo@example.com", Password: "password123", CallbackURL: config.AppRoutes.VerifyEmailSuccess}
 
 	t.Run("success", func(t *testing.T) {
+		t.Parallel()
 		e := newEnv(t, config.Features{})
 		e.auth.EXPECT().SignInEmail(gomock.Any(), in).Return(demoUser, demoSession, nil)
 		e.auth.EXPECT().SetSessionCookie(gomock.Any(), demoSession).Do(setCookie)
@@ -68,6 +71,7 @@ func TestLogin(t *testing.T) {
 	})
 
 	t.Run("without JS", func(t *testing.T) {
+		t.Parallel()
 		e := newEnv(t, config.Features{})
 		e.auth.EXPECT().SignInEmail(gomock.Any(), in).Return(demoUser, demoSession, nil)
 		e.auth.EXPECT().SetSessionCookie(gomock.Any(), demoSession)
@@ -83,6 +87,7 @@ func TestLogin(t *testing.T) {
 	// Every auth error the UI knows renders translated; unknown ones generically.
 	for _, ae := range ui.AuthErrors {
 		t.Run(ae.Key, func(t *testing.T) {
+			t.Parallel()
 			e := newEnv(t, config.Features{})
 			e.auth.EXPECT().SignInEmail(gomock.Any(), in).Return(ui.User{}, ui.Session{}, ae.Err)
 			if ae.Key == "pages.verifyEmail.description" { // unverified: a fresh link goes out
@@ -98,6 +103,7 @@ func TestLogin(t *testing.T) {
 		assertSSE(t, e.do(http.MethodPost, config.AppRoutes.Login, form, datastar), `id="form-error"`, en("pages.verifyEmail.checkEmail"))
 	})
 	t.Run("unknown error", func(t *testing.T) {
+		t.Parallel()
 		e := newEnv(t, config.Features{})
 		e.auth.EXPECT().SignInEmail(gomock.Any(), in).Return(ui.User{}, ui.Session{}, errors.New("db down"))
 		assertSSE(t, e.do(http.MethodPost, config.AppRoutes.Login, form, datastar), en("errors.somethingWentWrong"))
@@ -105,6 +111,7 @@ func TestLogin(t *testing.T) {
 }
 
 func TestSignup(t *testing.T) {
+	t.Parallel()
 	form := url.Values{"name": {"Grace"}, "email": {"grace@example.com"}, "password": {"password123"}}
 	in := ui.SignUpInput{Name: "Grace", Email: "grace@example.com", Password: "password123", CallbackURL: config.AppRoutes.VerifyEmailSuccess}
 
@@ -123,6 +130,7 @@ func TestSignup(t *testing.T) {
 }
 
 func TestForgotAndResetPassword(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t, config.Features{})
 	e.auth.EXPECT().RequestPasswordReset(gomock.Any(), "demo@example.com", config.AppRoutes.ResetPassword).Return(nil)
 	assertSSE(t, e.do(http.MethodPost, config.AppRoutes.ForgotPassword, url.Values{"email": {"demo@example.com"}}, datastar), `id="forgot-password"`, en("pages.forgotPassword.emailSent"))
@@ -160,6 +168,7 @@ func TestForgotAndResetPassword(t *testing.T) {
 }
 
 func TestVerifyEmail(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t, config.Features{EmailVerification: true})
 	e.auth.EXPECT().SendVerificationEmail(gomock.Any(), "new@example.com", config.AppRoutes.VerifyEmailSuccess).Return(nil)
 	assertSSE(t, e.do(http.MethodPost, config.AppRoutes.VerifyEmail, url.Values{"email": {"new@example.com"}}, datastar, lang("ja")),
@@ -211,6 +220,7 @@ func TestVerifyEmail(t *testing.T) {
 }
 
 func TestLogout(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t, config.Features{})
 	e.signedIn("sess-1")
 	e.auth.EXPECT().SignOut(gomock.Any(), demoSession.Token).Return(nil)
@@ -219,6 +229,7 @@ func TestLogout(t *testing.T) {
 }
 
 func TestLocaleSwitch(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t, config.Features{})
 	rec := e.do(http.MethodPost, routes.Locale, url.Values{"locale": {"ja"}, "next": {"/login?x=1"}})
 	assertSeeOther(t, rec, "/login?x=1")
@@ -246,6 +257,7 @@ func TestLocaleSwitch(t *testing.T) {
 }
 
 func TestActionsRejectCrossOrigin(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t, config.Features{})
 	rec := e.do(http.MethodPost, config.AppRoutes.Login, url.Values{"email": {"a@b.c"}}, func(r *http.Request) {
 		r.Header.Set("Sec-Fetch-Site", "cross-site")

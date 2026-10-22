@@ -25,6 +25,7 @@ func valid() map[string]string {
 }
 
 func TestLoadDevelopmentDefaults(t *testing.T) {
+	t.Parallel()
 	kv := valid()
 	kv["PORT"] = "3000" // the web app's; ADMIN_PORT unset falls back to it
 	kv["ADMIN_BOOTSTRAP_EMAIL"] = " Root@Example.com "
@@ -51,6 +52,7 @@ func TestLoadDevelopmentDefaults(t *testing.T) {
 }
 
 func TestLoadProductionDefaultsTo2FA(t *testing.T) {
+	t.Parallel()
 	kv := valid()
 	kv["APP_ENV"], kv["RESEND_API_KEY"] = "production", "re_x"
 	cfg, err := Load(env(kv))
@@ -64,6 +66,7 @@ func TestLoadProductionDefaultsTo2FA(t *testing.T) {
 }
 
 func TestLoadReportsEveryProblem(t *testing.T) {
+	t.Parallel()
 	_, err := Load(env(map[string]string{
 		"APP_ENV": "production", "ADMIN_PUBLIC_URL": "https://admin.example.com/path",
 		"ADMIN_REQUIRE_2FA": "maybe", "ADMIN_BOOTSTRAP_EMAIL": "root",
@@ -79,6 +82,7 @@ func TestLoadReportsEveryProblem(t *testing.T) {
 }
 
 func TestLoadRefusesSharedSecretsAndDatabases(t *testing.T) {
+	t.Parallel()
 	kv := valid()
 	kv["AUTH_SECRET"] = kv["ADMIN_AUTH_SECRET"]
 	kv["ADMIN_DATABASE_URL"] = kv["DATABASE_URL"]
@@ -89,6 +93,7 @@ func TestLoadRefusesSharedSecretsAndDatabases(t *testing.T) {
 }
 
 func TestLoadLiveSecrets(t *testing.T) {
+	t.Parallel()
 	kv := valid()
 	kv["ADMIN_AUTH_SECRET_PREVIOUS"] = strings.Repeat("p", 32)
 	kv["ADMIN_AUTH_SECRET_GRACE"] = "24h"
@@ -118,6 +123,7 @@ func TestLoadLiveSecrets(t *testing.T) {
 // A loaded Config prints, logs and marshals without its credentials, so
 // logging it (or a struct holding it) can never leak them.
 func TestConfigNeverPrintsSecrets(t *testing.T) {
+	t.Parallel()
 	values := []string{"apppass-4242", "adminpass-5353", "admin-secret-" + strings.Repeat("z", 32), "re_resend_9999"}
 	kv := valid()
 	kv["DATABASE_URL"] = "postgres://app:" + values[0] + "@db/app"
