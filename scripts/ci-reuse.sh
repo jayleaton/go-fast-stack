@@ -7,6 +7,8 @@
 #             github-actions[bot], recording exactly this tree
 #             ("success tree=<sha>"). Then ci-ok success is posted on the
 #             pushed commit with a pointer to that result.
+#             Also skipped when the pushed commit itself already has that
+#             success (main fast-forwarded to a merge-queue commit CI tested).
 #   schedule: the build cache for this commit already exists.
 # Anything else, or any doubt: skip=false and the run checks everything.
 # Env: EVENT, MESSAGE (head commit message), GH_TOKEN, GITHUB_REPOSITORY,
@@ -36,6 +38,15 @@ push) ;;
 esac
 
 tree=$(git rev-parse "$sha^{tree}")
+
+# The commit itself already passed (e.g. main fast-forwarded to a merge-queue
+# commit that CI tested): nothing to do.
+self=$(gh api "repos/$repo/commits/$sha/statuses" \
+  --jq '[.[] | select(.context == "ci-ok")][0] | "\(.state)|\(.creator.login)|\(.description)"' 2>/dev/null || true)
+if [ "$self" = "success|github-actions[bot]|success tree=$tree" ]; then
+  echo "commit ${sha:0:7} already has ci-ok success for tree $tree"
+  out true
+fi
 # PRs this commit came from: GitHub's association (squash/merge/rebase via the
 # PR), plus "(#N)" in the first line, which GitHub adds to squash-merge titles.
 prs=$(
