@@ -99,6 +99,16 @@ ci: ## Run the same checks as CI
 affected: ## Show what CI checks for this branch (packages affected vs origin/main)
 	./scripts/affected.sh
 
+.PHONY: bench-devloop
+bench-devloop: ## Print dev-loop timings: build, generate, lint, probes, tests per package (BENCH_COLD=1: also cold caches)
+ifdef TEST_DATABASE_URL
+	./scripts/bench-devloop.sh
+else
+	@$(MAKE) --no-print-directory test-db-up
+	@port=$$($(COMPOSE) port postgres-test 5432 | sed 's/.*://'); \
+	  TEST_DATABASE_URL="postgres://postgres:postgres@127.0.0.1:$$port/postgres?sslmode=disable" ./scripts/bench-devloop.sh
+endif
+
 .PHONY: migrate
 migrate: ## Run auth then app migrations against DATABASE_URL
 	$(GO) run ./apps/web/cmd/server migrate

@@ -1,0 +1,51 @@
+# Dev-loop timings on a CI-shaped runner (`make bench-devloop` with cold and
+# warm caches): build, generate, lint per linter, probes, and tests per
+# package with and without -race. The report is the run's summary page.
+# Run it by hand (Actions > Bench dev loop), or push any ref to a bench/*
+# branch to measure it, e.g. the base of a perf PR and its head.
+name: Bench dev loop
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['bench/**']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bench-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable
+    steps:
+      # Same Postgres as CI's db shard.
+      - name: Start Postgres
+        run: |
+          docker run -d --name pg -p 5432:5432 -e POSTGRES_PASSWORD=postgres \
+            --tmpfs /var/lib/postgresql postgres:18-alpine \
+            -c fsync=off -c synchronous_commit=off -c full_page_writes=off -c max_connections=200
+      - uses: actions/checkout@v7
+      # Read-only: the module cache CI saves. Build and lint caches start
+      # empty on purpose; the bench measures cold and warm itself.
+      - uses: actions/cache/restore@v6
+        with:
+          path: ~/go/pkg/mod
+          key: v7-gomod-${{ runner.os }}-${{ hashFiles('go.sum') }}
+          restore-keys: v7-gomod-${{ runner.os }}-
+      - name: Go toolchain and modules
+        run: |
+          go version
+          go mod download
+          go mod download -modfile=tools/go.mod
+      - name: Wait for Postgres
+        run: |
+          for _ in $(seq 1 120); do docker exec pg pg_isready -q -h 127.0.0.1 -U postgres && exit 0; sleep 0.5; done
+          docker logs pg; exit 1
+      - name: Bench
+        run: make bench-devloop BENCH_COLD=1
