@@ -26,7 +26,7 @@ type Caller struct {
 
 // Actor is the service-layer identity of the caller.
 func (c Caller) Actor() services.Actor {
-	return services.Actor{UserID: c.User.ID, Email: c.User.Email}
+	return services.Actor{UserID: c.User.ID, Email: c.User.Email, SessionID: c.Session.ID}
 }
 
 // CallerFrom reads the caller the auth middleware stored in the request

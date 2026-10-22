@@ -95,7 +95,7 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		return err
 	}
 
-	users := services.NewUserService(database.NewUserRepository(pool))
+	users := services.NewUserService(database.NewUserRepository(pool), server.NewAccountCredentials(authn))
 	handler := server.New(server.Deps{
 		Config: cfg,
 		Log:    log,

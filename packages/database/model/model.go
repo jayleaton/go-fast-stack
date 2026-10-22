@@ -29,7 +29,9 @@ type UserProfileUpdate struct {
 	Image    *string
 }
 
-// UserDataSummary lists what the app stores for a user (shown before account deletion).
+// UserDataSummary lists what the app stores for a user (shown before account
+// deletion). Add a count here for every app table that references "user".
 type UserDataSummary struct {
-	User User `json:"user"`
+	User     User  `json:"user"`
+	Sessions int64 `json:"sessions"`
 }

@@ -9,6 +9,18 @@ import (
 	"context"
 )
 
+const countUserSessions = `-- name: CountUserSessions :one
+SELECT count(*) FROM "session" WHERE "userId" = $1 AND "expiresAt" > now()
+`
+
+// Read-only: packages/auth owns "session"; the summary only counts rows.
+func (q *Queries) CountUserSessions(ctx context.Context, userid string) (int64, error) {
+	row := q.db.QueryRow(ctx, countUserSessions, userid)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const deleteUser = `-- name: DeleteUser :execrows
 DELETE FROM "user" WHERE id = $1
 `
@@ -19,25 +31,6 @@ func (q *Queries) DeleteUser(ctx context.Context, id string) (int64, error) {
 		return 0, err
 	}
 	return result.RowsAffected(), nil
-}
-
-const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, name, email, "emailVerified", image, "createdAt", "updatedAt" FROM "user" WHERE email = $1
-`
-
-func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error) {
-	row := q.db.QueryRow(ctx, getUserByEmail, email)
-	var i User
-	err := row.Scan(
-		&i.ID,
-		&i.Name,
-		&i.Email,
-		&i.EmailVerified,
-		&i.Image,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
 }
 
 const getUserByID = `-- name: GetUserByID :one

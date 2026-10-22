@@ -20,7 +20,8 @@ import (
 const origin = "http://app.test"
 
 // TestAuthWiring drives packages/auth through the real server: auth
-// endpoints, the session middleware, the caller adapter and the users API.
+// endpoints, the session middleware, the caller and credentials adapters and
+// the users API over the real repository.
 func TestAuthWiring(t *testing.T) {
 	t.Parallel()
 	pool := dbtest.New(t, dbtest.App)
@@ -34,7 +35,7 @@ func TestAuthWiring(t *testing.T) {
 		Log:    log,
 		DB:     pinger{},
 		Auth:   a,
-		Users:  api.NewUsers(services.NewUserService(database.NewUserRepository(pool)), CallerFrom),
+		Users:  api.NewUsers(services.NewUserService(database.NewUserRepository(pool), NewAccountCredentials(a)), CallerFrom),
 	})
 	do := func(method, path, body string, headers ...string) *httptest.ResponseRecorder {
 		t.Helper()
@@ -57,25 +58,30 @@ func TestAuthWiring(t *testing.T) {
 	cookie := rec.Result().Cookies()[0]
 	withCookie := []string{"Cookie", cookie.Name + "=" + cookie.Value, "Origin", origin}
 
-	rec = do("GET", config.APIRoutes.Users, "", withCookie...)
+	rec = do("GET", config.APIRoutes.Me, "", withCookie...)
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"email":"ada@example.com"`) {
 		t.Fatalf("GET users with cookie: %d %s", rec.Code, rec.Body)
 	}
-	rec = do("PATCH", config.APIRoutes.Users, `{"name":"Ada Lovelace"}`, withCookie...)
+	rec = do("PATCH", config.APIRoutes.Me, `{"name":"Ada Lovelace"}`, withCookie...)
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"name":"Ada Lovelace"`) {
 		t.Fatalf("PATCH users: %d %s", rec.Code, rec.Body)
 	}
 	bearer := []string{"Authorization", "Bearer " + signUp.Token}
-	rec = do("GET", config.APIRoutes.Users, "", bearer...)
+	rec = do("GET", config.APIRoutes.Me, "", bearer...)
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"name":"Ada Lovelace"`) {
 		t.Fatalf("GET users with bearer: %d %s", rec.Code, rec.Body)
+	}
+
+	rec = do("GET", config.APIRoutes.MeData, "", bearer...)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"sessions":1`) {
+		t.Fatalf("GET data summary: %d %s", rec.Code, rec.Body)
 	}
 
 	if rec = do("POST", "/api/auth/sign-out", "", withCookie...); rec.Code != http.StatusOK {
 		t.Fatalf("sign-out: %d %s", rec.Code, rec.Body)
 	}
 	for name, headers := range map[string][]string{"cookie": withCookie, "bearer": bearer} {
-		rec = do("GET", config.APIRoutes.Users, "", headers...)
+		rec = do("GET", config.APIRoutes.Me, "", headers...)
 		if rec.Code != http.StatusUnauthorized || strings.TrimSpace(rec.Body.String()) != `{"data":null,"error":"Unauthorized"}` {
 			t.Errorf("%s after sign-out: %d %s", name, rec.Code, rec.Body)
 		}

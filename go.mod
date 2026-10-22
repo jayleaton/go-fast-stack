@@ -3,8 +3,11 @@ module github.com/jayleaton/ai-patterns-go
 go 1.26.8
 
 require (
+	github.com/a-h/templ v0.3.1070
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/pressly/goose/v3 v3.29.0
+	github.com/starfederation/datastar-go v1.2.2
+	go.uber.org/mock v0.6.0
 	golang.org/x/crypto v0.58.0
 	golang.org/x/text v0.43.0
 )
@@ -12,7 +15,6 @@ require (
 require (
 	github.com/CAFxX/httpcompression v0.0.9 // indirect
 	github.com/a-h/parse v0.0.0-20250122154542-74294addb73e // indirect
-	github.com/a-h/templ v0.3.1070 // indirect
 	github.com/andybalholm/brotli v1.2.6 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cli/browser v1.3.0 // indirect
@@ -27,7 +29,6 @@ require (
 	github.com/mfridman/interpolate v0.0.2 // indirect
 	github.com/natefinch/atomic v1.0.1 // indirect
 	github.com/sethvargo/go-retry v0.5.0 // indirect
-	github.com/starfederation/datastar-go v1.2.2 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/mod v0.41.0 // indirect
@@ -37,4 +38,7 @@ require (
 	golang.org/x/tools v0.51.0 // indirect
 )
 
-tool github.com/a-h/templ/cmd/templ
+tool (
+	github.com/a-h/templ/cmd/templ
+	go.uber.org/mock/mockgen
+)

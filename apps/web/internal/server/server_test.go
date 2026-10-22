@@ -12,8 +12,6 @@ import (
 
 	"github.com/jayleaton/ai-patterns-go/apps/web/internal/api"
 	"github.com/jayleaton/ai-patterns-go/apps/web/internal/config"
-	"github.com/jayleaton/ai-patterns-go/apps/web/internal/services"
-	"github.com/jayleaton/ai-patterns-go/apps/web/internal/services/servicetest"
 )
 
 type pinger struct{ err error }
@@ -33,13 +31,12 @@ func (noAuth) Handler() http.Handler {
 }
 
 func newHandler(db Pinger, ui http.Handler) http.Handler {
-	users := services.NewUserService(servicetest.NewUsers())
 	return New(Deps{
 		Config: config.Config{TrustedOrigins: []string{"http://dev-box:3000"}},
 		Log:    slog.New(slog.NewTextHandler(io.Discard, nil)),
 		DB:     db,
 		Auth:   noAuth{},
-		Users:  api.NewUsers(users, CallerFrom),
+		Users:  api.NewUsers(nil, CallerFrom), // nobody is signed in, so no request reaches the service
 		UI:     ui,
 	})
 }
@@ -75,7 +72,7 @@ func TestMountsAndMiddleware(t *testing.T) {
 	}{
 		{"ui mounted at /", httptest.NewRequest(http.MethodGet, "/dashboard", nil), 200, "ui"},
 		{"auth mounted", httptest.NewRequest(http.MethodPost, "/api/auth/sign-in/email", nil), 501, `"error"`},
-		{"api needs a session", httptest.NewRequest(http.MethodGet, "/api/core/v1/users", nil), 401, `"Unauthorized"`},
+		{"api needs a session", httptest.NewRequest(http.MethodGet, "/api/core/v1/users/me", nil), 401, `"Unauthorized"`},
 		{"panics become 500 envelopes", httptest.NewRequest(http.MethodGet, "/boom", nil), 500, `"Internal server error"`},
 		{"cross-site writes are rejected", crossSite("https://evil.example"), 403, `"Cross-origin request rejected"`},
 		{"trusted origins pass", crossSite("http://dev-box:3000"), 401, `"Unauthorized"`},
@@ -89,7 +86,7 @@ func TestMountsAndMiddleware(t *testing.T) {
 }
 
 func crossSite(origin string) *http.Request {
-	req := httptest.NewRequest(http.MethodPatch, "/api/core/v1/users", strings.NewReader(`{}`))
+	req := httptest.NewRequest(http.MethodPatch, "/api/core/v1/users/me", strings.NewReader(`{}`))
 	req.Header.Set("Origin", origin)
 	req.Header.Set("Sec-Fetch-Site", "cross-site")
 	return req
