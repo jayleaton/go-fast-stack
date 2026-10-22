@@ -3,7 +3,6 @@ package auth
 import (
 	"crypto/hmac"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -34,12 +33,6 @@ func generateID(n int) string {
 	return string(out)
 }
 
-func (a *Auth) mac(value string) []byte {
-	m := hmac.New(sha256.New, []byte(a.cfg.Secret))
-	m.Write([]byte(value))
-	return m.Sum(nil)
-}
-
 // signValue returns value + "." + base64(HMAC-SHA256(secret, value)), the
 // better-call signed cookie format (before URL encoding).
 func (a *Auth) signValue(value string) string {
@@ -49,47 +42,59 @@ func (a *Auth) signValue(value string) string {
 // verifySigned checks a "value.signature" string and returns value. The input
 // may still be URL-encoded (cookie or bearer header).
 func (a *Auth) verifySigned(signed string) (string, bool) {
+	v, ok, _ := a.verifySignedKey(signed)
+	return v, ok
+}
+
+// verifySignedKey is verifySigned that also reports whether the signature
+// used the current secret (false: re-sign it).
+func (a *Auth) verifySignedKey(signed string) (value string, ok, current bool) {
 	if strings.Contains(signed, "%") {
 		decoded, err := url.PathUnescape(signed)
 		if err != nil {
-			return "", false
+			return "", false, false
 		}
 		signed = decoded
 	}
 	i := strings.LastIndexByte(signed, '.')
 	if i < 1 {
-		return "", false
+		return "", false, false
 	}
 	value, sig := signed[:i], signed[i+1:]
 	if len(sig) != 44 || !strings.HasSuffix(sig, "=") {
-		return "", false
+		return "", false, false
 	}
 	got, err := base64.StdEncoding.DecodeString(sig)
-	if err != nil || !hmac.Equal(got, a.mac(value)) {
-		return "", false
+	if err != nil {
+		return "", false, false
 	}
-	return value, true
+	if ok, current := a.checkMAC(value, got); ok {
+		return value, true, current
+	}
+	return "", false, false
 }
 
 // parseBearer extracts the session token from an Authorization header value.
 // Like Better Auth's bearer plugin it accepts the signed token (as returned in
 // the set-auth-token header) or the raw session token (as returned in the
-// sign-in body). A signed token with a bad signature is rejected.
-func (a *Auth) parseBearer(header string) (string, bool) {
+// sign-in body). A signed token with a bad signature is rejected; resign is
+// true for a signed token made with a previous secret.
+func (a *Auth) parseBearer(header string) (token string, ok, resign bool) {
 	if len(header) < 7 || !strings.EqualFold(header[:7], "bearer ") {
-		return "", false
+		return "", false, false
 	}
-	token := strings.TrimSpace(header[7:])
+	token = strings.TrimSpace(header[7:])
 	if token == "" {
-		return "", false
+		return "", false, false
 	}
 	if strings.Contains(token, ".") {
-		return a.verifySigned(token)
+		v, ok, current := a.verifySignedKey(token)
+		return v, ok, ok && !current
 	}
 	if !isTokenString(token) {
-		return "", false
+		return "", false, false
 	}
-	return token, true
+	return token, true, false
 }
 
 // isTokenString reports whether s looks like a generated token, so garbage
@@ -135,6 +140,24 @@ func (a *Auth) credFingerprint(hash *string) string {
 		return ""
 	}
 	return base64.RawURLEncoding.EncodeToString(a.mac("credential:" + *hash)[:16])
+}
+
+// credMatches reports whether cred is hash's fingerprint under an accepted
+// secret (links issued before a rotation keep working).
+func (a *Auth) credMatches(cred string, hash *string) bool {
+	if hash == nil || *hash == "" {
+		return cred == ""
+	}
+	got, err := base64.RawURLEncoding.DecodeString(cred)
+	if err != nil || len(got) != 16 {
+		return false
+	}
+	for _, k := range a.ring.Load().accepted(a.now()) {
+		if hmac.Equal(got, hmacSum(k.secret, "credential:"+*hash)[:16]) {
+			return true
+		}
+	}
+	return false
 }
 
 // changeEmailRequest is Better Auth's requestType for a link sent to the new
@@ -186,7 +209,10 @@ func (a *Auth) parseVerificationToken(token string) (verificationClaims, error) 
 		return verificationClaims{}, ErrInvalidToken
 	}
 	sig, err := base64.RawURLEncoding.DecodeString(parts[2])
-	if err != nil || !hmac.Equal(sig, a.mac(parts[0]+"."+parts[1])) {
+	if err != nil {
+		return verificationClaims{}, ErrInvalidToken
+	}
+	if ok, _ := a.checkMAC(parts[0]+"."+parts[1], sig); !ok {
 		return verificationClaims{}, ErrInvalidToken
 	}
 	rawClaims, err := base64.RawURLEncoding.DecodeString(parts[1])

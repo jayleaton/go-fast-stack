@@ -44,7 +44,7 @@ Ports of Better Auth's `twoFactor` and `admin` plugins and an invite flow; the f
 | Invites | `Config.DisableSignUp` turns public sign-up off (`400 EMAIL_PASSWORD_SIGN_UP_DISABLED`); invites keep working. `CreateUserWithoutPassword` + `IssueSetPasswordLink` email a single-use "Set your password" link (`InviteTTL`, default 72 h; a newer link replaces older ones), shaped like a reset link (relative `redirectTo` linked directly). The page posts `POST /set-password {token, newPassword}` (`CompleteSetPassword`): sets the password, verifies the email and signs in, or continues into 2FA enrolment when it is required. |
 | Several instances | `CookiePrefix` (cookies `<prefix>.session_token`, `.two_factor`, `.trust_device`), own `Secret`, `MigrateTable` for a separate goose table. Request data is tagged per instance, so nested middleware never mixes sessions. |
 
-Security notes for this part: TOTP secrets are AES-256-GCM encrypted with a key derived from `AUTH_SECRET` (user id as associated data) and backup codes are stored as keyed hashes bound to the user, so a database dump alone yields neither; rotating `AUTH_SECRET` therefore invalidates every enrolment (recover users with `UserAdmin.ResetTwoFactor`). Trusted-device cookies are not rotated on use (Better Auth rotates them); disable 2FA, reset the password or revoke other sessions to forget them. The per-challenge attempt limit uses the configured `RateLimiter` (in-memory by default); the per-user lockout is in the database.
+Security notes for this part: TOTP secrets are AES-256-GCM encrypted (user id as associated data) and backup codes are stored as keyed hashes bound to the user, under data keys stored wrapped by `AUTH_SECRET`, so a database dump alone yields neither, and rotating `AUTH_SECRET` rewraps the data keys instead of invalidating enrolments. Trusted-device cookies are not rotated on use (Better Auth rotates them); disable 2FA, reset the password or revoke other sessions to forget them. The per-challenge attempt limit uses the configured `RateLimiter` (in-memory by default); the per-user lockout is in the database.
 
 ## Usage
 
@@ -115,8 +115,14 @@ token. Don't wrap static file routes with it.
   better-call format (known-answer tested against Node). HttpOnly,
   SameSite=Lax, Path=/, Secure on https, Max-Age until session expiry.
 - **Secret**: `AUTH_SECRET` (at least 32 bytes) signs cookies and verification
-  JWTs. Rotating it signs everyone out and invalidates pending verification
-  links. Reset links are database rows and survive rotation.
+  JWTs and wraps the 2FA data keys. It rotates without signing anyone out:
+  `Config.PreviousSecrets` / `SetSecrets` keep old secrets verifying for
+  `SecretGrace` (default: the longest signed lifetime), with the retirement
+  time stored in `"authKey"` so every replica ends the window together;
+  cookies and bearer tokens signed with an old secret are re-signed on use.
+  `RevokedSecrets` (or rotating without listing the old value) rejects a
+  leaked secret at once. Reset links are database rows and survive rotation.
+  See `keyring.go`.
 - **Verification links** are stateless JWTs that stay valid for 24 h, but they
   only sign someone in while the email is still unverified. The update locks
   the user row, so concurrent clicks yield one session. Verifying revokes the

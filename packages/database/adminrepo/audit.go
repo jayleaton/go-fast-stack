@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/jackc/pgx/v5/pgxpool"
-
 	"github.com/jayleaton/ai-patterns-go/packages/database/adminrepo/adminsql"
 	"github.com/jayleaton/ai-patterns-go/packages/database/adminrepo/model"
 )
@@ -17,8 +15,9 @@ type AuditLog struct {
 	q *adminsql.Queries
 }
 
-// NewAuditLog returns the audit log backed by the admin database pool.
-func NewAuditLog(adminPool *pgxpool.Pool) *AuditLog {
+// NewAuditLog returns the audit log backed by the admin database pool (a
+// database.Pool, so a rotated ADMIN_DATABASE_URL swaps it, or a *pgxpool.Pool).
+func NewAuditLog(adminPool adminsql.DBTX) *AuditLog {
 	return &AuditLog{q: adminsql.New(adminPool)}
 }
 

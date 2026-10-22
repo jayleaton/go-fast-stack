@@ -4,8 +4,6 @@ import (
 	"context"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
-
 	"github.com/jayleaton/ai-patterns-go/packages/database/adminrepo/appsql"
 	"github.com/jayleaton/ai-patterns-go/packages/database/adminrepo/model"
 )
@@ -18,7 +16,7 @@ type Stats struct {
 }
 
 // NewStats returns the statistics over the app database pool.
-func NewStats(appPool *pgxpool.Pool) *Stats {
+func NewStats(appPool appsql.DBTX) *Stats {
 	return &Stats{q: appsql.New(appPool), now: time.Now}
 }
 

@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // UserAdmin manages users the way Better Auth's admin plugin does: list and
@@ -22,7 +21,7 @@ type UserAdmin struct {
 }
 
 // NewUserAdmin returns a UserAdmin over pool (a database migrated by Migrate).
-func NewUserAdmin(pool *pgxpool.Pool) *UserAdmin {
+func NewUserAdmin(pool DB) *UserAdmin {
 	return &UserAdmin{store: &store{pool: pool}, now: time.Now}
 }
 

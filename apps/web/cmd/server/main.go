@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"os"
@@ -69,8 +70,17 @@ func main() {
 	}
 }
 
+// migrate runs at deploy time (Railway pre-deploy), never on rotation.
 func migrate(ctx context.Context, cfg config.Config, log *slog.Logger) error {
-	pool, err := database.Open(ctx, cfg.DatabaseURL.Reveal())
+	if err := cfg.Secrets.Start(ctx); err != nil { // DATABASE_URL may come from the provider
+		return err
+	}
+	defer cfg.Secrets.Stop()
+	url, err := cfg.Secrets.DatabaseURL()
+	if err != nil {
+		return err
+	}
+	pool, err := database.Open(ctx, url.Reveal())
 	if err != nil {
 		return err
 	}
@@ -91,13 +101,13 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	}
 	defer cfg.Secrets.Stop()
 
-	pool, err := database.Open(ctx, cfg.DatabaseURL.Reveal())
+	pool, err := newPool(ctx, cfg, log)
 	if err != nil {
 		return err
 	}
 	defer pool.Close()
 
-	authn, err := newAuth(cfg, pool, log)
+	authn, err := newAuth(ctx, cfg, pool, log)
 	if err != nil {
 		return err
 	}
@@ -147,10 +157,48 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	return authn.Shutdown(shutdownCtx)
 }
 
+// rotationTimeout bounds one live rotation (connecting a new pool, rewrapping
+// auth keys). It runs on the secrets poller, never on a request.
+const rotationTimeout = 30 * time.Second
+
+// newPool opens the database pool from DATABASE_URL and swaps it in place
+// whenever DATABASE_URL rotates. A new URL must reach a database migrated at
+// least as far as this binary, or the current pool stays.
+func newPool(ctx context.Context, cfg config.Config, log *slog.Logger) (*database.Pool, error) {
+	url, err := cfg.Secrets.DatabaseURL()
+	if err != nil {
+		return nil, err
+	}
+	pool, err := database.OpenPool(ctx, url.Reveal(), database.PoolOptions{
+		Probe:  database.MigratedProbe(map[string]fs.FS{auth.MigrationTable: auth.Migrations, database.MigrationTable: database.Migrations}),
+		Logger: log,
+	})
+	if err != nil {
+		return nil, err
+	}
+	applied := url.Fingerprint()
+	log.Info("database: pool opened", "database_url", applied)
+	cfg.Secrets.OnDatabaseURL(func(v secrets.Secret) error {
+		if v.Fingerprint() == applied {
+			return nil
+		}
+		ctx, cancel := context.WithTimeout(ctx, rotationTimeout) // shutdown aborts a rotation in progress
+		defer cancel()
+		if err := pool.Swap(ctx, v.Reveal()); err != nil {
+			return err // the old pool stays; retried after the next fetch
+		}
+		log.Info("database: DATABASE_URL rotated", "from", applied, "to", v.Fingerprint())
+		applied = v.Fingerprint()
+		return nil
+	})
+	return pool, nil
+}
+
 // newAuth configures packages/auth from config: Resend when RESEND_API_KEY is
-// set (required in production), otherwise email links are logged. The key is
-// a live secret: each rotation rebuilds the Resend client in place.
-func newAuth(cfg config.Config, pool *pgxpool.Pool, log *slog.Logger) (*auth.Auth, error) {
+// set (required in production), otherwise email links are logged. The key and
+// AUTH_SECRET[_PREVIOUS] are live secrets: a rotated key rebuilds the Resend
+// client, rotated auth secrets update the keyring (no one is signed out).
+func newAuth(ctx context.Context, cfg config.Config, pool *database.Pool, log *slog.Logger) (*auth.Auth, error) {
 	dev := auth.NewDevMailer(log)
 	mailer := auth.NewSwapMailer(dev)
 	cfg.Secrets.OnResendAPIKey(func(key secrets.Secret) error {
@@ -163,8 +211,16 @@ func newAuth(cfg config.Config, pool *pgxpool.Pool, log *slog.Logger) (*auth.Aut
 		log.Info("mailer: resend client built", "secrets_provider", cfg.Secrets.Provider(), "resend_api_key", key.Fingerprint())
 		return nil
 	})
-	return auth.New(auth.Config{
-		Secret:                   cfg.AuthSecret.Reveal(),
+	keys, err := cfg.Secrets.AuthSecrets()
+	if err != nil {
+		return nil, err
+	}
+	current, previous, revoked := keys.Reveal()
+	authn, err := auth.New(auth.Config{
+		Secret:                   current,
+		PreviousSecrets:          previous,
+		RevokedSecrets:           revoked,
+		SecretGrace:              cfg.AuthSecretGrace,
 		BaseURL:                  cfg.PublicURL.String(),
 		RequireEmailVerification: cfg.Features.EmailVerification,
 		TrustedOrigins:           slices.Concat(cfg.TrustedOrigins, auth.MobileTrustedOrigins(!cfg.Features.MobileDevOrigins)),
@@ -173,6 +229,26 @@ func newAuth(cfg config.Config, pool *pgxpool.Pool, log *slog.Logger) (*auth.Aut
 		ClientIPHeader:           cfg.ClientIPHeader,
 		Logger:                   log,
 	}, pool, mailer)
+	if err != nil {
+		return nil, err
+	}
+	applied := keys.Fingerprint()
+	log.Info("auth: keyring loaded", "keyring", applied)
+	cfg.Secrets.OnAuthSecrets(func(k secrets.Keyring) error {
+		if k.Fingerprint() == applied {
+			return nil
+		}
+		ctx, cancel := context.WithTimeout(ctx, rotationTimeout) // shutdown aborts a rotation in progress
+		defer cancel()
+		current, previous, revoked := k.Reveal()
+		if err := authn.SetSecrets(ctx, auth.Secrets{Current: current, Previous: previous, Revoked: revoked}); err != nil {
+			return err // the old keyring stays; retried after the next fetch
+		}
+		log.Info("auth: AUTH_SECRET rotated", "from", applied, "to", k.Fingerprint())
+		applied = k.Fingerprint()
+		return nil
+	})
+	return authn, nil
 }
 
 // newLogger redacts credentials from every record (secrets.NewRedactingHandler);

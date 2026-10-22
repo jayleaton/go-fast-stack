@@ -10,14 +10,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
-
-	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/jayleaton/ai-patterns-go/apps/admin/internal/config"
 	"github.com/jayleaton/ai-patterns-go/apps/admin/internal/server"
@@ -59,6 +58,14 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	// Every command needs secrets (both database URLs, the admin auth keyring).
+	if err := cfg.Secrets.Start(ctx); err != nil {
+		log.Error(cmd+" failed", "err", err)
+		stop()
+		os.Exit(1)
+	}
+	defer cfg.Secrets.Stop()
+
 	switch cmd {
 	case "migrate":
 		err = migrate(ctx, cfg, log)
@@ -78,7 +85,11 @@ func main() {
 // tables, then the audit log. The app database is the web service's to
 // migrate. Then it seeds ADMIN_BOOTSTRAP_EMAIL (idempotent).
 func migrate(ctx context.Context, cfg config.Config, log *slog.Logger) error {
-	adminPool, err := database.Open(ctx, cfg.AdminDatabaseURL.Reveal())
+	url, err := cfg.Secrets.AdminDatabaseURL()
+	if err != nil {
+		return err
+	}
+	adminPool, err := database.Open(ctx, url.Reveal())
 	if err != nil {
 		return err
 	}
@@ -94,7 +105,7 @@ func migrate(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		return nil
 	}
 
-	admins, err := newAdminAuth(cfg, adminPool, log)
+	admins, err := newAdminAuth(ctx, cfg, adminPool, log)
 	if err != nil {
 		return err
 	}
@@ -116,12 +127,16 @@ func migrate(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 // invite emails a set-password link (the dev mailer logs it). The operator
 // running the CLI acts as services.SystemActor and is audited as "cli".
 func invite(ctx context.Context, cfg config.Config, log *slog.Logger, email string) error {
-	adminPool, err := database.Open(ctx, cfg.AdminDatabaseURL.Reveal())
+	url, err := cfg.Secrets.AdminDatabaseURL()
+	if err != nil {
+		return err
+	}
+	adminPool, err := database.Open(ctx, url.Reveal())
 	if err != nil {
 		return err
 	}
 	defer adminPool.Close()
-	admins, err := newAdminAuth(cfg, adminPool, log)
+	admins, err := newAdminAuth(ctx, cfg, adminPool, log)
 	if err != nil {
 		return err
 	}
@@ -143,18 +158,22 @@ func invite(ctx context.Context, cfg config.Config, log *slog.Logger, email stri
 }
 
 func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
-	appPool, err := database.Open(ctx, cfg.DatabaseURL.Reveal())
+	// The admin service migrates neither database at runtime: both must be at
+	// least as far as this binary's migrations, before boot and after a rotation.
+	appPool, err := livePool(ctx, log, "app", cfg.Secrets.AppDatabaseURL, cfg.Secrets.OnAppDatabaseURL,
+		map[string]fs.FS{auth.MigrationTable: auth.Migrations, database.MigrationTable: database.Migrations})
 	if err != nil {
 		return fmt.Errorf("app database: %w", err)
 	}
 	defer appPool.Close()
-	adminPool, err := database.Open(ctx, cfg.AdminDatabaseURL.Reveal())
+	adminPool, err := livePool(ctx, log, "admin", cfg.Secrets.AdminDatabaseURL, cfg.Secrets.OnAdminDatabaseURL,
+		map[string]fs.FS{auth.MigrationTable: auth.Migrations, adminrepo.MigrationTable: adminrepo.Migrations})
 	if err != nil {
 		return fmt.Errorf("admin database: %w", err)
 	}
 	defer adminPool.Close()
 
-	admins, err := newAdminAuth(cfg, adminPool, log)
+	admins, err := newAdminAuth(ctx, cfg, adminPool, log)
 	if err != nil {
 		return err
 	}
@@ -168,10 +187,11 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	events := server.NewAuthEvents(services.NewAuthEventService(adminrepo.NewAdmins(adminPool), auditLog), log)
 
 	handler := server.New(server.Deps{
-		Config: cfg,
-		Log:    log,
-		DBs:    map[string]server.Pinger{"app": appPool, "admin": adminPool},
-		Auth:   admins,
+		Config:  cfg,
+		Log:     log,
+		DBs:     map[string]server.Pinger{"app": appPool, "admin": adminPool},
+		Secrets: cfg.Secrets,
+		Auth:    admins,
 		// No JSON API on the network: the UI calls the services in-process
 		// (and audits sign-ins through NewUIAuth). To let scripts call
 		// /api/admin/v1, pass api.NewUsers(users, callers.API) etc. as API;
@@ -215,20 +235,69 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	return admins.Shutdown(shutdownCtx)
 }
 
-// newAdminAuth is the admin app's own packages/auth instance over the admin
-// database: its own secret, cookies (prefix "admin") and 2FA policy. Sign-up
-// is off: admins are invited (AdminService.InviteAdmin).
-func newAdminAuth(cfg config.Config, adminPool *pgxpool.Pool, log *slog.Logger) (*auth.Auth, error) {
-	var mailer auth.Mailer = auth.NewDevMailer(log)
-	if !cfg.ResendAPIKey.IsZero() {
-		mailer = auth.NewResendMailer(cfg.ResendAPIKey.Reveal(), cfg.FromEmail)
-	} else {
-		log.Warn("RESEND_API_KEY not set: admin invite links are logged, not sent")
+// rotationTimeout bounds one live rotation (connecting a new pool, rewrapping
+// auth keys). It runs on the secrets poller, never on a request.
+const rotationTimeout = 30 * time.Second
+
+// livePool opens the database named by url and swaps it in place whenever
+// the URL rotates; a new URL must pass the migrations probe or the current
+// pool stays.
+func livePool(ctx context.Context, log *slog.Logger, name string, url func() (secrets.Secret, error), onChange func(secrets.Hook), migrated map[string]fs.FS) (*database.Pool, error) {
+	u, err := url()
+	if err != nil {
+		return nil, err
 	}
-	return auth.New(auth.Config{
-		Secret:       cfg.AuthSecret.Reveal(),
-		BaseURL:      cfg.PublicURL.String(),
-		CookiePrefix: "admin",
+	pool, err := database.OpenPool(ctx, u.Reveal(), database.PoolOptions{Probe: database.MigratedProbe(migrated), Logger: log})
+	if err != nil {
+		return nil, err
+	}
+	applied := u.Fingerprint()
+	log.Info("database: pool opened", "database", name, "url", applied)
+	onChange(func(v secrets.Secret) error {
+		if v.Fingerprint() == applied {
+			return nil
+		}
+		ctx, cancel := context.WithTimeout(ctx, rotationTimeout) // shutdown aborts a rotation in progress
+		defer cancel()
+		if err := pool.Swap(ctx, v.Reveal()); err != nil {
+			return err // the old pool stays; retried after the next fetch
+		}
+		log.Info("database: URL rotated", "database", name, "from", applied, "to", v.Fingerprint())
+		applied = v.Fingerprint()
+		return nil
+	})
+	return pool, nil
+}
+
+// newAdminAuth is the admin app's own packages/auth instance over the admin
+// database: its own secret keyring, cookies (prefix "admin") and 2FA policy.
+// Sign-up is off: admins are invited (AdminService.InviteAdmin). The keyring
+// and RESEND_API_KEY rotate live.
+func newAdminAuth(ctx context.Context, cfg config.Config, adminPool auth.DB, log *slog.Logger) (*auth.Auth, error) {
+	dev := auth.NewDevMailer(log)
+	mailer := auth.NewSwapMailer(dev)
+	cfg.Secrets.OnResendAPIKey(func(key secrets.Secret) error {
+		if key.IsZero() {
+			mailer.Swap(dev)
+			log.Warn("RESEND_API_KEY not set: admin invite links are logged, not sent")
+			return nil
+		}
+		mailer.Swap(auth.NewResendMailer(key.Reveal(), cfg.FromEmail))
+		log.Info("mailer: resend client built", "resend_api_key", key.Fingerprint())
+		return nil
+	})
+	keys, err := cfg.Secrets.AuthSecrets()
+	if err != nil {
+		return nil, err
+	}
+	current, previous, revoked := keys.Reveal()
+	admins, err := auth.New(auth.Config{
+		Secret:          current,
+		PreviousSecrets: previous,
+		RevokedSecrets:  revoked,
+		SecretGrace:     cfg.AuthSecretGrace,
+		BaseURL:         cfg.PublicURL.String(),
+		CookiePrefix:    "admin",
 		// No Better Auth clients: bind the admin cookies to this host.
 		HostOnlyCookies: true,
 		DisableSignUp:   true,
@@ -239,6 +308,25 @@ func newAdminAuth(cfg config.Config, adminPool *pgxpool.Pool, log *slog.Logger) 
 		TwoFactor:       &auth.TwoFactorConfig{Required: cfg.RequireTwoFactor},
 		Logger:          log,
 	}, adminPool, mailer)
+	if err != nil {
+		return nil, err
+	}
+	applied := keys.Fingerprint()
+	cfg.Secrets.OnAuthSecrets(func(k secrets.Keyring) error {
+		if k.Fingerprint() == applied {
+			return nil
+		}
+		ctx, cancel := context.WithTimeout(ctx, rotationTimeout)
+		defer cancel()
+		current, previous, revoked := k.Reveal()
+		if err := admins.SetSecrets(ctx, auth.Secrets{Current: current, Previous: previous, Revoked: revoked}); err != nil {
+			return err // the old keyring stays; retried after the next fetch
+		}
+		log.Info("auth: ADMIN_AUTH_SECRET rotated", "from", applied, "to", k.Fingerprint())
+		applied = k.Fingerprint()
+		return nil
+	})
+	return admins, nil
 }
 
 func policy(cfg config.Config) services.Policy {

@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jayleaton/ai-patterns-go/packages/secrets"
 )
@@ -84,8 +85,8 @@ func TestLoadSecretsProvider(t *testing.T) {
 	defer cfg.Secrets.Stop()
 	var got secrets.Secret
 	cfg.Secrets.OnResendAPIKey(func(v secrets.Secret) error { got = v; return nil })
-	if !got.Equal(secrets.NewSecret("re_env")) || cfg.Secrets.Healthy() != nil || cfg.Secrets.Status().Keys != 1 {
-		t.Fatalf("resend key = %s, status = %+v", got.Fingerprint(), cfg.Secrets.Status())
+	if !got.Equal(secrets.NewSecret("re_env")) || cfg.Secrets.Healthy() != nil || cfg.Secrets.Status().Keys != len(liveSecrets) {
+		t.Fatalf("resend key = %q, status = %+v", got, cfg.Secrets.Status())
 	}
 
 	cfg, err = Load(env(with(map[string]string{"SECRETS_PROVIDER": "doppler", "DOPPLER_TOKEN": "dp.st.x", "SECRETS_REFRESH_INTERVAL": "30s"})))
@@ -115,35 +116,98 @@ func TestLoadSecretsProvider(t *testing.T) {
 	}
 }
 
-// A loaded Config prints, logs and marshals without its credentials, so
-// logging it (or a struct holding it) can never leak them.
-func TestConfigNeverPrintsSecrets(t *testing.T) {
-	values := []string{"dbpass-4242", "auth-secret-" + strings.Repeat("z", 32), "re_resend_9999", "dp.st.doppler_7777"}
+func TestLoadLiveDatabaseAndAuthSecrets(t *testing.T) {
+	a, b := strings.Repeat("a", 32), strings.Repeat("b", 32)
 	cfg, err := Load(env(map[string]string{
-		"PUBLIC_URL":       "http://dev-box:3000",
-		"DATABASE_URL":     "postgres://app:" + values[0] + "@db:5432/app",
-		"AUTH_SECRET":      values[1],
-		"RESEND_API_KEY":   values[2],
-		"SECRETS_PROVIDER": "doppler",
-		"DOPPLER_TOKEN":    values[3],
+		"PUBLIC_URL": "http://dev-box:3000", "DATABASE_URL": "postgres://x",
+		"AUTH_SECRET": b, "AUTH_SECRET_PREVIOUS": " " + a + " ,", "AUTH_SECRET_GRACE": "48h",
 	}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !cfg.DatabaseURL.Equal(secrets.NewSecret("postgres://app:"+values[0]+"@db:5432/app")) || !cfg.AuthSecret.Equal(secrets.NewSecret(values[1])) {
-		t.Fatal("credentials not loaded")
+	if cfg.AuthSecretGrace != 48*time.Hour {
+		t.Fatalf("grace = %s", cfg.AuthSecretGrace)
 	}
-	var logged bytes.Buffer
-	slog.New(slog.NewTextHandler(&logged, nil)).Info("cfg", "cfg", cfg)
-	slog.New(slog.NewJSONHandler(&logged, nil)).Info("cfg", "cfg", cfg)
-	j, err := json.Marshal(cfg)
+	if err := cfg.Secrets.Start(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	defer cfg.Secrets.Stop()
+	if u, err := cfg.Secrets.DatabaseURL(); err != nil || !u.Equal(secrets.NewSecret("postgres://x")) {
+		t.Fatalf("DatabaseURL = %v", err)
+	}
+	keys, err := cfg.Secrets.AuthSecrets()
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, out := range []string{fmt.Sprintf("%v %+v %#v", cfg, cfg, cfg), logged.String(), string(j)} {
-		for _, v := range values {
-			if strings.Contains(out, v) {
-				t.Errorf("config output contains %q: %s", v, out)
+	if !keys.Current.Equal(secrets.NewSecret(b)) || len(keys.Previous) != 1 || !keys.Previous[0].Equal(secrets.NewSecret(a)) || len(keys.Revoked) != 0 || strings.Contains(keys.Fingerprint(), a) {
+		t.Fatalf("auth secrets: %s", keys.Fingerprint())
+	}
+	var calls int
+	cfg.Secrets.OnAuthSecrets(func(secrets.Keyring) error { calls++; return nil }) // two keys, one distinct pair
+	var dbURL secrets.Secret
+	cfg.Secrets.OnDatabaseURL(func(v secrets.Secret) error { dbURL = v; return nil })
+	if calls != 1 || !dbURL.Equal(secrets.NewSecret("postgres://x")) {
+		t.Fatalf("hooks: auth calls=%d db=%s", calls, dbURL.Fingerprint())
+	}
+
+	for _, tt := range []struct {
+		kv   map[string]string
+		want string
+	}{
+		{map[string]string{"AUTH_SECRET_PREVIOUS": "short"}, "AUTH_SECRET_PREVIOUS entry 1 must be at least 32"},
+		{map[string]string{"AUTH_SECRET_REVOKED": a + ",short"}, "AUTH_SECRET_REVOKED entry 2 must be at least 32"},
+		{map[string]string{"AUTH_SECRET_GRACE": "-1h"}, "AUTH_SECRET_GRACE must be a positive duration"},
+	} {
+		kv := map[string]string{"PUBLIC_URL": "http://dev-box:3000", "DATABASE_URL": "postgres://x", "AUTH_SECRET": b}
+		for k, v := range tt.kv {
+			kv[k] = v
+		}
+		if _, err := Load(env(kv)); err == nil || !strings.Contains(err.Error(), tt.want) {
+			t.Errorf("%v: err = %v, want %q", tt.kv, err, tt.want)
+		}
+	}
+}
+
+// A loaded Config prints, logs and marshals without its credentials, so
+// logging it (or a struct holding it) can never leak them, before or after
+// the secrets are loaded.
+func TestConfigNeverPrintsSecrets(t *testing.T) {
+	values := []string{"dbpass-4242", "auth-secret-" + strings.Repeat("z", 32), "re_resend_9999", "dp.st.doppler_7777"}
+	kv := map[string]string{
+		"PUBLIC_URL":     "http://dev-box:3000",
+		"DATABASE_URL":   "postgres://app:" + values[0] + "@db:5432/app",
+		"AUTH_SECRET":    values[1],
+		"RESEND_API_KEY": values[2],
+	}
+	cfg, err := Load(env(kv))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.Secrets.Start(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	defer cfg.Secrets.Stop()
+	if u, _ := cfg.Secrets.DatabaseURL(); !u.Equal(secrets.NewSecret(kv["DATABASE_URL"])) {
+		t.Fatal("credentials not loaded")
+	}
+	kv["SECRETS_PROVIDER"], kv["DOPPLER_TOKEN"] = "doppler", values[3]
+	remote, err := Load(env(kv))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var logged bytes.Buffer
+	for _, c := range []Config{cfg, remote} {
+		slog.New(slog.NewTextHandler(&logged, nil)).Info("cfg", "cfg", c)
+		slog.New(slog.NewJSONHandler(&logged, nil)).Info("cfg", "cfg", c)
+		j, err := json.Marshal(c)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, out := range []string{fmt.Sprintf("%v %+v %#v", c, c, c), logged.String(), string(j)} {
+			for _, v := range values {
+				if strings.Contains(out, v) {
+					t.Errorf("config output contains %q: %s", v, out)
+				}
 			}
 		}
 	}

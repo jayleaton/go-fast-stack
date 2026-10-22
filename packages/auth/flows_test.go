@@ -266,7 +266,7 @@ func TestVerifyEmailRejectsBadTokens(t *testing.T) {
 
 	wantCode(t, h.do("GET", BasePath+"/verify-email?token="+token+"x", nil, nil), http.StatusUnauthorized, "INVALID_TOKEN")
 	wantCode(t, h.do("GET", BasePath+"/verify-email", nil, nil), http.StatusUnauthorized, "INVALID_TOKEN")
-	other := &Auth{cfg: Config{Secret: strings.Repeat("z", 40)}, now: time.Now}
+	other := unitAuthWith(strings.Repeat("z", 40))
 	wantCode(t, h.do("GET", BasePath+"/verify-email?token="+other.signVerificationToken(email, "", time.Hour), nil, nil), http.StatusUnauthorized, "INVALID_TOKEN")
 	wantCode(t, h.do("GET", BasePath+"/verify-email?token="+h.a.signVerificationToken(uniqueEmail(t), "", time.Hour), nil, nil), http.StatusUnauthorized, "USER_NOT_FOUND")
 	wantCode(t, h.do("GET", BasePath+"/verify-email?token="+token+"&callbackURL=https://evil.test/", nil, nil), http.StatusForbidden, "INVALID_CALLBACK_URL")

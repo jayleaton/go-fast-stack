@@ -32,6 +32,7 @@ import (
 	"log/slog"
 	"maps"
 	"slices"
+	"strings"
 	"time"
 )
 
@@ -50,6 +51,9 @@ func (s Secret) Reveal() string { return s.v }
 // Len is the length of the value in bytes, for validation (minimum lengths)
 // without revealing it.
 func (s Secret) Len() int { return len(s.v) }
+
+// TrimSpace returns the secret without leading and trailing white space.
+func (s Secret) TrimSpace() Secret { return Secret{strings.TrimSpace(s.v)} }
 
 // IsZero reports whether the secret is empty (unset or removed upstream).
 func (s Secret) IsZero() bool { return s.v == "" }

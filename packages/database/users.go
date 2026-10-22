@@ -5,7 +5,6 @@ import (
 	"errors"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/jayleaton/ai-patterns-go/packages/database/model"
 	"github.com/jayleaton/ai-patterns-go/packages/database/sqlc"
@@ -20,9 +19,10 @@ type UserRepository struct {
 	q *sqlc.Queries
 }
 
-// NewUserRepository returns a repository backed by pool.
-func NewUserRepository(pool *pgxpool.Pool) *UserRepository {
-	return &UserRepository{q: sqlc.New(pool)}
+// NewUserRepository returns a repository backed by db: a *Pool (live
+// DATABASE_URL rotation) or a *pgxpool.Pool.
+func NewUserRepository(db sqlc.DBTX) *UserRepository {
+	return &UserRepository{q: sqlc.New(db)}
 }
 
 // GetByID returns model.ErrNotFound when no user has id.

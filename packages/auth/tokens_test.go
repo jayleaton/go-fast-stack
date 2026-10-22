@@ -14,13 +14,24 @@ import (
 
 // unitAuth is an Auth without a database, for pure functions.
 func unitAuth() *Auth {
-	return &Auth{
-		cfg:        Config{Secret: testSecret, MinPasswordLength: 8, MaxPasswordLength: 128},
+	a := &Auth{
+		cfg:        Config{Secret: testSecret, MinPasswordLength: 8, MaxPasswordLength: 128, SecretGrace: DefaultSessionTTL},
 		log:        slog.New(slog.NewTextHandler(io.Discard, nil)),
 		now:        time.Now,
 		baseOrigin: testBase,
 		trusted:    append([]string{testBase}, MobileTrustedOrigins(false)...),
 	}
+	a.ring.Store(&keyring{current: signingKey{secret: []byte(testSecret), kid: kidOf([]byte(testSecret))}})
+	a.data.Store(&dataKeys{totp: legacyDataKey([]byte(testSecret), purposeTOTP), backup: legacyDataKey([]byte(testSecret), purposeBackup)})
+	return a
+}
+
+// unitAuthWith is unitAuth signing with secret.
+func unitAuthWith(secret string) *Auth {
+	a := unitAuth()
+	a.ring.Store(&keyring{current: signingKey{secret: []byte(secret), kid: kidOf([]byte(secret))}})
+	a.data.Store(&dataKeys{totp: legacyDataKey([]byte(secret), purposeTOTP), backup: legacyDataKey([]byte(secret), purposeBackup)})
+	return a
 }
 
 func TestGenerateID(t *testing.T) {
@@ -58,7 +69,7 @@ func TestSignedValueFormat(t *testing.T) {
 func TestVerifySigned(t *testing.T) {
 	a := unitAuth()
 	good := a.signValue("tok123")
-	other := (&Auth{cfg: Config{Secret: strings.Repeat("o", 40)}}).signValue("tok123")
+	other := unitAuthWith(strings.Repeat("o", 40)).signValue("tok123")
 	cases := []struct {
 		in   string
 		want string
@@ -108,7 +119,7 @@ func TestParseBearer(t *testing.T) {
 		{"Bearer tok' OR 1=1 --", "", false},
 	}
 	for _, c := range cases {
-		got, ok := a.parseBearer(c.header)
+		got, ok, _ := a.parseBearer(c.header)
 		if got != c.want || ok != c.ok {
 			t.Errorf("parseBearer(%q) = %q %v, want %q %v", c.header, got, ok, c.want, c.ok)
 		}
@@ -200,7 +211,7 @@ func FuzzParseBearer(f *testing.F) {
 	f.Add("Bearer " + a.signValue(generateID(32)))
 	f.Add("bearer %41.%")
 	f.Fuzz(func(t *testing.T, header string) {
-		token, ok := a.parseBearer(header)
+		token, ok, _ := a.parseBearer(header)
 		if ok && !isTokenString(token) && !strings.Contains(header, ".") {
 			t.Fatalf("parseBearer(%q) returned non-token %q", header, token)
 		}

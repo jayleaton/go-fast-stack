@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/jayleaton/ai-patterns-go/packages/secrets"
 )
@@ -23,21 +24,18 @@ const (
 	Production  Env = "production"
 )
 
-// Config is the validated environment. Credentials are secrets.Secret, so the
-// whole Config prints, logs and marshals without them; cmd/server reveals each
-// one where it builds the client that needs it.
+// Config is the validated environment.
 type Config struct {
-	Env            Env
-	Addr           string         // listen address, always 0.0.0.0:PORT
-	PublicURL      *url.URL       // origin people reach the app on (emails, auth callbacks)
-	InternalURL    *url.URL       // origin the server uses to reach itself
-	TrustedOrigins []string       // PublicURL plus TRUSTED_ORIGINS
-	DatabaseURL    secrets.Secret // holds the database password; Reveal only in cmd/server
-	AuthSecret     secrets.Secret // signs cookies and tokens; Reveal only in cmd/server
-	Secrets        Secrets        // live secrets (RESEND_API_KEY) from SECRETS_PROVIDER; started by serve
-	FromEmail      string
-	ClientIPHeader string // header the trusted proxy sets to the client IP (auth rate limits); empty uses the TCP peer
-	Features       Features
+	Env             Env
+	Addr            string        // listen address, always 0.0.0.0:PORT
+	PublicURL       *url.URL      // origin people reach the app on (emails, auth callbacks)
+	InternalURL     *url.URL      // origin the server uses to reach itself
+	TrustedOrigins  []string      // PublicURL plus TRUSTED_ORIGINS
+	Secrets         Secrets       // live secrets (DATABASE_URL, AUTH_SECRET[_PREVIOUS], RESEND_API_KEY) from SECRETS_PROVIDER
+	AuthSecretGrace time.Duration // AUTH_SECRET_GRACE: how long a retired AUTH_SECRET is accepted (0: packages/auth default)
+	FromEmail       string
+	ClientIPHeader  string // header the trusted proxy sets to the client IP (auth rate limits); empty uses the TCP peer
+	Features        Features
 }
 
 // Load reads and validates config. getenv is os.Getenv outside tests.
@@ -52,10 +50,8 @@ func Load(getenv func(string) string) (Config, error) {
 	}
 
 	cfg := Config{
-		Env:         Env(get("APP_ENV", string(Development))),
-		DatabaseURL: secrets.NewSecret(get("DATABASE_URL", "")),
-		AuthSecret:  secrets.NewSecret(get("AUTH_SECRET", "")),
-		FromEmail:   get("FROM_EMAIL", "noreply@example.com"),
+		Env:       Env(get("APP_ENV", string(Development))),
+		FromEmail: get("FROM_EMAIL", "noreply@example.com"),
 		// Only set behind a proxy that overwrites/appends it (Railway: X-Real-IP),
 		// or clients could pick their own rate-limit bucket.
 		ClientIPHeader: get("CLIENT_IP_HEADER", ""),
@@ -86,11 +82,8 @@ func Load(getenv func(string) string) (Config, error) {
 		}
 	}
 
-	if cfg.DatabaseURL.IsZero() {
-		errs = append(errs, errors.New("DATABASE_URL is required"))
-	}
-	if cfg.AuthSecret.Len() < 32 {
-		errs = append(errs, errors.New("AUTH_SECRET must be at least 32 characters (openssl rand -base64 32)"))
+	if cfg.AuthSecretGrace, err = secrets.ParseDuration("AUTH_SECRET_GRACE", get("AUTH_SECRET_GRACE", ""), 0); err != nil {
+		errs = append(errs, err)
 	}
 	cfg.Secrets = loadSecrets(cfg.Env, get, &errs)
 

@@ -32,9 +32,12 @@ Use these words when talking about this repo, in code review, commits and agent 
 | feature toggles | `config.Features`: email verification, template welcome, Expo dev origins | `apps/web/internal/config/features.go` |
 | session | a row in `"session"`; the signed `better-auth.session_token` cookie (web) or `Authorization: Bearer <token>` (mobile) points at it | `packages/auth/` |
 | dev mailer | logs auth email links instead of sending them (no `RESEND_API_KEY`) | `packages/auth/mailer.go` |
-| live secret | a secret served by the secrets provider that rotates without a redeploy (`RESEND_API_KEY`); consumers reach it through a typed accessor on `config.Secrets` | `apps/web/internal/config/secrets.go` |
+| live secret | a secret served by the secrets provider that rotates without a redeploy (`DATABASE_URL`, `AUTH_SECRET`, `AUTH_SECRET_PREVIOUS`, `RESEND_API_KEY`: everything but `DOPPLER_TOKEN`); consumers reach it through a typed accessor on `config.Secrets` | `apps/web/internal/config/secrets.go` |
 | secrets provider | where live secrets come from (`SECRETS_PROVIDER`): `env` (read once at boot) or `doppler` (polled) | `packages/secrets/` |
 | snapshot | the whole set of secrets one fetch returned; validated before it replaces the last good one | `packages/secrets/` |
+| keyring | the auth secrets `packages/auth` holds: the current one signs, previous ones still verify until their grace period ends (retirement time stored in `"authKey"`) | `packages/auth/keyring.go` |
+| data key | a random key protecting data at rest (TOTP secrets, backup-code hashes), stored wrapped by the auth secret so a rotation rewraps it instead of breaking 2FA | `packages/auth/keyring.go` |
+| pool swap | `database.Pool.Swap`: a rotated `DATABASE_URL` opens and probes a new pool, switches atomically and drains the old one | `packages/database/pool.go` |
 | max staleness | how long the last good snapshot may be served while the provider fails before `/healthz` reports 503 | `SECRETS_MAX_STALENESS` |
 | sandbox database | the Docker Postgres from `make db-up`; the only database you may break | `docker-compose.yml` |
 | Datastar | the SSE-first hypermedia library the UI uses (core only, no Pro) | `apps/web/ui/` |

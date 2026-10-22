@@ -4,8 +4,6 @@ import (
 	"context"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
-
 	"github.com/jayleaton/ai-patterns-go/packages/database/adminrepo/adminsql"
 	"github.com/jayleaton/ai-patterns-go/packages/database/adminrepo/model"
 )
@@ -19,7 +17,7 @@ type Admins struct {
 }
 
 // NewAdmins returns the repository over the admin database pool.
-func NewAdmins(adminPool *pgxpool.Pool) *Admins {
+func NewAdmins(adminPool adminsql.DBTX) *Admins {
 	return &Admins{q: adminsql.New(adminPool)}
 }
 

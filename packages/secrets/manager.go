@@ -134,7 +134,7 @@ func (m *Manager) Format(f fmt.State, _ rune) {
 func (m *Manager) Provider() string { return m.p.Name() }
 
 // Start fetches the first snapshot (retrying StartAttempts times with
-// backoff) and, unless the provider is Static, polls until ctx ends or Stop
+// backoff, once for a Static provider) and, unless the provider is Static, polls until ctx ends or Stop
 // is called. Without a valid first snapshot it returns the error: a fresh
 // process must not serve without its secrets.
 func (m *Manager) Start(ctx context.Context) error {
@@ -152,7 +152,8 @@ func (m *Manager) Start(ctx context.Context) error {
 		if err == nil {
 			break
 		}
-		if attempt >= m.o.StartAttempts || !sleep(loopCtx, m.backoff(attempt, err)) {
+		// A static provider returns the same values every time: fail at once.
+		if m.static || attempt >= m.o.StartAttempts || !sleep(loopCtx, m.backoff(attempt, err)) {
 			cancel()
 			close(m.done)
 			return err

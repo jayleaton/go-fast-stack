@@ -98,17 +98,18 @@ func (a *Auth) setSignedCookie(w http.ResponseWriter, name, value string, maxAge
 	http.SetCookie(w, c)
 }
 
-// signedCookie returns the verified value of a signed cookie, or "".
-func (a *Auth) signedCookie(r *http.Request, name string) string {
+// signedCookie returns the verified value of a signed cookie, or "", and
+// whether it was signed with a previous secret (re-sign it).
+func (a *Auth) signedCookie(r *http.Request, name string) (value string, resign bool) {
 	c, err := r.Cookie(name)
 	if err != nil {
-		return ""
+		return "", false
 	}
-	v, ok := a.verifySigned(c.Value)
+	v, ok, current := a.verifySignedKey(c.Value)
 	if !ok {
-		return ""
+		return "", false
 	}
-	return v
+	return v, !current
 }
 
 // SetSessionCookie writes the signed session cookie for s (HttpOnly,
@@ -128,23 +129,34 @@ func encodeCookieValue(v string) string {
 	return strings.NewReplacer("+", "%2B", "/", "%2F", "=", "%3D").Replace(v)
 }
 
+// tokenSource is where sessionToken found the token.
+type tokenSource int
+
+const (
+	noToken tokenSource = iota
+	fromBearer
+	fromSessionCookie
+)
+
 // sessionToken returns the token presented by r: a bearer token takes
-// precedence over the cookie, as with Better Auth's bearer plugin.
-func (a *Auth) sessionToken(r *http.Request) string {
+// precedence over the cookie, as with Better Auth's bearer plugin. resign is
+// true when it was signed with a previous secret: re-issue it the same way it
+// came (never put a cookie's token in a header).
+func (a *Auth) sessionToken(r *http.Request) (token string, src tokenSource, resign bool) {
 	if h := r.Header.Get("Authorization"); h != "" {
-		if token, ok := a.parseBearer(h); ok {
-			return token
+		if token, ok, resign := a.parseBearer(h); ok {
+			return token, fromBearer, resign
 		}
 	}
 	c, err := r.Cookie(a.cookieName())
 	if err != nil {
-		return ""
+		return "", noToken, false
 	}
-	token, ok := a.verifySigned(c.Value)
+	token, ok, current := a.verifySignedKey(c.Value)
 	if !ok || !isTokenString(token) {
-		return ""
+		return "", noToken, false
 	}
-	return token
+	return token, fromSessionCookie, !current
 }
 
 // clientIP returns the normalised client address: the right-most entry of
@@ -196,18 +208,29 @@ func (a *Auth) Middleware(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		meta := &requestMeta{owner: a, ip: a.clientIP(r), userAgent: r.UserAgent(), token: a.sessionToken(r)}
+		token, src, resign := a.sessionToken(r)
+		meta := &requestMeta{owner: a, ip: a.clientIP(r), userAgent: r.UserAgent(), token: token}
 		if a.cfg.TwoFactor != nil {
-			meta.twoFactorToken = a.signedCookie(r, a.cookie(twoFactorCookieName))
-			meta.trustToken = a.signedCookie(r, a.cookie(trustDeviceCookieName))
+			meta.twoFactorToken, _ = a.signedCookie(r, a.cookie(twoFactorCookieName)) // lives minutes: no re-sign
+			var resignTrust bool
+			meta.trustToken, resignTrust = a.signedCookie(r, a.cookie(trustDeviceCookieName))
+			if resignTrust {
+				a.SetTrustDeviceCookie(w, meta.trustToken) // the server-side row still bounds its lifetime
+			}
 		}
 		if meta.token != "" {
 			user, sess, err := a.loadSession(r.Context(), meta.token)
 			switch {
 			case err == nil:
 				meta.user, meta.session, meta.ok = user, sess.Session, true
-				if sess.refreshed && a.fromCookie(r) {
+				// A rotated AUTH_SECRET: move the client to the current one
+				// while the previous one is still accepted.
+				switch {
+				case src == fromSessionCookie && resign, sess.refreshed && a.fromCookie(r):
 					a.SetSessionCookie(w, sess.Session)
+				case src == fromBearer && resign:
+					w.Header().Set("Set-Auth-Token", a.signValue(meta.token))
+					w.Header().Add("Access-Control-Expose-Headers", "set-auth-token")
 				}
 			case errors.Is(err, errNotFound):
 				if a.fromCookie(r) {

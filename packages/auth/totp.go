@@ -79,14 +79,6 @@ func totpURI(key []byte, issuer, account string) string {
 	return "otpauth://totp/" + label + "?" + q.Encode()
 }
 
-// derivedKey returns a 32-byte key for purpose, derived from the auth secret,
-// so one AUTH_SECRET never doubles as two keys.
-func (a *Auth) derivedKey(purpose string) []byte {
-	m := hmac.New(sha256.New, []byte(a.cfg.Secret))
-	m.Write([]byte("auth/" + purpose))
-	return m.Sum(nil)
-}
-
 // sealTOTPKey encrypts a TOTP key with AES-256-GCM for storage, bound to the
 // user so a row copied to another user does not decrypt.
 func (a *Auth) sealTOTPKey(userID string, key []byte) (string, error) {
@@ -99,7 +91,7 @@ func (a *Auth) sealTOTPKey(userID string, key []byte) (string, error) {
 	return base64.RawStdEncoding.EncodeToString(gcm.Seal(nonce, nonce, key, []byte(userID))), nil
 }
 
-var errBadTOTPKey = errors.New("auth: stored TOTP secret does not decrypt (AUTH_SECRET changed?)")
+var errBadTOTPKey = errors.New("auth: stored TOTP secret does not decrypt")
 
 func (a *Auth) openTOTPKey(userID, sealed string) ([]byte, error) {
 	gcm, err := a.totpCipher()
@@ -118,7 +110,7 @@ func (a *Auth) openTOTPKey(userID, sealed string) ([]byte, error) {
 }
 
 func (a *Auth) totpCipher() (cipher.AEAD, error) {
-	block, err := aes.NewCipher(a.derivedKey("two-factor-secret"))
+	block, err := aes.NewCipher(a.dataKey(purposeTOTP))
 	if err != nil {
 		return nil, err
 	}
@@ -144,7 +136,7 @@ func (a *Auth) hashBackupCode(userID, code string) string {
 	if len(code) == 10 && !strings.Contains(code, "-") {
 		code = code[:5] + "-" + code[5:]
 	}
-	m := hmac.New(sha256.New, a.derivedKey("backup-code"))
+	m := hmac.New(sha256.New, a.dataKey(purposeBackup))
 	m.Write([]byte(userID + "\x00" + code))
 	return base64.RawStdEncoding.EncodeToString(m.Sum(nil))
 }
