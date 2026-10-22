@@ -20,6 +20,10 @@ on:
   push:
     branches: [main]
   merge_group:
+  # Refreshes the caches PRs restore (pushes to main that reuse a PR's result
+  # do not); skipped when main has not moved since the last saved cache.
+  schedule:
+    - cron: '17 */4 * * *'
 
 # PR runs: draft and real runs use separate groups, so a skipped draft run
 # (e.g. a push landing a second before "ready for review") never cancels the
@@ -36,7 +40,7 @@ permissions:
   contents: read
   pull-requests: read # paths-filter lists PR files through the API
   statuses: write # the ci-ok commit status
-  actions: read # the opt-in fan-out finaliser reads the other job's result
+  actions: read # the opt-in fan-out finaliser reads the other job's result; scheduled runs list caches
 
 env:
   TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable
@@ -61,6 +65,7 @@ jobs:
       poll: ${{ steps.timeouts.outputs.poll }}
       target: ${{ steps.target.outputs.sha }}
       merge: ${{ steps.target.outputs.merge }}
+      tree: ${{ steps.target.outputs.tree }}
       packages: ${{ steps.affected.outputs.packages }}
       dirs: ${{ steps.affected.outputs.dirs }}
       full: ${{ steps.affected.outputs.full }}
@@ -109,9 +114,25 @@ jobs:
 
       # Depth 2: a PR checkout is the merge commit (HEAD^1 = base, HEAD^2 = head).
       - uses: actions/checkout@v7
-        if: github.event_name != 'pull_request' || steps.go-pr.outputs.go == 'true' || steps.mobile-pr.outputs.mobile == 'true' || steps.deploy-pr.outputs.deploy == 'true'
         with:
           fetch-depth: 2
+
+      # A push to main whose tree is identical to a PR merge commit that
+      # already passed CI is not tested again: ci-ok is posted from that
+      # result. Safe by construction: the PR's ci-ok must be a success posted by
+      # this workflow (github-actions[bot]) recording exactly this tree (see
+      # "ci-ok result"); if main moved in between (tree differs) or the result
+      # is missing or not success, the run checks everything as usual.
+      # A scheduled run is skipped when the cache for this commit already exists.
+      - name: Reuse or skip
+        id: reuse
+        if: github.event_name == 'push' || github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          MESSAGE: ${{ github.event.head_commit.message }}
+        run: ./scripts/ci-reuse.sh
+
       - uses: dorny/paths-filter@v4
         if: github.event_name == 'push'
         id: mobile-push
@@ -125,12 +146,17 @@ jobs:
           GO_PR: ${{ steps.go-pr.outputs.go }}
           MOBILE: ${{ steps.mobile-pr.outputs.mobile || steps.mobile-push.outputs.mobile }}
           DEPLOY: ${{ steps.deploy-pr.outputs.deploy }}
+          SKIP: ${{ steps.reuse.outputs.skip }}
         run: |
           go=true mobile=$MOBILE deploy=$DEPLOY
           if [ "$EVENT" = pull_request ]; then go=$GO_PR; else deploy=true; fi
           if [ "$EVENT" = merge_group ] || [ "$EVENT" = workflow_dispatch ]; then mobile=true; fi
+          if [ "$SKIP" = true ]; then go=false mobile=false deploy=false; fi
+          save=false
+          case $EVENT in workflow_dispatch | schedule) save=true ;; push) [ "$GITHUB_REF" = refs/heads/main ] && save=true ;; esac
           echo "go=$go" >> "$GITHUB_OUTPUT"; echo "mobile=${mobile:-false}" >> "$GITHUB_OUTPUT"
-          echo "deploy=${deploy:-false}" >> "$GITHUB_OUTPUT"
+          echo "deploy=${deploy:-false}" >> "$GITHUB_OUTPUT"; echo "save=$save" >> "$GITHUB_OUTPUT"
+          echo "skip=${SKIP:-false}" >> "$GITHUB_OUTPUT"
 
       # The commit ci-ok is posted on: the PR head of the merge commit actually
       # checked out (the event's head can be stale when a push and "ready for
@@ -144,14 +170,15 @@ jobs:
         run: |
           if [ "$EVENT" != pull_request ]; then
             echo "sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"; echo "merge=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
-          elif git rev-parse -q --verify HEAD^2 >/dev/null 2>&1; then
-            echo "sha=$(git rev-parse HEAD^2)" >> "$GITHUB_OUTPUT"; echo "merge=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           else
-            echo "sha=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR" --jq .head.sha)" >> "$GITHUB_OUTPUT"
+            echo "sha=$(git rev-parse HEAD^2)" >> "$GITHUB_OUTPUT"; echo "merge=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           fi
+          # The tree tested (the merge commit's), recorded in ci-ok so a push
+          # to main with exactly this tree can reuse the result.
+          echo "tree=$(git rev-parse HEAD^{tree})" >> "$GITHUB_OUTPUT"
 
       - name: ci-ok pending
-        if: steps.scope.outputs.go == 'true' || steps.scope.outputs.mobile == 'true' || steps.scope.outputs.deploy == 'true'
+        if: (steps.scope.outputs.go == 'true' || steps.scope.outputs.mobile == 'true' || steps.scope.outputs.deploy == 'true')
         env:
           GH_TOKEN: ${{ github.token }}
           SHA: ${{ steps.target.outputs.sha }}
@@ -241,19 +268,19 @@ jobs:
           generate: ${{ steps.affected.outputs.generate }}
           mobile: ${{ steps.scope.outputs.mobile }}
           deploy: ${{ steps.scope.outputs.deploy }}
-          save: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+          save: ${{ steps.scope.outputs.save }}
 
       # This job (lint) loads every package and its test imports, so it saves
       # the module cache. Cache-path "!" exclusions did not apply, so trim
       # explicitly: zips (~125 MB incl. the 71 MB toolchain zip) and testdata.
       - name: Trim module cache
-        if: (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && steps.mod-cache.outputs.cache-hit != 'true'
+        if: steps.scope.outputs.save == 'true' && steps.mod-cache.outputs.cache-hit != 'true'
         run: |
           chmod -R u+w ~/go/pkg/mod
           find ~/go/pkg/mod/cache/download -name '*.zip' -delete
           find ~/go/pkg/mod -mindepth 2 -type d -name testdata -prune -exec rm -rf {} +
       - uses: actions/cache/save@v6
-        if: (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && steps.mod-cache.outputs.cache-hit != 'true'
+        if: steps.scope.outputs.save == 'true' && steps.mod-cache.outputs.cache-hit != 'true'
         with:
           path: ~/go/pkg/mod
           key: v7-gomod-${{ runner.os }}-${{ hashFiles('go.sum') }}
@@ -261,20 +288,21 @@ jobs:
       # This job's own result (docs-only PRs land here with nothing to check:
       # success). With fan-out, the db job posts it instead.
       - name: ci-ok result
-        if: always() && !cancelled() && steps.plan.outputs.fanout != 'true' && steps.target.outputs.sha != ''
+        if: always() && !cancelled() && steps.plan.outputs.fanout != 'true' && steps.target.outputs.sha != '' && steps.scope.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           SHA: ${{ steps.target.outputs.sha }}
+          TREE: ${{ steps.target.outputs.tree }}
           STATUS: ${{ job.status }}
         run: |
           state=failure; [ "$STATUS" = success ] && state=success
           gh api "repos/$GITHUB_REPOSITORY/statuses/$SHA" -f state=$state -f context=ci-ok \
-            -f description="$state" -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" >/dev/null
+            -f description="$state tree=$TREE" -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" >/dev/null
 
       # A run cancelled by a newer push can still report job.status success
       # (seen on a superseded PR run), so a cancelled run only ever posts failure.
       - name: ci-ok cancelled
-        if: cancelled() && steps.plan.outputs.fanout != 'true' && steps.target.outputs.sha != ''
+        if: cancelled() && steps.plan.outputs.fanout != 'true' && steps.target.outputs.sha != '' && steps.scope.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           SHA: ${{ steps.target.outputs.sha }}
@@ -345,6 +373,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           SHA: ${{ needs.ci.outputs.target }}
+          TREE: ${{ needs.ci.outputs.tree }}
           STATUS: ${{ job.status }}
           POLL_MIN: ${{ needs.ci.outputs.poll || '9' }}
         run: |
@@ -358,7 +387,7 @@ jobs:
           echo "db=$STATUS other=${other:-unfinished}"
           state=failure; [ "$STATUS" = success ] && [ "$other" = success ] && state=success
           gh api "repos/$GITHUB_REPOSITORY/statuses/$SHA" -f state=$state -f context=ci-ok \
-            -f description="$state" -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" >/dev/null
+            -f description="$state tree=$TREE" -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" >/dev/null
 
       # A run cancelled by a newer push can still report job.status success
       # (seen on a superseded PR run), so a cancelled run only ever posts failure.
