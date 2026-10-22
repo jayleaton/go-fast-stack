@@ -3,6 +3,7 @@ package static
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -25,7 +26,7 @@ func TestDatastarPin(t *testing.T) {
 func TestHandlerCaching(t *testing.T) {
 	h := Handler()
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest("GET", URL(CSSFile), nil))
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, URL(CSSFile), nil))
 	if rec.Code != 200 || rec.Header().Get("Cache-Control") != "public, max-age=31536000, immutable" {
 		t.Fatalf("versioned: code %d cache %q", rec.Code, rec.Header().Get("Cache-Control"))
 	}
@@ -33,7 +34,7 @@ func TestHandlerCaching(t *testing.T) {
 		t.Fatal("app.css is not the Tailwind build")
 	}
 	rec = httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest("GET", "/static/"+CSSFile+"?v=stale", nil))
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/static/"+CSSFile+"?v=stale", nil))
 	if rec.Header().Get("Cache-Control") != "no-cache" {
 		t.Fatalf("stale version cached: %q", rec.Header().Get("Cache-Control"))
 	}

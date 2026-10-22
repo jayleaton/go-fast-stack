@@ -13,6 +13,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jayleaton/ai-patterns-go/apps/web/internal/services"
+	"github.com/jayleaton/ai-patterns-go/apps/web/internal/validate"
 	"github.com/jayleaton/ai-patterns-go/apps/web/ui"
 )
 
@@ -131,21 +133,25 @@ func (a Auth) SignUpEmail(_ context.Context, in ui.SignUpInput) (ui.User, ui.Ses
 	s := a.S
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if in.Name == "" || !strings.Contains(in.Email, "@") {
-		return ui.User{}, ui.Session{}, ui.ErrInvalidInput
+	if !strings.Contains(in.Email, "@") {
+		return ui.User{}, ui.Session{}, ui.ErrInvalidEmail
 	}
-	if len(in.Password) < 8 {
-		return ui.User{}, ui.Session{}, ui.ErrPasswordTooShort
+	if err := checkPassword(in.Password); err != nil {
+		return ui.User{}, ui.Session{}, err
 	}
-	if s.byEmailLocked(in.Email) != nil {
-		return ui.User{}, ui.Session{}, ui.ErrEmailTaken
+	if existing := s.byEmailLocked(in.Email); existing != nil {
+		// Like auth: with verification on, a taken email looks like success.
+		if s.RequireEmailVerification {
+			return ui.User{Name: in.Name, Email: in.Email}, ui.Session{}, nil
+		}
+		return ui.User{}, ui.Session{}, ui.ErrUserAlreadyExists
 	}
 	u := ui.User{ID: token(), Name: in.Name, Email: in.Email, CreatedAt: s.Now()}
 	s.accounts[u.ID] = &account{user: u, password: in.Password}
 	if s.RequireEmailVerification {
 		tok := token()
 		s.verify[tok] = u.ID
-		s.mailLocked("verify", u.Email, "/auth/verify-email/success", tok)
+		s.mailLocked("verify", u.Email, in.CallbackURL, tok)
 		return u, ui.Session{}, nil
 	}
 	return u, s.newSessionLocked(u.ID), nil
@@ -157,7 +163,7 @@ func (a Auth) SignInEmail(_ context.Context, in ui.SignInInput) (ui.User, ui.Ses
 	defer s.mu.Unlock()
 	acc := s.byEmailLocked(in.Email)
 	if acc == nil || acc.password != in.Password {
-		return ui.User{}, ui.Session{}, ui.ErrInvalidCredentials
+		return ui.User{}, ui.Session{}, ui.ErrInvalidEmailOrPassword
 	}
 	if s.RequireEmailVerification && !acc.user.EmailVerified {
 		return ui.User{}, ui.Session{}, ui.ErrEmailNotVerified
@@ -193,8 +199,8 @@ func (a Auth) ResetPassword(_ context.Context, tok, newPassword string) error {
 	if !ok || s.accounts[id] == nil {
 		return ui.ErrInvalidToken
 	}
-	if len(newPassword) < 8 {
-		return ui.ErrPasswordTooShort
+	if err := checkPassword(newPassword); err != nil {
+		return err
 	}
 	delete(s.reset, tok)
 	s.accounts[id].password = newPassword
@@ -211,6 +217,9 @@ func (a Auth) VerifyEmail(_ context.Context, tok string) (ui.User, ui.Session, e
 	}
 	delete(s.verify, tok)
 	acc := s.accounts[id]
+	if acc.user.EmailVerified {
+		return acc.user, ui.Session{}, nil
+	}
 	acc.user.EmailVerified = true
 	return acc.user, s.newSessionLocked(id), nil
 }
@@ -278,38 +287,52 @@ func (a Auth) Middleware(next http.Handler) http.Handler {
 	})
 }
 
-// Users implements ui.Users.
+// Users implements ui.Users with the same rules as services.UserService.
 type Users struct{ S *Store }
 
 var _ ui.Users = Users{}
 
-func (u Users) UpdateSettings(_ context.Context, userID string, in ui.UpdateSettingsInput) (ui.User, error) {
+func (u Users) UpdateUserSettings(_ context.Context, actor services.Actor, userID string, in validate.UpdateUserSettings) (services.User, error) {
+	if userID != actor.UserID {
+		return services.User{}, &services.Error{Kind: services.KindForbidden, Message: "Cannot update another user's settings"}
+	}
 	s := u.S
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	acc := s.accounts[userID]
 	if acc == nil {
-		return ui.User{}, ui.ErrInvalidInput
+		return services.User{}, &services.Error{Kind: services.KindNotFound, Message: "User not found"}
 	}
-	if in.Name == "" || len(in.Name) > 255 || !strings.Contains(in.Email, "@") {
-		return ui.User{}, ui.ErrInvalidInput
+	if in.Name != nil {
+		acc.user.Name = *in.Name
 	}
-	if other := s.byEmailLocked(in.Email); other != nil && other.user.ID != userID {
-		return ui.User{}, ui.ErrEmailTaken
-	}
-	acc.user.Name, acc.user.Email = in.Name, in.Email
-	return acc.user, nil
+	x := acc.user
+	return services.User{ID: x.ID, Name: x.Name, Email: x.Email, EmailVerified: x.EmailVerified, CreatedAt: x.CreatedAt, UpdatedAt: s.Now()}, nil
 }
 
-func (u Users) DeleteAccount(_ context.Context, userID string) error {
+func (u Users) DeleteAllUserData(_ context.Context, actor services.Actor) error {
 	s := u.S
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	delete(s.accounts, userID)
+	if s.accounts[actor.UserID] == nil {
+		return &services.Error{Kind: services.KindNotFound, Message: "User not found"}
+	}
+	delete(s.accounts, actor.UserID)
 	for tok, sess := range s.sessions {
-		if sess.UserID == userID {
+		if sess.UserID == actor.UserID {
 			delete(s.sessions, tok)
 		}
+	}
+	return nil
+}
+
+// checkPassword applies auth's default length rules (8-128 characters).
+func checkPassword(p string) error {
+	switch n := len([]rune(p)); {
+	case n < 8:
+		return ui.ErrPasswordTooShort
+	case n > 128:
+		return ui.ErrPasswordTooLong
 	}
 	return nil
 }

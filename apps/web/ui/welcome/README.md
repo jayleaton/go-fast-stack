@@ -6,7 +6,7 @@ It is **not** part of the real app. Login, signup, dashboard, auth and the datab
 
 ## Remove it
 
-1. Set `TemplateWelcome` to `false` in the routes config (`apps/web/internal/config`; `ui.Features` until integration).
+1. Set `TemplateWelcome` to `false` in `FeaturesFor` (`apps/web/internal/config/features.go`).
 2. Delete this folder: `apps/web/ui/welcome`.
 3. Delete the two `welcome.` references in `apps/web/ui/handlers.go` (the compiler points at them).
 

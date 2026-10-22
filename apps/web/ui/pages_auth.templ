@@ -4,7 +4,7 @@ import (
 	"net/url"
 
 	"github.com/jayleaton/ai-patterns-go/apps/web/ui/i18n"
-	"github.com/jayleaton/ai-patterns-go/apps/web/ui/routes"
+	"github.com/jayleaton/ai-patterns-go/apps/web/internal/config"
 	"github.com/jayleaton/ai-patterns-go/apps/web/ui/view"
 )
 
@@ -31,7 +31,7 @@ templ LoginPage(f AuthForm) {
 			<div>
 				<h2 class={ view.HeadingClass }>{ i18n.T(ctx, "pages.login.title") }</h2>
 			</div>
-			<form id="login-form" class="mt-8 space-y-6" method="post" action={ templ.SafeURL(routes.Login) } data-on:submit={ view.PostForm(routes.Login) } data-indicator:_loading>
+			<form id="login-form" class="mt-8 space-y-6" method="post" action={ templ.SafeURL(config.AppRoutes.Login) } data-on:submit={ view.PostForm(config.AppRoutes.Login) } data-indicator:_loading>
 				@view.ErrorAlert(formErrorID, f.Error)
 				<div class="space-y-4">
 					@view.Input(view.Field{ID: "email", Type: "email", Label: i18n.T(ctx, "common.email"), Placeholder: i18n.T(ctx, "pages.login.emailPlaceholder"), Autocomplete: "email", Value: f.Email})
@@ -41,12 +41,12 @@ templ LoginPage(f AuthForm) {
 					@view.SubmitButton(i18n.T(ctx, "pages.login.loginButton"), i18n.T(ctx, "common.loading"), "_loading")
 				</div>
 				<div class="flex items-center justify-between">
-					<a href={ templ.SafeURL(routes.ForgotPassword) } class="text-sm font-medium text-blue-600 hover:text-blue-600/90 dark:text-blue-400 dark:hover:text-blue-300">
+					<a href={ templ.SafeURL(config.AppRoutes.ForgotPassword) } class="text-sm font-medium text-blue-600 hover:text-blue-600/90 dark:text-blue-400 dark:hover:text-blue-300">
 						{ i18n.T(ctx, "pages.login.forgotPassword") }
 					</a>
 				</div>
 				<div class="text-center">
-					<a href={ templ.SafeURL(routes.Signup) } class={ view.TextLinkClass }>
+					<a href={ templ.SafeURL(config.AppRoutes.Signup) } class={ view.TextLinkClass }>
 						{ i18n.T(ctx, "pages.login.dontHaveAccount") } { i18n.T(ctx, "pages.login.signUpInstead") }
 					</a>
 				</div>
@@ -61,7 +61,7 @@ templ SignupPage(f AuthForm) {
 			<div>
 				<h2 class={ view.HeadingClass }>{ i18n.T(ctx, "pages.signup.title") }</h2>
 			</div>
-			<form id="signup-form" class="mt-8 space-y-6" method="post" action={ templ.SafeURL(routes.Signup) } data-on:submit={ view.PostForm(routes.Signup) } data-indicator:_loading>
+			<form id="signup-form" class="mt-8 space-y-6" method="post" action={ templ.SafeURL(config.AppRoutes.Signup) } data-on:submit={ view.PostForm(config.AppRoutes.Signup) } data-indicator:_loading>
 				@view.ErrorAlert(formErrorID, f.Error)
 				<div class="space-y-4">
 					@view.Input(view.Field{ID: "name", Type: "text", Label: i18n.T(ctx, "common.name"), Placeholder: i18n.T(ctx, "pages.signup.namePlaceholder"), Autocomplete: "name", Value: f.Name})
@@ -72,7 +72,7 @@ templ SignupPage(f AuthForm) {
 					@view.SubmitButton(i18n.T(ctx, "pages.signup.signupButton"), i18n.T(ctx, "common.loading"), "_loading")
 				</div>
 				<div class="text-center">
-					<a href={ templ.SafeURL(routes.Login) } class={ view.TextLinkClass }>
+					<a href={ templ.SafeURL(config.AppRoutes.Login) } class={ view.TextLinkClass }>
 						{ i18n.T(ctx, "pages.signup.alreadyHaveAccount") } { i18n.T(ctx, "pages.signup.signInInstead") }
 					</a>
 				</div>
@@ -90,14 +90,14 @@ templ ForgotPasswordPage(f AuthForm, sent bool) {
 				@ForgotPasswordSent()
 			} else {
 				<div id={ forgotPasswordID } class="mt-8">
-					<form class="space-y-6" method="post" action={ templ.SafeURL(routes.ForgotPassword) } data-on:submit={ view.PostForm(routes.ForgotPassword) } data-indicator:_loading>
+					<form class="space-y-6" method="post" action={ templ.SafeURL(config.AppRoutes.ForgotPassword) } data-on:submit={ view.PostForm(config.AppRoutes.ForgotPassword) } data-indicator:_loading>
 						@view.ErrorAlert(formErrorID, f.Error)
 						@view.Input(view.Field{ID: "email", Type: "email", Label: i18n.T(ctx, "pages.forgotPassword.emailLabel"), Placeholder: i18n.T(ctx, "pages.forgotPassword.emailPlaceholder"), Autocomplete: "email", Value: f.Email})
 						<div>
 							@view.SubmitButton(i18n.T(ctx, "pages.forgotPassword.sendResetLink"), i18n.T(ctx, "common.loading"), "_loading")
 						</div>
 						<div class="text-center">
-							<a href={ templ.SafeURL(routes.Login) } class={ view.TextLinkClass }>{ i18n.T(ctx, "pages.forgotPassword.backToLogin") }</a>
+							<a href={ templ.SafeURL(config.AppRoutes.Login) } class={ view.TextLinkClass }>{ i18n.T(ctx, "pages.forgotPassword.backToLogin") }</a>
 						</div>
 					</form>
 				</div>
@@ -113,7 +113,7 @@ templ ForgotPasswordSent() {
 			<div role="status" class={ view.SuccessAlertClass }>{ i18n.T(ctx, "pages.forgotPassword.emailSent") }</div>
 			@view.InfoBox(i18n.T(ctx, "pages.forgotPassword.checkEmail"))
 			<div class="text-center">
-				<a href={ templ.SafeURL(routes.Login) } class={ view.TextLinkClass }>{ i18n.T(ctx, "pages.forgotPassword.backToLogin") }</a>
+				<a href={ templ.SafeURL(config.AppRoutes.Login) } class={ view.TextLinkClass }>{ i18n.T(ctx, "pages.forgotPassword.backToLogin") }</a>
 			</div>
 		</div>
 	</div>
@@ -130,12 +130,12 @@ templ ResetPasswordPage(token string, f AuthForm, done bool) {
 				<div id={ resetPasswordID } class="mt-8">
 					<div role="alert" class={ view.ErrorAlertClass }>{ i18n.T(ctx, "pages.resetPassword.invalidResetLink") }</div>
 					<div class="mt-6 text-center">
-						<a href={ templ.SafeURL(routes.ForgotPassword) } class={ view.TextLinkClass }>{ i18n.T(ctx, "pages.resetPassword.requestNewResetLink") }</a>
+						<a href={ templ.SafeURL(config.AppRoutes.ForgotPassword) } class={ view.TextLinkClass }>{ i18n.T(ctx, "pages.resetPassword.requestNewResetLink") }</a>
 					</div>
 				</div>
 			} else {
 				<div id={ resetPasswordID }>
-					<form class="mt-8 space-y-6" method="post" action={ templ.SafeURL(routes.ResetPassword) } data-on:submit={ view.PostForm(routes.ResetPassword) } data-indicator:_loading>
+					<form class="mt-8 space-y-6" method="post" action={ templ.SafeURL(config.AppRoutes.ResetPassword) } data-on:submit={ view.PostForm(config.AppRoutes.ResetPassword) } data-indicator:_loading>
 						<input type="hidden" name="token" value={ token }/>
 						@view.ErrorAlert(formErrorID, f.Error)
 						<div class="space-y-4">
@@ -146,7 +146,7 @@ templ ResetPasswordPage(token string, f AuthForm, done bool) {
 							@view.SubmitButton(i18n.T(ctx, "pages.resetPassword.resetButton"), i18n.T(ctx, "pages.resetPassword.resettingPassword"), "_loading")
 						</div>
 						<div class="text-center">
-							<a href={ templ.SafeURL(routes.Login) } class={ view.TextLinkClass }>{ i18n.T(ctx, "pages.resetPassword.backToLogin") }</a>
+							<a href={ templ.SafeURL(config.AppRoutes.Login) } class={ view.TextLinkClass }>{ i18n.T(ctx, "pages.resetPassword.backToLogin") }</a>
 						</div>
 					</form>
 				</div>
@@ -162,7 +162,7 @@ templ ResetPasswordDone() {
 		<h3 class="mt-6 text-lg font-medium text-neutral-900 dark:text-neutral-100">{ i18n.T(ctx, "pages.resetPassword.passwordResetSuccess") }</h3>
 		<p class="mt-2 text-sm text-neutral-600 dark:text-neutral-300">{ i18n.T(ctx, "pages.resetPassword.passwordUpdated") }</p>
 		<div class="mt-6">
-			<a href={ templ.SafeURL(routes.Login) } class={ view.SuccessButtonClass }>{ i18n.T(ctx, "pages.resetPassword.signInWithNewPassword") }</a>
+			<a href={ templ.SafeURL(config.AppRoutes.Login) } class={ view.SuccessButtonClass }>{ i18n.T(ctx, "pages.resetPassword.signInWithNewPassword") }</a>
 		</div>
 	</div>
 }
@@ -204,7 +204,7 @@ templ ResendBlock(email string, s ResendState) {
 		if s.CooldownSeconds > 0 {
 			<div class="hidden" data-on-interval__duration.1s="$_cooldown > 0 && ($_cooldown = $_cooldown - 1)"></div>
 		}
-		<form method="post" action={ templ.SafeURL(routes.VerifyEmail) } data-on:submit={ view.PostForm(routes.VerifyEmail) } data-indicator:_sending>
+		<form method="post" action={ templ.SafeURL(config.AppRoutes.VerifyEmail) } data-on:submit={ view.PostForm(config.AppRoutes.VerifyEmail) } data-indicator:_sending>
 			<input type="hidden" name="email" value={ email }/>
 			<button
 				type="submit"
@@ -222,7 +222,7 @@ templ ResendBlock(email string, s ResendState) {
 			</button>
 		</form>
 		<div class="text-center">
-			<a href={ templ.SafeURL(routes.Login) } class={ view.TextLinkClass }>{ i18n.T(ctx, "pages.verifyEmail.backToLogin") }</a>
+			<a href={ templ.SafeURL(config.AppRoutes.Login) } class={ view.TextLinkClass }>{ i18n.T(ctx, "pages.verifyEmail.backToLogin") }</a>
 		</div>
 	</div>
 }
@@ -254,18 +254,18 @@ templ VerifyEmailSuccessPage(token string, result templ.Component) {
 // verifyURL carries the token in the query of the verification POST.
 func verifyURL(token string) string {
 	if token == "" {
-		return routes.VerifyEmailSuccess
+		return config.AppRoutes.VerifyEmailSuccess
 	}
-	return routes.VerifyEmailSuccess + "?" + url.Values{"token": {token}}.Encode()
+	return config.AppRoutes.VerifyEmailSuccess + "?" + url.Values{"token": {token}}.Encode()
 }
 
 templ VerifyEmailSucceeded() {
-	<div id={ verifyResultID } class="text-center" data-init={ "setTimeout(() => window.location.assign('" + routes.Dashboard + "'), 1500)" }>
+	<div id={ verifyResultID } class="text-center" data-init={ "setTimeout(() => window.location.assign('" + config.AppRoutes.Dashboard + "'), 1500)" }>
 		@view.StatusIcon("success")
 		<h2 class={ view.HeadingClass }>{ i18n.T(ctx, "pages.verifyEmail.emailVerifiedSuccessfully") }</h2>
 		<p class={ view.SubheadingClass }>{ i18n.T(ctx, "pages.verifyEmail.accountVerifiedRedirect") }</p>
 		<div class="mt-6">
-			<a href={ templ.SafeURL(routes.Dashboard) } class={ view.SuccessButtonClass }>{ i18n.T(ctx, "pages.verifyEmail.continueToDashboard") }</a>
+			<a href={ templ.SafeURL(config.AppRoutes.Dashboard) } class={ view.SuccessButtonClass }>{ i18n.T(ctx, "pages.verifyEmail.continueToDashboard") }</a>
 		</div>
 	</div>
 }
@@ -276,7 +276,7 @@ templ VerifyEmailFailed(message string) {
 		<h2 class={ view.HeadingClass }>{ i18n.T(ctx, "pages.verifyEmail.verificationFailed") }</h2>
 		<p class={ view.SubheadingClass }>{ message }</p>
 		<div class="mt-6">
-			<a href={ templ.SafeURL(routes.Login) } class={ view.PrimaryButtonClass }>{ i18n.T(ctx, "pages.verifyEmail.backToLogin") }</a>
+			<a href={ templ.SafeURL(config.AppRoutes.Login) } class={ view.PrimaryButtonClass }>{ i18n.T(ctx, "pages.verifyEmail.backToLogin") }</a>
 		</div>
 	</div>
 }

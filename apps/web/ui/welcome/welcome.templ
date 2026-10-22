@@ -3,7 +3,7 @@ package welcome
 import (
 	"strconv"
 
-	"github.com/jayleaton/ai-patterns-go/apps/web/ui/routes"
+	"github.com/jayleaton/ai-patterns-go/apps/web/internal/config"
 	"github.com/jayleaton/ai-patterns-go/apps/web/ui/view"
 )
 
@@ -53,8 +53,8 @@ templ LandingPage() {
 				<h1 class={ heroH1Class }>{ t.Hero.Title }</h1>
 				<p class="max-w-2xl text-base leading-relaxed text-neutral-600 sm:text-lg dark:text-neutral-300">{ t.Hero.Subtitle }</p>
 				<div class="flex flex-col gap-3 sm:flex-row sm:items-center">
-					<a href={ templ.SafeURL(routes.Signup) } class={ primaryCTA }>{ t.Hero.Primary }</a>
-					<a href={ templ.SafeURL(routes.Login) } class={ outlineCTA }>{ t.Hero.Secondary }</a>
+					<a href={ templ.SafeURL(config.AppRoutes.Signup) } class={ primaryCTA }>{ t.Hero.Primary }</a>
+					<a href={ templ.SafeURL(config.AppRoutes.Login) } class={ outlineCTA }>{ t.Hero.Secondary }</a>
 					<a href="#start" class="inline-flex items-center justify-center px-2 py-3 text-sm font-medium text-neutral-600 underline-offset-4 hover:underline dark:text-neutral-300">{ t.Hero.Skip }</a>
 				</div>
 			</header>
@@ -101,7 +101,7 @@ templ LandingPage() {
 					}
 				</ul>
 				<p class="mt-6">
-					<a href={ templ.SafeURL(routes.Why) } class="text-sm font-medium text-blue-700 underline-offset-4 hover:underline dark:text-blue-300">{ t.Patterns.More }</a>
+					<a href={ templ.SafeURL(config.AppRoutes.Why) } class="text-sm font-medium text-blue-700 underline-offset-4 hover:underline dark:text-blue-300">{ t.Patterns.More }</a>
 				</p>
 			}
 			@section("") {
@@ -135,9 +135,9 @@ templ LandingPage() {
 			<footer class="mt-10 flex flex-col gap-3 text-sm text-neutral-500 sm:flex-row sm:items-center sm:justify-between dark:text-neutral-400">
 				<span>{ t.Footer.Brand }</span>
 				<nav class="flex flex-wrap gap-4">
-					<a href={ templ.SafeURL(routes.Why) } class={ footerLink }>{ t.Footer.Why }</a>
-					<a href={ templ.SafeURL(routes.Login) } class={ footerLink }>{ t.Footer.Login }</a>
-					<a href={ templ.SafeURL(routes.Signup) } class={ footerLink }>{ t.Footer.Signup }</a>
+					<a href={ templ.SafeURL(config.AppRoutes.Why) } class={ footerLink }>{ t.Footer.Why }</a>
+					<a href={ templ.SafeURL(config.AppRoutes.Login) } class={ footerLink }>{ t.Footer.Login }</a>
+					<a href={ templ.SafeURL(config.AppRoutes.Signup) } class={ footerLink }>{ t.Footer.Signup }</a>
 				</nav>
 			</footer>
 		}
@@ -170,8 +170,8 @@ templ WhyPage() {
 				}
 			</ol>
 			<div class="mt-12 flex flex-col gap-3 sm:flex-row">
-				<a href={ templ.SafeURL(routes.Home) } class={ outlineCTA }>{ t.Why.Back }</a>
-				<a href={ templ.SafeURL(routes.Signup) } class="inline-flex items-center justify-center rounded-lg bg-blue-600 px-5 py-3 text-sm font-medium text-white hover:bg-blue-600/90 dark:bg-blue-500">{ t.Why.Start }</a>
+				<a href={ templ.SafeURL(config.AppRoutes.Home) } class={ outlineCTA }>{ t.Why.Back }</a>
+				<a href={ templ.SafeURL(config.AppRoutes.Signup) } class="inline-flex items-center justify-center rounded-lg bg-blue-600 px-5 py-3 text-sm font-medium text-white hover:bg-blue-600/90 dark:bg-blue-500">{ t.Why.Start }</a>
 			</div>
 		}
 	}

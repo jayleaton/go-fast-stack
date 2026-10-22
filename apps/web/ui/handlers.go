@@ -9,8 +9,10 @@ import (
 
 	"github.com/starfederation/datastar-go/datastar"
 
+	"github.com/jayleaton/ai-patterns-go/apps/web/internal/config"
+	"github.com/jayleaton/ai-patterns-go/apps/web/internal/services"
+	"github.com/jayleaton/ai-patterns-go/apps/web/internal/validate"
 	"github.com/jayleaton/ai-patterns-go/apps/web/ui/i18n"
-	"github.com/jayleaton/ai-patterns-go/apps/web/ui/routes"
 	"github.com/jayleaton/ai-patterns-go/apps/web/ui/view"
 	"github.com/jayleaton/ai-patterns-go/apps/web/ui/welcome"
 )
@@ -20,7 +22,7 @@ const resendCooldown = 5 * time.Minute
 
 func (u *UI) home(w http.ResponseWriter, r *http.Request) {
 	if _, _, ok := u.auth.UserFrom(r.Context()); ok {
-		http.Redirect(w, r, routes.Dashboard, http.StatusSeeOther)
+		http.Redirect(w, r, config.AppRoutes.Dashboard, http.StatusSeeOther)
 		return
 	}
 	if u.features.TemplateWelcome {
@@ -44,13 +46,17 @@ func (u *UI) loginPage(w http.ResponseWriter, r *http.Request) {
 
 func (u *UI) login(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	in := SignInInput{Email: strings.TrimSpace(r.PostFormValue("email")), Password: r.PostFormValue("password")}
+	in := SignInInput{
+		Email:       strings.TrimSpace(r.PostFormValue("email")),
+		Password:    r.PostFormValue("password"),
+		CallbackURL: config.AppRoutes.VerifyEmailSuccess,
+	}
 	_, s, err := u.auth.SignInEmail(ctx, in)
 	if err != nil {
 		msg := u.errorMessage(ctx, err)
 		if errors.Is(err, ErrEmailNotVerified) {
 			// Like the original: send a fresh link and say so.
-			if err := u.auth.SendVerificationEmail(ctx, in.Email, routes.VerifyEmailSuccess); err != nil {
+			if err := u.auth.SendVerificationEmail(ctx, in.Email, config.AppRoutes.VerifyEmailSuccess); err != nil {
 				u.log.WarnContext(ctx, "ui: resend verification on login", "err", err)
 				msg = i18n.T(ctx, "pages.verifyEmail.checkEmail")
 			}
@@ -59,7 +65,7 @@ func (u *UI) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	u.auth.SetSessionCookie(w, s)
-	u.redirect(w, r, routes.Dashboard)
+	u.redirect(w, r, config.AppRoutes.Dashboard)
 }
 
 func (u *UI) signupPage(w http.ResponseWriter, r *http.Request) {
@@ -69,9 +75,10 @@ func (u *UI) signupPage(w http.ResponseWriter, r *http.Request) {
 func (u *UI) signup(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	in := SignUpInput{
-		Name:     strings.TrimSpace(r.PostFormValue("name")),
-		Email:    strings.TrimSpace(r.PostFormValue("email")),
-		Password: r.PostFormValue("password"),
+		Name:        strings.TrimSpace(r.PostFormValue("name")),
+		Email:       strings.TrimSpace(r.PostFormValue("email")),
+		Password:    r.PostFormValue("password"),
+		CallbackURL: config.AppRoutes.VerifyEmailSuccess,
 	}
 	_, s, err := u.auth.SignUpEmail(ctx, in)
 	if err != nil {
@@ -80,11 +87,11 @@ func (u *UI) signup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if u.features.EmailVerification || s.Token == "" {
-		u.redirect(w, r, routes.VerifyEmail+"?"+url.Values{"email": {in.Email}}.Encode())
+		u.redirect(w, r, config.AppRoutes.VerifyEmail+"?"+url.Values{"email": {in.Email}}.Encode())
 		return
 	}
 	u.auth.SetSessionCookie(w, s)
-	u.redirect(w, r, routes.Dashboard)
+	u.redirect(w, r, config.AppRoutes.Dashboard)
 }
 
 func (u *UI) forgotPasswordPage(w http.ResponseWriter, r *http.Request) {
@@ -94,7 +101,7 @@ func (u *UI) forgotPasswordPage(w http.ResponseWriter, r *http.Request) {
 func (u *UI) forgotPassword(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	email := strings.TrimSpace(r.PostFormValue("email"))
-	if err := u.auth.RequestPasswordReset(ctx, email, routes.ResetPassword); err != nil {
+	if err := u.auth.RequestPasswordReset(ctx, email, config.AppRoutes.ResetPassword); err != nil {
 		u.log.ErrorContext(ctx, "ui: request password reset", "err", err)
 		msg := i18n.T(ctx, "common.error")
 		u.patch(w, r, http.StatusUnprocessableEntity, ForgotPasswordPage(AuthForm{Email: email, Error: msg}, false), view.ErrorAlert(formErrorID, msg))
@@ -125,10 +132,14 @@ func (u *UI) resetPassword(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := u.auth.ResetPassword(ctx, token, password); err != nil {
 		switch {
-		case errors.Is(err, ErrInvalidToken):
+		case errors.Is(err, ErrInvalidToken), errors.Is(err, ErrTokenExpired):
 			fail("pages.resetPassword.invalidResetLink")
 		case errors.Is(err, ErrPasswordTooShort):
 			fail("pages.resetPassword.passwordTooShort")
+		case errors.Is(err, ErrPasswordTooLong):
+			fail("errors.passwordTooLong")
+		case errors.Is(err, ErrTooManyRequests):
+			fail("errors.tooManyRequests")
 		default:
 			u.log.ErrorContext(ctx, "ui: reset password", "err", err)
 			fail("common.error")
@@ -150,7 +161,7 @@ func (u *UI) resendVerification(w http.ResponseWriter, r *http.Request) {
 		CooldownSeconds: int(resendCooldown.Seconds()),
 	}
 	status := http.StatusOK
-	if err := u.auth.SendVerificationEmail(ctx, email, routes.VerifyEmailSuccess); err != nil {
+	if err := u.auth.SendVerificationEmail(ctx, email, config.AppRoutes.VerifyEmailSuccess); err != nil {
 		state = ResendState{Error: u.errorMessage(ctx, err)}
 		status = http.StatusUnprocessableEntity
 	}
@@ -176,7 +187,7 @@ func (u *UI) verifyEmail(w http.ResponseWriter, r *http.Request) {
 			if s.Token != "" {
 				u.auth.SetSessionCookie(w, s)
 			}
-		case errors.Is(err, ErrInvalidToken):
+		case errors.Is(err, ErrInvalidToken), errors.Is(err, ErrTokenExpired):
 			result, status = VerifyEmailFailed(i18n.T(ctx, "pages.verifyEmail.invalidToken")), http.StatusUnprocessableEntity
 		default:
 			u.log.ErrorContext(ctx, "ui: verify email", "err", err)
@@ -191,7 +202,7 @@ func (u *UI) verifyEmail(w http.ResponseWriter, r *http.Request) {
 func (u *UI) dashboard(w http.ResponseWriter, r *http.Request) {
 	user, _, ok := u.auth.UserFrom(r.Context())
 	if !ok {
-		http.Redirect(w, r, routes.Login, http.StatusSeeOther)
+		http.Redirect(w, r, config.AppRoutes.Login, http.StatusSeeOther)
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
@@ -204,7 +215,7 @@ func (u *UI) dashboard(w http.ResponseWriter, r *http.Request) {
 func (u *UI) dashboardLive(w http.ResponseWriter, r *http.Request) {
 	user, session, ok := u.auth.UserFrom(r.Context())
 	if !ok {
-		u.redirect(w, r, routes.Login)
+		u.redirect(w, r, config.AppRoutes.Login)
 		return
 	}
 	tab := r.URL.Query().Get("tab")
@@ -224,7 +235,7 @@ func (u *UI) dashboardLive(w http.ResponseWriter, r *http.Request) {
 		case <-tick.C:
 		case ev := <-events:
 			if ev.Deleted {
-				_ = sse.Redirect(routes.Home)
+				_ = sse.Redirect(config.AppRoutes.Home)
 				return
 			}
 			if err := sse.PatchElementTempl(AccountCard(ev.User)); err != nil {
@@ -243,20 +254,23 @@ func (u *UI) updateSettings(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	user, _, ok := u.auth.UserFrom(ctx)
 	if !ok {
-		u.redirect(w, r, routes.Login)
+		u.redirect(w, r, config.AppRoutes.Login)
 		return
 	}
 	tab := r.PostFormValue("tab")
-	in := UpdateSettingsInput{
-		Name:  strings.TrimSpace(r.PostFormValue("name")),
-		Email: strings.TrimSpace(r.PostFormValue("email")),
+	name := r.PostFormValue("name")
+	in := validate.UpdateUserSettings{Name: &name}
+	err := in.Validate()
+	var saved services.User
+	if err == nil {
+		saved, err = u.users.UpdateUserSettings(ctx, actor(user), user.ID, in)
 	}
-	updated, err := u.users.UpdateSettings(ctx, user.ID, in)
 	if err != nil {
-		st := SettingsState{Name: in.Name, Email: in.Email, Error: u.errorMessage(ctx, err)}
+		st := SettingsState{Name: name, Error: u.serviceMessage(ctx, err)}
 		u.patch(w, r, http.StatusUnprocessableEntity, DashboardPage(DashboardData{User: user, Tab: tab, Settings: st}), SettingsStatus(st))
 		return
 	}
+	updated := userFromService(saved)
 	u.hub.publish(user.ID, userEvent{User: updated, Tab: tab})
 	st := SettingsState{Saved: true}
 	u.patch(w, r, http.StatusOK, DashboardPage(DashboardData{User: updated, Tab: tab, Settings: st}), SettingsStatus(st), AccountCard(updated))
@@ -266,11 +280,11 @@ func (u *UI) deleteAccount(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	user, session, ok := u.auth.UserFrom(ctx)
 	if !ok {
-		u.redirect(w, r, routes.Login)
+		u.redirect(w, r, config.AppRoutes.Login)
 		return
 	}
-	if err := u.users.DeleteAccount(ctx, user.ID); err != nil {
-		msg := u.errorMessage(ctx, err)
+	if err := u.users.DeleteAllUserData(ctx, actor(user)); err != nil {
+		msg := u.serviceMessage(ctx, err)
 		u.patch(w, r, http.StatusInternalServerError, DashboardPage(DashboardData{User: user, Tab: newTabID(), Settings: SettingsState{DeleteError: msg}}), view.ErrorAlert(deleteErrorID, msg))
 		return
 	}
@@ -280,7 +294,7 @@ func (u *UI) deleteAccount(w http.ResponseWriter, r *http.Request) {
 	}
 	u.auth.ClearSessionCookie(w)
 	u.hub.publish(user.ID, userEvent{Deleted: true})
-	u.redirect(w, r, routes.Home)
+	u.redirect(w, r, config.AppRoutes.Home)
 }
 
 func (u *UI) logout(w http.ResponseWriter, r *http.Request) {
@@ -291,7 +305,7 @@ func (u *UI) logout(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	u.auth.ClearSessionCookie(w)
-	u.redirect(w, r, routes.Login)
+	u.redirect(w, r, config.AppRoutes.Login)
 }
 
 // setLocale is the language switcher: store the choice, go back to the page.

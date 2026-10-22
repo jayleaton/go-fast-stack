@@ -15,6 +15,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/jayleaton/ai-patterns-go/apps/web/internal/config"
 	"github.com/jayleaton/ai-patterns-go/apps/web/ui"
 	"github.com/jayleaton/ai-patterns-go/apps/web/ui/uifake"
 )
@@ -38,7 +39,7 @@ func main() {
 	ui.New(ui.Deps{
 		Auth:     auth,
 		Users:    uifake.Users{S: store},
-		Features: ui.Features{EmailVerification: *verify, TemplateWelcome: *welcome},
+		Features: config.Features{EmailVerification: *verify, TemplateWelcome: *welcome},
 		Logger:   log,
 	}).Routes(mux)
 

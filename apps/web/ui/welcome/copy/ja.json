@@ -104,7 +104,7 @@
     "title": "この案内ページは、捨てる前提です",
     "body": "本物のアプリはこのフォルダにはありません。ログイン、サインアップ、ダッシュボードはそのまま残ります。",
     "steps": [
-      "apps/web/internal/config のルート設定を開き、TemplateWelcome を false にします。",
+      "apps/web/internal/config/features.go を開き、TemplateWelcome を false にします。",
       "フォルダ apps/web/ui/welcome を削除します。",
       "apps/web/ui で welcome のルートを登録している所を消します（コンパイラが場所を教えてくれます）。"
     ],

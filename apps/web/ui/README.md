@@ -9,7 +9,7 @@ Ported from the original `apps/web-app` (same pages, same Tailwind classes, same
 | `ui/view` | layout shell (header: logout, theme, language), shared inputs/buttons/alerts/skeletons |
 | `ui/welcome` | template welcome landing + `/why` (feature-flagged, deletable; see its README) |
 | `ui/i18n` | `messages/{en,ja}.json`, locale negotiation, `i18n.T(ctx, key)` |
-| `ui/routes` | every UI path (moves to `apps/web/internal/config` at integration) |
+| `ui/routes` | the UI's own action endpoints (logout, locale, live stream, settings, delete, static); pages use `config.AppRoutes` |
 | `ui/static` | embedded `app.css` (generated), pinned `datastar-1.0.4.js`, favicon |
 | `ui/uifake` | in-memory `Auth`/`Users` for tests and the preview |
 | `ui/cmd/preview` | all pages with fakes on `0.0.0.0:3001` |
@@ -43,8 +43,8 @@ Watch mode while editing: `go tool templ generate -path apps/web/ui -watch` and 
 mux := http.NewServeMux()
 ui.New(ui.Deps{
     Auth:          uiAuth{a},           // adapter over *auth.Auth, below
-    Users:         userService,         // services.Users: UpdateSettings, DeleteAccount
-    Features:      ui.Features{EmailVerification: cfg.EmailVerification, TemplateWelcome: cfg.TemplateWelcome},
+    Users:         userService,         // *services.UserService satisfies ui.Users as is
+    Features:      cfg.Features,
     SecureCookies: cfg.IsProduction,
     Logger:        log,
 }).Routes(mux)
@@ -56,14 +56,17 @@ POST actions are wrapped in `http.CrossOriginProtection` (stdlib); keep that if 
 
 ### Auth adapter
 
-`ui.Auth` has the contract's method set with UI-local types (`ui.User`, `ui.Session`, inputs), so this package does
-not import `packages/auth`. The adapter converts types and **wraps errors in the `ui.Err*` sentinels**
-(`ErrInvalidCredentials`, `ErrEmailNotVerified`, `ErrEmailTaken`, `ErrPasswordTooShort`, `ErrInvalidToken`,
-`ErrInvalidInput`); anything else shows "Something went wrong" and is logged. `UserFrom` maps to `auth.UserFrom`.
+`ui.Auth` has `*auth.Auth`'s method set (including `SendVerificationEmail`) with UI-local types (`ui.User`,
+`ui.Session`, inputs with `CallbackURL`), because `packages/auth` is not on main yet. The adapter copies fields and
+**maps each `auth.Err*` to the `ui.Err*` value of the same name** (`ErrInvalidEmail`, `ErrInvalidEmailOrPassword`,
+`ErrPasswordTooShort`, `ErrPasswordTooLong`, `ErrUserAlreadyExists`, `ErrEmailNotVerified`, `ErrInvalidToken`,
+`ErrTokenExpired`, `ErrTooManyRequests`); anything else shows "Something went wrong" and is logged. `UserFrom` maps
+to `auth.UserFrom`. Once auth merges, the UI can take `auth` types directly and the adapter goes away.
 
-Contract gap: `SendVerificationEmail(ctx, email, callbackURL)` backs the "resend verification email" button and the
-resend-on-unverified-login behavior of the original. It is not in the v0 contract; Better Auth's equivalent is
-`POST /api/auth/send-verification-email`.
+`ui.Users` is the method set of `*services.UserService` (`UpdateUserSettings`, `DeleteAllUserData`). The settings form
+posts only the name: email changes belong to the auth flows, so the email is shown read-only. The form is validated
+with `validate.UpdateUserSettings` before the service call; validation and `KindInvalid` errors show
+`errors.invalidInput`.
 
 `redirectTo`/`callbackURL` are app paths (`/auth/reset-password`, `/auth/verify-email/success`); auth joins them with
 its `BaseURL`, so no origin is hardcoded here. The verify link may carry `?token=` (the page POSTs it to
@@ -89,7 +92,8 @@ already set the cookie (the page then just checks the session).
   `Accept-Language`, then `en`. Keys must be string literals: `TestUsedKeysExistInEveryLocale` scans the templates
   and fails when any locale is missing one, and the render tests fail on any key that renders as itself.
   New keys vs the original (same structure, additions only): `common.home`, `components.themeToggle.*`,
-  `pages.home.*`, `pages.dashboard.{settingsForm,deleteAccount,live}.*`, `errors.{emailTaken,invalidInput}`.
+  `pages.home.*`, `pages.dashboard.{settingsForm,deleteAccount,live}.*`,
+  `errors.{emailTaken,invalidInput,passwordTooLong,tooManyRequests}`.
 
 ## Updating Datastar
 

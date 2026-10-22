@@ -104,7 +104,7 @@
     "title": "This welcome page is designed to be thrown away",
     "body": "None of your real app lives in this folder. Login, signup, and the dashboard stay.",
     "steps": [
-      "Open the routes config in apps/web/internal/config and set TemplateWelcome to false.",
+      "Open apps/web/internal/config/features.go and set TemplateWelcome to false.",
       "Delete the folder apps/web/ui/welcome.",
       "Remove the welcome routes where apps/web/ui mounts them (the compiler shows you where)."
     ],

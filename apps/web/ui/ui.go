@@ -12,6 +12,9 @@ import (
 	"github.com/a-h/templ"
 	"github.com/starfederation/datastar-go/datastar"
 
+	"github.com/jayleaton/ai-patterns-go/apps/web/internal/config"
+	"github.com/jayleaton/ai-patterns-go/apps/web/internal/services"
+	"github.com/jayleaton/ai-patterns-go/apps/web/internal/validate"
 	"github.com/jayleaton/ai-patterns-go/apps/web/ui/i18n"
 	"github.com/jayleaton/ai-patterns-go/apps/web/ui/routes"
 	"github.com/jayleaton/ai-patterns-go/apps/web/ui/static"
@@ -22,7 +25,7 @@ import (
 type UI struct {
 	auth     Auth
 	users    Users
-	features Features
+	features config.Features
 	secure   bool
 	log      *slog.Logger
 	now      func() time.Time
@@ -72,20 +75,20 @@ func (u *UI) Routes(mux *http.ServeMux) {
 	})
 
 	page("GET /{$}", u.home)
-	page("GET "+routes.Why, u.why)
-	page("GET "+routes.Login, u.loginPage)
-	action("POST "+routes.Login, u.login)
-	page("GET "+routes.Signup, u.signupPage)
-	action("POST "+routes.Signup, u.signup)
-	page("GET "+routes.ForgotPassword, u.forgotPasswordPage)
-	action("POST "+routes.ForgotPassword, u.forgotPassword)
-	page("GET "+routes.ResetPassword, u.resetPasswordPage)
-	action("POST "+routes.ResetPassword, u.resetPassword)
-	page("GET "+routes.VerifyEmail, u.verifyEmailPage)
-	action("POST "+routes.VerifyEmail, u.resendVerification)
-	page("GET "+routes.VerifyEmailSuccess, u.verifyEmailSuccessPage)
-	action("POST "+routes.VerifyEmailSuccess, u.verifyEmail)
-	page("GET "+routes.Dashboard, u.dashboard)
+	page("GET "+config.AppRoutes.Why, u.why)
+	page("GET "+config.AppRoutes.Login, u.loginPage)
+	action("POST "+config.AppRoutes.Login, u.login)
+	page("GET "+config.AppRoutes.Signup, u.signupPage)
+	action("POST "+config.AppRoutes.Signup, u.signup)
+	page("GET "+config.AppRoutes.ForgotPassword, u.forgotPasswordPage)
+	action("POST "+config.AppRoutes.ForgotPassword, u.forgotPassword)
+	page("GET "+config.AppRoutes.ResetPassword, u.resetPasswordPage)
+	action("POST "+config.AppRoutes.ResetPassword, u.resetPassword)
+	page("GET "+config.AppRoutes.VerifyEmail, u.verifyEmailPage)
+	action("POST "+config.AppRoutes.VerifyEmail, u.resendVerification)
+	page("GET "+config.AppRoutes.VerifyEmailSuccess, u.verifyEmailSuccessPage)
+	action("POST "+config.AppRoutes.VerifyEmailSuccess, u.verifyEmail)
+	page("GET "+config.AppRoutes.Dashboard, u.dashboard)
 	page("GET "+routes.DashboardLive, u.dashboardLive)
 	action("POST "+routes.UpdateSettings, u.updateSettings)
 	action("POST "+routes.DeleteAccount, u.deleteAccount)
@@ -163,10 +166,29 @@ func (u *UI) errorMessage(ctx context.Context, err error) string {
 	return i18n.T(ctx, "errors.somethingWentWrong")
 }
 
+// serviceMessage translates a validation or user-service error.
+func (u *UI) serviceMessage(ctx context.Context, err error) string {
+	var verr *validate.Error
+	if errors.As(err, &verr) || services.KindOf(err) == services.KindInvalid {
+		return i18n.T(ctx, "errors.invalidInput")
+	}
+	u.log.ErrorContext(ctx, "ui: user service", "err", err)
+	return i18n.T(ctx, "errors.somethingWentWrong")
+}
+
+// actor is the signed-in user as the services see it.
+func actor(u User) services.Actor {
+	return services.Actor{UserID: u.ID, Email: u.Email}
+}
+
+func userFromService(s services.User) User {
+	return User{ID: s.ID, Name: s.Name, Email: s.Email, EmailVerified: s.EmailVerified, CreatedAt: s.CreatedAt}
+}
+
 // safeNext keeps redirects on this site.
 func safeNext(next string) string {
 	if !strings.HasPrefix(next, "/") || strings.HasPrefix(next, "//") || strings.HasPrefix(next, `/\`) {
-		return routes.Home
+		return config.AppRoutes.Home
 	}
 	return next
 }

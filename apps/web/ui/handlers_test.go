@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jayleaton/ai-patterns-go/apps/web/internal/config"
 	"github.com/jayleaton/ai-patterns-go/apps/web/ui"
 	"github.com/jayleaton/ai-patterns-go/apps/web/ui/routes"
 	"github.com/jayleaton/ai-patterns-go/apps/web/ui/uifake"
@@ -24,7 +25,7 @@ type env struct {
 	user  ui.User
 }
 
-func newEnv(t *testing.T, f ui.Features) *env {
+func newEnv(t *testing.T, f config.Features) *env {
 	t.Helper()
 	store := uifake.NewStore()
 	user := store.AddUser("Demo User", "demo@example.com", "password123", true)
@@ -105,10 +106,10 @@ func assertRedirectScript(t *testing.T, rec *httptest.ResponseRecorder, to strin
 }
 
 func TestPages(t *testing.T) {
-	e := newEnv(t, ui.Features{TemplateWelcome: true})
+	e := newEnv(t, config.Features{TemplateWelcome: true})
 	pages := []string{
-		routes.Home, routes.Why, routes.Login, routes.Signup, routes.ForgotPassword,
-		routes.ResetPassword + "?token=abc", routes.VerifyEmail + "?email=a%40b.c", routes.VerifyEmailSuccess,
+		config.AppRoutes.Home, config.AppRoutes.Why, config.AppRoutes.Login, config.AppRoutes.Signup, config.AppRoutes.ForgotPassword,
+		config.AppRoutes.ResetPassword + "?token=abc", config.AppRoutes.VerifyEmail + "?email=a%40b.c", config.AppRoutes.VerifyEmailSuccess,
 	}
 	for _, l := range []string{"en", "ja"} {
 		for _, p := range pages {
@@ -122,23 +123,23 @@ func TestPages(t *testing.T) {
 		}
 	}
 
-	if rec := e.do("GET", routes.Dashboard, nil); rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != routes.Login {
+	if rec := e.do("GET", config.AppRoutes.Dashboard, nil); rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != config.AppRoutes.Login {
 		t.Errorf("dashboard signed out: %d %q", rec.Code, rec.Header().Get("Location"))
 	}
 	tok := e.signedIn()
-	rec := e.do("GET", routes.Dashboard, nil, session(tok), lang("ja"))
+	rec := e.do("GET", config.AppRoutes.Dashboard, nil, session(tok), lang("ja"))
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "ダッシュボード") || !strings.Contains(rec.Body.String(), "Demo User") {
 		t.Errorf("dashboard signed in: %d", rec.Code)
 	}
-	if rec := e.do("GET", routes.Home, nil, session(tok)); rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != routes.Dashboard {
+	if rec := e.do("GET", config.AppRoutes.Home, nil, session(tok)); rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != config.AppRoutes.Dashboard {
 		t.Errorf("home signed in: %d %q", rec.Code, rec.Header().Get("Location"))
 	}
 
-	off := newEnv(t, ui.Features{})
-	if rec := off.do("GET", routes.Why, nil); rec.Code != http.StatusNotFound {
+	off := newEnv(t, config.Features{})
+	if rec := off.do("GET", config.AppRoutes.Why, nil); rec.Code != http.StatusNotFound {
 		t.Errorf("why with welcome off: %d", rec.Code)
 	}
-	if rec := off.do("GET", routes.Home, nil); !strings.Contains(rec.Body.String(), "Your app is running") {
+	if rec := off.do("GET", config.AppRoutes.Home, nil); !strings.Contains(rec.Body.String(), "Your app is running") {
 		t.Error("home with welcome off is not the plain page")
 	}
 	if rec := e.do("GET", "/favicon.ico", nil); rec.Code != http.StatusMovedPermanently {
@@ -147,36 +148,36 @@ func TestPages(t *testing.T) {
 }
 
 func TestLogin(t *testing.T) {
-	e := newEnv(t, ui.Features{})
+	e := newEnv(t, config.Features{})
 
-	rec := e.do("POST", routes.Login, url.Values{"email": {"demo@example.com"}, "password": {"nope"}}, datastar, lang("ja"))
+	rec := e.do("POST", config.AppRoutes.Login, url.Values{"email": {"demo@example.com"}, "password": {"nope"}}, datastar, lang("ja"))
 	assertSSE(t, rec, `id="form-error"`, "無効な認証情報")
 	if sessionCookie(rec) != nil {
 		t.Error("cookie set on failed login")
 	}
 
-	rec = e.do("POST", routes.Login, url.Values{"email": {"demo@example.com"}, "password": {"password123"}}, datastar)
-	assertRedirectScript(t, rec, routes.Dashboard)
+	rec = e.do("POST", config.AppRoutes.Login, url.Values{"email": {"demo@example.com"}, "password": {"password123"}}, datastar)
+	assertRedirectScript(t, rec, config.AppRoutes.Dashboard)
 	if c := sessionCookie(rec); c == nil || c.Value == "" || !c.HttpOnly {
 		t.Fatalf("session cookie: %+v", c)
 	}
 
 	// Without JS the same form posts normally.
-	rec = e.do("POST", routes.Login, url.Values{"email": {"demo@example.com"}, "password": {"nope"}})
+	rec = e.do("POST", config.AppRoutes.Login, url.Values{"email": {"demo@example.com"}, "password": {"nope"}})
 	if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), "Invalid credentials") || !strings.Contains(rec.Body.String(), `value="demo@example.com"`) {
 		t.Errorf("no-JS failed login: %d", rec.Code)
 	}
-	rec = e.do("POST", routes.Login, url.Values{"email": {"demo@example.com"}, "password": {"password123"}})
-	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != routes.Dashboard || sessionCookie(rec) == nil {
+	rec = e.do("POST", config.AppRoutes.Login, url.Values{"email": {"demo@example.com"}, "password": {"password123"}})
+	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != config.AppRoutes.Dashboard || sessionCookie(rec) == nil {
 		t.Errorf("no-JS login: %d %q", rec.Code, rec.Header().Get("Location"))
 	}
 }
 
 func TestLoginUnverifiedResendsLink(t *testing.T) {
-	e := newEnv(t, ui.Features{EmailVerification: true})
+	e := newEnv(t, config.Features{EmailVerification: true})
 	e.store.RequireEmailVerification = true
 	e.store.AddUser("New", "new@example.com", "password123", false)
-	rec := e.do("POST", routes.Login, url.Values{"email": {"new@example.com"}, "password": {"password123"}}, datastar)
+	rec := e.do("POST", config.AppRoutes.Login, url.Values{"email": {"new@example.com"}, "password": {"password123"}}, datastar)
 	assertSSE(t, rec, "We sent you an email with a verification link")
 	if e.store.Token("verify") == "" {
 		t.Error("no verification email sent")
@@ -184,121 +185,129 @@ func TestLoginUnverifiedResendsLink(t *testing.T) {
 }
 
 func TestSignup(t *testing.T) {
-	e := newEnv(t, ui.Features{})
+	e := newEnv(t, config.Features{})
 	form := url.Values{"name": {"Grace"}, "email": {"grace@example.com"}, "password": {"password123"}}
-	rec := e.do("POST", routes.Signup, form, datastar)
-	assertRedirectScript(t, rec, routes.Dashboard)
+	rec := e.do("POST", config.AppRoutes.Signup, form, datastar)
+	assertRedirectScript(t, rec, config.AppRoutes.Dashboard)
 	if sessionCookie(rec) == nil {
 		t.Error("no session after signup")
 	}
 
-	rec = e.do("POST", routes.Signup, form, datastar)
+	rec = e.do("POST", config.AppRoutes.Signup, form, datastar)
 	assertSSE(t, rec, "Email already in use")
 
-	rec = e.do("POST", routes.Signup, url.Values{"name": {"X"}, "email": {"x@example.com"}, "password": {"short"}}, datastar)
+	rec = e.do("POST", config.AppRoutes.Signup, url.Values{"name": {"X"}, "email": {"x@example.com"}, "password": {"short"}}, datastar)
 	assertSSE(t, rec, "Password must be at least 8 characters")
 
-	v := newEnv(t, ui.Features{EmailVerification: true})
+	v := newEnv(t, config.Features{EmailVerification: true})
 	v.store.RequireEmailVerification = true
-	rec = v.do("POST", routes.Signup, form, datastar)
-	assertRedirectScript(t, rec, routes.VerifyEmail+"?email=grace%40example.com")
+	rec = v.do("POST", config.AppRoutes.Signup, form, datastar)
+	assertRedirectScript(t, rec, config.AppRoutes.VerifyEmail+"?email=grace%40example.com")
 	if sessionCookie(rec) != nil {
 		t.Error("signed in before verifying")
 	}
+	if got := v.store.Outbox(); len(got) != 1 || got[0].URL[:len(config.AppRoutes.VerifyEmailSuccess)] != config.AppRoutes.VerifyEmailSuccess {
+		t.Errorf("verification mail should land on the success page: %+v", got)
+	}
+	// A taken email does not reveal itself while verification is on.
+	rec = v.do("POST", config.AppRoutes.Signup, url.Values{"name": {"X"}, "email": {"demo@example.com"}, "password": {"password123"}}, datastar)
+	assertRedirectScript(t, rec, config.AppRoutes.VerifyEmail+"?email=demo%40example.com")
 }
 
 func TestForgotAndResetPassword(t *testing.T) {
-	e := newEnv(t, ui.Features{})
-	rec := e.do("POST", routes.ForgotPassword, url.Values{"email": {"demo@example.com"}}, datastar)
+	e := newEnv(t, config.Features{})
+	rec := e.do("POST", config.AppRoutes.ForgotPassword, url.Values{"email": {"demo@example.com"}}, datastar)
 	assertSSE(t, rec, `id="forgot-password"`, "Email sent!")
 	tok := e.store.Token("reset")
 	if tok == "" {
 		t.Fatal("no reset email")
 	}
 
-	rec = e.do("POST", routes.ResetPassword, url.Values{"token": {tok}, "password": {"newpassword1"}, "confirmPassword": {"other12345"}}, datastar)
+	rec = e.do("POST", config.AppRoutes.ResetPassword, url.Values{"token": {tok}, "password": {"newpassword1"}, "confirmPassword": {"other12345"}}, datastar)
 	assertSSE(t, rec, `id="form-error"`, "Passwords don&#39;t match")
 
-	rec = e.do("POST", routes.ResetPassword, url.Values{"token": {tok}, "password": {"newpassword1"}, "confirmPassword": {"newpassword1"}}, datastar)
+	rec = e.do("POST", config.AppRoutes.ResetPassword, url.Values{"token": {tok}, "password": {"newpassword1"}, "confirmPassword": {"newpassword1"}}, datastar)
 	assertSSE(t, rec, `id="reset-password"`, "Password reset successfully!")
 
-	rec = e.do("POST", routes.ResetPassword, url.Values{"token": {tok}, "password": {"newpassword1"}, "confirmPassword": {"newpassword1"}}, datastar)
+	rec = e.do("POST", config.AppRoutes.ResetPassword, url.Values{"token": {tok}, "password": {"newpassword1"}, "confirmPassword": {"newpassword1"}}, datastar)
 	assertSSE(t, rec, "Invalid reset link")
 
-	rec = e.do("POST", routes.Login, url.Values{"email": {"demo@example.com"}, "password": {"newpassword1"}}, datastar)
-	assertRedirectScript(t, rec, routes.Dashboard)
+	rec = e.do("POST", config.AppRoutes.Login, url.Values{"email": {"demo@example.com"}, "password": {"newpassword1"}}, datastar)
+	assertRedirectScript(t, rec, config.AppRoutes.Dashboard)
 }
 
 func TestVerifyEmail(t *testing.T) {
-	e := newEnv(t, ui.Features{EmailVerification: true})
+	e := newEnv(t, config.Features{EmailVerification: true})
 	e.store.RequireEmailVerification = true
 	e.store.AddUser("New", "new@example.com", "password123", false)
 
-	rec := e.do("POST", routes.VerifyEmail, url.Values{"email": {"new@example.com"}}, datastar, lang("ja"))
+	rec := e.do("POST", config.AppRoutes.VerifyEmail, url.Values{"email": {"new@example.com"}}, datastar, lang("ja"))
 	assertSSE(t, rec, `id="resend"`, "{_cooldown: 300}", "確認メールを送信しました")
 	tok := e.store.Token("verify")
 
-	page := e.do("GET", routes.VerifyEmailSuccess+"?token="+tok, nil)
+	page := e.do("GET", config.AppRoutes.VerifyEmailSuccess+"?token="+tok, nil)
 	if !strings.Contains(page.Body.String(), "@post(&#39;/auth/verify-email/success?token="+tok) {
 		t.Fatal("success page does not post the token on load")
 	}
 
-	rec = e.do("POST", routes.VerifyEmailSuccess+"?token="+tok, nil, datastar)
+	rec = e.do("POST", config.AppRoutes.VerifyEmailSuccess+"?token="+tok, nil, datastar)
 	assertSSE(t, rec, `id="verify-result"`, "Email verified successfully!")
 	if sessionCookie(rec) == nil {
 		t.Error("not signed in after verifying")
 	}
 
-	rec = e.do("POST", routes.VerifyEmailSuccess+"?token="+tok, nil, datastar)
+	rec = e.do("POST", config.AppRoutes.VerifyEmailSuccess+"?token="+tok, nil, datastar)
 	assertSSE(t, rec, "Verification failed", "Invalid or expired token")
 
-	rec = e.do("POST", routes.VerifyEmailSuccess, nil, datastar)
+	rec = e.do("POST", config.AppRoutes.VerifyEmailSuccess, nil, datastar)
 	assertSSE(t, rec, "automatic login failed")
 }
 
 func TestSettingsAndDelete(t *testing.T) {
-	e := newEnv(t, ui.Features{})
-	e.store.AddUser("Other", "taken@example.com", "password123", true)
+	e := newEnv(t, config.Features{})
 	tok := e.signedIn()
 
-	rec := e.do("POST", routes.UpdateSettings, url.Values{"name": {"Ada"}, "email": {"ada@example.com"}}, datastar, session(tok))
-	assertSSE(t, rec, `id="settings-status"`, "Settings saved.", `id="account-card"`, "Ada", "ada@example.com")
+	page := e.do("GET", config.AppRoutes.Dashboard, nil, session(tok)).Body.String()
+	if !strings.Contains(page, `id="settings-email"`) || strings.Contains(page, `name="email"`) {
+		t.Error("settings form must show the email read-only and not post it")
+	}
 
-	rec = e.do("POST", routes.UpdateSettings, url.Values{"name": {"Ada"}, "email": {"taken@example.com"}}, datastar, session(tok))
-	assertSSE(t, rec, "Email already in use")
+	// The email is never sent, so a smuggled one is ignored.
+	rec := e.do("POST", routes.UpdateSettings, url.Values{"name": {"  Ada  "}, "email": {"evil@example.com"}}, datastar, session(tok))
+	assertSSE(t, rec, `id="settings-status"`, "Settings saved.", `id="account-card"`, ">Ada<", "demo@example.com")
 
-	rec = e.do("POST", routes.UpdateSettings, url.Values{"name": {""}, "email": {"ada@example.com"}}, datastar, session(tok), lang("ja"))
+	rec = e.do("POST", routes.UpdateSettings, url.Values{"name": {"   "}}, datastar, session(tok), lang("ja"))
 	assertSSE(t, rec, "入力内容を確認して")
 
 	rec = e.do("POST", routes.UpdateSettings, url.Values{"name": {"Ada"}}, datastar)
-	assertRedirectScript(t, rec, routes.Login)
+	assertRedirectScript(t, rec, config.AppRoutes.Login)
 
 	rec = e.do("POST", routes.DeleteAccount, nil, datastar, session(tok))
-	assertRedirectScript(t, rec, routes.Home)
+	assertRedirectScript(t, rec, config.AppRoutes.Home)
 	if c := sessionCookie(rec); c == nil || c.MaxAge >= 0 {
 		t.Errorf("session cookie not cleared: %+v", c)
 	}
-	if rec := e.do("GET", routes.Dashboard, nil, session(tok)); rec.Code != http.StatusSeeOther {
+	if rec := e.do("GET", config.AppRoutes.Dashboard, nil, session(tok)); rec.Code != http.StatusSeeOther {
 		t.Errorf("dashboard after delete: %d", rec.Code)
 	}
-	rec = e.do("POST", routes.Login, url.Values{"email": {"ada@example.com"}, "password": {"password123"}}, datastar)
+	rec = e.do("POST", config.AppRoutes.Login, url.Values{"email": {"demo@example.com"}, "password": {"password123"}}, datastar)
 	assertSSE(t, rec, "Invalid credentials")
 }
 
 func TestLogout(t *testing.T) {
-	e := newEnv(t, ui.Features{})
+	e := newEnv(t, config.Features{})
 	tok := e.signedIn()
 	rec := e.do("POST", routes.Logout, nil, session(tok))
-	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != routes.Login {
+	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != config.AppRoutes.Login {
 		t.Fatalf("logout: %d %q", rec.Code, rec.Header().Get("Location"))
 	}
-	if rec := e.do("GET", routes.Dashboard, nil, session(tok)); rec.Code != http.StatusSeeOther {
+	if rec := e.do("GET", config.AppRoutes.Dashboard, nil, session(tok)); rec.Code != http.StatusSeeOther {
 		t.Errorf("session still valid after logout: %d", rec.Code)
 	}
 }
 
 func TestLocaleSwitch(t *testing.T) {
-	e := newEnv(t, ui.Features{})
+	e := newEnv(t, config.Features{})
 	rec := e.do("POST", routes.Locale, url.Values{"locale": {"ja"}, "next": {"/login?x=1"}})
 	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/login?x=1" {
 		t.Fatalf("switch: %d %q", rec.Code, rec.Header().Get("Location"))
@@ -312,21 +321,21 @@ func TestLocaleSwitch(t *testing.T) {
 	if lc == nil || lc.Value != "ja" {
 		t.Fatalf("locale cookie: %+v", lc)
 	}
-	page := e.do("GET", routes.Login, nil, func(r *http.Request) { r.AddCookie(lc) }, lang("en"))
+	page := e.do("GET", config.AppRoutes.Login, nil, func(r *http.Request) { r.AddCookie(lc) }, lang("en"))
 	if !strings.Contains(page.Body.String(), "アカウントにサインイン") {
 		t.Error("cookie locale not applied over Accept-Language")
 	}
 	for _, next := range []string{"//evil.example", "https://evil.example", `/\evil.example`} {
 		rec := e.do("POST", routes.Locale, url.Values{"locale": {"en"}, "next": {next}})
-		if rec.Header().Get("Location") != routes.Home {
+		if rec.Header().Get("Location") != config.AppRoutes.Home {
 			t.Errorf("next %q redirected to %q", next, rec.Header().Get("Location"))
 		}
 	}
 }
 
 func TestActionsRejectCrossOrigin(t *testing.T) {
-	e := newEnv(t, ui.Features{})
-	rec := e.do("POST", routes.Login, url.Values{"email": {"demo@example.com"}, "password": {"password123"}}, func(r *http.Request) {
+	e := newEnv(t, config.Features{})
+	rec := e.do("POST", config.AppRoutes.Login, url.Values{"email": {"demo@example.com"}, "password": {"password123"}}, func(r *http.Request) {
 		r.Header.Set("Sec-Fetch-Site", "cross-site")
 	})
 	if rec.Code != http.StatusForbidden {
@@ -364,14 +373,14 @@ func (s *sseReader) next() string {
 // connection: initial patch, cross-tab update with notice, own-tab update
 // without notice, and the redirect when the account is deleted.
 func TestLiveStream(t *testing.T) {
-	e := newEnv(t, ui.Features{})
+	e := newEnv(t, config.Features{})
 	srv := httptest.NewServer(e.h)
 	defer srv.Close()
 	tok := e.signedIn()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	req, _ := http.NewRequestWithContext(ctx, "GET", srv.URL+routes.DashboardLive+"?tab=A", nil)
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL+routes.DashboardLive+"?tab=A", nil)
 	req.Header.Set("Datastar-Request", "true")
 	req.AddCookie(&http.Cookie{Name: uifake.CookieName, Value: tok})
 	res, err := http.DefaultClient.Do(req)
@@ -411,7 +420,7 @@ func TestLiveStream(t *testing.T) {
 	}
 
 	rec := e.do("POST", routes.DeleteAccount, nil, datastar, session(tok))
-	assertRedirectScript(t, rec, routes.Home)
+	assertRedirectScript(t, rec, config.AppRoutes.Home)
 	if ev := s.next(); !strings.Contains(ev, `window.location.href = "/"`) {
 		t.Fatalf("expected redirect after delete, got: %s", ev)
 	}

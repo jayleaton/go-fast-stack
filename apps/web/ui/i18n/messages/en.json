@@ -67,7 +67,7 @@
       },
       "settingsForm": {
         "title": "Account settings",
-        "description": "Update your name and email address.",
+        "description": "Update the name shown on your account. Your email is used to sign in and can't be changed here.",
         "saving": "Saving...",
         "saved": "Settings saved."
       },
@@ -175,6 +175,8 @@
     "passwordTooShort": "Password must be at least 8 characters",
     "emailInvalid": "Please enter a valid email address",
     "emailTaken": "Email already in use",
-    "invalidInput": "Please check the form and try again"
+    "invalidInput": "Please check the form and try again",
+    "tooManyRequests": "Too many attempts. Please try again later.",
+    "passwordTooLong": "Password must be at most 128 characters"
   }
 }

@@ -2,6 +2,7 @@ package i18n
 
 import (
 	"io/fs"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -29,7 +30,7 @@ func TestUsedKeysExistInEveryLocale(t *testing.T) {
 		}
 		name := d.Name()
 		if d.IsDir() || strings.HasSuffix(name, "_templ.go") || strings.HasSuffix(name, "_test.go") ||
-			!(strings.HasSuffix(name, ".templ") || strings.HasSuffix(name, ".go")) {
+			(!strings.HasSuffix(name, ".templ") && !strings.HasSuffix(name, ".go")) {
 			return nil
 		}
 		src, err := os.ReadFile(path)
@@ -97,7 +98,7 @@ func TestNegotiate(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			r := httptest.NewRequest("GET", "/", nil)
+			r := httptest.NewRequest(http.MethodGet, "/", nil)
 			if c.accept != "" {
 				r.Header.Set("Accept-Language", c.accept)
 			}
