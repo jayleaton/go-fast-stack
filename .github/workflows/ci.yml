@@ -267,6 +267,13 @@ jobs:
         env:
           AFFECTED_FULL: ${{ github.event_name != 'pull_request' && '1' || '' }}
 
+      - name: TEMP module cache sizes
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          du -sh ~/go/pkg/mod ~/go/pkg/mod/cache/download ~/.cache/go-build
+          du -s ~/go/pkg/mod/* ~/go/pkg/mod/*/* 2>/dev/null | sort -n | tail -12
+          find ~/go/pkg/mod/cache/download -name '*.zip' | wc -l
+
       # Only when an affected package's tests use it; boots in the background
       # while the build runs. tmpfs and no fsync: test data is throwaway.
       # Only when an affected package's tests use it; boots in the background
