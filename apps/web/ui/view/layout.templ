@@ -1,0 +1,155 @@
+package view
+
+import (
+	"strings"
+
+	"github.com/jayleaton/ai-patterns-go/apps/web/ui/i18n"
+	"github.com/jayleaton/ai-patterns-go/apps/web/ui/routes"
+	"github.com/jayleaton/ai-patterns-go/apps/web/ui/static"
+)
+
+func pageTitle(title string) string {
+	if title == "" {
+		return Brand
+	}
+	return title + " — " + Brand
+}
+
+// Layout is the root shell (apps/web-app/app/layout.tsx): sticky header with
+// logout, theme toggle and language switcher.
+templ Layout(title string) {
+	<!DOCTYPE html>
+	<html lang={ string(i18n.From(ctx).Locale) } dir="ltr" class={ StateFrom(ctx).Theme }>
+		<head>
+			<meta charset="utf-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1"/>
+			<meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff"/>
+			<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0a0a0a"/>
+			<meta name="description" content="Monorepo template using Go, templ, Datastar, TailwindCSS and PostgreSQL."/>
+			<title>{ pageTitle(title) }</title>
+			<link rel="icon" href={ static.URL(static.FaviconFile) }/>
+			<link rel="stylesheet" href={ static.URL(static.CSSFile) }/>
+			<script type="module" src={ static.URL(static.DatastarFile) }></script>
+		</head>
+		<body class="bg-white text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100">
+			<div class="relative min-h-screen">
+				<header class="sticky top-0 z-50 border-b border-neutral-200/80 bg-white/80 backdrop-blur-md dark:border-neutral-800/80 dark:bg-neutral-950/80">
+					<nav aria-label="Global" class="mx-auto flex max-w-3xl items-center justify-end gap-2 px-4 py-3 md:px-6">
+						if StateFrom(ctx).Authenticated {
+							@LogoutButton()
+						}
+						@ThemeToggle()
+						@LanguageSelector()
+					</nav>
+				</header>
+				<main id="main-content" role="main">
+					{ children... }
+				</main>
+				<footer aria-label="Site footer"></footer>
+			</div>
+		</body>
+	</html>
+}
+
+// LogoutButton signs out through Datastar; without JS the form posts normally.
+templ LogoutButton() {
+	<form method="post" action={ templ.SafeURL(routes.Logout) } data-on:submit={ PostForm(routes.Logout) } data-indicator:_logging-out>
+		<button
+			type="submit"
+			aria-label={ i18n.T(ctx, "components.authStatus.logout") }
+			title={ i18n.T(ctx, "components.authStatus.logout") }
+			data-attr:disabled="$_loggingOut"
+			class="h-9 w-9 rounded-md border border-neutral-200 bg-white text-neutral-700 shadow-sm hover:bg-neutral-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400 disabled:opacity-50 disabled:cursor-not-allowed dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-200 dark:hover:bg-neutral-800"
+		>
+			<svg class="mx-auto h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+				<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+				<polyline points="16,17 21,12 16,7"></polyline>
+				<line x1="21" y1="12" x2="9" y2="12"></line>
+			</svg>
+		</button>
+	</form>
+}
+
+// ThemeToggle switches dark/light. Both icons render; CSS shows the one for
+// the effective theme, so it is correct before any script runs.
+templ ThemeToggle() {
+	<button
+		type="button"
+		data-on:click={ themeToggle }
+		aria-label={ i18n.T(ctx, "components.themeToggle.toggle") }
+		title={ i18n.T(ctx, "components.themeToggle.toggle") }
+		class={ headerButtonClass }
+	>
+		<svg class="mx-auto hidden h-5 w-5 dark:block" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+			<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+		</svg>
+		<svg class="mx-auto h-5 w-5 dark:hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+			<circle cx="12" cy="12" r="4"></circle>
+			<path d="M12 2v2m0 16v2M2 12h2m16 0h2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path>
+		</svg>
+	</button>
+}
+
+// LanguageSelector is the dropdown from components/language-selector.tsx.
+// Picking a locale posts a plain form; the server sets the cookie and sends
+// the browser back to the current page.
+templ LanguageSelector() {
+	{{ t := i18n.From(ctx) }}
+	<div
+		class="relative"
+		data-signals="{_langOpen: false}"
+		data-on:click__outside="$_langOpen = false"
+		data-on:keydown__window="evt.key === 'Escape' && ($_langOpen = false)"
+	>
+		<button
+			type="button"
+			id="language-button"
+			data-on:click="$_langOpen = !$_langOpen"
+			aria-label={ t.T("components.languageSelector.language") }
+			aria-haspopup="listbox"
+			aria-expanded="false"
+			data-attr:aria-expanded="$_langOpen ? 'true' : 'false'"
+			aria-controls="language-menu"
+			class="inline-flex h-9 items-center gap-1.5 rounded-md border border-neutral-200 bg-white px-2.5 text-sm font-medium text-neutral-800 shadow-sm hover:bg-neutral-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
+		>
+			<span>{ strings.ToUpper(string(t.Locale)) }</span>
+			<svg class="h-3.5 w-3.5 text-neutral-500 transition-transform dark:text-neutral-400" data-class:rotate-180="$_langOpen" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+			</svg>
+		</button>
+		<form method="post" action={ templ.SafeURL(routes.Locale) }>
+			<input type="hidden" name="next" value={ StateFrom(ctx).Path }/>
+			<ul
+				id="language-menu"
+				role="listbox"
+				aria-label={ t.T("components.languageSelector.language") }
+				style="display: none"
+				data-show="$_langOpen"
+				class="absolute right-0 z-50 mt-1 min-w-[10.5rem] overflow-hidden rounded-md border border-neutral-200 bg-white py-1 shadow-lg dark:border-neutral-800 dark:bg-neutral-900"
+			>
+				for _, l := range i18n.Locales {
+					<li role="option" aria-selected={ boolString(l == t.Locale) }>
+						<button
+							type="submit"
+							name="locale"
+							value={ string(l) }
+							class={ "flex w-full items-center justify-between px-3 py-2 text-left text-sm disabled:opacity-50",
+								templ.KV("bg-neutral-100 font-medium text-neutral-950 dark:bg-neutral-800 dark:text-white", l == t.Locale),
+								templ.KV("text-neutral-700 hover:bg-neutral-50 dark:text-neutral-200 dark:hover:bg-neutral-800", l != t.Locale) }
+						>
+							<span>{ t.Label(l) }</span>
+							<span class="text-xs text-neutral-400 dark:text-neutral-500">{ strings.ToUpper(string(l)) }</span>
+						</button>
+					</li>
+				}
+			</ul>
+		</form>
+	</div>
+}
+
+func boolString(b bool) string {
+	if b {
+		return "true"
+	}
+	return "false"
+}
