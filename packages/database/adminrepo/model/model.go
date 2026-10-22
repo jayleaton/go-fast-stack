@@ -27,6 +27,10 @@ type NewAuditEntry struct {
 	TargetID    string
 	TargetLabel string // the target's email when the entry was written
 	Details     map[string]string
+	// At is when a fact happened (Append only; zero: when it is written). The
+	// log is ordered by it, so a fact delivered late still sorts where it
+	// happened. Mutations are always stamped when their intent is written.
+	At time.Time
 }
 
 // Audit statuses. A mutation's entry is written pending before it runs and

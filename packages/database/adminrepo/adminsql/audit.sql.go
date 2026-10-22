@@ -8,11 +8,13 @@ package adminsql
 import (
 	"context"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const appendAuditEntry = `-- name: AppendAuditEntry :exec
-INSERT INTO admin_audit_log (actor_id, actor_email, action, target_type, target_id, target_label, details)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+INSERT INTO admin_audit_log (actor_id, actor_email, action, target_type, target_id, target_label, details, created_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, coalesce($8::timestamptz, now()))
 `
 
 type AppendAuditEntryParams struct {
@@ -23,9 +25,11 @@ type AppendAuditEntryParams struct {
 	TargetID    string
 	TargetLabel string
 	Details     []byte
+	At          pgtype.Timestamptz
 }
 
-// A completed fact (sign-ins, ...): no outcome follows.
+// A completed fact (sign-ins, ...): no outcome follows. created_at is when it
+// happened (facts can arrive late, from auth's event worker), now() if unset.
 func (q *Queries) AppendAuditEntry(ctx context.Context, arg AppendAuditEntryParams) error {
 	_, err := q.db.Exec(ctx, appendAuditEntry,
 		arg.ActorID,
@@ -35,6 +39,7 @@ func (q *Queries) AppendAuditEntry(ctx context.Context, arg AppendAuditEntryPara
 		arg.TargetID,
 		arg.TargetLabel,
 		arg.Details,
+		arg.At,
 	)
 	return err
 }

@@ -1,7 +1,8 @@
 -- name: AppendAuditEntry :exec
--- A completed fact (sign-ins, ...): no outcome follows.
-INSERT INTO admin_audit_log (actor_id, actor_email, action, target_type, target_id, target_label, details)
-VALUES ($1, $2, $3, $4, $5, $6, $7);
+-- A completed fact (sign-ins, ...): no outcome follows. created_at is when it
+-- happened (facts can arrive late, from auth's event worker), now() if unset.
+INSERT INTO admin_audit_log (actor_id, actor_email, action, target_type, target_id, target_label, details, created_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, coalesce(sqlc.narg(at)::timestamptz, now()));
 
 -- name: BeginAuditEntry :one
 -- The intent of a mutation, written before it runs.

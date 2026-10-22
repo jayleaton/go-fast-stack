@@ -21,14 +21,14 @@ func NewAuditEvents(svc *services.AuthEventService, log *slog.Logger) auth.Event
 		var err error
 		switch e.Kind {
 		case auth.EventSignIn:
-			err = svc.SignedIn(ctx, e.UserID, e.Email, signInMethod(e.Method))
+			err = svc.SignedIn(ctx, e.At, e.UserID, e.Email, signInMethod(e.Method))
 		case auth.EventSignOut:
-			err = svc.SignedOut(ctx, e.UserID, e.Email)
+			err = svc.SignedOut(ctx, e.At, e.UserID, e.Email)
 		case auth.EventTwoFactorFailed:
 			if e.UserID == "" {
 				return // no valid pending sign-in: there is no admin to attribute it to
 			}
-			err = svc.TwoFactorFailed(ctx, e.UserID, e.Email, e.Reason)
+			err = svc.TwoFactorFailed(ctx, e.At, e.UserID, e.Email, e.Reason)
 		default:
 			return
 		}
