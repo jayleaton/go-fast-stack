@@ -216,9 +216,9 @@ func (w *wired) do(method, path, body, bearer string, wantStatus int, out any) s
 }
 
 // inviteAdmin runs the CLI path (bootstrap + invite as the operator), then
-// sets the password from the emailed link the way the UI's /set-password page
-// does (auth in-process; no auth endpoint is mounted). It returns the admin's
-// bearer token.
+// sets the password from the emailed link (it opens the UI's /set-password
+// page) through the audited auth endpoint the opt-in API mounts. It returns
+// the admin's bearer token.
 func (w *wired) inviteAdmin(email, password string) string {
 	w.t.Helper()
 	ctx := context.Background()
@@ -242,11 +242,12 @@ func (w *wired) inviteAdmin(email, password string) string {
 	if link.Path != config.AppRoutes.SetPassword || link.Query().Get("token") == "" {
 		w.t.Fatalf("invite link %s does not open the set-password page", link)
 	}
-	_, sess, err := w.admins.CompleteSetPassword(ctx, link.Query().Get("token"), password)
-	if err != nil || sess.Token == "" {
-		w.t.Fatalf("set password: %v", err)
+	var res struct{ Token string }
+	w.do("POST", "/api/auth/set-password", `{"token":"`+link.Query().Get("token")+`","newPassword":"`+password+`"}`, "", 200, &res)
+	if res.Token == "" {
+		w.t.Fatal("set-password returned no session token")
 	}
-	return sess.Token
+	return res.Token
 }
 
 // TestBanFlow is the dashboard's core promise, over real packages/auth on two
