@@ -54,10 +54,17 @@ if [ "$full" = true ]; then
   exit 0
 fi
 
+# sqlc inputs and outputs: every queries:/out: path in sqlc.yaml (schemas are
+# migrations, which force a full run above).
+sqlcdir=packages/database
+mapfile -t sqlcpaths < <(sed -nE 's/^[[:space:]]*(queries|out):[[:space:]]*([^[:space:]#]+).*/\2/p' "$sqlcdir/sqlc.yaml" |
+  while read -r p; do echo "$sqlcdir/${p%/}/"; done)
 sqlc=false templ=false
 for f in "${changed[@]}"; do
+  for p in "${sqlcpaths[@]}"; do
+    if [[ $f == "$p"* ]]; then sqlc=true; fi
+  done
   case $f in
-  packages/database/queries/* | packages/database/sqlc/* | */migrations/* | packages/database/sqlc.yaml) sqlc=true ;;
   *.templ | *_templ.go) templ=true ;;
   esac
 done
