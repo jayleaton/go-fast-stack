@@ -17,7 +17,6 @@
     "password": "パスワード",
     "yes": "はい",
     "no": "いいえ",
-    "home": "ホーム",
     "metaDescription": "Go、templ、Datastar、Tailwind、PostgreSQL で作られたアプリ。"
   },
   "components": {
@@ -59,8 +58,7 @@
       "quickActions": {
         "title": "クイックアクション",
         "settings": "設定",
-        "profile": "プロフィール",
-        "support": "サポート"
+        "profile": "プロフィール"
       },
       "sections": {
         "analytics": {
@@ -87,6 +85,7 @@
     },
     "login": {
       "title": "アカウントにサインイン",
+      "description": "おかえりなさい。続けるには、メールアドレスとパスワードを入力してください。",
       "loginButton": "サインイン",
       "forgotPassword": "パスワードをお忘れですか？",
       "dontHaveAccount": "アカウントをお持ちでない方",
@@ -96,6 +95,7 @@
     },
     "signup": {
       "title": "アカウントを作成",
+      "description": "メールアドレスですぐに始められます。登録は1分ほどで完了します。",
       "signupButton": "サインアップ",
       "alreadyHaveAccount": "既にアカウントをお持ちですか？",
       "signInInstead": "サインイン",
@@ -156,7 +156,6 @@
       "accountVerifiedRedirect": "アカウントが確認されました。ログイン済みです。まもなくリダイレクトします。",
       "continueToDashboard": "ダッシュボードに続行",
       "invalidUser": "このリンクは別のアカウント用です。サインアウトしてからもう一度リンクを開いてください。",
-      "confirmTitle": "メールアドレスの確認",
       "confirmDescription": "このメールアドレスがあなたのものであることを確認して、認証を完了してください。",
       "confirmButton": "メールアドレスを認証"
     },
@@ -169,7 +168,6 @@
     "account": {
       "title": "アカウント",
       "subtitle": "プロフィール、サインイン情報、デバイスを管理します。",
-      "backToDashboard": "ダッシュボードに戻る",
       "emailChanged": "メールアドレスが {email} に変更されました。",
       "profile": {
         "title": "プロフィール",

@@ -11,6 +11,7 @@ import (
 
 	"github.com/jayleaton/ai-patterns-go/apps/web/internal/config"
 	"github.com/jayleaton/ai-patterns-go/apps/web/ui"
+	"github.com/jayleaton/ai-patterns-go/apps/web/ui/i18n"
 	"github.com/jayleaton/ai-patterns-go/apps/web/ui/routes"
 )
 
@@ -90,6 +91,12 @@ func TestLogin(t *testing.T) {
 			assertSSE(t, e.do(http.MethodPost, config.AppRoutes.Login, form, datastar, lang("ja")), `id="form-error"`, ja(ae.Key))
 		})
 	}
+	t.Run("unverified, resend fails", func(t *testing.T) {
+		e := newEnv(t, config.Features{})
+		e.auth.EXPECT().SignInEmail(gomock.Any(), in).Return(ui.User{}, ui.Session{}, authErr(t, "pages.verifyEmail.description"))
+		e.auth.EXPECT().SendVerificationEmail(gomock.Any(), "demo@example.com", config.AppRoutes.VerifyEmailSuccess).Return(errors.New("smtp"))
+		assertSSE(t, e.do(http.MethodPost, config.AppRoutes.Login, form, datastar), `id="form-error"`, en("pages.verifyEmail.checkEmail"))
+	})
 	t.Run("unknown error", func(t *testing.T) {
 		e := newEnv(t, config.Features{})
 		e.auth.EXPECT().SignInEmail(gomock.Any(), in).Return(ui.User{}, ui.Session{}, errors.New("db down"))
@@ -137,6 +144,19 @@ func TestForgotAndResetPassword(t *testing.T) {
 
 	e.auth.EXPECT().ResetPassword(gomock.Any(), "tok", "short").Return(authErr(t, "errors.passwordTooShort"))
 	assertSSE(t, e.do(http.MethodPost, config.AppRoutes.ResetPassword, reset("short", "short"), datastar), en("pages.resetPassword.passwordTooShort"))
+
+	long := strings.Repeat("x", 129)
+	e.auth.EXPECT().ResetPassword(gomock.Any(), "tok", long).Return(authErr(t, "errors.passwordTooLong"))
+	assertSSE(t, e.do(http.MethodPost, config.AppRoutes.ResetPassword, reset(long, long), datastar), `id="form-error"`, en("errors.passwordTooLong"))
+
+	e.auth.EXPECT().ResetPassword(gomock.Any(), "tok", "newpassword1").Return(authErr(t, "errors.tooManyRequests"))
+	assertSSE(t, e.do(http.MethodPost, config.AppRoutes.ResetPassword, reset("newpassword1", "newpassword1"), datastar), en("errors.tooManyRequests"))
+
+	// No token never reaches auth; without JS the whole page comes back with the error.
+	rec := e.do(http.MethodPost, config.AppRoutes.ResetPassword, url.Values{"password": {"newpassword1"}, "confirmPassword": {"newpassword1"}})
+	if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), en("pages.resetPassword.invalidResetLink")) {
+		t.Errorf("reset without token: %d", rec.Code)
+	}
 }
 
 func TestVerifyEmail(t *testing.T) {
@@ -214,6 +234,11 @@ func TestLocaleSwitch(t *testing.T) {
 	page := e.do(http.MethodGet, config.AppRoutes.Login, nil, func(r *http.Request) { r.AddCookie(lc) }, lang("en"))
 	if !strings.Contains(page.Body.String(), ja("pages.login.title")) {
 		t.Error("cookie locale not applied over Accept-Language")
+	}
+	// An unsupported locale falls back to the default.
+	rec = e.do(http.MethodPost, routes.Locale, url.Values{"locale": {"xx"}, "next": {"/login"}})
+	if c := rec.Result().Cookies(); len(c) == 0 || c[0].Value != string(i18n.DefaultLocale) {
+		t.Errorf("unsupported locale cookie: %+v", c)
 	}
 	for _, next := range []string{"//evil.example", "https://evil.example", `/\evil.example`} {
 		assertSeeOther(t, e.do(http.MethodPost, routes.Locale, url.Values{"locale": {"en"}, "next": {next}}), config.AppRoutes.Home)

@@ -139,6 +139,11 @@ func TestAccountHappyPaths(t *testing.T) {
 		assertSSE(t, e.do(http.MethodPost, routes.AccountRevokeSession, url.Values{"sessionId": {"sess-2"}}, datastar), `id="sessions-card"`, en("pages.account.sessions.revoked"))
 		e.users.EXPECT().RevokeOtherSessions(gomock.Any(), demoActor, "u1").Return(nil)
 		assertSSE(t, e.do(http.MethodPost, routes.AccountRevokeOthers, url.Values{}, datastar), en("pages.account.sessions.othersRevoked"))
+
+		// The revoke worked but the list cannot be reloaded: say why instead.
+		e.users.EXPECT().RevokeSession(gomock.Any(), demoActor, "u1", "sess-2").Return(nil)
+		e.users.EXPECT().ListSessions(gomock.Any(), demoActor, "u1").Return(nil, errors.New("db down"))
+		assertSSE(t, e.do(http.MethodPost, routes.AccountRevokeSession, url.Values{"sessionId": {"sess-2"}}, datastar), `id="sessions-status"`, en("errors.somethingWentWrong"))
 	})
 
 	t.Run("delete", func(t *testing.T) {
@@ -146,6 +151,12 @@ func TestAccountHappyPaths(t *testing.T) {
 		e.signedIn("sess-1")
 		e.users.EXPECT().DeleteAccount(gomock.Any(), demoActor, "u1").Return(nil)
 		e.auth.EXPECT().SignOut(gomock.Any(), demoSession.Token).Return(nil)
+		e.auth.EXPECT().ClearSessionCookie(gomock.Any())
+		assertRedirectScript(t, e.do(http.MethodPost, routes.AccountDelete, url.Values{}, datastar), config.AppRoutes.Home)
+
+		// A failed sign-out after the delete still clears the cookie and leaves.
+		e.users.EXPECT().DeleteAccount(gomock.Any(), demoActor, "u1").Return(nil)
+		e.auth.EXPECT().SignOut(gomock.Any(), demoSession.Token).Return(errors.New("gone"))
 		e.auth.EXPECT().ClearSessionCookie(gomock.Any())
 		assertRedirectScript(t, e.do(http.MethodPost, routes.AccountDelete, url.Values{}, datastar), config.AppRoutes.Home)
 	})
@@ -310,5 +321,37 @@ func TestLiveStream(t *testing.T) {
 	assertSSE(t, e.do(http.MethodPost, routes.AccountRevokeOthers, url.Values{}, datastar), en("pages.account.sessions.othersRevoked"))
 	if ev := s.next(); !strings.Contains(ev, `window.location.href = "`+config.AppRoutes.Login+`"`) {
 		t.Fatalf("expected the revoked tab to go to login, got: %s", ev)
+	}
+}
+
+// TestLiveStreamAccountDeleted: deleting the account on another device sends
+// every open dashboard home.
+func TestLiveStreamAccountDeleted(t *testing.T) {
+	e := newEnv(t, config.Features{})
+	srv := httptest.NewServer(e.h)
+	defer srv.Close()
+	e.signedIn("sess-1")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL+routes.DashboardLive+"?tab=A", nil)
+	req.Header.Set("Datastar-Request", "true")
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	s := &sseReader{t: t, sc: bufio.NewScanner(res.Body)}
+	_ = s.next() // first live body
+
+	e.signedIn("sess-9")
+	other := demoActor
+	other.SessionID = "sess-9"
+	e.users.EXPECT().DeleteAccount(gomock.Any(), other, "u1").Return(nil)
+	e.auth.EXPECT().SignOut(gomock.Any(), gomock.Any()).Return(nil)
+	e.auth.EXPECT().ClearSessionCookie(gomock.Any())
+	assertRedirectScript(t, e.do(http.MethodPost, routes.AccountDelete, url.Values{}, datastar), config.AppRoutes.Home)
+	if ev := s.next(); !strings.Contains(ev, `window.location.href = "`+config.AppRoutes.Home+`"`) {
+		t.Fatalf("expected the deleted account's tab to go home, got: %s", ev)
 	}
 }
