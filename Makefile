@@ -54,7 +54,10 @@ test: test-db-up ## go test -race against a throwaway Postgres
 .PHONY: ci
 ci: ## Run the same checks as CI
 	$(GO) build ./...
-	$(MAKE) check-generated lint lint-layering test
+	$(MAKE) check-generated
+	$(MAKE) lint test
+	@# Alone: its temporary probe packages would leak into the other checks under make -j.
+	$(MAKE) lint-layering
 
 .PHONY: migrate
 migrate: ## Run auth then app migrations against DATABASE_URL

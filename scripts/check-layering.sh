@@ -18,6 +18,7 @@ cases=(
   "apps/web/ui|$mod/packages/database"
   "apps/web/internal/services|net/http"
   "apps/web/internal/services|$mod/packages/database/sqlc"
+  "packages/auth|$mod/packages/database"
 )
 
 dirs=()

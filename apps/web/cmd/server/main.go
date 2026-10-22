@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"slices"
 	"syscall"
 	"time"
 
@@ -20,15 +21,14 @@ import (
 	"github.com/jayleaton/ai-patterns-go/apps/web/internal/api"
 	"github.com/jayleaton/ai-patterns-go/apps/web/internal/config"
 	"github.com/jayleaton/ai-patterns-go/apps/web/internal/server"
-	"github.com/jayleaton/ai-patterns-go/apps/web/internal/server/devauth"
 	"github.com/jayleaton/ai-patterns-go/apps/web/internal/services"
+	"github.com/jayleaton/ai-patterns-go/packages/auth"
 	"github.com/jayleaton/ai-patterns-go/packages/database"
-	"github.com/jayleaton/ai-patterns-go/packages/database/authstub"
 )
 
 // migrations run in order: auth owns "user", app tables reference it.
 var migrations = []func(context.Context, *pgxpool.Pool) error{
-	authstub.Migrate, // TODO(feat/auth): auth.Migrate
+	auth.Migrate,
 	database.Migrate,
 }
 
@@ -89,13 +89,9 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	}
 	defer pool.Close()
 
-	var auth server.Auth = devauth.NoAuth{}
-	caller := devauth.CallerFrom
-	if cfg.Features.DevAuth {
-		if auth, err = devauth.New(ctx, pool); err != nil {
-			return fmt.Errorf("dev auth (run `make migrate` first): %w", err)
-		}
-		log.Warn("dev auth fake: every request is signed in as " + devauth.UserEmail)
+	authn, err := newAuth(cfg, pool, log)
+	if err != nil {
+		return err
 	}
 
 	users := services.NewUserService(database.NewUserRepository(pool))
@@ -103,8 +99,8 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		Config: cfg,
 		Log:    log,
 		DB:     pool,
-		Auth:   auth,
-		Users:  api.NewUsers(users, caller),
+		Auth:   authn,
+		Users:  api.NewUsers(users, server.CallerFrom),
 	})
 
 	srv := &http.Server{
@@ -134,7 +130,28 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	if err := <-errc; !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
-	return nil
+	// Requests are done; let auth emails queued by them go out.
+	return authn.Shutdown(shutdownCtx)
+}
+
+// newAuth configures packages/auth from config: Resend when RESEND_API_KEY is
+// set (required in production), otherwise email links are logged.
+func newAuth(cfg config.Config, pool *pgxpool.Pool, log *slog.Logger) (*auth.Auth, error) {
+	var mailer auth.Mailer = auth.NewDevMailer(log)
+	if cfg.ResendAPIKey != "" {
+		mailer = auth.NewResendMailer(cfg.ResendAPIKey, cfg.FromEmail)
+	} else {
+		log.Warn("RESEND_API_KEY not set: auth email links are logged, not sent")
+	}
+	return auth.New(auth.Config{
+		Secret:                   cfg.AuthSecret,
+		BaseURL:                  cfg.PublicURL.String(),
+		RequireEmailVerification: cfg.Features.EmailVerification,
+		TrustedOrigins:           slices.Concat(cfg.TrustedOrigins, auth.MobileTrustedOrigins(!cfg.Features.MobileDevOrigins)),
+		LoginPath:                config.AppRoutes.Login,
+		ClientIPHeader:           cfg.ClientIPHeader,
+		Logger:                   log,
+	}, pool, mailer)
 }
 
 func newLogger(env config.Env) *slog.Logger {

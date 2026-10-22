@@ -30,6 +30,7 @@ type Config struct {
 	AuthSecret     string
 	ResendAPIKey   string // empty outside production: email links are logged
 	FromEmail      string
+	ClientIPHeader string // header the trusted proxy sets to the client IP (auth rate limits); empty uses the TCP peer
 	Features       Features
 }
 
@@ -50,6 +51,9 @@ func Load(getenv func(string) string) (Config, error) {
 		AuthSecret:   get("AUTH_SECRET", ""),
 		ResendAPIKey: get("RESEND_API_KEY", ""),
 		FromEmail:    get("FROM_EMAIL", "noreply@example.com"),
+		// Only set behind a proxy that overwrites/appends it (Railway: X-Real-IP),
+		// or clients could pick their own rate-limit bucket.
+		ClientIPHeader: get("CLIENT_IP_HEADER", ""),
 	}
 	switch cfg.Env {
 	case Development, Test, Production:

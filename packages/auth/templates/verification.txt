@@ -1,0 +1,9 @@
+Verify your email address
+
+Hi there! We need to verify your email address ({{.Email}}) to complete your account setup.
+
+Click the link below to verify your email address:
+
+{{.URL}}
+
+This verification link will expire in 24 hours for security reasons.

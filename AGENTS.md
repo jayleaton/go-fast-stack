@@ -51,7 +51,7 @@ The most common defect is a change that works on the path you tested and is miss
 ## Dev loop
 
 - `make db-up && make migrate && make dev` starts Postgres + pgweb (bound to 127.0.0.1), runs migrations, and serves on `0.0.0.0:3000`. `.env` is created from `.env.example` on first run; set `POSTGRES_PORT` etc. there if the defaults are taken.
-- Until `packages/auth` is wired, development signs every request in as a seeded dev user (`config.Features.DevAuth`). It is never on in production.
+- Auth is real in every environment. In development email verification is off and the dev mailer logs verification and reset links to the server log, so sign up through `/api/auth/sign-up/email` (or the UI) and copy links from the log. `packages/auth/README.md` has the endpoints, the security model and how to port more Better Auth features.
 - A running dev server is fine to leave up. Stop only what you started, by PID.
 - Inspect data with pgweb (`127.0.0.1:5050`). Seed realistic data before verifying a user-facing flow; an empty database is a bad test. Secrets go in `.env` only when the flow needs them, and never get committed.
 
@@ -80,7 +80,7 @@ The most common defect is a change that works on the path you tested and is miss
 - `apps/web/internal/services`: business rules. `apps/web/internal/validate`: input types.
 - `apps/web/ui`: templ pages, Datastar handlers, i18n, static assets.
 - `packages/database`: pool, `migrations/` (goose, embedded), `queries/` (sqlc input), `sqlc/` (generated, never edit), repositories, `model/`, `dbtest/`.
-- `packages/auth`: Better Auth–style auth, its own migrations and endpoints.
+- `packages/auth`: Better Auth–style auth: its own migrations, queries, endpoints (Better Auth paths and response shapes, not the envelope), sessions, mailers. Self-contained: it never imports `apps/` or `packages/database` (depguard).
 - `apps/mobile-app`: the Expo app, which talks to the JSON API with bearer tokens.
 - Root: `Makefile`, `docker-compose.yml`, `Dockerfile`, `railway.json`, `.golangci.yml`, `tools/` (pinned dev tools, run via `go tool -modfile=tools/go.mod`).
 

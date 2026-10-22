@@ -24,7 +24,7 @@ func TestLoadDevelopmentDefaults(t *testing.T) {
 	if cfg.PublicURL.String() != "http://dev-box:3000" || cfg.InternalURL.String() != "http://dev-box:3000" {
 		t.Fatalf("public=%s internal=%s", cfg.PublicURL, cfg.InternalURL)
 	}
-	if cfg.Features.EmailVerification || !cfg.Features.DevAuth {
+	if cfg.Features.EmailVerification || !cfg.Features.MobileDevOrigins {
 		t.Fatalf("dev features = %+v", cfg.Features)
 	}
 	if got := Absolute(cfg.PublicURL, AppRoutes.VerifyEmail); got != "http://dev-box:3000/auth/verify-email" {
@@ -46,7 +46,7 @@ func TestLoadProductionRequiresProviders(t *testing.T) {
 
 func TestProductionFeatures(t *testing.T) {
 	f := FeaturesFor(Production)
-	if !f.EmailVerification || f.DevAuth {
+	if !f.EmailVerification || f.MobileDevOrigins {
 		t.Fatalf("production features = %+v", f)
 	}
 }

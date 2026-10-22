@@ -7,17 +7,16 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/jayleaton/ai-patterns-go/packages/auth"
 	"github.com/jayleaton/ai-patterns-go/packages/database"
-	"github.com/jayleaton/ai-patterns-go/packages/database/authstub"
 )
 
 // App is the full app schema: auth tables, then app migrations.
 var App = Template{
 	Name:        "app",
-	Fingerprint: authstub.Schema + fingerprint(database.Migrations),
+	Fingerprint: fingerprint(auth.Migrations) + fingerprint(database.Migrations),
 	Setup: func(ctx context.Context, pool *pgxpool.Pool) error {
-		// TODO(feat/auth): auth.Migrate(ctx, pool)
-		if err := authstub.Migrate(ctx, pool); err != nil {
+		if err := auth.Migrate(ctx, pool); err != nil {
 			return err
 		}
 		return database.Migrate(ctx, pool)

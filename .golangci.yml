@@ -56,6 +56,14 @@ linters:
           deny:
             - pkg: github.com/jayleaton/ai-patterns-go/apps
               desc: packages/database is the bottom layer and never imports apps
+        auth:
+          files:
+            - "**/packages/auth/**"
+          deny:
+            - pkg: github.com/jayleaton/ai-patterns-go/apps
+              desc: packages/auth is self-contained and never imports apps
+            - pkg: github.com/jayleaton/ai-patterns-go/packages/database
+              desc: packages/auth owns its tables and queries; it never uses the app's repositories
   exclusions:
     generated: lax
     presets:
