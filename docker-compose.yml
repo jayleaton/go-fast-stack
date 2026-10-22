@@ -1,5 +1,7 @@
-# Local sandbox only. Ports bind to 127.0.0.1; set POSTGRES_PORT / PGWEB_PORT /
-# TEST_POSTGRES_PORT in .env when the defaults are taken.
+# Local sandbox only; ports bind to 127.0.0.1. Run it through make: the
+# Makefile gives each checkout its own project name and ports (`make env`), so
+# parallel worktrees never collide. The defaults below apply to bare
+# `docker compose` only.
 name: ${COMPOSE_PROJECT_NAME:-ai-patterns-go}
 
 services:
@@ -42,7 +44,7 @@ services:
       POSTGRES_PASSWORD: postgres
     command: ["postgres", "-c", "fsync=off", "-c", "synchronous_commit=off", "-c", "full_page_writes=off", "-c", "max_connections=200"]
     ports:
-      - "127.0.0.1:${TEST_POSTGRES_PORT:-54329}:5432"
+      - "127.0.0.1:${TEST_POSTGRES_PORT:-}:5432" # empty: Docker picks a free port
     tmpfs:
       - /var/lib/postgresql
     healthcheck:
