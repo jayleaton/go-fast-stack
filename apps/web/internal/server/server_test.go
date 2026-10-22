@@ -12,7 +12,6 @@ import (
 
 	"github.com/jayleaton/ai-patterns-go/apps/web/internal/api"
 	"github.com/jayleaton/ai-patterns-go/apps/web/internal/config"
-	"github.com/jayleaton/ai-patterns-go/apps/web/internal/server/devauth"
 	"github.com/jayleaton/ai-patterns-go/apps/web/internal/services"
 	"github.com/jayleaton/ai-patterns-go/apps/web/internal/services/servicetest"
 )
@@ -21,14 +20,26 @@ type pinger struct{ err error }
 
 func (p pinger) Ping(context.Context) error { return p.err }
 
+// noAuth stands in for *auth.Auth: nobody is signed in and the auth
+// endpoints answer 501, so mount and middleware order can be tested without
+// a database (auth_test.go covers the real package).
+type noAuth struct{}
+
+func (noAuth) Middleware(next http.Handler) http.Handler { return next }
+func (noAuth) Handler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		api.WriteError(w, http.StatusNotImplemented, "not implemented", nil)
+	})
+}
+
 func newHandler(db Pinger, ui http.Handler) http.Handler {
 	users := services.NewUserService(servicetest.NewUsers())
 	return New(Deps{
 		Config: config.Config{TrustedOrigins: []string{"http://dev-box:3000"}},
 		Log:    slog.New(slog.NewTextHandler(io.Discard, nil)),
 		DB:     db,
-		Auth:   devauth.NoAuth{},
-		Users:  api.NewUsers(users, devauth.CallerFrom),
+		Auth:   noAuth{},
+		Users:  api.NewUsers(users, CallerFrom),
 		UI:     ui,
 	})
 }

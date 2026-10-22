@@ -1,8 +1,8 @@
 version: "2"
 sql:
   - engine: postgresql
-    # TODO(feat/auth): replace authstub/user.sql with ../auth/migrations once packages/auth lands.
-    schema: [authstub/user.sql, migrations]
+    # Auth tables (owned by packages/auth) first, then app migrations.
+    schema: [../auth/migrations, migrations]
     queries: queries
     gen:
       go:
@@ -11,6 +11,7 @@ sql:
         sql_package: pgx/v5
         emit_pointers_for_null_types: true
         emit_json_tags: true
+        omit_unused_structs: true # auth tables stay invisible unless a query uses them
         json_tags_case_style: camel
         overrides:
           - db_type: timestamptz

@@ -15,6 +15,16 @@ import (
 //go:embed migrations/*.sql
 var migrationFiles embed.FS
 
+// Migrations holds the embedded auth migrations (goose SQL). sqlc reads the
+// same files as schema; test templates hash them to detect schema changes.
+var Migrations = func() fs.FS {
+	sub, err := fs.Sub(migrationFiles, "migrations")
+	if err != nil {
+		panic(err)
+	}
+	return sub
+}()
+
 // MigrationTable is the goose version table for auth migrations. App
 // migrations use their own table and run after these.
 const MigrationTable = "goose_auth"
@@ -30,15 +40,11 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 	db := stdlib.OpenDBFromPool(pool)
 	defer func() { _ = db.Close() }()
 
-	migrations, err := fs.Sub(migrationFiles, "migrations")
-	if err != nil {
-		return err
-	}
 	locker, err := lock.NewPostgresSessionLocker(lock.WithLockID(migrationLockID))
 	if err != nil {
 		return err
 	}
-	provider, err := goose.NewProvider(goose.DialectPostgres, db, migrations,
+	provider, err := goose.NewProvider(goose.DialectPostgres, db, Migrations,
 		goose.WithTableName(MigrationTable),
 		goose.WithSessionLocker(locker),
 		goose.WithDisableGlobalRegistry(true),

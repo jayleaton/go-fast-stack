@@ -13,8 +13,7 @@ import (
 	"github.com/jayleaton/ai-patterns-go/apps/web/internal/config"
 )
 
-// Auth is the part of *auth.Auth the server mounts (devauth.Fake until
-// packages/auth lands).
+// Auth is the part of *auth.Auth the server mounts.
 type Auth interface {
 	Middleware(next http.Handler) http.Handler // loads the session into the request context
 	Handler() http.Handler                     // JSON endpoints under config.APIRoutes.Auth
