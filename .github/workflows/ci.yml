@@ -130,7 +130,7 @@ jobs:
       # started cold (3+ min). Restore by prefix instead: same go.sum first,
       # else the newest cache from main. Only pushes to main (and manual runs)
       # save, once per go.sum per day, so PRs never evict main's cache.
-      # Bump the "go2" prefix when what is cached changes (e.g. the toolchain).
+      # Bump the "go3" prefix when what is cached changes (e.g. the toolchain).
       - name: Go cache key
         id: go-cache
         run: echo "day=$(date -u +%Y%m%d)" >> "$GITHUB_OUTPUT"
@@ -140,10 +140,11 @@ jobs:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-          key: go2-${{ runner.os }}-${{ hashFiles('go.sum') }}-${{ steps.go-cache.outputs.day }}
+            ~/.cache/golangci-lint
+          key: go3-${{ runner.os }}-${{ hashFiles('go.sum') }}-${{ steps.go-cache.outputs.day }}
           restore-keys: |
-            go2-${{ runner.os }}-${{ hashFiles('go.sum') }}-
-            go2-${{ runner.os }}-
+            go3-${{ runner.os }}-${{ hashFiles('go.sum') }}-
+            go3-${{ runner.os }}-
 
       # No setup-go: extracting and copying Go into the tool cache took ~12 s.
       # The runner's preinstalled go switches to the go.mod version itself
@@ -175,9 +176,12 @@ jobs:
       - name: Build
         run: go build ./...
 
+      # Its own cache key only changes with go.sum or weekly, so an exact hit
+      # kept a stale cache forever; its directory rides in the Go cache instead.
       - uses: golangci/golangci-lint-action@v9
         with:
           version: v2.15.0
+          skip-cache: true
 
       - name: Test boundaries
         run: ./scripts/check-test-boundaries.sh
@@ -212,7 +216,8 @@ jobs:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-          key: go2-${{ runner.os }}-${{ hashFiles('go.sum') }}-${{ steps.go-cache.outputs.day }}
+            ~/.cache/golangci-lint
+          key: go3-${{ runner.os }}-${{ hashFiles('go.sum') }}-${{ steps.go-cache.outputs.day }}
 
   # Typecheck, lint, Expo SDK version check and unit tests. The contract test
   # (pnpm test:contract) needs Go + Docker and runs locally.
