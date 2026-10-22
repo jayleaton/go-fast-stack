@@ -1,3 +1,4 @@
+// ci timing probe
 // Package services holds business rules. Both transports (the JSON API and
 // the HTML UI) call services in-process. Services see everything below them
 // through ports: small interfaces declared here, by the consumer, and
