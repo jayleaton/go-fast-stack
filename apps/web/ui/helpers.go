@@ -1,3 +1,4 @@
+// Scratch: CI minutes (web-only change).
 package ui
 
 import (
