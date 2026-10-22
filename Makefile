@@ -21,11 +21,11 @@ help: ## List targets
 	@grep -hE '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F ':.*## ' '{printf "  %-14s %s\n", $$1, $$2}'
 
 .PHONY: dev
-dev: generate ## Run the server (0.0.0.0, PORT or 3000) with .env
+dev: ## Run the server (0.0.0.0, PORT or 3000) with .env
 	$(GO) run ./apps/web/cmd/server serve
 
 .PHONY: build
-build: generate ## Build a static binary into bin/server
+build: ## Build a static binary into bin/server
 	CGO_ENABLED=0 $(GO) build -trimpath -ldflags='-s -w' -o $(BIN) ./apps/web/cmd/server
 
 .PHONY: generate
