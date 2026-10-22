@@ -1,7 +1,9 @@
 # The checks one CI job runs, shared by the single job (mode "all") and the
 # two fan-out jobs ("db": lint + DB-backed tests, "other": the rest + mobile).
 # Expects: checkout, module cache, Go toolchain and the affected outputs
-# (scripts/affected.sh) to be done by the caller.
+# (scripts/affected.sh) to be done by the caller. The steps here only set up
+# tools and caches; scripts/ci-check.sh runs the checks themselves as parallel
+# tasks (lint, generated code, tests, deploy/, mobile), then the probes.
 name: check
 description: Lint, test and (optionally) mobile checks for the affected packages
 inputs:
@@ -27,8 +29,8 @@ runs:
         PACKAGES: ${{ inputs.packages }}
 
     # Boots while caches restore and lint runs; only DB-backed test binaries
-    # wait for it (see Test). tmpfs and no fsync: test data is throwaway. The
-    # fan-out "db" job starts it itself, first thing (see ci.yml).
+    # wait for it (see scripts/ci-check.sh). tmpfs and no fsync: test data is
+    # throwaway. The fan-out "db" job starts it itself, first thing (ci.yml).
     - name: Start Postgres
       if: steps.shard.outputs.db == 'true' && inputs.mode != 'db'
       shell: bash
@@ -41,7 +43,7 @@ runs:
     # Build + lint cache, keyed by commit: saved by the single CI job on pushes
     # to main and restored by prefix everywhere else (incl. opt-in fan-out).
     - uses: actions/cache/restore@v6
-      if: inputs.packages != ''
+      if: inputs.packages != '' || inputs.deploy == 'true'
       with:
         path: |
           ~/.cache/go-build
@@ -49,110 +51,54 @@ runs:
         key: v7-go-${{ runner.os }}-${{ github.sha }}
         restore-keys: v7-go-${{ runner.os }}-
 
-    # ---- lint ("all" and "db") ----
-    - name: gofmt
-      if: inputs.mode != 'other' && inputs.packages != ''
-      shell: bash
-      run: |
-        unformatted="$(gofmt -l .)"
-        if [ -n "$unformatted" ]; then
-          echo "$unformatted"; echo 'gofmt: run gofmt -w .'; exit 1
-        fi
-
     - uses: sqlc-dev/setup-sqlc@v5
       if: inputs.mode != 'other' && inputs.sqlc == 'true'
       with:
         sqlc-version: '1.31.1'
 
-    - name: Generated code is up to date
-      if: inputs.mode != 'other' && (inputs.sqlc == 'true' || inputs.templ == 'true' || inputs.generate != '')
+    # Only the binary: ci-check.sh runs it (root module and deploy/ at once).
+    # Its own cache rides in the build cache above.
+    - uses: golangci/golangci-lint-action@v9
+      if: (inputs.mode != 'other' && inputs.packages != '') || inputs.deploy == 'true'
+      with:
+        version: v2.15.0
+        install-only: true
+
+    # ---- mobile app: Node from the runner's tool cache, pnpm via corepack
+    # (the packageManager pin), node_modules cached by lockfile ----
+    # (The contract test, pnpm test:contract, needs Go + Docker and runs locally.)
+    - uses: actions/setup-node@v7
+      if: inputs.mobile == 'true'
+      with:
+        node-version: 22
+    - name: pnpm
+      if: inputs.mobile == 'true'
       shell: bash
+      run: corepack enable
       env:
+        COREPACK_ENABLE_DOWNLOAD_PROMPT: '0'
+    - uses: actions/cache/restore@v6
+      if: inputs.mobile == 'true'
+      id: node-modules
+      with:
+        path: apps/mobile-app/node_modules
+        key: v1-mobile-nm-${{ runner.os }}-node22-${{ hashFiles('apps/mobile-app/pnpm-lock.yaml') }}
+
+    - name: Checks
+      shell: bash
+      run: ./scripts/ci-check.sh
+      env:
+        MODE: ${{ inputs.mode }}
+        DIRS: ${{ inputs.packages != '' && inputs.dirs || '' }}
+        TESTS: ${{ steps.shard.outputs.packages }}
+        DB: ${{ steps.shard.outputs.db }}
+        FULL: ${{ inputs.full }}
         SQLC: ${{ inputs.sqlc }}
         TEMPL: ${{ inputs.templ }}
         GENERATE: ${{ inputs.generate }}
-      run: |
-        if [ "$SQLC" = true ]; then sqlc generate -f packages/database/sqlc.yaml; fi
-        for p in $GENERATE; do go generate "$p"; done
-        if [ "$TEMPL" = true ]; then
-          for ui in packages/uikit apps/web/ui apps/admin/ui; do if [ -d "$ui" ]; then go tool templ generate -path "$ui"; fi; done
-        fi
-        git diff --exit-code
-        test -z "$(git status --porcelain)" || { git status --short; echo 'untracked generated files: run make generate and commit'; exit 1; }
-
-    # Its own cache rides in the build cache above.
-    - uses: golangci/golangci-lint-action@v9
-      if: inputs.mode != 'other' && inputs.packages != ''
-      with:
-        version: v2.15.0
-        skip-cache: true
-        args: ${{ inputs.dirs }}
-
-    - name: Test boundaries
-      if: inputs.mode != 'other' && inputs.packages != ''
-      shell: bash
-      run: ./scripts/check-test-boundaries.sh
-
-    # The probes prove the lint and test rules still bite; their inputs
-    # (scripts/, .golangci.yml) always force a full run.
-    - name: Coverage floors name real packages
-      if: inputs.mode != 'other' && inputs.full == 'true'
-      shell: bash
-      run: ./scripts/check-coverage.sh --exist
-    - name: Layering rules
-      if: inputs.mode != 'other' && inputs.full == 'true'
-      shell: bash
-      run: ./scripts/check-layering.sh
-      env:
-        GOLANGCI_LINT: golangci-lint
-
-    # ---- tests ----
-    # With -coverprofile go test also compiles packages without tests (lint
-    # type-checks everything too), so there is no build step. DB-backed test
-    # binaries wait for Postgres through an -exec wrapper, so compiling
-    # overlaps its boot. Readiness is checked inside the container over TCP:
-    # docker's port proxy accepts connections before Postgres listens, and the
-    # image's first-boot init server answers on the unix socket only.
-    - name: Test
-      if: steps.shard.outputs.packages != ''
-      shell: bash
-      env:
-        PACKAGES: ${{ steps.shard.outputs.packages }}
-        DB: ${{ steps.shard.outputs.db }}
-      run: |
-        mkdir -p .cache
-        exec_flag=()
-        if [ "$DB" = true ]; then
-          cat > "$RUNNER_TEMP/wait-db" <<'SH'
-        #!/usr/bin/env bash
-        if grep -lq 'TEST_DATABASE_URL' ./*_test.go 2>/dev/null; then
-          # 2x the measured Postgres boot (12-22 s): never waits longer than 45 s.
-          for _ in $(seq 1 180); do
-            docker exec pg pg_isready -q -h 127.0.0.1 -U postgres 2>/dev/null && exec "$@"
-            sleep 0.25
-          done
-          echo "postgres did not start:" >&2; cat "$RUNNER_TEMP/pg.log" >&2; docker logs pg >&2; exit 1
-        fi
-        exec "$@"
-        SH
-          chmod +x "$RUNNER_TEMP/wait-db"
-          exec_flag=(-exec "$RUNNER_TEMP/wait-db")
-        fi
-        # testbudget prints plain go test output, the slowest tests, and fails
-        # a package or test over its time budget (AGENTS.md "Fast tests").
-        set -o pipefail
-        go test -race -json "${exec_flag[@]}" -coverprofile=.cache/coverage.out $PACKAGES | # word splitting intended
-          go run ./scripts/testbudget
-        TESTED="$PACKAGES" ./scripts/check-coverage.sh .cache/coverage.out
-
-    # After the tests: the coverage probes plant their uncovered statements in
-    # the run's profile (this job tested every probed package on a full run).
-    - name: Test boundary probes
-      if: inputs.mode != 'db' && inputs.full == 'true'
-      shell: bash
-      run: ./scripts/check-test-probes.sh
-      env:
-        PROFILE: .cache/coverage.out
+        MOBILE: ${{ inputs.mobile }}
+        DEPLOY: ${{ inputs.deploy }}
+        COREPACK_ENABLE_DOWNLOAD_PROMPT: '0'
 
     - uses: actions/cache/save@v6
       if: inputs.save == 'true' && inputs.packages != '' && inputs.mode == 'all'
@@ -161,42 +107,9 @@ runs:
           ~/.cache/go-build
           ~/.cache/golangci-lint
         key: v7-go-${{ runner.os }}-${{ github.sha }}
-
-    # ---- mobile app: typecheck, lint, Expo SDK check, unit tests ----
-    # (The contract test, pnpm test:contract, needs Go + Docker and runs locally.)
-    - uses: pnpm/action-setup@v6
-      if: inputs.mobile == 'true'
+    # Any branch saves a missing node_modules: there is one per lockfile.
+    - uses: actions/cache/save@v6
+      if: inputs.mobile == 'true' && steps.node-modules.outputs.cache-hit != 'true'
       with:
-        package_json_file: apps/mobile-app/package.json
-    - uses: actions/setup-node@v7
-      if: inputs.mobile == 'true'
-      with:
-        node-version: 22
-        cache: pnpm
-        cache-dependency-path: apps/mobile-app/pnpm-lock.yaml
-    - name: Mobile app checks
-      if: inputs.mobile == 'true'
-      shell: bash
-      working-directory: apps/mobile-app
-      run: |
-        pnpm install --frozen-lockfile
-        pnpm exec tsc --noEmit
-        pnpm exec expo lint
-        pnpm exec expo install --check
-        pnpm test
-
-    # ---- deploy/: its own Go module (Railway IaC SDK + yaml) ----
-    - name: deploy module vet
-      if: inputs.deploy == 'true'
-      shell: bash
-      working-directory: deploy
-      run: |
-        go vet ./...
-        (cd .railway && go vet railway.go)
-    - uses: golangci/golangci-lint-action@v9
-      if: inputs.deploy == 'true'
-      with:
-        version: v2.15.0
-        skip-cache: true
-        working-directory: deploy
-        args: -c ../.golangci.yml ./...
+        path: apps/mobile-app/node_modules
+        key: v1-mobile-nm-${{ runner.os }}-node22-${{ hashFiles('apps/mobile-app/pnpm-lock.yaml') }}
