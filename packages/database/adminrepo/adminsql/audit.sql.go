@@ -7,6 +7,7 @@ package adminsql
 
 import (
 	"context"
+	"time"
 )
 
 const appendAuditEntry = `-- name: AppendAuditEntry :exec
@@ -24,6 +25,7 @@ type AppendAuditEntryParams struct {
 	Details     []byte
 }
 
+// A completed fact (sign-ins, ...): no outcome follows.
 func (q *Queries) AppendAuditEntry(ctx context.Context, arg AppendAuditEntryParams) error {
 	_, err := q.db.Exec(ctx, appendAuditEntry,
 		arg.ActorID,
@@ -35,6 +37,38 @@ func (q *Queries) AppendAuditEntry(ctx context.Context, arg AppendAuditEntryPara
 		arg.Details,
 	)
 	return err
+}
+
+const beginAuditEntry = `-- name: BeginAuditEntry :one
+INSERT INTO admin_audit_log (actor_id, actor_email, action, target_type, target_id, target_label, details, intent)
+VALUES ($1, $2, $3, $4, $5, $6, $7, true)
+RETURNING id
+`
+
+type BeginAuditEntryParams struct {
+	ActorID     string
+	ActorEmail  string
+	Action      string
+	TargetType  string
+	TargetID    string
+	TargetLabel string
+	Details     []byte
+}
+
+// The intent of a mutation, written before it runs.
+func (q *Queries) BeginAuditEntry(ctx context.Context, arg BeginAuditEntryParams) (int64, error) {
+	row := q.db.QueryRow(ctx, beginAuditEntry,
+		arg.ActorID,
+		arg.ActorEmail,
+		arg.Action,
+		arg.TargetType,
+		arg.TargetID,
+		arg.TargetLabel,
+		arg.Details,
+	)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
 }
 
 const countAuditEntries = `-- name: CountAuditEntries :one
@@ -56,10 +90,13 @@ func (q *Queries) CountAuditEntries(ctx context.Context, arg CountAuditEntriesPa
 }
 
 const listAuditEntries = `-- name: ListAuditEntries :many
-SELECT id, actor_id, actor_email, action, target_type, target_id, target_label, details, created_at FROM admin_audit_log
-WHERE ($1::text IS NULL OR action = $1)
-  AND ($2::text IS NULL OR target_id = $2)
-ORDER BY created_at DESC, id DESC
+SELECT l.id, l.actor_id, l.actor_email, l.action, l.target_type, l.target_id, l.target_label, l.details, l.created_at, l.intent,
+       o.status AS outcome_status, o.reason AS outcome_reason, o.reconciled AS outcome_reconciled
+FROM admin_audit_log l
+LEFT JOIN admin_audit_outcome o ON o.entry_id = l.id
+WHERE ($1::text IS NULL OR l.action = $1)
+  AND ($2::text IS NULL OR l.target_id = $2)
+ORDER BY l.created_at DESC, l.id DESC
 LIMIT $4 OFFSET $3
 `
 
@@ -70,7 +107,23 @@ type ListAuditEntriesParams struct {
 	RowLimit  int32
 }
 
-func (q *Queries) ListAuditEntries(ctx context.Context, arg ListAuditEntriesParams) ([]AdminAuditLog, error) {
+type ListAuditEntriesRow struct {
+	ID                int64
+	ActorID           string
+	ActorEmail        string
+	Action            string
+	TargetType        string
+	TargetID          string
+	TargetLabel       string
+	Details           []byte
+	CreatedAt         time.Time
+	Intent            bool
+	OutcomeStatus     *string
+	OutcomeReason     *string
+	OutcomeReconciled *bool
+}
+
+func (q *Queries) ListAuditEntries(ctx context.Context, arg ListAuditEntriesParams) ([]ListAuditEntriesRow, error) {
 	rows, err := q.db.Query(ctx, listAuditEntries,
 		arg.Action,
 		arg.TargetID,
@@ -81,9 +134,70 @@ func (q *Queries) ListAuditEntries(ctx context.Context, arg ListAuditEntriesPara
 		return nil, err
 	}
 	defer rows.Close()
-	var items []AdminAuditLog
+	var items []ListAuditEntriesRow
 	for rows.Next() {
-		var i AdminAuditLog
+		var i ListAuditEntriesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ActorID,
+			&i.ActorEmail,
+			&i.Action,
+			&i.TargetType,
+			&i.TargetID,
+			&i.TargetLabel,
+			&i.Details,
+			&i.CreatedAt,
+			&i.Intent,
+			&i.OutcomeStatus,
+			&i.OutcomeReason,
+			&i.OutcomeReconciled,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const pendingAuditEntries = `-- name: PendingAuditEntries :many
+SELECT l.id, l.actor_id, l.actor_email, l.action, l.target_type, l.target_id, l.target_label, l.details, l.created_at
+FROM admin_audit_log l
+WHERE l.intent AND l.created_at < $1
+  AND NOT EXISTS (SELECT 1 FROM admin_audit_outcome o WHERE o.entry_id = l.id)
+ORDER BY l.created_at, l.id
+LIMIT $2
+`
+
+type PendingAuditEntriesParams struct {
+	Before   time.Time
+	RowLimit int32
+}
+
+type PendingAuditEntriesRow struct {
+	ID          int64
+	ActorID     string
+	ActorEmail  string
+	Action      string
+	TargetType  string
+	TargetID    string
+	TargetLabel string
+	Details     []byte
+	CreatedAt   time.Time
+}
+
+// Intents older than the cut-off that never got an outcome, oldest first.
+func (q *Queries) PendingAuditEntries(ctx context.Context, arg PendingAuditEntriesParams) ([]PendingAuditEntriesRow, error) {
+	rows, err := q.db.Query(ctx, pendingAuditEntries, arg.Before, arg.RowLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []PendingAuditEntriesRow
+	for rows.Next() {
+		var i PendingAuditEntriesRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.ActorID,
@@ -103,4 +217,34 @@ func (q *Queries) ListAuditEntries(ctx context.Context, arg ListAuditEntriesPara
 		return nil, err
 	}
 	return items, nil
+}
+
+const resolveAuditEntry = `-- name: ResolveAuditEntry :execrows
+INSERT INTO admin_audit_outcome (entry_id, status, reason, reconciled)
+SELECT l.id, $1, $2, $3
+FROM admin_audit_log l
+WHERE l.id = $4 AND l.intent
+ON CONFLICT (entry_id) DO NOTHING
+`
+
+type ResolveAuditEntryParams struct {
+	Status     string
+	Reason     string
+	Reconciled bool
+	EntryID    int64
+}
+
+// The first outcome wins (a late request result after the reconciler, or the
+// reverse, is a no-op). Only intents take outcomes.
+func (q *Queries) ResolveAuditEntry(ctx context.Context, arg ResolveAuditEntryParams) (int64, error) {
+	result, err := q.db.Exec(ctx, resolveAuditEntry,
+		arg.Status,
+		arg.Reason,
+		arg.Reconciled,
+		arg.EntryID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
