@@ -319,3 +319,7 @@ Locally the admin database is a second database on the same per-checkout Postgre
 ## Working on it
 
 Read [AGENTS.md](AGENTS.md) (architecture, test boundaries, how to add a service, PR rules) and [CONTEXT.md](CONTEXT.md) (shared vocabulary).
+
+## License
+
+[MIT](LICENSE). Use it for anything, including commercial projects; keep the copyright notice.
