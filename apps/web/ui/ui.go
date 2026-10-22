@@ -29,6 +29,7 @@ type UI struct {
 	userFrom func(ctx context.Context) (User, Session, bool)
 	users    Users
 	features config.Features
+	appName  string
 	secure   bool
 	log      *slog.Logger
 	now      func() time.Time
@@ -47,12 +48,16 @@ func New(d Deps) *UI {
 		userFrom: d.UserFrom,
 		users:    d.Users,
 		features: d.Features,
+		appName:  d.AppName,
 		secure:   d.SecureCookies,
 		log:      d.Logger,
 		now:      d.Now,
 		interval: d.LiveInterval,
 		hub:      newHub(),
 		csrf:     http.NewCrossOriginProtection(),
+	}
+	if u.appName == "" {
+		u.appName = config.DefaultAppName
 	}
 	if u.userFrom == nil {
 		u.userFrom = auth.UserFrom
@@ -129,6 +134,7 @@ func (u *UI) wrap(h http.HandlerFunc) http.Handler {
 		_, _, authed := u.userFrom(r.Context())
 		ctx := i18n.WithTranslator(r.Context(), i18n.Translator{Locale: loc})
 		ctx = view.WithState(ctx, view.State{
+			AppName:       u.appName,
 			Authenticated: authed,
 			Theme:         view.ThemeFrom(r),
 			Path:          pathWithoutToken(r.URL),

@@ -115,6 +115,9 @@ type Deps struct {
 	// defaults to auth.UserFrom.
 	UserFrom func(ctx context.Context) (User, Session, bool)
 	Features config.Features
+	// AppName is the product name in the header and <title>; defaults to
+	// config.DefaultAppName.
+	AppName string
 	// SecureCookies marks UI cookies (locale) Secure; true behind HTTPS.
 	SecureCookies bool
 	Logger        *slog.Logger

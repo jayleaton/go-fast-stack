@@ -5,10 +5,9 @@ package view
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 	"net/http"
-	"strings"
+
+	"github.com/jayleaton/ai-patterns-go/packages/uikit"
 )
 
 // DefaultAppName is the brand when Deps.AppName is empty.
@@ -16,7 +15,7 @@ const DefaultAppName = "Admin"
 
 // ThemeCookie stores the theme toggle choice ("dark" or "light"). Without it
 // the CSS follows prefers-color-scheme.
-const ThemeCookie = "theme"
+const ThemeCookie = uikit.ThemeCookie
 
 // Nav sections; State.Section highlights one.
 const (
@@ -54,54 +53,20 @@ func StateFrom(ctx context.Context) State {
 	return s
 }
 
-// ThemeFrom reads the theme cookie.
-func ThemeFrom(r *http.Request) string {
-	if c, err := r.Cookie(ThemeCookie); err == nil && (c.Value == "dark" || c.Value == "light") {
-		return c.Value
-	}
-	return ""
-}
+// ThemeFrom reads the theme cookie: "dark", "light" or "" (system).
+func ThemeFrom(r *http.Request) string { return uikit.ThemeFrom(r) }
 
 // PostForm is the Datastar action that submits the closest form urlencoded.
-func PostForm(path string) string {
-	return fmt.Sprintf("@post('%s', {contentType: 'form'})", jsPath(path))
-}
+func PostForm(path string) string { return uikit.PostForm(path) }
 
-// ConfirmPostForm is PostForm behind a browser confirm(message): cancelling
-// sends nothing (Datastar always prevents a form's native submit). Without
-// JS the form posts as is.
-func ConfirmPostForm(message, path string) string {
-	return "confirm(" + jsString(message) + ") && " + PostForm(path)
-}
+// ConfirmPostForm is PostForm behind a browser confirm(message).
+func ConfirmPostForm(message, path string) string { return uikit.ConfirmPostForm(message, path) }
 
 // Post is the Datastar action that posts the page's signals as JSON.
-func Post(path string) string {
-	return fmt.Sprintf("@post('%s')", jsPath(path))
-}
+func Post(path string) string { return uikit.Post(path) }
 
 // Get is the Datastar action for a GET SSE stream.
-func Get(path string) string {
-	return fmt.Sprintf("@get('%s')", jsPath(path))
-}
-
-// jsString quotes s as a JS string literal. JSON is valid JS, and the
-// encoder escapes <, > and & too.
-func jsString(s string) string {
-	b, _ := json.Marshal(s) // a string always encodes
-	return string(b)
-}
-
-// jsPath keeps a server path safe inside a single-quoted JS string.
-func jsPath(p string) string {
-	return strings.NewReplacer(`\`, `\\`, `'`, `\'`).Replace(p)
-}
-
-// themeToggle flips the effective theme, persists it in the theme cookie and
-// updates <html> without a round trip.
-const themeToggle = `const root = document.documentElement;` +
-	` const dark = root.classList.contains('dark') || (!root.classList.contains('light') && window.matchMedia('(prefers-color-scheme: dark)').matches);` +
-	` root.classList.toggle('dark', !dark); root.classList.toggle('light', dark);` +
-	` document.cookie = 'theme=' + (dark ? 'light' : 'dark') + '; path=/; max-age=31536000; samesite=lax' + (location.protocol === 'https:' ? '; secure' : '')`
+func Get(path string) string { return uikit.Get(path) }
 
 // Shared Tailwind classes, copied from the original pages.
 const (
@@ -124,7 +89,6 @@ const (
 	TableClass           = "min-w-full divide-y divide-neutral-200 text-sm dark:divide-neutral-800"
 	ThClass              = "px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400"
 	TdClass              = "whitespace-nowrap px-3 py-2 text-neutral-700 dark:text-neutral-300"
-	headerButtonClass    = "inline-flex h-9 w-9 items-center justify-center rounded-md border border-neutral-200 bg-white text-neutral-800 shadow-sm hover:bg-neutral-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
 )
 
 // Field describes one labelled form input.

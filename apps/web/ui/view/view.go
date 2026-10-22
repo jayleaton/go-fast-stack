@@ -4,20 +4,19 @@ package view
 
 import (
 	"context"
-	"fmt"
 	"net/http"
-	"strings"
-)
 
-// Brand is the site name used in <title>.
-const Brand = "Better Stack"
+	"github.com/jayleaton/ai-patterns-go/packages/uikit"
+)
 
 // ThemeCookie stores the theme toggle choice ("dark" or "light"). Without it
 // the CSS follows prefers-color-scheme.
-const ThemeCookie = "theme"
+const ThemeCookie = uikit.ThemeCookie
 
 // State is the per-request data the layout needs.
 type State struct {
+	// AppName is the product name in the header and <title> (Deps.AppName).
+	AppName       string
 	Authenticated bool
 	// Theme is "dark", "light" or "" (system).
 	Theme string
@@ -38,45 +37,20 @@ func StateFrom(ctx context.Context) State {
 	return s
 }
 
-// ThemeFrom reads the theme cookie.
-func ThemeFrom(r *http.Request) string {
-	if c, err := r.Cookie(ThemeCookie); err == nil && (c.Value == "dark" || c.Value == "light") {
-		return c.Value
-	}
-	return ""
-}
+// ThemeFrom reads the theme cookie: "dark", "light" or "" (system).
+func ThemeFrom(r *http.Request) string { return uikit.ThemeFrom(r) }
 
 // PostForm is the Datastar action that submits the closest form urlencoded.
-func PostForm(path string) string {
-	return fmt.Sprintf("@post('%s', {contentType: 'form'})", jsPath(path))
-}
+func PostForm(path string) string { return uikit.PostForm(path) }
 
 // Post is the Datastar action that posts the page's signals as JSON.
-func Post(path string) string {
-	return fmt.Sprintf("@post('%s')", jsPath(path))
-}
+func Post(path string) string { return uikit.Post(path) }
 
 // Get is the Datastar action for a GET SSE stream.
-func Get(path string) string {
-	return fmt.Sprintf("@get('%s')", jsPath(path))
-}
+func Get(path string) string { return uikit.Get(path) }
 
 // Assign is the expression that navigates to path (a safe relative path).
-func Assign(path string) string {
-	return fmt.Sprintf("window.location.assign('%s')", jsPath(path))
-}
-
-// jsPath keeps a server path safe inside a single-quoted JS string.
-func jsPath(p string) string {
-	return strings.NewReplacer(`\`, `\\`, `'`, `\'`, "\n", `\n`, "\r", `\r`, "\u2028", `\u2028`, "\u2029", `\u2029`).Replace(p)
-}
-
-// themeToggle flips the effective theme, persists it in the theme cookie and
-// updates <html> without a round trip.
-const themeToggle = `const root = document.documentElement;` +
-	` const dark = root.classList.contains('dark') || (!root.classList.contains('light') && window.matchMedia('(prefers-color-scheme: dark)').matches);` +
-	` root.classList.toggle('dark', !dark); root.classList.toggle('light', dark);` +
-	` document.cookie = 'theme=' + (dark ? 'light' : 'dark') + '; path=/; max-age=31536000; samesite=lax' + (location.protocol === 'https:' ? '; secure' : '')`
+func Assign(path string) string { return uikit.Assign(path) }
 
 // Shared Tailwind classes, copied from the original pages.
 const (
@@ -90,7 +64,6 @@ const (
 	SuccessAlertClass  = "rounded-md border border-green-300 bg-green-50 px-4 py-3 text-green-700 dark:border-green-800 dark:bg-green-950/40 dark:text-green-300"
 	HeadingClass       = "mt-6 text-center text-3xl font-extrabold text-neutral-900 dark:text-neutral-100"
 	SubheadingClass    = "mt-2 text-center text-sm text-neutral-600 dark:text-neutral-300"
-	headerButtonClass  = "inline-flex h-9 w-9 items-center justify-center rounded-md border border-neutral-200 bg-white text-neutral-800 shadow-sm hover:bg-neutral-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
 )
 
 // Field describes one labelled form input.

@@ -29,12 +29,20 @@
       "users": "ユーザー",
       "admins": "管理者",
       "audit": "監査ログ",
-      "analytics": "分析"
+      "analytics": "分析",
+      "menu": "メニュー",
+      "skipToContent": "本文へスキップ"
     },
     "pager": {
       "previous": "前へ",
       "next": "次へ",
       "showing": "{2}件中 {0}〜{1}件を表示"
+    },
+    "toast": {
+      "close": "閉じる"
+    },
+    "confirm": {
+      "cancel": "キャンセル"
     }
   },
   "pages": {

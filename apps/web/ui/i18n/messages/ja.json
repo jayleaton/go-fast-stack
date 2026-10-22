@@ -17,7 +17,8 @@
     "password": "パスワード",
     "yes": "はい",
     "no": "いいえ",
-    "home": "ホーム"
+    "home": "ホーム",
+    "metaDescription": "Go、templ、Datastar、Tailwind、PostgreSQL で作られたアプリ。"
   },
   "components": {
     "languageSelector": {
@@ -36,6 +37,16 @@
       "toggle": "テーマを切り替え",
       "toLight": "ライトモードに切り替え",
       "toDark": "ダークモードに切り替え"
+    },
+    "nav": {
+      "label": "メイン",
+      "dashboard": "ダッシュボード",
+      "account": "アカウント",
+      "menu": "メニュー",
+      "skipToContent": "本文へスキップ"
+    },
+    "toast": {
+      "close": "閉じる"
     }
   },
   "pages": {

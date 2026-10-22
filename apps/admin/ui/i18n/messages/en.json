@@ -29,12 +29,20 @@
       "users": "Users",
       "admins": "Admins",
       "audit": "Audit log",
-      "analytics": "Analytics"
+      "analytics": "Analytics",
+      "menu": "Menu",
+      "skipToContent": "Skip to content"
     },
     "pager": {
       "previous": "Previous",
       "next": "Next",
       "showing": "Showing {0}–{1} of {2}"
+    },
+    "toast": {
+      "close": "Dismiss"
+    },
+    "confirm": {
+      "cancel": "Cancel"
     }
   },
   "pages": {

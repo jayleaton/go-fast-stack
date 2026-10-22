@@ -203,7 +203,7 @@ jobs:
           if [ "$SQLC" = true ]; then sqlc generate -f packages/database/sqlc.yaml; fi
           for p in $GENERATE; do go generate "$p"; done
           if [ "$TEMPL" = true ]; then
-            for ui in apps/web/ui apps/admin/ui; do if [ -d "$ui" ]; then go tool templ generate -path "$ui"; fi; done
+            for ui in packages/uikit apps/web/ui apps/admin/ui; do if [ -d "$ui" ]; then go tool templ generate -path "$ui"; fi; done
           fi
           git diff --exit-code
           test -z "$(git status --porcelain)" || { git status --short; echo 'untracked generated files: run make generate and commit'; exit 1; }

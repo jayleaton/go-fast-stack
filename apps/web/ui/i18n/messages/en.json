@@ -17,7 +17,8 @@
     "password": "Password",
     "yes": "Yes",
     "no": "No",
-    "home": "Home"
+    "home": "Home",
+    "metaDescription": "A Go, templ, Datastar, Tailwind and PostgreSQL app."
   },
   "components": {
     "languageSelector": {
@@ -36,6 +37,16 @@
       "toggle": "Toggle theme",
       "toLight": "Switch to light mode",
       "toDark": "Switch to dark mode"
+    },
+    "nav": {
+      "label": "Main",
+      "dashboard": "Dashboard",
+      "account": "Account",
+      "menu": "Menu",
+      "skipToContent": "Skip to content"
+    },
+    "toast": {
+      "close": "Dismiss"
     }
   },
   "pages": {

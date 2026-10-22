@@ -1,0 +1,229 @@
+package uikit
+
+// Page is the HTML document. The theme class is rendered by the server from
+// the theme cookie (no class: follow the system), so the first paint has the
+// right colors without a pre-paint script. data-nonce lets Datastar run
+// data-* expressions under the strict nonce CSP.
+templ Page(d Document) {
+	<!DOCTYPE html>
+	<html
+		lang={ d.Lang }
+		dir="ltr"
+		if d.Theme != "" {
+			class={ d.Theme }
+		}
+		if templ.GetNonce(ctx) != "" {
+			data-nonce={ templ.GetNonce(ctx) }
+		}
+	>
+		<head>
+			<meta charset="utf-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1"/>
+			<meta name="color-scheme" content="light dark"/>
+			if d.Description != "" {
+				<meta name="description" content={ d.Description }/>
+			}
+			<title>{ d.Title }</title>
+			if d.Favicon != "" {
+				<link rel="icon" href={ d.Favicon }/>
+			}
+			<link rel="stylesheet" href={ d.CSS }/>
+			if d.Script != "" {
+				<script type="module" src={ d.Script } nonce={ templ.GetNonce(ctx) }></script>
+			}
+		</head>
+		<body class="min-h-dvh bg-background text-foreground">
+			{ children... }
+		</body>
+	</html>
+}
+
+// AppShell is the signed-in (or public) frame: skip link, sticky header with
+// the brand, the nav (inline from md up, a disclosure menu below) and the
+// actions, then main and an optional footer.
+templ AppShell(s Shell) {
+	<a href="#main-content" class="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-3 focus:z-[60] focus:rounded-control focus:bg-surface focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-foreground focus:shadow-popover">{ s.SkipLabel }</a>
+	<div
+		class="flex min-h-dvh flex-col"
+		if len(s.Nav) > 0 {
+			data-signals="{_menuOpen: false}"
+			data-on:keydown__window="evt.key === 'Escape' && ($_menuOpen = false)"
+		}
+	>
+		<header class="sticky top-0 z-40 border-b border-border bg-surface/90 backdrop-blur supports-[backdrop-filter]:bg-surface/75">
+			<div class={ ContainerClass, "flex h-16 items-center gap-3" }>
+				if len(s.Nav) > 0 {
+					<button
+						type="button"
+						data-testid="mobile-menu-button"
+						class={ ButtonClass(Ghost, Icon, false), "-ml-2 md:hidden" }
+						aria-label={ s.MenuLabel }
+						aria-controls="mobile-menu"
+						aria-expanded="false"
+						data-attr:aria-expanded="$_menuOpen ? 'true' : 'false'"
+						data-on:click="$_menuOpen = !$_menuOpen"
+					>
+						<svg class="size-5" data-class:hidden="$_menuOpen" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"></path></svg>
+						<svg class="hidden size-5" data-class:hidden="!$_menuOpen" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg>
+					</button>
+				}
+				<a href={ templ.SafeURL(s.BrandHref) } class="flex min-w-0 items-center gap-2.5 rounded-control" data-testid="brand">
+					<span class="grid size-8 shrink-0 place-items-center rounded-control bg-primary text-sm font-bold text-primary-foreground" aria-hidden="true">{ initial(s.Brand) }</span>
+					<span class="truncate text-base font-semibold tracking-tight">{ s.Brand }</span>
+				</a>
+				if len(s.Nav) > 0 {
+					<nav aria-label={ s.NavLabel } class="ml-4 hidden items-center gap-1 md:flex">
+						for _, n := range s.Nav {
+							@navLink(n, false)
+						}
+					</nav>
+				}
+				<div class="ml-auto flex items-center gap-1.5 sm:gap-2">
+					if s.Actions != nil {
+						@s.Actions
+					}
+				</div>
+			</div>
+			if len(s.Nav) > 0 {
+				<div id="mobile-menu" class="hidden border-t border-border md:hidden" data-class:hidden="!$_menuOpen">
+					<div class={ ContainerClass, "space-y-1 py-3" }>
+						if s.MenuExtra != nil {
+							<div class="px-3 pb-2 text-sm text-muted-foreground">
+								@s.MenuExtra
+							</div>
+						}
+						<nav aria-label={ s.NavLabel } class="flex flex-col gap-1">
+							for _, n := range s.Nav {
+								@navLink(n, true)
+							}
+						</nav>
+					</div>
+				</div>
+			}
+		</header>
+		<main id="main-content" class="flex-1 focus:outline-none" tabindex="-1">
+			{ children... }
+		</main>
+		if s.Footer != nil {
+			<footer class="border-t border-border">
+				<div class={ ContainerClass, "py-6 text-sm text-muted-foreground" }>
+					@s.Footer
+				</div>
+			</footer>
+		}
+	</div>
+}
+
+templ navLink(n NavItem, block bool) {
+	<a
+		href={ templ.SafeURL(n.Href) }
+		if n.Current {
+			aria-current="page"
+		}
+		class={ "rounded-control px-3 text-sm font-medium motion-safe:transition-colors",
+			templ.KV("py-2", !block), templ.KV("py-2.5 text-base", block),
+			templ.KV("bg-accent text-accent-foreground", n.Current),
+			templ.KV("text-muted-foreground hover:bg-muted hover:text-foreground", !n.Current) }
+	>{ n.Label }</a>
+}
+
+// ThemeToggle switches dark/light. Both icons render; CSS shows the one for
+// the effective theme, so it is right before any script runs.
+templ ThemeToggle(label string) {
+	<button type="button" data-on:click={ themeToggle } aria-label={ label } title={ label } data-testid="theme-toggle" class={ ButtonClass(Ghost, Icon, false) }>
+		<svg class="hidden size-5 dark:block" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+			<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+		</svg>
+		<svg class="size-5 dark:hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+			<circle cx="12" cy="12" r="4"></circle>
+			<path d="M12 2v2m0 16v2M2 12h2m16 0h2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path>
+		</svg>
+	</button>
+}
+
+// LocaleMenu is the language dropdown. Each option is a submit button of a
+// plain form, so it works without JS; Datastar only opens and closes it.
+templ LocaleMenu(l Locales) {
+	<div
+		class="relative"
+		data-signals="{_langOpen: false}"
+		data-on:click__outside="$_langOpen = false"
+		data-on:keydown__window="evt.key === 'Escape' && ($_langOpen = false)"
+	>
+		<button
+			type="button"
+			id="language-button"
+			data-on:click="$_langOpen = !$_langOpen"
+			aria-label={ l.Label }
+			aria-haspopup="true"
+			aria-expanded="false"
+			data-attr:aria-expanded="$_langOpen ? 'true' : 'false'"
+			aria-controls="language-menu"
+			class={ ButtonClass(Ghost, Small, false), "h-9 gap-1.5 px-2.5" }
+		>
+			<svg class="size-4 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"></path></svg>
+			<span class="uppercase">{ l.Current }</span>
+		</button>
+		<form method="post" action={ templ.SafeURL(l.Action) }>
+			<input type="hidden" name="next" value={ l.Next }/>
+			<div
+				id="language-menu"
+				aria-label={ l.Label }
+				data-class:hidden="!$_langOpen"
+				class="absolute right-0 z-50 mt-2 hidden min-w-44 overflow-hidden rounded-control border border-border bg-surface p-1 shadow-popover"
+			>
+				for _, o := range l.Options {
+					<button
+						type="submit"
+						name="locale"
+						value={ o.Value }
+						lang={ o.Value }
+						if o.Selected {
+							aria-current="true"
+						}
+						class={ "flex w-full items-center justify-between gap-3 rounded-[calc(var(--ui-radius-control)-2px)] px-3 py-2 text-left text-sm",
+							templ.KV("bg-accent font-medium text-accent-foreground", o.Selected),
+							templ.KV("text-foreground hover:bg-muted", !o.Selected) }
+					>
+						<span>{ o.Label }</span>
+						<span class="text-xs uppercase opacity-75">{ o.Value }</span>
+					</button>
+				}
+			</div>
+		</form>
+	</div>
+}
+
+// SignOutButton posts to action through Datastar; without JS the form posts
+// normally.
+templ SignOutButton(action, label string) {
+	<form class="flex" method="post" action={ templ.SafeURL(action) } data-on:submit={ PostForm(action) } data-indicator:_signing-out>
+		<button type="submit" aria-label={ label } title={ label } data-testid="sign-out" data-attr:disabled="$_signingOut" class={ ButtonClass(Ghost, Icon, false) }>
+			<svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+				<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+				<polyline points="16,17 21,12 16,7"></polyline>
+				<line x1="21" y1="12" x2="9" y2="12"></line>
+			</svg>
+		</button>
+	</form>
+}
+
+// AuthLayout centers a narrow card for sign-in style pages: the brand mark,
+// a title and description, then the card's content.
+templ AuthLayout(brand, title, description string) {
+	<div class="relative flex min-h-[calc(100dvh-4rem)] items-start justify-center overflow-hidden px-4 py-10 sm:items-center sm:py-16">
+		<div aria-hidden="true" class="pointer-events-none absolute inset-x-0 top-0 -z-10 h-72 bg-gradient-to-b from-accent to-transparent opacity-70"></div>
+		<div class="w-full max-w-md">
+			<div class="mb-6 text-center">
+				<span class="mx-auto mb-4 grid size-11 place-items-center rounded-card bg-primary text-lg font-bold text-primary-foreground shadow-card" aria-hidden="true">{ initial(brand) }</span>
+				<h1 class="text-2xl font-semibold tracking-tight text-balance">{ title }</h1>
+				if description != "" {
+					<p class="mt-2 text-sm text-muted-foreground text-pretty">{ description }</p>
+				}
+			</div>
+			<div class={ CardClass, "p-6 sm:p-8" }>
+				{ children... }
+			</div>
+		</div>
+	</div>
+}
