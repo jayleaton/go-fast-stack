@@ -386,7 +386,7 @@ func (a *Auth) SendVerificationEmail(ctx context.Context, email, callbackURL str
 	if err != nil {
 		return err
 	}
-	current, _, signedIn := UserFrom(ctx)
+	current, _, signedIn := a.userFrom(ctx)
 	if signedIn {
 		if current.Email != email {
 			return ErrEmailMismatch

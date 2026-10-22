@@ -74,6 +74,29 @@ func TestBanAndUnban(t *testing.T) {
 	}
 }
 
+func TestAdminResetTwoFactorRecoversAccess(t *testing.T) {
+	h := newHarness(t, with2FA(true))
+	ctx := context.Background()
+	email := uniqueEmail(t)
+	rec := h.signUp(email, "password123")
+	pending := hdr{"Cookie": cookies(rec), "Origin": testBase}
+	secret := jsonBody(t, h.do("POST", BasePath+"/two-factor/enable", map[string]any{}, pending))["secret"].(string)
+	rec = h.do("POST", BasePath+"/two-factor/verify-totp", map[string]any{"code": h.code(secret)}, pending)
+	id := h.userID(hdr{"Cookie": cookieHeader(t, rec)})
+
+	// Lost authenticator: the admin resets 2FA; sign-in asks to enrol again.
+	if err := h.a.Users().ResetTwoFactor(ctx, id); err != nil {
+		t.Fatal(err)
+	}
+	rec = h.signIn(email, "password123")
+	if body := jsonBody(t, rec); body["twoFactorSetupRequired"] != true {
+		t.Fatalf("after reset sign-in = %v", body)
+	}
+	if err := h.a.Users().ResetTwoFactor(ctx, generateID(32)); !errors.Is(err, ErrUserNotFound) {
+		t.Fatalf("unknown user err = %v", err)
+	}
+}
+
 func TestBannedUserGetsNoTwoFactorChallenge(t *testing.T) {
 	h := newHarness(t, with2FA(false))
 	email := uniqueEmail(t)
@@ -346,5 +369,20 @@ func TestSeparateInstancesDoNotCollide(t *testing.T) {
 	}
 	if get(admins, adminCookie.Name+"="+appCookie.Value) || get(app, appCookie.Name+"="+adminCookie.Value) {
 		t.Fatal("a cookie signed by the other instance was accepted")
+	}
+
+	// Nested (admin handler mounted inside the app's Middleware): each instance
+	// still only sees its own session.
+	nested := &harness{t: t, a: admins, h: app.Middleware(admins.Handler()), mail: h.mail, clock: h.clock}
+	both := appCookie.Name + "=" + appCookie.Value
+	if nested.getSession(hdr{"Cookie": both}) != nil {
+		t.Fatal("admin instance accepted the app session through nested Middleware")
+	}
+	if nested.getSession(hdr{"Cookie": both + "; " + adminCookie.Name + "=" + adminCookie.Value}) == nil {
+		t.Fatal("admin session lost under nested Middleware")
+	}
+	protected := app.Middleware(admins.RequireUser(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })))
+	if rec := nested.serve(protected, "GET", "/admin", nil, hdr{"Cookie": both}); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("admin RequireUser with only an app session: %d", rec.Code)
 	}
 }

@@ -22,6 +22,7 @@ type ctxKey struct{}
 type requestMeta struct {
 	ip, userAgent  string
 	token          string // session token presented by the client, valid or not
+	owner          *Auth  // the instance whose Middleware loaded this
 	twoFactorToken string // pending 2FA sign-in (two_factor cookie)
 	trustToken     string // "trust this device" (trust_device cookie)
 	user           User
@@ -34,7 +35,26 @@ func metaFrom(ctx context.Context) *requestMeta {
 	return m
 }
 
-// UserFrom returns the signed-in user and session that Middleware loaded.
+// meta returns the request data this instance's Middleware loaded, or nil.
+// Another instance's data (nested Middleware, e.g. an admin app mounted
+// inside the main app) is never used for this instance's sessions or tokens.
+func (a *Auth) meta(ctx context.Context) *requestMeta {
+	if m := metaFrom(ctx); m != nil && m.owner == a {
+		return m
+	}
+	return nil
+}
+
+// userFrom is UserFrom restricted to this instance's session.
+func (a *Auth) userFrom(ctx context.Context) (User, Session, bool) {
+	if m := a.meta(ctx); m != nil && m.ok {
+		return m.user, m.session, true
+	}
+	return User{}, Session{}, false
+}
+
+// UserFrom returns the signed-in user and session that Middleware loaded
+// (the innermost instance's, when several are nested).
 func UserFrom(ctx context.Context) (User, Session, bool) {
 	if m := metaFrom(ctx); m != nil && m.ok {
 		return m.user, m.session, true
@@ -167,11 +187,11 @@ func normalizeIP(s string) string {
 // extended once per SessionUpdateAge.
 func (a *Auth) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if metaFrom(r.Context()) != nil {
+		if a.meta(r.Context()) != nil {
 			next.ServeHTTP(w, r)
 			return
 		}
-		meta := &requestMeta{ip: a.clientIP(r), userAgent: r.UserAgent(), token: a.sessionToken(r)}
+		meta := &requestMeta{owner: a, ip: a.clientIP(r), userAgent: r.UserAgent(), token: a.sessionToken(r)}
 		if a.cfg.TwoFactor != nil {
 			meta.twoFactorToken = a.signedCookie(r, a.cookie(twoFactorCookieName))
 			meta.trustToken = a.signedCookie(r, a.cookie(trustDeviceCookieName))
@@ -207,7 +227,7 @@ func (a *Auth) fromCookie(r *http.Request) bool {
 // when that has not run yet.
 func (a *Auth) RequireUser(next http.Handler) http.Handler {
 	return a.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if _, _, ok := UserFrom(r.Context()); ok {
+		if _, _, ok := a.userFrom(r.Context()); ok {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -273,7 +293,7 @@ func (a *Auth) createSession(ctx context.Context, userID string) (Session, error
 		UpdatedAt: now,
 		UserID:    userID,
 	}
-	if m := metaFrom(ctx); m != nil {
+	if m := a.meta(ctx); m != nil {
 		if m.ip != "" {
 			s.IPAddress = &m.ip
 		}

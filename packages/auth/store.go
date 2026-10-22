@@ -448,12 +448,14 @@ var errAlreadyEnabled = errors.New("auth: two-factor already enabled")
 // acceptTOTPStep records step as used if it is newer than the last accepted
 // one, verifying the enrolment and enabling 2FA on the user the first time.
 // It returns errNotFound for a replayed (or older) step.
-func (s *store) acceptTOTPStep(ctx context.Context, userID string, step int64, now time.Time) error {
+// The update is pinned to secret, the one the code was checked against, so an
+// enrolment replaced meanwhile is never the one that gets verified.
+func (s *store) acceptTOTPStep(ctx context.Context, userID, secret string, step int64, now time.Time) error {
 	return s.tx(ctx, func(q querier) error {
 		tag, err := q.Exec(ctx, `
 			UPDATE "twoFactor" SET "lastUsedStep" = $2, "verified" = true, "failedVerificationCount" = 0,
 				"lockedUntil" = NULL, "updatedAt" = $3
-			WHERE "userId" = $1 AND "lastUsedStep" < $2`, userID, step, now)
+			WHERE "userId" = $1 AND "lastUsedStep" < $2 AND "secret" = $4`, userID, step, now, secret)
 		if err != nil {
 			return err
 		}
@@ -491,6 +493,22 @@ func (s *store) useBackupCode(ctx context.Context, userID, hash string, now time
 			WHERE "userId" = $1`, userID, string(left), now)
 		return err
 	})
+}
+
+// restoreBackupCode puts back a backup code that was spent without effect.
+func (s *store) restoreBackupCode(ctx context.Context, userID, hash string, now time.Time) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE "twoFactor" SET "backupCodes" = ("backupCodes"::jsonb || to_jsonb($2::text))::text, "updatedAt" = $3
+		WHERE "userId" = $1 AND "verified" AND NOT ("backupCodes"::jsonb ? $2)`, userID, hash, now)
+	return err
+}
+
+// resetTwoFactorFailures clears an expired lockout so failures count afresh.
+func (s *store) resetTwoFactorFailures(ctx context.Context, userID string, now time.Time) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE "twoFactor" SET "failedVerificationCount" = 0, "lockedUntil" = NULL, "updatedAt" = $2
+		WHERE "userId" = $1 AND "lockedUntil" <= $2`, userID, now)
+	return err
 }
 
 // setBackupCodes replaces a verified enrolment's backup codes.

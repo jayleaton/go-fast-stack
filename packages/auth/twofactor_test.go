@@ -93,6 +93,11 @@ func TestTwoFactorEnrolmentAndSignIn(t *testing.T) {
 
 	// Not active until confirmed: sign-in still gives a session.
 	wantStatus(t, h.signIn(email, "password123"), http.StatusOK)
+	// Someone else's pending two_factor cookie does not hijack the confirm step.
+	stranger := uniqueEmail(t)
+	h.enrol(stranger)
+	foreign := strings.Split(h.challenge(stranger, "password123"), "; ")
+	signedIn["Cookie"] += "; " + foreign[len(foreign)-1]
 	wantCode(t, h.do("POST", BasePath+"/two-factor/verify-totp", map[string]any{"code": "000000"}, signedIn), http.StatusUnauthorized, "INVALID_CODE")
 	confirm := h.code(secret)
 	wantStatus(t, h.do("POST", BasePath+"/two-factor/verify-totp", map[string]any{"code": confirm}, signedIn), http.StatusOK)
@@ -222,6 +227,9 @@ func TestTwoFactorLockoutExpiryAndOff(t *testing.T) {
 	locked := hdr{"Cookie": h.challenge(email, "password123"), "Origin": testBase}
 	wantCode(t, h.do("POST", BasePath+"/two-factor/verify-totp", map[string]any{"code": h.code(setup.Secret)}, locked), http.StatusTooManyRequests, "ACCOUNT_TEMPORARILY_LOCKED")
 	h.clock.Advance(twoFactorLockout + time.Minute)
+	// After the lock runs out one typo does not lock again: counting restarts.
+	typo := hdr{"Cookie": h.challenge(email, "password123"), "Origin": testBase}
+	wantCode(t, h.do("POST", BasePath+"/two-factor/verify-totp", map[string]any{"code": "000000"}, typo), http.StatusUnauthorized, "INVALID_CODE")
 	unlocked := hdr{"Cookie": h.challenge(email, "password123"), "Origin": testBase}
 	wantStatus(t, h.do("POST", BasePath+"/two-factor/verify-totp", map[string]any{"code": h.code(setup.Secret)}, unlocked), http.StatusOK)
 

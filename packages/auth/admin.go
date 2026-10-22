@@ -240,6 +240,28 @@ func (u *UserAdmin) RevokeSession(ctx context.Context, userID, sessionID string)
 	return err
 }
 
+// ResetTwoFactor removes a user's 2FA enrolment, trusted devices and pending
+// 2FA sign-ins, for account recovery (lost authenticator and backup codes, or
+// a rotated auth secret). With TwoFactorConfig.Required the user enrols again
+// at their next sign-in.
+func (u *UserAdmin) ResetTwoFactor(ctx context.Context, userID string) error {
+	if _, err := u.adminUser(ctx, userID); err != nil {
+		return err
+	}
+	return u.store.tx(ctx, func(q querier) error {
+		if err := u.store.deleteChallenges(ctx, q, userID); err != nil {
+			return err
+		}
+		if _, err := q.Exec(ctx, `DELETE FROM "twoFactor" WHERE "userId" = $1`, userID); err != nil {
+			return err
+		}
+		if _, err := q.Exec(ctx, `UPDATE "user" SET "twoFactorEnabled" = false, "updatedAt" = $2 WHERE "id" = $1`, userID, u.now()); err != nil {
+			return err
+		}
+		return u.store.deleteTrustedDevices(ctx, q, userID)
+	})
+}
+
 // RevokeUserSessions signs out every session of userID.
 func (u *UserAdmin) RevokeUserSessions(ctx context.Context, userID string) error {
 	return u.store.deleteUserSessions(ctx, u.store.pool, userID)

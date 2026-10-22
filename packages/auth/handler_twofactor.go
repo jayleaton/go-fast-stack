@@ -66,9 +66,9 @@ func (a *Auth) handleTwoFactorEnable(w http.ResponseWriter, r *http.Request) {
 	}
 	var setup TOTPSetup
 	var err error
-	if user, _, ok := UserFrom(r.Context()); ok {
+	if user, _, ok := a.userFrom(r.Context()); ok {
 		setup, err = a.EnableTwoFactor(r.Context(), user.ID, in.Password)
-	} else if metaFrom(r.Context()).twoFactorToken != "" {
+	} else if a.meta(r.Context()).twoFactorToken != "" {
 		setup, err = a.StartTwoFactorSetup(r.Context(), "")
 	} else {
 		err = ErrUnauthorized
@@ -124,12 +124,9 @@ func (a *Auth) handleTwoFactorVerify(method string) http.HandlerFunc {
 			return
 		}
 		ctx := r.Context()
-		if metaFrom(ctx).twoFactorToken == "" {
-			user, sess, ok := UserFrom(ctx)
-			if !ok {
-				a.writeError(w, r, ErrInvalidTwoFactorCookie)
-				return
-			}
+		if user, sess, ok := a.userFrom(ctx); ok && !a.pendingFor(ctx, user.ID) {
+			// Signed in: confirm enrolment. A stale or foreign two_factor
+			// cookie must not get in the way.
 			if method != TwoFactorMethodTOTP {
 				a.writeError(w, r, ErrInvalidCode)
 				return

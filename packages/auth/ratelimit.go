@@ -76,7 +76,7 @@ func (m *MemoryRateLimiter) Allow(_ context.Context, key string, rule RateRule) 
 // rateLimit applies rule to the client IP of the current request. Requests
 // without request metadata (Middleware not applied) are not limited.
 func (a *Auth) rateLimit(ctx context.Context, endpoint string, rule RateRule) error {
-	meta := metaFrom(ctx)
+	meta := a.meta(ctx)
 	if meta == nil || meta.ip == "" {
 		return nil
 	}

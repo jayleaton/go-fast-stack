@@ -140,7 +140,7 @@ func (a *Auth) needsSecondFactor(ctx context.Context, userID string) (bool, erro
 // trustedDevice reports whether the request carries a valid trust-device
 // cookie for userID.
 func (a *Auth) trustedDevice(ctx context.Context, userID string) bool {
-	m := metaFrom(ctx)
+	m := a.meta(ctx)
 	if m == nil || m.trustToken == "" || a.cfg.TwoFactor.TrustDeviceTTL <= 0 || !isTokenString(m.trustToken) {
 		return false
 	}
@@ -152,7 +152,7 @@ func (a *Auth) trustedDevice(ctx context.Context, userID string) bool {
 // enrolment (setup) challenge.
 func (a *Auth) challenge(ctx context.Context, token string) (string, bool, error) {
 	if token == "" {
-		if m := metaFrom(ctx); m != nil {
+		if m := a.meta(ctx); m != nil {
 			token = m.twoFactorToken
 		}
 	}
@@ -172,13 +172,24 @@ func (a *Auth) challenge(ctx context.Context, token string) (string, bool, error
 	return value, false, nil
 }
 
-func challengeToken(ctx context.Context, token string) string {
+func (a *Auth) challengeToken(ctx context.Context, token string) string {
 	if token == "" {
-		if m := metaFrom(ctx); m != nil {
+		if m := a.meta(ctx); m != nil {
 			return m.twoFactorToken
 		}
 	}
 	return token
+}
+
+// pendingFor reports whether the request carries a live 2FA challenge for
+// userID (a signed-in user signing in again), as opposed to none, a stale one
+// or another user's.
+func (a *Auth) pendingFor(ctx context.Context, userID string) bool {
+	if m := a.meta(ctx); m == nil || m.twoFactorToken == "" {
+		return false
+	}
+	id, _, err := a.challenge(ctx, "")
+	return err == nil && id == userID
 }
 
 // VerifyTwoFactor completes a pending sign-in with a TOTP or backup code and
@@ -192,7 +203,7 @@ func (a *Auth) VerifyTwoFactor(ctx context.Context, in VerifyTwoFactorInput) (Tw
 	if err := a.rateLimit(ctx, "two-factor", RuleSignIn); err != nil {
 		return TwoFactorResult{}, err
 	}
-	token := challengeToken(ctx, in.ChallengeToken)
+	token := a.challengeToken(ctx, in.ChallengeToken)
 	userID, setup, err := a.challenge(ctx, token)
 	if err != nil {
 		return TwoFactorResult{}, err
@@ -213,6 +224,12 @@ func (a *Auth) VerifyTwoFactor(ctx context.Context, in VerifyTwoFactorInput) (Tw
 		consumed, err = a.store.consumeVerification(ctx, q, challengePrefix+token, a.now())
 		return err
 	}); err != nil || (consumed != userID && consumed != setupChallengePrefix+userID) {
+		if method == TwoFactorMethodBackup {
+			// The code bought nothing: give it back.
+			if err := a.store.restoreBackupCode(ctx, userID, a.hashBackupCode(userID, in.Code), a.now()); err != nil {
+				a.log.ErrorContext(ctx, "auth: restoring backup code failed", "userId", userID, "err", err)
+			}
+		}
 		return TwoFactorResult{}, ErrInvalidTwoFactorCookie
 	}
 	user, err := a.store.userByID(ctx, a.store.pool, userID)
@@ -249,8 +266,14 @@ func (a *Auth) checkSecondFactor(ctx context.Context, userID, method, code strin
 		return err
 	}
 	now := a.now()
-	if row.lockedUntil != nil && row.lockedUntil.After(now) {
-		return ErrTwoFactorLocked
+	if row.lockedUntil != nil {
+		if row.lockedUntil.After(now) {
+			return ErrTwoFactorLocked
+		}
+		// The lock has run out: start counting failures afresh.
+		if err := a.store.resetTwoFactorFailures(ctx, userID, now); err != nil {
+			return err
+		}
 	}
 	fail := func(e error) error {
 		if err := a.store.recordTwoFactorFailure(ctx, userID, twoFactorMaxFailures, twoFactorLockout, now); err != nil {
@@ -268,8 +291,8 @@ func (a *Auth) checkSecondFactor(ctx context.Context, userID, method, code strin
 		if !ok {
 			return fail(ErrInvalidCode)
 		}
-		if err := a.store.acceptTOTPStep(ctx, userID, step, now); errors.Is(err, errNotFound) {
-			return fail(ErrInvalidCode) // replayed: this code was already used
+		if err := a.store.acceptTOTPStep(ctx, userID, row.secret, step, now); errors.Is(err, errNotFound) {
+			return fail(ErrInvalidCode) // replayed, or the enrolment was replaced meanwhile
 		} else if err != nil {
 			return err
 		}

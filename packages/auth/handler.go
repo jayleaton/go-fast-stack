@@ -150,7 +150,7 @@ func (a *Auth) handleSignOut(w http.ResponseWriter, r *http.Request) {
 	}
 	// Revoke the presented session and, when a bearer token and a cookie
 	// both came in, the cookie's session too.
-	tokens := []string{metaFrom(r.Context()).token}
+	tokens := []string{a.meta(r.Context()).token}
 	if c, err := r.Cookie(a.cookieName()); err == nil {
 		if t, ok := a.verifySigned(c.Value); ok && isTokenString(t) {
 			tokens = append(tokens, t)
@@ -169,7 +169,7 @@ func (a *Auth) handleSignOut(w http.ResponseWriter, r *http.Request) {
 func (a *Auth) handleGetSession(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Pragma", "no-cache")
-	user, sess, ok := UserFrom(r.Context())
+	user, sess, ok := a.userFrom(r.Context())
 	if !ok {
 		writeJSON(w, http.StatusOK, nil)
 		return
