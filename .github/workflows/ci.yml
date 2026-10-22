@@ -66,14 +66,24 @@ jobs:
 
   # PRs and pushes to main run only the jobs whose paths changed; merge_group
   # and workflow_dispatch run everything.
-  # lint and test run in parallel; each restores only the caches it uses.
-  lint:
+  # Two parallel jobs (private-repo runners have 2 vCPUs; race-compiling is
+  # CPU-bound). Each is billed rounded up to a whole minute, so lint shares
+  # the db shard's runner: it runs while Postgres boots, which the DB tests
+  # wait for anyway. "db" = lint + packages whose tests use Postgres;
+  # "other" = the remaining packages.
+  go:
+    name: ${{ matrix.shard == 'db' && 'lint + test (db)' || 'test (other)' }}
+    strategy:
+      matrix:
+        shard: [db, other]
     needs: draft
     if: ${{ !cancelled() && (github.event_name != 'pull_request' || !github.event.pull_request.draft || needs.draft.outputs.run == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # Also decides whether the mobile job runs: a separate "changes" job cost a
-    # billed minute on every run (jobs bill rounded up to whole minutes).
+    env:
+      TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable
+    # Whether the mobile job runs (both legs compute the same value; matrix
+    # outputs come from whichever leg finishes last).
     outputs:
       mobile: ${{ steps.mobile-pr.outputs.mobile || steps.mobile-push.outputs.mobile }}
     steps:
@@ -88,172 +98,6 @@ jobs:
               - 'apps/web/internal/config/routes.go'
               - '.github/workflows/**'
 
-      # Docs-only and mobile-only PRs stop here: no checkout, cache or
-      # toolchain. PR events list changed files through the API.
-      - uses: dorny/paths-filter@v4
-        if: github.event_name == 'pull_request'
-        id: filter
-        with:
-          predicate-quantifier: every
-          filters: |
-            go:
-              - '**'
-              - '!docs/**'
-              - '!apps/mobile-app/**'
-              - '!*.md'
-              - '!.gitignore'
-              - '!.dockerignore'
-      - name: Scope
-        id: scope
-        env:
-          GO: ${{ github.event_name != 'pull_request' || steps.filter.outputs.go == 'true' }}
-        run: echo "go=$GO" >> "$GITHUB_OUTPUT"
-
-      # Depth 2: a PR checkout is the merge commit, and HEAD^1 is the base.
-      - uses: actions/checkout@v7
-        if: steps.scope.outputs.go == 'true'
-        with:
-          fetch-depth: 2
-      - uses: dorny/paths-filter@v4
-        if: github.event_name == 'push'
-        id: mobile-push
-        with:
-          filters: *mobile-filter
-
-      # Modules (and the go.mod toolchain) are keyed by go.sum; module zips and
-      # dependencies' testdata are deleted before saving (builds read only the
-      # extracted sources and .ziphash files). Build/lint caches are keyed
-      # by commit and saved on every push to main, so PRs restore the newest
-      # main state by prefix. Bump the "v4" prefix when what is cached changes.
-      - uses: actions/cache/restore@v6
-        if: steps.scope.outputs.go == 'true'
-        id: mod-cache
-        with:
-          path: |
-            ~/go/pkg/mod
-          key: v7-gomod-${{ runner.os }}-${{ hashFiles('go.sum') }}
-          restore-keys: v7-gomod-${{ runner.os }}-
-      - uses: actions/cache/restore@v6
-        if: steps.scope.outputs.go == 'true'
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/.cache/golangci-lint
-          key: v4-golint-${{ runner.os }}-${{ github.sha }}
-          restore-keys: v4-golint-${{ runner.os }}-
-
-      # No setup-go: the runner's preinstalled go switches to the go.mod
-      # version itself (GOTOOLCHAIN=auto); the toolchain lives in the module cache.
-      - name: Go toolchain
-        if: steps.scope.outputs.go == 'true'
-        run: go version
-
-      # PRs check only the packages their changes can affect, and only the
-      # touched generators; shared inputs mean everything. See scripts/affected.sh.
-      - name: Affected packages
-        if: steps.scope.outputs.go == 'true'
-        id: affected
-        run: ./scripts/affected.sh HEAD^1
-        env:
-          AFFECTED_FULL: ${{ github.event_name != 'pull_request' && '1' || '' }}
-
-      - name: gofmt
-        if: steps.scope.outputs.go == 'true'
-        run: |
-          unformatted="$(gofmt -l .)"
-          if [ -n "$unformatted" ]; then
-            echo "$unformatted"
-            echo 'gofmt: run gofmt -w .'
-            exit 1
-          fi
-
-      - uses: sqlc-dev/setup-sqlc@v5
-        if: steps.affected.outputs.sqlc == 'true'
-        with:
-          sqlc-version: '1.31.1'
-
-      - name: Generated code is up to date
-        if: steps.affected.outputs.sqlc == 'true' || steps.affected.outputs.templ == 'true' || steps.affected.outputs.generate != ''
-        env:
-          SQLC: ${{ steps.affected.outputs.sqlc }}
-          TEMPL: ${{ steps.affected.outputs.templ }}
-          GENERATE: ${{ steps.affected.outputs.generate }}
-        run: |
-          if [ "$SQLC" = true ]; then sqlc generate -f packages/database/sqlc.yaml; fi
-          for p in $GENERATE; do go generate "$p"; done
-          if [ "$TEMPL" = true ]; then
-            for ui in apps/web/ui apps/admin/ui; do if [ -d "$ui" ]; then go tool templ generate -path "$ui"; fi; done
-          fi
-          git diff --exit-code
-          test -z "$(git status --porcelain)" || { git status --short; echo 'untracked generated files: run make generate and commit'; exit 1; }
-
-      # Its own cache key only changes with go.sum or weekly; its directory
-      # rides in the lint cache above instead.
-      - uses: golangci/golangci-lint-action@v9
-        if: steps.affected.outputs.packages != ''
-        with:
-          version: v2.15.0
-          skip-cache: true
-          args: ${{ steps.affected.outputs.dirs }}
-
-      - name: Test boundaries
-        if: steps.scope.outputs.go == 'true'
-        run: ./scripts/check-test-boundaries.sh
-
-      # The probes prove the lint and test rules still bite; their inputs
-      # (scripts/, .golangci.yml) always force a full run.
-      - name: Coverage floors name real packages
-        if: steps.affected.outputs.full == 'true'
-        run: ./scripts/check-coverage.sh --exist
-
-      - name: Layering rules
-        if: steps.affected.outputs.full == 'true'
-        run: ./scripts/check-layering.sh
-        env:
-          GOLANGCI_LINT: golangci-lint
-
-      - uses: actions/cache/save@v6
-        if: (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main'))
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/.cache/golangci-lint
-          key: v4-golint-${{ runner.os }}-${{ github.sha }}
-
-      # The lint job loads every package and its test imports, so it saves the
-      # module cache. "!" exclusions in cache paths did not apply, so trim
-      # explicitly:
-      # zips (~125 MB incl. the 71 MB toolchain zip) and dependency testdata.
-      - name: Trim module cache
-        if: (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && steps.mod-cache.outputs.cache-hit != 'true'
-        run: |
-          chmod -R u+w ~/go/pkg/mod
-          find ~/go/pkg/mod/cache/download -name '*.zip' -delete
-          find ~/go/pkg/mod -mindepth 2 -type d -name testdata -prune -exec rm -rf {} +
-          du -sh ~/go/pkg/mod
-      - uses: actions/cache/save@v6
-        if: (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && steps.mod-cache.outputs.cache-hit != 'true'
-        with:
-          path: |
-            ~/go/pkg/mod
-          key: v7-gomod-${{ runner.os }}-${{ hashFiles('go.sum') }}
-
-  # Two shards: private-repo runners have 2 vCPUs and race-compiling the
-  # affected packages is CPU-bound. "db" tests the packages whose tests use
-  # Postgres and starts it first thing, on a runner not yet busy compiling
-  # (its boot took 12-22 s next to the build); "other" tests the rest.
-  test:
-    name: test (${{ matrix.shard }})
-    strategy:
-      matrix:
-        shard: [db, other]
-    needs: draft
-    if: ${{ !cancelled() && (github.event_name != 'pull_request' || !github.event.pull_request.draft || needs.draft.outputs.run == 'true') }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    env:
-      TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable
-    steps:
       # Docs-only and mobile-only PRs stop here: no checkout, cache or
       # toolchain. PR events list changed files through the API.
       - uses: dorny/paths-filter@v4
@@ -290,12 +134,17 @@ jobs:
         if: steps.scope.outputs.go == 'true'
         with:
           fetch-depth: 2
+      - uses: dorny/paths-filter@v4
+        if: github.event_name == 'push'
+        id: mobile-push
+        with:
+          filters: *mobile-filter
 
       # Modules (and the go.mod toolchain) are keyed by go.sum; module zips and
       # dependencies' testdata are deleted before saving (builds read only the
-      # extracted sources and .ziphash files). Build/lint caches are keyed
-      # by commit and saved on every push to main, so PRs restore the newest
-      # main state by prefix. Bump the "v4" prefix when what is cached changes.
+      # extracted sources and .ziphash files). Build/lint caches are per shard,
+      # keyed by commit and saved on every push to main, so PRs restore the
+      # newest main state by prefix. Bump a prefix when what it caches changes.
       - uses: actions/cache/restore@v6
         if: steps.scope.outputs.go == 'true'
         id: mod-cache
@@ -304,6 +153,15 @@ jobs:
             ~/go/pkg/mod
           key: v7-gomod-${{ runner.os }}-${{ hashFiles('go.sum') }}
           restore-keys: v7-gomod-${{ runner.os }}-
+      - uses: actions/cache/restore@v6
+        if: steps.scope.outputs.go == 'true'
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/.cache/golangci-lint
+          key: v5-go${{ matrix.shard }}-${{ runner.os }}-${{ github.sha }}
+          restore-keys: v5-go${{ matrix.shard }}-${{ runner.os }}-
+
       # No setup-go: the runner's preinstalled go switches to the go.mod
       # version itself (GOTOOLCHAIN=auto); the toolchain lives in the module cache.
       - name: Go toolchain
@@ -319,24 +177,73 @@ jobs:
         env:
           AFFECTED_FULL: ${{ github.event_name != 'pull_request' && '1' || '' }}
 
+      # ---- lint (db leg) ----
+      - name: gofmt
+        if: steps.scope.outputs.go == 'true' && matrix.shard == 'db'
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "$unformatted"
+            echo 'gofmt: run gofmt -w .'
+            exit 1
+          fi
+
+      - uses: sqlc-dev/setup-sqlc@v5
+        if: steps.affected.outputs.sqlc == 'true' && matrix.shard == 'db'
+        with:
+          sqlc-version: '1.31.1'
+
+      - name: Generated code is up to date
+        if: (steps.affected.outputs.sqlc == 'true' || steps.affected.outputs.templ == 'true' || steps.affected.outputs.generate != '') && matrix.shard == 'db'
+        env:
+          SQLC: ${{ steps.affected.outputs.sqlc }}
+          TEMPL: ${{ steps.affected.outputs.templ }}
+          GENERATE: ${{ steps.affected.outputs.generate }}
+        run: |
+          if [ "$SQLC" = true ]; then sqlc generate -f packages/database/sqlc.yaml; fi
+          for p in $GENERATE; do go generate "$p"; done
+          if [ "$TEMPL" = true ]; then
+            for ui in apps/web/ui apps/admin/ui; do if [ -d "$ui" ]; then go tool templ generate -path "$ui"; fi; done
+          fi
+          git diff --exit-code
+          test -z "$(git status --porcelain)" || { git status --short; echo 'untracked generated files: run make generate and commit'; exit 1; }
+
+      # Its own cache key only changes with go.sum or weekly; its directory
+      # rides in the shard cache above instead.
+      - uses: golangci/golangci-lint-action@v9
+        if: steps.affected.outputs.packages != '' && matrix.shard == 'db'
+        with:
+          version: v2.15.0
+          skip-cache: true
+          args: ${{ steps.affected.outputs.dirs }}
+
+      - name: Test boundaries
+        if: steps.scope.outputs.go == 'true' && matrix.shard == 'db'
+        run: ./scripts/check-test-boundaries.sh
+
+      # The probes prove the lint and test rules still bite; their inputs
+      # (scripts/, .golangci.yml) always force a full run.
+      - name: Coverage floors name real packages
+        if: steps.affected.outputs.full == 'true' && matrix.shard == 'db'
+        run: ./scripts/check-coverage.sh --exist
+
+      - name: Layering rules
+        if: steps.affected.outputs.full == 'true' && matrix.shard == 'db'
+        run: ./scripts/check-layering.sh
+        env:
+          GOLANGCI_LINT: golangci-lint
+
+      - name: Test boundary probes
+        if: steps.affected.outputs.full == 'true' && matrix.shard == 'other'
+        run: ./scripts/check-test-probes.sh
+
+      # ---- tests (both legs) ----
       - name: Shard
         if: steps.affected.outputs.packages != ''
         id: shard
         run: ./scripts/ci-shard.sh "${{ matrix.shard }}"
         env:
           PACKAGES: ${{ steps.affected.outputs.packages }}
-
-      - uses: actions/cache/restore@v6
-        if: steps.scope.outputs.go == 'true'
-        with:
-          path: |
-            ~/.cache/go-build
-          key: v4-gotest-${{ matrix.shard }}-${{ runner.os }}-${{ github.sha }}
-          restore-keys: v4-gotest-${{ matrix.shard }}-${{ runner.os }}-
-
-      - name: Test boundary probes
-        if: steps.affected.outputs.full == 'true' && matrix.shard == 'other'
-        run: ./scripts/check-test-probes.sh
 
       - name: Test
         if: steps.shard.outputs.packages != ''
@@ -374,12 +281,32 @@ jobs:
         with:
           path: |
             ~/.cache/go-build
-          key: v4-gotest-${{ matrix.shard }}-${{ runner.os }}-${{ github.sha }}
+            ~/.cache/golangci-lint
+          key: v5-go${{ matrix.shard }}-${{ runner.os }}-${{ github.sha }}
+
+      # The db leg (lint) loads every package and its test imports, so it saves
+      # the module cache. "!" exclusions in cache paths did not apply, so trim
+      # explicitly: zips (~125 MB incl. the 71 MB toolchain zip) and dependency
+      # testdata.
+      - name: Trim module cache
+        if: (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && steps.mod-cache.outputs.cache-hit != 'true' && matrix.shard == 'db'
+        run: |
+          chmod -R u+w ~/go/pkg/mod
+          find ~/go/pkg/mod/cache/download -name '*.zip' -delete
+          find ~/go/pkg/mod -mindepth 2 -type d -name testdata -prune -exec rm -rf {} +
+          du -sh ~/go/pkg/mod
+      - uses: actions/cache/save@v6
+        if: (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && steps.mod-cache.outputs.cache-hit != 'true' && matrix.shard == 'db'
+        with:
+          path: |
+            ~/go/pkg/mod
+          key: v7-gomod-${{ runner.os }}-${{ hashFiles('go.sum') }}
+
   # Typecheck, lint, Expo SDK version check and unit tests. The contract test
   # (pnpm test:contract) needs Go + Docker and runs locally.
   mobile:
-    needs: lint
-    if: ${{ !cancelled() && (github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch' || needs.lint.outputs.mobile == 'true') }}
+    needs: go
+    if: ${{ !cancelled() && (github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch' || needs.go.outputs.mobile == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     defaults:
@@ -411,12 +338,12 @@ jobs:
   ci-ok:
     name: ${{ github.event.pull_request.draft && needs.draft.outputs.run != 'true' && 'ci (draft, not run)' || 'ci-ok' }}
     if: ${{ always() && (github.event_name != 'pull_request' || !github.event.pull_request.draft || needs.draft.outputs.run == 'true') }}
-    needs: [draft, lint, test, mobile]
+    needs: [draft, go, mobile]
     runs-on: ubuntu-latest
     timeout-minutes: 1
     steps:
       - name: Fail if any job failed or was cancelled
         if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
         run: |
-          echo 'draft=${{ needs.draft.result }} lint=${{ needs.lint.result }} test=${{ needs.test.result }} mobile=${{ needs.mobile.result }}'
+          echo 'draft=${{ needs.draft.result }} go=${{ needs.go.result }} mobile=${{ needs.mobile.result }}'
           exit 1
