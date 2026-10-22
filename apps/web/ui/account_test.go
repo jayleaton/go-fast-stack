@@ -44,10 +44,13 @@ var accountActions = []struct {
 }
 
 func TestAccountAnonymous(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t, config.Features{})
 	assertSeeOther(t, e.do(http.MethodGet, config.AppRoutes.Account, nil), config.AppRoutes.Login)
 	for _, a := range accountActions {
 		t.Run(a.name, func(t *testing.T) {
+			t.Parallel()
+			e := newEnv(t, config.Features{})
 			assertRedirectScript(t, e.do(http.MethodPost, a.path, a.form, datastar), config.AppRoutes.Login)
 			assertSeeOther(t, e.do(http.MethodPost, a.path, a.form), config.AppRoutes.Login)
 		})
@@ -55,6 +58,7 @@ func TestAccountAnonymous(t *testing.T) {
 }
 
 func TestAccountPage(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t, config.Features{})
 	e.signedIn("sess-1")
 	e.users.EXPECT().ListSessions(gomock.Any(), demoActor, "u1").Return(demoSessions, nil)
@@ -91,9 +95,11 @@ func TestAccountPage(t *testing.T) {
 }
 
 func TestAccountHappyPaths(t *testing.T) {
+	t.Parallel()
 	img := "https://example.com/a.png"
 
 	t.Run("profile", func(t *testing.T) {
+		t.Parallel()
 		e := newEnv(t, config.Features{})
 		e.signedIn("sess-1")
 		e.users.EXPECT().UpdateProfile(gomock.Any(), demoActor, "u1", gomock.Cond(func(in validate.UpdateUserSettings) bool {
@@ -110,6 +116,7 @@ func TestAccountHappyPaths(t *testing.T) {
 	})
 
 	t.Run("email", func(t *testing.T) {
+		t.Parallel()
 		e := newEnv(t, config.Features{})
 		e.signedIn("sess-1")
 		e.users.EXPECT().RequestEmailChange(gomock.Any(), demoActor, "u1", validate.UpdateUserEmail{NewEmail: "ada@example.com", CallbackURL: config.AppRoutes.EmailChanged}).Return(nil)
@@ -118,6 +125,7 @@ func TestAccountHappyPaths(t *testing.T) {
 	})
 
 	t.Run("password", func(t *testing.T) {
+		t.Parallel()
 		e := newEnv(t, config.Features{})
 		e.signedIn("sess-1")
 		e.users.EXPECT().ChangePassword(gomock.Any(), demoActor, "u1", validate.UpdateUserPassword{CurrentPassword: "old-password", NewPassword: "new-password", RevokeOtherSessions: true}).Return(nil)
@@ -132,6 +140,7 @@ func TestAccountHappyPaths(t *testing.T) {
 	})
 
 	t.Run("sessions", func(t *testing.T) {
+		t.Parallel()
 		e := newEnv(t, config.Features{})
 		e.signedIn("sess-1")
 		e.users.EXPECT().RevokeSession(gomock.Any(), demoActor, "u1", "sess-2").Return(nil)
@@ -147,6 +156,7 @@ func TestAccountHappyPaths(t *testing.T) {
 	})
 
 	t.Run("delete", func(t *testing.T) {
+		t.Parallel()
 		e := newEnv(t, config.Features{})
 		e.signedIn("sess-1")
 		e.users.EXPECT().DeleteAccount(gomock.Any(), demoActor, "u1").Return(nil)
@@ -162,6 +172,7 @@ func TestAccountHappyPaths(t *testing.T) {
 	})
 
 	t.Run("without JS", func(t *testing.T) {
+		t.Parallel()
 		e := newEnv(t, config.Features{})
 		e.signedIn("sess-1")
 		e.users.EXPECT().UpdateProfile(gomock.Any(), demoActor, "u1", gomock.Any()).Return(services.User{ID: "u1", Name: "Ada"}, nil)
@@ -172,6 +183,7 @@ func TestAccountHappyPaths(t *testing.T) {
 // TestAccountErrors renders every named service error and kind translated,
 // through the revoke-others action.
 func TestAccountErrors(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		err error
 		key string
@@ -196,6 +208,7 @@ func TestAccountErrors(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.err.Error(), func(t *testing.T) {
+			t.Parallel()
 			e := newEnv(t, config.Features{})
 			e.signedIn("sess-1")
 			e.users.EXPECT().RevokeOtherSessions(gomock.Any(), demoActor, "u1").Return(c.err)
@@ -225,6 +238,7 @@ func TestAccountErrors(t *testing.T) {
 	}
 	for _, f := range forms {
 		t.Run(f.name, func(t *testing.T) {
+			t.Parallel()
 			e := newEnv(t, config.Features{})
 			e.signedIn("sess-1")
 			f.expect(e)
@@ -246,6 +260,7 @@ func TestAccountErrors(t *testing.T) {
 	}
 	for _, v := range validation {
 		t.Run("invalid "+v.name, func(t *testing.T) {
+			t.Parallel()
 			e := newEnv(t, config.Features{})
 			e.signedIn("sess-1")
 			assertSSE(t, e.do(http.MethodPost, v.path, v.form, datastar, lang("ja")), ja(v.key))
@@ -283,6 +298,7 @@ func (s *sseReader) next() string {
 // first patch, a profile save from the Account page (account card + notice),
 // and the stream signing its tab out when another device revokes it.
 func TestLiveStream(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t, config.Features{})
 	srv := httptest.NewServer(e.h)
 	defer srv.Close()

@@ -16,6 +16,8 @@ func getter(kv map[string]string) func(string) string {
 }
 
 func TestBootstrapReportsEveryProblem(t *testing.T) {
+	t.Parallel()
+
 	requireKey := func(get func(string) string) []error {
 		if get(key) == "" {
 			return []error{errors.New(key + " is required")}
@@ -57,6 +59,8 @@ func TestBootstrapReportsEveryProblem(t *testing.T) {
 }
 
 func TestBootstrapValidatesTheSnapshot(t *testing.T) {
+	t.Parallel()
+
 	validate := func(get func(string) string) []error {
 		if !strings.HasPrefix(get(key), "re_") {
 			return []error{errors.New(key + " must start with re_")}
@@ -83,6 +87,8 @@ func TestBootstrapValidatesTheSnapshot(t *testing.T) {
 }
 
 func TestKeyring(t *testing.T) {
+	t.Parallel()
+
 	synctest.Test(t, func(t *testing.T) {
 		a, b, c := strings.Repeat("a", 32), strings.Repeat("b", 32), strings.Repeat("c", 32)
 		f := newFake(map[string]string{"SIGNING": " " + a + "\n"})
@@ -115,7 +121,7 @@ func TestKeyring(t *testing.T) {
 			t.Fatal("keyring values logged")
 		}
 		m.Stop()
-		time.Sleep(time.Hour)
+		advance(time.Hour)
 		if _, err := m.Keyring("SIGNING"); !errors.Is(err, secrets.ErrStale) {
 			t.Fatalf("stale keyring: %v", err)
 		}

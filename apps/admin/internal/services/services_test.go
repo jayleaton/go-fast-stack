@@ -119,9 +119,11 @@ func policyCalls(p ports, policy services.Policy) map[string]func(services.Actor
 // Every method refuses before touching a port: the mocks have no
 // expectations, so any call fails the test.
 func TestServicesRefuseUnauthorizedActors(t *testing.T) {
+	t.Parallel()
 	policy := services.Policy{RequireTwoFactor: true}
 	for name := range policyCalls(newPorts(t), policy) {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			call := policyCalls(newPorts(t), policy)[name]            // mocks bound to this subtest
 			wantErr(t, call(services.Actor{}), services.ErrForbidden) // no actor is nobody
 			noTwoFactor := grace
@@ -139,6 +141,7 @@ func TestServicesRefuseUnauthorizedActors(t *testing.T) {
 
 // Without the 2FA requirement any admin may act, and the operator always may.
 func TestPolicyAllowsAdminsAndSystem(t *testing.T) {
+	t.Parallel()
 	for _, policy := range []services.Policy{{}, {RequireTwoFactor: true}} {
 		for _, actor := range []services.Actor{cli, {AdminID: "a2", Email: "bob@example.com"}} {
 			if policy.RequireTwoFactor && !actor.System {
@@ -155,6 +158,7 @@ func TestPolicyAllowsAdminsAndSystem(t *testing.T) {
 }
 
 func TestSystemActor(t *testing.T) {
+	t.Parallel()
 	want := services.Actor{AdminID: "system:cli", Email: "cli", System: true}
 	if cli != want {
 		t.Fatalf("SystemActor = %+v, want %+v", cli, want)
@@ -163,6 +167,7 @@ func TestSystemActor(t *testing.T) {
 
 // Kind sentinels match every error of their kind; specific errors only themselves.
 func TestErrorKinds(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		err, target error
 		want        bool
@@ -391,6 +396,7 @@ func mutations() []mutation {
 // failed intent write stops the change (the change ports have no
 // expectations, so calling one fails the test), and the outcome follows it.
 func TestMutationsFailClosed(t *testing.T) {
+	t.Parallel()
 	for _, m := range mutations() {
 		// sequence expects the reads, the intent, the change failing with
 		// portErr and its outcome write (returning resolveErr), in order.
@@ -404,6 +410,7 @@ func TestMutationsFailClosed(t *testing.T) {
 		}
 
 		t.Run(m.name+"/succeeded", func(t *testing.T) {
+			t.Parallel()
 			p := newPorts(t)
 			sequence(p, nil, succeeded, nil)
 			if err := m.call(p); err != nil {
@@ -412,6 +419,7 @@ func TestMutationsFailClosed(t *testing.T) {
 		})
 
 		t.Run(m.name+"/intent not written", func(t *testing.T) {
+			t.Parallel()
 			p := newPorts(t)
 			gomock.InOrder(append(m.reads(p), p.log.EXPECT().Begin(ctx, m.intent).Return(int64(0), errDB))...)
 			err := m.call(p)
@@ -422,6 +430,7 @@ func TestMutationsFailClosed(t *testing.T) {
 		})
 
 		t.Run(m.name+"/outcome not written", func(t *testing.T) {
+			t.Parallel()
 			p := newPorts(t)
 			sequence(p, nil, succeeded, errResolve)
 			err := m.call(p)
@@ -432,12 +441,14 @@ func TestMutationsFailClosed(t *testing.T) {
 		})
 
 		t.Run(m.name+"/refused", func(t *testing.T) {
+			t.Parallel()
 			p := newPorts(t)
 			sequence(p, m.refusal, failed(m.want.Error()), nil)
 			wantErr(t, m.call(p), m.want)
 		})
 
 		t.Run(m.name+"/refused, outcome not written", func(t *testing.T) {
+			t.Parallel()
 			p := newPorts(t)
 			sequence(p, m.refusal, failed(m.want.Error()), errResolve)
 			err := m.call(p)
@@ -448,6 +459,7 @@ func TestMutationsFailClosed(t *testing.T) {
 		})
 
 		t.Run(m.name+"/raw error", func(t *testing.T) {
+			t.Parallel()
 			p := newPorts(t)
 			sequence(p, errDB, internalFailure, nil)
 			wantInternal(t, m.call(p), errDB)

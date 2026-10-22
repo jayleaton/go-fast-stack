@@ -23,22 +23,29 @@ import (
 )
 
 // testPool is a pool on a throwaway database with the auth migrations
-// applied, or nil when no database is configured.
+// applied, or nil when no database is configured. Tests on it run in
+// parallel, so they only touch rows they created (uniqueEmail, generateID);
+// a test that reads table-wide state uses newDatabase instead.
 var testPool *pgxpool.Pool
 
-// TestMain creates a fresh database (auth_test_<pid>) on the server named by
-// TEST_DATABASE_URL or DATABASE_URL, so it never touches existing data and can
-// run alongside other packages' tests. Without a URL the database tests skip,
+// testDSN is the server URL (TEST_DATABASE_URL or DATABASE_URL), and
+// templateDB a migrated template database on it that newDatabase clones.
+var testDSN, templateDB string
+
+// TestMain migrates a template database (auth_tmpl_<random>) once on the
+// server named by TEST_DATABASE_URL or DATABASE_URL and clones it into the
+// shared test database, so it never touches existing data and can run
+// alongside other packages' tests. Without a URL the database tests skip,
 // except under CI where they fail.
 func TestMain(m *testing.M) {
-	dsn := os.Getenv("TEST_DATABASE_URL")
-	if dsn == "" {
-		dsn = os.Getenv("DATABASE_URL")
+	testDSN = os.Getenv("TEST_DATABASE_URL")
+	if testDSN == "" {
+		testDSN = os.Getenv("DATABASE_URL")
 	}
-	if dsn == "" {
+	if testDSN == "" {
 		os.Exit(m.Run())
 	}
-	code, err := runWithDatabase(m, dsn)
+	code, err := runWithDatabase(m)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "auth tests:", err)
 		os.Exit(1)
@@ -46,69 +53,113 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-func runWithDatabase(m *testing.M, dsn string) (int, error) {
+func runWithDatabase(m *testing.M) (int, error) {
 	ctx := context.Background()
-	admin, err := connectWhenReady(ctx, dsn)
+	admin, err := connectWhenReady(ctx, testDSN)
 	if err != nil {
 		return 0, err
 	}
 	defer func() { _ = admin.Close(ctx) }()
+
 	// Random, not pid+time: concurrent or repeated test binaries must never pick
 	// the same name (a collision fails TestMain before any test runs).
+	tmpl := "auth_tmpl_" + strings.ToLower(generateID(16))
+	if _, err := admin.Exec(ctx, "CREATE DATABASE "+tmpl); err != nil {
+		return 0, err
+	}
+	defer func() {
+		// A template cannot be dropped; unmark it first.
+		_, _ = admin.Exec(ctx, "ALTER DATABASE "+tmpl+" WITH IS_TEMPLATE false")
+		_, _ = admin.Exec(ctx, "DROP DATABASE "+tmpl+" WITH (FORCE)")
+	}()
+	if err := migrateTemplate(ctx, admin, tmpl); err != nil {
+		return 0, err
+	}
+	templateDB = tmpl
+
 	name := "auth_test_" + strings.ToLower(generateID(16))
-	if _, err := admin.Exec(ctx, "CREATE DATABASE "+name); err != nil {
+	if _, err := admin.Exec(ctx, cloneSQL(name)); err != nil {
 		return 0, err
 	}
 	defer func() { _, _ = admin.Exec(ctx, "DROP DATABASE "+name+" WITH (FORCE)") }()
-
-	cfg, err := pgxpool.ParseConfig(dsn)
-	if err != nil {
-		return 0, err
-	}
-	cfg.ConnConfig.Database = name
-	testPool, err = pgxpool.NewWithConfig(ctx, cfg)
+	testPool, err = poolOn(ctx, name)
 	if err != nil {
 		return 0, err
 	}
 	defer testPool.Close()
-	if err := Migrate(ctx, testPool); err != nil {
-		return 0, err
-	}
 	return m.Run(), nil
 }
 
-// newDatabase creates an empty database on the test server for one test,
-// dropped when it ends, and returns a pool on it.
+// migrateTemplate applies the auth migrations to tmpl and marks it a
+// template nobody can connect to, which is what lets clones run concurrently.
+func migrateTemplate(ctx context.Context, admin *pgx.Conn, tmpl string) error {
+	pool, err := poolOn(ctx, tmpl)
+	if err != nil {
+		return err
+	}
+	err = Migrate(ctx, pool)
+	pool.Close()
+	if err != nil {
+		return err
+	}
+	_, err = admin.Exec(ctx, "ALTER DATABASE "+tmpl+" WITH IS_TEMPLATE true ALLOW_CONNECTIONS false")
+	return err
+}
+
+func cloneSQL(name string) string {
+	return "CREATE DATABASE " + name + " TEMPLATE " + templateDB + " STRATEGY FILE_COPY"
+}
+
+// poolOn returns a pool on database name of the test server.
+func poolOn(ctx context.Context, name string) (*pgxpool.Pool, error) {
+	cfg, err := pgxpool.ParseConfig(testDSN)
+	if err != nil {
+		return nil, err
+	}
+	cfg.ConnConfig.Database = name
+	return pgxpool.NewWithConfig(ctx, cfg)
+}
+
+// newDatabase gives one test a migrated database of its own (a clone of the
+// template), dropped when it ends: for tests that read table-wide state or
+// change state other tests share (key rotation).
 func newDatabase(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	needDB(t)
+	return createDatabase(t, cloneSQL)
+}
+
+// newEmptyDatabase gives one test an empty database (no migrations), dropped
+// when it ends.
+func newEmptyDatabase(t *testing.T) *pgxpool.Pool {
+	t.Helper()
+	needDB(t)
+	return createDatabase(t, func(name string) string { return "CREATE DATABASE " + name })
+}
+
+func createDatabase(t *testing.T, create func(name string) string) *pgxpool.Pool {
+	t.Helper()
 	ctx := context.Background()
-	dsn := os.Getenv("TEST_DATABASE_URL")
-	if dsn == "" {
-		dsn = os.Getenv("DATABASE_URL")
-	}
-	admin, err := pgx.Connect(ctx, dsn)
+	admin, err := pgx.Connect(ctx, testDSN)
 	if err != nil {
 		t.Fatal(err)
 	}
 	name := "auth_extra_" + strings.ToLower(generateID(12))
-	if _, err := admin.Exec(ctx, "CREATE DATABASE "+name); err != nil {
+	if _, err := admin.Exec(ctx, create(name)); err != nil {
+		_ = admin.Close(ctx)
 		t.Fatal(err)
 	}
-	cfg, err := pgxpool.ParseConfig(dsn)
-	if err != nil {
-		t.Fatal(err)
-	}
-	cfg.ConnConfig.Database = name
-	pool, err := pgxpool.NewWithConfig(ctx, cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
+	pool, err := poolOn(ctx, name)
 	t.Cleanup(func() {
-		pool.Close()
+		if pool != nil {
+			pool.Close()
+		}
 		_, _ = admin.Exec(context.Background(), "DROP DATABASE "+name+" WITH (FORCE)")
 		_ = admin.Close(context.Background())
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	return pool
 }
 
@@ -130,7 +181,7 @@ func connectWhenReady(ctx context.Context, dsn string) (*pgx.Conn, error) {
 		if time.Now().After(deadline) || ctx.Err() != nil {
 			return nil, fmt.Errorf("postgres not ready after 30s: %w", err)
 		}
-		time.Sleep(200 * time.Millisecond) // readiness poll for the server, not test timing
+		time.Sleep(200 * time.Millisecond) //nolint:forbidigo // polls Postgres readiness before any test runs, not test timing
 	}
 }
 

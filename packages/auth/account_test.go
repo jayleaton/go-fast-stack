@@ -27,6 +27,7 @@ func (h *harness) userID(headers hdr) string {
 }
 
 func TestChangePassword(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, nil)
 	email := uniqueEmail(t)
 	cookie := hdr{"Cookie": cookieHeader(t, h.signUp(email, "old-password")), "Origin": testBase}
@@ -87,6 +88,7 @@ func TestChangePassword(t *testing.T) {
 }
 
 func TestChangePasswordWithoutCredentialAccount(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, nil)
 	ctx := context.Background()
 	id := generateID(32)
@@ -102,6 +104,7 @@ func TestChangePasswordWithoutCredentialAccount(t *testing.T) {
 }
 
 func TestChangeEmail(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, nil)
 	email, taken, next := uniqueEmail(t), uniqueEmail(t), uniqueEmail(t)
 	cookie := hdr{"Cookie": cookieHeader(t, h.signUp(email, "password123")), "Origin": testBase}
@@ -182,6 +185,7 @@ func TestChangeEmail(t *testing.T) {
 }
 
 func TestChangeEmailLinkExpiresAndRechecksTheAddress(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, nil)
 	ctx := context.Background()
 	first, second := uniqueEmail(t), uniqueEmail(t)
@@ -232,6 +236,7 @@ func (h *harness) changeLinks() map[string]string {
 }
 
 func TestChangeEmailLinksAreBoundToTheirUserAndRequest(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, nil)
 	ctx := context.Background()
 	a, b, c := uniqueEmail(t), uniqueEmail(t), uniqueEmail(t)
@@ -295,21 +300,23 @@ func TestChangeEmailLinksAreBoundToTheirUserAndRequest(t *testing.T) {
 }
 
 func TestPendingEmailChangeIsCancelledByRecovery(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
+	// Each recovery fails the subtest that runs it (h.t), not the parent.
 	for name, recover := range map[string]func(h *harness, userID, email string){
 		"change password": func(h *harness, userID, _ string) {
 			if err := h.a.ChangePassword(ctx, userID, "password123", "new-password", false, ""); err != nil {
-				t.Fatal(err)
+				h.t.Fatal(err)
 			}
 		},
 		"revoke other sessions": func(h *harness, userID, _ string) {
 			if err := h.a.RevokeOtherSessions(ctx, userID, ""); err != nil {
-				t.Fatal(err)
+				h.t.Fatal(err)
 			}
 		},
 		"password reset": func(h *harness, _, email string) {
 			if err := h.a.RequestPasswordReset(ctx, email, "/r"); err != nil {
-				t.Fatal(err)
+				h.t.Fatal(err)
 			}
 			var link string
 			for _, m := range h.mails() {
@@ -317,12 +324,13 @@ func TestPendingEmailChangeIsCancelledByRecovery(t *testing.T) {
 					link = m.url
 				}
 			}
-			if err := h.a.ResetPassword(ctx, mustQuery(t, link, "token"), "new-password"); err != nil {
-				t.Fatal(err)
+			if err := h.a.ResetPassword(ctx, mustQuery(h.t, link, "token"), "new-password"); err != nil {
+				h.t.Fatal(err)
 			}
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			h := newHarness(t, nil)
 			email, attacker := uniqueEmail(t), uniqueEmail(t)
 			wantStatus(t, h.signUp(email, "password123"), http.StatusOK)
@@ -340,6 +348,7 @@ func TestPendingEmailChangeIsCancelledByRecovery(t *testing.T) {
 }
 
 func TestChangeEmailNeedsAFreshSession(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, nil)
 	email := uniqueEmail(t)
 	cookie := hdr{"Cookie": cookieHeader(t, h.signUp(email, "password123")), "Origin": testBase}
@@ -352,6 +361,7 @@ func TestChangeEmailNeedsAFreshSession(t *testing.T) {
 }
 
 func TestChangePasswordConcurrencyAndPerUserLimit(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, nil)
 	ctx := context.Background()
 	email := uniqueEmail(t)
@@ -394,6 +404,7 @@ func TestChangePasswordConcurrencyAndPerUserLimit(t *testing.T) {
 }
 
 func TestChangeEmailHidesTakenAddressWhenVerificationRequired(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, func(c *Config) { c.RequireEmailVerification = true })
 	ctx := context.Background()
 	owner, taken := uniqueEmail(t), uniqueEmail(t)
@@ -416,6 +427,7 @@ func TestChangeEmailHidesTakenAddressWhenVerificationRequired(t *testing.T) {
 }
 
 func TestSessionsListAndRevoke(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, nil)
 	ctx := context.Background()
 	email, otherEmail := uniqueEmail(t), uniqueEmail(t)

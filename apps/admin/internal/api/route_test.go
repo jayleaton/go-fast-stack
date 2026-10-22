@@ -134,15 +134,18 @@ func wantOK(t *testing.T, method, path, body string, expect func(m svcs)) {
 // TestRoutes runs the boundary cases against every endpoint. The mocks fail
 // the test on any service call a case does not expect.
 func TestRoutes(t *testing.T) {
+	t.Parallel()
 	routes := allRoutes(t)
 	for _, name := range slices.Sorted(maps.Keys(routes)) {
 		rt := routes[name]
 		t.Run(name+"/no session is 401", func(t *testing.T) {
+			t.Parallel()
 			_, h := newRouter(t)
 			res := apitest.Do(t, h, apitest.Anonymous, rt.method, rt.path, rt.body)
 			wantError(t, res, 401, "Unauthorized")
 		})
 		t.Run(name+"/invalid input is 400", func(t *testing.T) {
+			t.Parallel()
 			m, h := newRouter(t)
 			path, body := rt.path, rt.body
 			switch {
@@ -163,12 +166,14 @@ func TestRoutes(t *testing.T) {
 		})
 		for _, e := range append(slices.Clone(everyRoute), rt.errs...) {
 			t.Run(fmt.Sprintf("%s/%v is %d", name, e.err, e.status), func(t *testing.T) {
+				t.Parallel()
 				m, h := newRouter(t)
 				rt.expect(m, e.err)
 				wantError(t, apitest.Do(t, h, apitest.AsAdmin(grace), rt.method, rt.path, rt.body), e.status, e.msg)
 			})
 		}
 		t.Run(name+"/ok is 200", func(t *testing.T) {
+			t.Parallel()
 			m, h := newRouter(t)
 			rt.expect(m, nil)
 			res := apitest.Do(t, h, apitest.AsAdmin(grace), rt.method, rt.path, rt.body)
@@ -186,6 +191,7 @@ func TestRoutes(t *testing.T) {
 // TestCallerActor: handlers act as the signed-in admin, on their session,
 // carrying their 2FA state (the services' 2FA policy reads it).
 func TestCallerActor(t *testing.T) {
+	t.Parallel()
 	want := services.Actor{AdminID: "a1", Email: "grace@example.com", SessionID: "session-a1", TwoFactorEnabled: true}
 	if actor != want {
 		t.Fatalf("actor = %+v, want %+v", actor, want)
@@ -198,6 +204,7 @@ func TestCallerActor(t *testing.T) {
 // TestErrorMapping covers every service error kind once; it is the same
 // route wrapper for every endpoint.
 func TestErrorMapping(t *testing.T) {
+	t.Parallel()
 	cases := []svcErr{
 		{services.ErrUserNotFound, 404, "User not found"},
 		{fmt.Errorf("auth: %w", services.ErrAdminExists), 409, "This person is already an admin"},
@@ -223,6 +230,7 @@ func TestErrorMapping(t *testing.T) {
 // that reads a body: none reaches the service (the mocks have no
 // expectations) and each names the body.
 func TestDecodeBody(t *testing.T) {
+	t.Parallel()
 	bodies := []struct{ method, path string }{
 		{"POST", config.UserPath("u1", "/ban")},
 		{"PUT", config.UserPath("u1", "/role")},
@@ -265,6 +273,7 @@ func TestDecodeBody(t *testing.T) {
 
 // TestBodyLimit: the route wrapper caps request bodies.
 func TestBodyLimit(t *testing.T) {
+	t.Parallel()
 	_, h := newRouter(t)
 	res := apitest.Do(t, h, apitest.AsAdmin(grace), "POST", config.UserPath("u1", "/ban"), `{"banReason":"`+strings.Repeat("x", 2<<20)+`"}`)
 	if res.Status != 400 || res.Details["body"] == "" {
@@ -275,6 +284,7 @@ func TestBodyLimit(t *testing.T) {
 // TestPublic: the public wrapper needs no session and maps errors the same
 // way.
 func TestPublic(t *testing.T) {
+	t.Parallel()
 	ok := api.Public(func(*http.Request) (api.Success, error) { return api.Success{Success: true}, nil })
 	res := apitest.Do(t, ok, apitest.Anonymous, "GET", "/", "")
 	if res.Status != 200 {
@@ -289,6 +299,7 @@ func TestPublic(t *testing.T) {
 // TestValidationErrorString: a validation error reads the same every time
 // (fields sorted), for logs and wrapped errors.
 func TestValidationErrorString(t *testing.T) {
+	t.Parallel()
 	err := &validate.Error{Fields: map[string]string{"offset": "must be 0 or more", "limit": "must be 1-100"}}
 	if got, want := err.Error(), "invalid input: limit: must be 1-100, offset: must be 0 or more"; got != want {
 		t.Fatalf("Error() = %q, want %q", got, want)

@@ -74,6 +74,7 @@ var adminRoutes = map[string]route{
 // TestCreateAdminInviteBody covers every CreateAdminInvite rule: the address
 // is normalised and the name defaults to its local part.
 func TestCreateAdminInviteBody(t *testing.T) {
+	t.Parallel()
 	long := strings.Repeat("x", 244) + "@example.com" // 256 characters
 	for _, email := range []string{"", "   ", "not an email", "Ada <ada@example.com>", "ada@", "@example.com", long} {
 		wantInvalid(t, "POST", r.AdminInvites, `{"email":"`+email+`","name":"Ada"}`, map[string]string{"email": emailRule})

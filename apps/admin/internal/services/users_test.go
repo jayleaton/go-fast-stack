@@ -26,6 +26,7 @@ func userAudit(action string, details map[string]string) services.NewAuditEntry 
 }
 
 func TestListUsers(t *testing.T) {
+	t.Parallel()
 	svc, dir, _ := newUserService(t)
 	in := validate.ListUsers{
 		Search: "ada", SearchField: "name", Role: "admin", Banned: ptr(true),
@@ -53,6 +54,7 @@ func TestListUsers(t *testing.T) {
 }
 
 func TestGetUser(t *testing.T) {
+	t.Parallel()
 	svc, dir, _ := newUserService(t)
 	sessions := []services.Session{{ID: "s1"}}
 
@@ -79,6 +81,7 @@ func TestGetUser(t *testing.T) {
 // failing change) of every mutation are in TestMutationsFailClosed.
 
 func TestBanUser(t *testing.T) {
+	t.Parallel()
 	svc, dir, log := newUserService(t)
 	detail := services.UserDetail{User: adaUser}
 
@@ -116,6 +119,7 @@ func TestBanUser(t *testing.T) {
 }
 
 func TestUnbanUser(t *testing.T) {
+	t.Parallel()
 	svc, dir, log := newUserService(t)
 	banned := adaUser
 	banned.Banned = true
@@ -139,6 +143,7 @@ func TestUnbanUser(t *testing.T) {
 }
 
 func TestSetRole(t *testing.T) {
+	t.Parallel()
 	svc, dir, log := newUserService(t)
 	detail := services.UserDetail{User: adaUser}
 	in := validate.SetUserRole{Role: "admin"}
@@ -175,6 +180,7 @@ func TestSetRole(t *testing.T) {
 }
 
 func TestRevokeSession(t *testing.T) {
+	t.Parallel()
 	svc, dir, log := newUserService(t)
 	detail := services.UserDetail{User: adaUser}
 
@@ -202,6 +208,7 @@ func TestRevokeSession(t *testing.T) {
 }
 
 func TestRevokeSessions(t *testing.T) {
+	t.Parallel()
 	svc, dir, log := newUserService(t)
 
 	gomock.InOrder(

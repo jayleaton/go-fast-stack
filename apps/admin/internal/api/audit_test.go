@@ -39,6 +39,7 @@ var auditRoutes = map[string]route{
 // TestListAuditLogQuery: filters are trimmed, the page size defaults, and the
 // bounds are inclusive.
 func TestListAuditLogQuery(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		q    url.Values
 		want validate.ListAuditLog
@@ -62,6 +63,7 @@ func TestListAuditLogQuery(t *testing.T) {
 
 // TestListAuditLogInvalid covers every ListAuditLog rule.
 func TestListAuditLogInvalid(t *testing.T) {
+	t.Parallel()
 	limit := map[string]string{"limit": "must be 1-100"}
 	cases := []struct {
 		q    string

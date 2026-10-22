@@ -104,6 +104,7 @@ var userRoutes = map[string]route{
 // TestListUsersQuery: every query parameter is decoded, trimmed where it is
 // free text, and defaulted, and reaches the service as given.
 func TestListUsersQuery(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		q    url.Values
 		want validate.ListUsers
@@ -140,6 +141,7 @@ func TestListUsersQuery(t *testing.T) {
 // TestListUsersInvalid covers every ListUsers rule: bad queries never reach
 // the service and name each failing parameter.
 func TestListUsersInvalid(t *testing.T) {
+	t.Parallel()
 	limit := map[string]string{"limit": "must be 1-100"}
 	whole := func(k string) map[string]string { return map[string]string{k: "must be a whole number"} }
 	cases := []struct {
@@ -171,6 +173,7 @@ func TestListUsersInvalid(t *testing.T) {
 
 // TestBanUserBody covers every BanUser rule and its boundaries.
 func TestBanUserBody(t *testing.T) {
+	t.Parallel()
 	path := config.UserPath("u2", "/ban")
 	for _, body := range []string{
 		`{}`,
@@ -206,6 +209,7 @@ func TestBanUserBody(t *testing.T) {
 // TestSetUserRoleBody covers the role shape (which roles exist is the
 // service's rule, so any well-formed name reaches it).
 func TestSetUserRoleBody(t *testing.T) {
+	t.Parallel()
 	path := config.UserPath("u2", "/role")
 	for _, body := range []string{
 		`{}`,

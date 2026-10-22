@@ -162,3 +162,9 @@ func (r *recorder) values() []string {
 	defer r.mu.Unlock()
 	return append([]string(nil), r.seen...)
 }
+
+// advance advances the synctest fake clock; only valid inside a synctest bubble.
+// Tests never sleep in real time: outside a bubble this would block.
+func advance(d time.Duration) {
+	time.Sleep(d) //nolint:forbidigo // synctest: advances the fake clock, no real time passes
+}

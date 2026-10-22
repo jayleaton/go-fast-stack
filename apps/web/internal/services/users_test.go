@@ -48,34 +48,44 @@ func wantInternal(t *testing.T, err, cause error) {
 // Every method refuses to act on another user before touching a port: the
 // mocks have no expectations, so any call fails the test.
 func TestUserServiceForbidsOtherUsers(t *testing.T) {
-	svc, _, _ := newService(t)
-	calls := map[string]func(services.Actor, string) error{
-		"GetProfile": func(a services.Actor, id string) error { _, err := svc.GetProfile(ctx, a, id); return err },
-		"UpdateProfile": func(a services.Actor, id string) error {
+	t.Parallel()
+	type service = *services.UserService
+	calls := map[string]func(service, services.Actor, string) error{
+		"GetProfile": func(svc service, a services.Actor, id string) error { _, err := svc.GetProfile(ctx, a, id); return err },
+		"UpdateProfile": func(svc service, a services.Actor, id string) error {
 			_, err := svc.UpdateProfile(ctx, a, id, validate.UpdateUserSettings{Name: ptr("Eve")})
 			return err
 		},
-		"RequestEmailChange": func(a services.Actor, id string) error {
+		"RequestEmailChange": func(svc service, a services.Actor, id string) error {
 			return svc.RequestEmailChange(ctx, a, id, validate.UpdateUserEmail{NewEmail: "x@example.com"})
 		},
-		"ChangePassword": func(a services.Actor, id string) error {
+		"ChangePassword": func(svc service, a services.Actor, id string) error {
 			return svc.ChangePassword(ctx, a, id, validate.UpdateUserPassword{CurrentPassword: "password123", NewPassword: "password456"})
 		},
-		"ListSessions":        func(a services.Actor, id string) error { _, err := svc.ListSessions(ctx, a, id); return err },
-		"RevokeSession":       func(a services.Actor, id string) error { return svc.RevokeSession(ctx, a, id, "s9") },
-		"RevokeOtherSessions": func(a services.Actor, id string) error { return svc.RevokeOtherSessions(ctx, a, id) },
-		"DeleteAccount":       func(a services.Actor, id string) error { return svc.DeleteAccount(ctx, a, id) },
-		"DataSummary":         func(a services.Actor, id string) error { _, err := svc.DataSummary(ctx, a, id); return err },
+		"ListSessions": func(svc service, a services.Actor, id string) error {
+			_, err := svc.ListSessions(ctx, a, id)
+			return err
+		},
+		"RevokeSession":       func(svc service, a services.Actor, id string) error { return svc.RevokeSession(ctx, a, id, "s9") },
+		"RevokeOtherSessions": func(svc service, a services.Actor, id string) error { return svc.RevokeOtherSessions(ctx, a, id) },
+		"DeleteAccount":       func(svc service, a services.Actor, id string) error { return svc.DeleteAccount(ctx, a, id) },
+		"DataSummary": func(svc service, a services.Actor, id string) error {
+			_, err := svc.DataSummary(ctx, a, id)
+			return err
+		},
 	}
 	for name, call := range calls {
 		t.Run(name, func(t *testing.T) {
-			wantErr(t, call(ada, "u2"), services.ErrForbidden)
-			wantErr(t, call(services.Actor{}, ""), services.ErrForbidden) // no actor is nobody
+			t.Parallel()
+			svc, _, _ := newService(t) // its own mocks: an unexpected call fails this subtest
+			wantErr(t, call(svc, ada, "u2"), services.ErrForbidden)
+			wantErr(t, call(svc, services.Actor{}, ""), services.ErrForbidden) // no actor is nobody
 		})
 	}
 }
 
 func TestGetProfile(t *testing.T) {
+	t.Parallel()
 	svc, repo, _ := newService(t)
 	repo.EXPECT().GetByID(ctx, "u1").Return(adaUser, nil)
 	if u, err := svc.GetProfile(ctx, ada, "u1"); err != nil || u != adaUser {
@@ -92,6 +102,7 @@ func TestGetProfile(t *testing.T) {
 }
 
 func TestUpdateProfile(t *testing.T) {
+	t.Parallel()
 	svc, repo, _ := newService(t)
 	renamed := adaUser
 	renamed.Name = "Ada L"
@@ -117,6 +128,7 @@ func TestUpdateProfile(t *testing.T) {
 }
 
 func TestRequestEmailChange(t *testing.T) {
+	t.Parallel()
 	svc, _, creds := newService(t)
 	in := validate.UpdateUserEmail{NewEmail: "ada@new.example", CallbackURL: "/dashboard"}
 
@@ -139,6 +151,7 @@ func TestRequestEmailChange(t *testing.T) {
 }
 
 func TestChangePassword(t *testing.T) {
+	t.Parallel()
 	svc, _, creds := newService(t)
 	in := validate.UpdateUserPassword{CurrentPassword: "password123", NewPassword: "password456", RevokeOtherSessions: true}
 
@@ -171,6 +184,7 @@ func TestChangePassword(t *testing.T) {
 }
 
 func TestListSessions(t *testing.T) {
+	t.Parallel()
 	svc, _, creds := newService(t)
 
 	creds.EXPECT().ListSessions(ctx, "u1").Return([]services.Session{{ID: "s1"}, {ID: "s2"}}, nil)
@@ -194,6 +208,7 @@ func TestListSessions(t *testing.T) {
 }
 
 func TestRevokeSession(t *testing.T) {
+	t.Parallel()
 	svc, _, creds := newService(t)
 
 	creds.EXPECT().RevokeSession(ctx, "u1", "s2").Return(nil)
@@ -211,6 +226,7 @@ func TestRevokeSession(t *testing.T) {
 }
 
 func TestRevokeOtherSessions(t *testing.T) {
+	t.Parallel()
 	svc, _, creds := newService(t)
 
 	creds.EXPECT().RevokeOtherSessions(ctx, "u1", "s1").Return(nil)
@@ -226,6 +242,7 @@ func TestRevokeOtherSessions(t *testing.T) {
 }
 
 func TestDeleteAccount(t *testing.T) {
+	t.Parallel()
 	svc, repo, _ := newService(t)
 
 	repo.EXPECT().Delete(ctx, "u1").Return(nil)
@@ -241,6 +258,7 @@ func TestDeleteAccount(t *testing.T) {
 }
 
 func TestDataSummary(t *testing.T) {
+	t.Parallel()
 	svc, repo, _ := newService(t)
 	want := services.UserDataSummary{User: adaUser, Sessions: 2}
 
@@ -260,6 +278,7 @@ func TestDataSummary(t *testing.T) {
 
 // Kind sentinels match every error of their kind; specific errors only themselves.
 func TestErrorKinds(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		err, target error
 		want        bool

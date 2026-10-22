@@ -10,6 +10,7 @@ import (
 )
 
 func TestBanAndUnban(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, nil)
 	ctx := context.Background()
 	email := uniqueEmail(t)
@@ -75,6 +76,7 @@ func TestBanAndUnban(t *testing.T) {
 }
 
 func TestAdminResetTwoFactorRecoversAccess(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, with2FA(true))
 	ctx := context.Background()
 	email := uniqueEmail(t)
@@ -98,6 +100,7 @@ func TestAdminResetTwoFactorRecoversAccess(t *testing.T) {
 }
 
 func TestDisableSignUpKeepsInvites(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, func(c *Config) { c.DisableSignUp = true })
 	ctx := context.Background()
 	email := uniqueEmail(t)
@@ -122,6 +125,7 @@ func TestDisableSignUpKeepsInvites(t *testing.T) {
 }
 
 func TestBannedUserGetsNoTwoFactorChallenge(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, with2FA(false))
 	email := uniqueEmail(t)
 	_, signedIn := h.enrol(email)
@@ -132,11 +136,9 @@ func TestBannedUserGetsNoTwoFactorChallenge(t *testing.T) {
 }
 
 func TestListUsersAndAdminOperations(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
-	pool := newDatabase(t)
-	if err := Migrate(ctx, pool); err != nil {
-		t.Fatal(err)
-	}
+	pool := newDatabase(t) // lists and counts every user: not the shared database
 	h := newHarness(t, nil)
 	a, err := New(h.a.cfg, pool, h.mail)
 	if err != nil {
@@ -233,6 +235,7 @@ func TestListUsersAndAdminOperations(t *testing.T) {
 }
 
 func TestInviteSetPasswordFlow(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, nil)
 	ctx := context.Background()
 	email := uniqueEmail(t)
@@ -300,6 +303,7 @@ func TestInviteSetPasswordFlow(t *testing.T) {
 }
 
 func TestInviteContinuesIntoRequiredTwoFactor(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, with2FA(true))
 	ctx := context.Background()
 	email := uniqueEmail(t)
@@ -338,11 +342,9 @@ func TestInviteContinuesIntoRequiredTwoFactor(t *testing.T) {
 }
 
 func TestSeparateInstancesDoNotCollide(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
-	appPool, adminPool := newDatabase(t), newDatabase(t)
-	if err := Migrate(ctx, appPool); err != nil {
-		t.Fatal(err)
-	}
+	appPool, adminPool := newDatabase(t), newEmptyDatabase(t)
 	if err := MigrateTable(ctx, adminPool, "goose_admin_auth"); err != nil {
 		t.Fatal(err)
 	}

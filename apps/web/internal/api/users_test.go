@@ -149,17 +149,21 @@ func wantError(t *testing.T, res apitest.Response, status int, msg string) {
 // TestUserRoutes runs the four boundary cases against every endpoint. The
 // mock fails the test on any service call a case does not expect.
 func TestUserRoutes(t *testing.T) {
+	t.Parallel()
 	for name, rt := range routes {
 		t.Run(name+"/no session is 401", func(t *testing.T) {
+			t.Parallel()
 			_, h := newRouter(t)
 			wantError(t, apitest.Do(t, h, apitest.Anonymous, rt.method, rt.path, rt.body), 401, "Unauthorized")
 		})
 		t.Run(name+"/other user is 403", func(t *testing.T) {
+			t.Parallel()
 			svc, h := newRouter(t)
 			rt.expect(svc.EXPECT(), services.ErrForbidden)
 			wantError(t, apitest.Do(t, h, apitest.AsUser(ada), rt.method, rt.path, rt.body), 403, "Forbidden")
 		})
 		t.Run(name+"/invalid input is 400", func(t *testing.T) {
+			t.Parallel()
 			svc, h := newRouter(t)
 			body := rt.invalid
 			if body == "" { // no body to get wrong: the service rejects the request
@@ -172,6 +176,7 @@ func TestUserRoutes(t *testing.T) {
 			}
 		})
 		t.Run(name+"/ok is 200", func(t *testing.T) {
+			t.Parallel()
 			svc, h := newRouter(t)
 			rt.expect(svc.EXPECT(), nil)
 			res := apitest.Do(t, h, apitest.AsUser(ada), rt.method, rt.path, rt.body)
@@ -188,6 +193,7 @@ func TestUserRoutes(t *testing.T) {
 // TestErrorMapping covers every service error kind once; it is the same
 // route wrapper for every endpoint.
 func TestErrorMapping(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		err    error
 		status int
@@ -212,6 +218,7 @@ func TestErrorMapping(t *testing.T) {
 // that use them: invalid bodies never reach the service (the mock has no
 // expectations) and name the failing field.
 func TestDecode(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		method, path, body, field string
 	}{
@@ -238,6 +245,7 @@ func TestDecode(t *testing.T) {
 // TestDecodeNamesJSONTypes: a wrong type is described in JSON terms, never
 // with the Go type it decodes into.
 func TestDecodeNamesJSONTypes(t *testing.T) {
+	t.Parallel()
 	for body, want := range map[string]string{
 		`{"name":1}`:      "name must be a string",
 		`{"name":["x"]}`:  "name must be a string",
@@ -254,6 +262,7 @@ func TestDecodeNamesJSONTypes(t *testing.T) {
 // TestEmailCallbackDefault: without a callbackURL the link lands on the
 // account page.
 func TestEmailCallbackDefault(t *testing.T) {
+	t.Parallel()
 	svc, h := newRouter(t)
 	svc.EXPECT().RequestEmailChange(anyCtx, actor, "u1", validate.UpdateUserEmail{NewEmail: "ada@new.example", CallbackURL: config.AppRoutes.EmailChanged})
 	if res := apitest.Do(t, h, apitest.AsUser(ada), "POST", r.MeEmail, `{"newEmail":"ada@new.example"}`); res.Status != 200 {
@@ -263,6 +272,7 @@ func TestEmailCallbackDefault(t *testing.T) {
 
 // TestBodyLimit: the route wrapper caps request bodies.
 func TestBodyLimit(t *testing.T) {
+	t.Parallel()
 	_, h := newRouter(t)
 	res := apitest.Do(t, h, apitest.AsUser(ada), "PATCH", r.Me, `{"name":"`+strings.Repeat("x", 2<<20)+`"}`)
 	if res.Status != 400 || res.Details["body"] == "" {

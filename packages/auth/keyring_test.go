@@ -28,11 +28,7 @@ var (
 // test database would rewrap the data keys under other tests.
 func rotationDB(t *testing.T) *pgxpool.Pool {
 	t.Helper()
-	pool := newDatabase(t)
-	if err := Migrate(context.Background(), pool); err != nil {
-		t.Fatal(err)
-	}
-	return pool
+	return newDatabase(t)
 }
 
 // instance is a 2FA-enabled Auth on pool with the given secrets, sharing clock.
@@ -77,6 +73,7 @@ func cookieValue(t *testing.T, header string) string {
 }
 
 func TestRotationKeepsSessionsLinksAndTwoFactor(t *testing.T) {
+	t.Parallel()
 	pool := rotationDB(t)
 	clock := &testClock{t: time.Now()}
 	h := instance(t, pool, clock, secretA)
@@ -154,6 +151,7 @@ func TestRotationKeepsSessionsLinksAndTwoFactor(t *testing.T) {
 }
 
 func TestGraceWindowIsSharedAcrossInstances(t *testing.T) {
+	t.Parallel()
 	pool := rotationDB(t)
 	clock := &testClock{t: time.Now()}
 	first := instance(t, pool, clock, secretA)
@@ -176,6 +174,7 @@ func TestGraceWindowIsSharedAcrossInstances(t *testing.T) {
 }
 
 func TestRotationWithoutPreviousRevokesAtOnceButKeepsTwoFactor(t *testing.T) {
+	t.Parallel()
 	pool := rotationDB(t)
 	clock := &testClock{t: time.Now()}
 	h := instance(t, pool, clock, secretA)
@@ -215,6 +214,7 @@ func TestRotationWithoutPreviousRevokesAtOnceButKeepsTwoFactor(t *testing.T) {
 }
 
 func TestDefaultSecretGraceCoversEverySignedLifetime(t *testing.T) {
+	t.Parallel()
 	if g := DefaultSecretGrace(Config{}); g != DefaultSessionTTL {
 		t.Fatalf("default = %s, want the session lifetime", g)
 	}
@@ -227,6 +227,7 @@ func TestDefaultSecretGraceCoversEverySignedLifetime(t *testing.T) {
 }
 
 func TestDataKeysOfExistingTwoFactorRowsAreKept(t *testing.T) {
+	t.Parallel()
 	pool := rotationDB(t)
 	ctx := context.Background()
 	// A database from before "authKey": a 2FA row sealed with the key derived
@@ -272,6 +273,7 @@ func TestDataKeysOfExistingTwoFactorRowsAreKept(t *testing.T) {
 }
 
 func TestRevokedSecretNeverVerifiesButUnwraps(t *testing.T) {
+	t.Parallel()
 	pool := rotationDB(t)
 	ctx := context.Background()
 	clock := &testClock{t: time.Now()}
@@ -307,6 +309,7 @@ func TestRevokedSecretNeverVerifiesButUnwraps(t *testing.T) {
 }
 
 func TestResignFollowsWhereTheTokenCameFrom(t *testing.T) {
+	t.Parallel()
 	pool := rotationDB(t)
 	clock := &testClock{t: time.Now()}
 	h := instance(t, pool, clock, secretA)
@@ -331,6 +334,7 @@ func TestResignFollowsWhereTheTokenCameFrom(t *testing.T) {
 }
 
 func TestFailedKeyStorageStillAppliesTheKeyring(t *testing.T) {
+	t.Parallel()
 	pool := rotationDB(t)
 	clock := &testClock{t: time.Now()}
 	h := instance(t, pool, clock, secretA)

@@ -41,6 +41,7 @@ func wantAPILink(t *testing.T, link, pathPrefix, callbackURL string) {
 }
 
 func TestResetLinkShapes(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, nil)
 	ctx := context.Background()
 	email := uniqueEmail(t)
@@ -76,6 +77,7 @@ func TestResetLinkShapes(t *testing.T) {
 }
 
 func TestSetPasswordLinkShapes(t *testing.T) {
+	t.Parallel()
 	h := newHarness(t, nil)
 	ctx := context.Background()
 	email := uniqueEmail(t)
@@ -107,6 +109,7 @@ func TestSetPasswordLinkShapes(t *testing.T) {
 }
 
 func TestVerificationLinkShapes(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	signUp := func(h *harness, callbackURL string) (string, string) {
 		h.t.Helper()
@@ -168,6 +171,7 @@ func TestVerificationLinkShapes(t *testing.T) {
 }
 
 func TestChangeEmailLinkShapes(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	h := newHarness(t, func(c *Config) { c.VerifyEmailPath = verifyPage })
 	email := uniqueEmail(t)
