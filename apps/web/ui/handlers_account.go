@@ -146,7 +146,7 @@ func (u *UI) changePassword(w http.ResponseWriter, r *http.Request) {
 		u.hub.publish(user.ID, userEvent{KeepSession: session.ID})
 	}
 	u.accountResult(w, r, user, session, "",
-		PasswordCard(user.Email, Status{Message: i18n.T(ctx, done)}),
+		replaced{PasswordCard(user.Email, Status{Message: i18n.T(ctx, done)})},
 		u.sessionsCard(ctx, user, session, Status{}))
 }
 

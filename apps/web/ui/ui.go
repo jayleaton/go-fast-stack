@@ -153,12 +153,20 @@ func (u *UI) patch(w http.ResponseWriter, r *http.Request, status int, page temp
 	}
 	sse := datastar.NewSSE(w, r)
 	for _, f := range fragments {
-		if err := sse.PatchElementTempl(f); err != nil {
+		var opts []datastar.PatchElementOption
+		if rf, ok := f.(replaced); ok {
+			f, opts = rf.Component, []datastar.PatchElementOption{datastar.WithModeReplace()}
+		}
+		if err := sse.PatchElementTempl(f, opts...); err != nil {
 			u.log.WarnContext(r.Context(), "ui: patch", "path", r.URL.Path, "err", err)
 			return
 		}
 	}
 }
+
+// replaced patches a fragment without morphing: the element is swapped, so
+// typed input values (passwords) are cleared. Default patches morph and keep them.
+type replaced struct{ templ.Component }
 
 // redirect navigates the browser: via SSE for Datastar, 303 otherwise.
 // Set cookies before calling it.

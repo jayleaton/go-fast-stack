@@ -123,7 +123,8 @@ func TestAccountHappyPaths(t *testing.T) {
 		e.users.EXPECT().ChangePassword(gomock.Any(), demoActor, "u1", validate.UpdateUserPassword{CurrentPassword: "old-password", NewPassword: "new-password", RevokeOtherSessions: true}).Return(nil)
 		e.users.EXPECT().ListSessions(gomock.Any(), demoActor, "u1").Return(demoSessions[:1], nil)
 		form := url.Values{"currentPassword": {"old-password"}, "newPassword": {"new-password"}, "confirmPassword": {"new-password"}, "revokeOtherSessions": {"on"}}
-		assertSSE(t, e.do(http.MethodPost, routes.AccountPassword, form, datastar), `id="password-card"`, en("pages.account.password.changedRevoked"), `id="sessions-card"`, en("pages.account.sessions.none"))
+		// Replaced, not morphed, so the typed passwords are cleared.
+		assertSSE(t, e.do(http.MethodPost, routes.AccountPassword, form, datastar), "data: mode replace", `id="password-card"`, en("pages.account.password.changedRevoked"), `id="sessions-card"`, en("pages.account.sessions.none"))
 
 		// A mismatch never reaches the service.
 		form.Set("confirmPassword", "typo-password")
