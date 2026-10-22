@@ -274,13 +274,13 @@ jobs:
       # the module cache. Cache-path "!" exclusions did not apply, so trim
       # explicitly: zips (~125 MB incl. the 71 MB toolchain zip) and testdata.
       - name: Trim module cache
-        if: steps.scope.outputs.save == 'true' && steps.mod-cache.outputs.cache-hit != 'true'
+        if: steps.scope.outputs.save == 'true' && steps.mod-cache.outcome == 'success' && steps.mod-cache.outputs.cache-hit != 'true'
         run: |
           chmod -R u+w ~/go/pkg/mod
           find ~/go/pkg/mod/cache/download -name '*.zip' -delete
           find ~/go/pkg/mod -mindepth 2 -type d -name testdata -prune -exec rm -rf {} +
       - uses: actions/cache/save@v6
-        if: steps.scope.outputs.save == 'true' && steps.mod-cache.outputs.cache-hit != 'true'
+        if: steps.scope.outputs.save == 'true' && steps.mod-cache.outcome == 'success' && steps.mod-cache.outputs.cache-hit != 'true'
         with:
           path: ~/go/pkg/mod
           key: v7-gomod-${{ runner.os }}-${{ hashFiles('go.sum') }}
