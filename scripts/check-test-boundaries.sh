@@ -17,6 +17,7 @@ boundaries=(
   apps/admin/internal/api      # admin route handler tests: mock service + mock session, real router
   apps/admin/ui/**             # admin ui handler tests, i18n key guard, render tests, Datastar hash pin
   packages/database/adminrepo  # admin repository integration tests: real Postgres (app + admin databases)
+  deploy/platform            # Railway setup (its own module): platform.yaml validation and the IaC graph, pure
 )
 
 # Single files with no boundary above them.

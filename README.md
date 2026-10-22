@@ -60,9 +60,100 @@ Each checkout gets its own compose project and database ports, derived from its 
 
 Go stdlib `net/http` · `templ` + Datastar + Tailwind (standalone CLI) · `pgx` + `sqlc` + `goose` · Postgres 18 · Resend · Railway (distroless image, about 5 MB).
 
-## Deploy (Railway)
+## Deploy to Railway
 
-`railway.json` builds the `Dockerfile`, runs `/server migrate` as the pre-deploy command, and health-checks `/healthz`. Set `APP_ENV=production`, `PUBLIC_URL`, `DATABASE_URL`, `AUTH_SECRET` (32+ chars), `RESEND_API_KEY` and `FROM_EMAIL`, plus `CLIENT_IP_HEADER=X-Real-IP` so auth rate limits see the client instead of Railway's proxy. Production turns on email verification. The server refuses to boot with a missing or invalid value and lists every problem. To rotate `RESEND_API_KEY` without a redeploy, serve it from Doppler instead (next section).
+One file decides the whole Railway project: [`deploy/platform.yaml`](deploy/platform.yaml) (admin yes/no, which environments, previews, region, sizes). `make railway-apply` makes Railway match it using Railway's [Infrastructure as Code](https://docs.railway.com/infrastructure-as-code) (Go authoring, beta). Re-running converges, and editing the file (add `qa`, turn on `admin`) updates the project.
+
+Needs the [Railway CLI](https://docs.railway.com/cli) 5.71.0 or newer, logged in, and Go. From clone to live:
+
+```sh
+railway login
+$EDITOR deploy/platform.yaml   # project name, repo, environments, admin
+make railway-apply             # creates the project, environments, services, databases, domains, secrets
+```
+
+`make railway-plan` shows what would change without touching anything. `make railway-verify` checks `/healthz` on every public URL.
+
+**Code source.** With `repo: owner/name`, Railway builds on every push to `branch`. Install the [Railway GitHub app](https://github.com/apps/railway-app) on that repo first, or the first apply fails with "You don't have access to the GitHub repo". With `repo: ""`, nothing deploys on push: `make railway-up` uploads your checkout (`PLATFORM_ENV=staging` for one environment).
+
+### Profiles
+
+| `environments:` | For | Services per environment |
+|---|---|---|
+| `production` (default) | trying it, solo projects | `web` + `postgres` |
+| `staging,production` | teams: recommended | same, twice |
+| `staging,qa,production` | a real QA sign-off step | same, three times |
+
+`admin: true` adds `admin` (the dashboard, `apps/admin`) and its own `admin-postgres` to every environment; admins never live in the app database. New environments are created empty: no copied data or secrets.
+
+Each service gets:
+- its Dockerfile built from the repo root;
+- `/server migrate` (or `/admin migrate`) as the pre-deploy command;
+- `/healthz` gating each deploy;
+- `DATABASE_URL` as a reference to its Postgres;
+- a generated `*.up.railway.app` domain behind `PUBLIC_URL`;
+- watch paths, so a change to `apps/admin/**` never rebuilds `web` (and `packages/**` rebuilds both).
+
+Removing something from `platform.yaml` (an environment, `admin`) never deletes it unless you run `CONFIRM_DESTRUCTIVE=1 make railway-apply`. Environments you drop are left alone and listed.
+
+### Cost
+
+Railway bills what containers actually use: about $10 per GB of memory per month, $20 per vCPU per month, and $0.15 per GB of volume. The plan minimum includes that much usage: Hobby $5/month, Pro $20/month. Idle footprint, measured on Railway on 2026-10-22:
+- web: about 75 MB, under 0.001 vCPU.
+- Postgres: 60–80 MB, under 0.001 vCPU, and about 0.9 GB of volume.
+- admin: about 70 MB, the same as web in the same local `docker stats` run.
+
+| Profile | Services | Idle compute/month | Fits in |
+|---|---|---:|---|
+| `production` | 2 | ≈ $1.55 | Hobby ($5) |
+| `staging,production` | 4 | ≈ $3.10 | Hobby |
+| `staging,qa,production` | 6 | ≈ $4.65 | Hobby |
+| `production` + admin | 4 | ≈ $3.00 | Hobby |
+| `staging,production` + admin | 8 | ≈ $6.00 | Hobby (≈ $6 bill) / Pro ($20) |
+| `staging,qa,production` + admin | 12 | ≈ $9.00 | Hobby (≈ $9 bill) / Pro ($20) |
+
+Real traffic, egress ($0.05/GB) and backups come on top. Each Postgres also gets Railway's public TCP proxy (`DATABASE_PUBLIC_URL`); IaC cannot opt out of it yet. The caps in `resources:` only bound a runaway process.
+
+### Secrets and Doppler
+
+Setup provisions per service and environment, and never overwrites a value that exists:
+- `AUTH_SECRET` / `ADMIN_AUTH_SECRET`: generated and sealed (nobody can read them back, not even you).
+- `SECRETS_PROVIDER`
+- a `DOPPLER_TOKEN` placeholder.
+
+IaC never touches these variables (`variables.ignore`), so `railway config plan` won't show or delete them.
+
+With `secrets.provider: doppler` (the default), each service reads `DATABASE_URL`, `AUTH_SECRET` and `RESEND_API_KEY` from its own Doppler config, and they rotate without a redeploy (see [Secrets](#secrets)). Until a service has a real token it runs with `SECRETS_PROVIDER=env` on the Railway values, so the project works on day one. Production still needs `RESEND_API_KEY` there.
+
+To switch a service to Doppler:
+1. Fill its Doppler config: `DATABASE_URL` (the Postgres service's private URL), `AUTH_SECRET` and `RESEND_API_KEY`. The admin config also needs `ADMIN_DATABASE_URL` and `ADMIN_AUTH_SECRET`.
+2. Create a read-only service token per service and environment.
+3. Run:
+
+```sh
+make railway-secrets   # asks for each token (input hidden), seals it, switches that service to doppler
+# or non-interactively:
+DOPPLER_TOKEN_WEB_PRODUCTION=dp.st.xxx DOPPLER_TOKEN_WEB_STAGING=dp.st.yyy make railway-secrets
+```
+
+Without Doppler, set `secrets.provider: env` and give `RESEND_API_KEY` the same way (`RESEND_API_KEY_PRODUCTION=re_xxx make railway-secrets`). Your local `.env` is never sent to Railway.
+
+Railway currently gives a database added to a second environment the literal text of its password generator as its password, a public string ([issue draft 0](docs/railway-go-iac-issues.md)). `make railway-apply` detects this and sets a random password inside the database over `railway ssh`. That needs an SSH key registered with Railway (`railway ssh keys`).
+
+### Preview environments
+
+Off by default. `previews: true` (needs `staging`) turns on Railway PR environments: each pull request gets a temporary copy of staging, deleted when the PR closes. Each preview runs its own web + Postgres while open, at roughly a staging environment's cost. Sealed values are not copied into previews, so give previews their own `AUTH_SECRET` (and Doppler token) as shared variables if you rely on them.
+
+### Under the hood
+
+- `deploy/` is its own Go module, so the Railway SDK is never in the app's `go.mod` or binary.
+- `deploy/platform` turns the YAML into the IaC graph.
+- `deploy/.railway/railway.go` is what `railway config plan|apply --file deploy/.railway/railway.go --environment <env>` evaluates.
+- `deploy/cmd/railway-setup` does what IaC cannot: create the project and environments, seal secrets, generate domains and toggle previews.
+- The root `railway.json` (Config as Code) is gone; Railway stops reading those files on 2026-12-01. Services created by IaC never read `apps/admin/railway.json` either.
+- Railway bugs found on the way: [docs/railway-go-iac-issues.md](docs/railway-go-iac-issues.md).
+
+Every service runs with `APP_ENV=production` (email verification on, `RESEND_API_KEY` required), `CLIENT_IP_HEADER=X-Real-IP` and `PORT=3000`. The server refuses to boot with a missing or invalid value and lists every problem.
 
 ## Secrets
 
@@ -88,7 +179,7 @@ With `env`, all of these are read at boot and change with a redeploy. The admin 
 
 1. Create a Doppler workspace and a project (e.g. `myapp`). Each environment (`dev`, `stg`, `prd`) is a config; add `DATABASE_URL`, `AUTH_SECRET` and `RESEND_API_KEY` to each (`AUTH_SECRET_PREVIOUS` only while rotating). The Developer plan is free for three people and service tokens are free.
 2. Per Railway environment, create a **read-only service token** for that environment's config (project → config → Access → Generate). One token per service per environment, so staging can't read production and a future admin service gets its own config.
-3. In Railway, on the web service of each environment, set `SECRETS_PROVIDER=doppler` and `DOPPLER_TOKEN=<that token>` (sealed). Remove `DATABASE_URL`, `AUTH_SECRET` and `RESEND_API_KEY` from the service: with `doppler` env copies are ignored. The pre-deploy `server migrate` reads `DATABASE_URL` from Doppler too.
+3. `make railway-secrets` (see "Deploy to Railway") stores each token sealed on its service and environment and sets `SECRETS_PROVIDER=doppler`, which redeploys it. The Railway copies of `DATABASE_URL`, `AUTH_SECRET` and `RESEND_API_KEY` are then ignored. The pre-deploy `server migrate` reads `DATABASE_URL` from Doppler too, so put the Postgres service's private `DATABASE_URL` in the Doppler config first.
 4. Deploy. The log shows `secrets: loaded provider=doppler`. From now on a change in Doppler reaches every replica within one interval (60 s ± 10 %): `secrets: rotated changed=[…]`, then the consumer's line (`database: DATABASE_URL rotated`, `auth: AUTH_SECRET rotated`, `mailer: resend client built`) with fingerprints. Revoke an old credential upstream once every replica logged the new fingerprint.
 5. Leave Doppler's Railway sync off for live keys: it writes Railway variables and redeploys, which is the `env` path.
 
@@ -173,7 +264,7 @@ make admin-invite EMAIL=admin@example.com   # dev: the set-password link is prin
 
 Locally the admin database is a second database on the same per-checkout Postgres: no extra container, and worktrees stay isolated. Hosted, give it its own small Postgres so its credentials and backups are separate from the app's.
 
-**Deploy:** a second Railway service from this repo with config file `apps/admin/railway.json` (builds `apps/admin/Dockerfile`, runs `/admin migrate` before deploy, health-checks `/healthz`, which pings both databases). Set `APP_ENV=production`, `ADMIN_PUBLIC_URL`, `ADMIN_DATABASE_URL` (the admin Postgres), `DATABASE_URL` (a reference to the app's Postgres), `ADMIN_AUTH_SECRET`, `ADMIN_BOOTSTRAP_EMAIL`, `RESEND_API_KEY`, `FROM_EMAIL` and `CLIENT_IP_HEADER=X-Real-IP`; to rotate them live, put the four secrets in the admin service's own Doppler config instead and set `SECRETS_PROVIDER=doppler` + `DOPPLER_TOKEN` (see "Secrets"). The database-password runbook applies to the admin Postgres too. Deploy the web service first: it migrates the app database the admin app reads. Not using it? Delete `apps/admin`, `packages/database/adminrepo` and the `admin-*` make targets.
+**Deploy:** set `admin: true` in `deploy/platform.yaml` and run `make railway-apply` (see "Deploy to Railway"). It adds the `admin` service (builds `apps/admin/Dockerfile`, runs `/admin migrate` before deploy, health-checks `/healthz`, which pings both databases) and its own `admin-postgres` to every environment. It also wires `ADMIN_DATABASE_URL`, `DATABASE_URL` (a reference to the app's Postgres) and `ADMIN_PUBLIC_URL`, and generates a sealed `ADMIN_AUTH_SECRET`. Set `admin_bootstrap_email` there for the first admin. To rotate the admin secrets live, give the admin service its own Doppler config and token (see "Secrets"). The database-password runbook applies to the admin Postgres too. Not using it? Delete `apps/admin`, `packages/database/adminrepo` and the `admin-*` make targets.
 
 ## Working on it
 

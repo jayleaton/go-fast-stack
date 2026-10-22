@@ -8,6 +8,7 @@
 bin
 tools
 docs
+deploy
 apps/mobile-app
 **/*_test.go
 **/node_modules
