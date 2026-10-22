@@ -24,6 +24,18 @@ floors=(
   "$mod/apps/admin/ui|80" # measured 89.9% when set
 )
 
+# --exist: fail if a floor package no longer exists (CI shards check floors
+# only for the packages they test, so a renamed package would go unnoticed).
+if [ "${1:-}" = --exist ]; then
+  pkgs=" $(go list ./... | tr '\n' ' ') "
+  failed=0
+  for f in "${floors[@]}"; do
+    pkg=${f%%|*}
+    if [[ $pkgs != *" $pkg "* ]]; then echo "FAIL  floor package $pkg does not exist"; failed=1; fi
+  done
+  exit "$failed"
+fi
+
 profile=${1:?usage: $0 <coverprofile> [<import path>]}
 only=${2:-${ONLY:-}}
 [ -r "$profile" ] || { echo "coverage: cannot read $profile"; exit 1; }
