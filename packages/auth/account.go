@@ -58,6 +58,9 @@ func (a *Auth) ChangePassword(ctx context.Context, userID, currentPassword, newP
 			return err
 		}
 		if revokeOtherSessions {
+			if err := a.store.deleteTrustedDevices(ctx, q, userID); err != nil {
+				return err
+			}
 			return a.store.deleteOtherSessions(ctx, q, userID, currentSessionID)
 		}
 		return nil
@@ -84,7 +87,7 @@ func (a *Auth) ChangeEmail(ctx context.Context, userID, newEmail, callbackURL st
 	if err := a.rateLimitUser(ctx, "change-email", userID, RuleEmailSending); err != nil {
 		return err
 	}
-	if _, sess, ok := UserFrom(ctx); ok && sess.UserID == userID && a.now().Sub(sess.CreatedAt) >= a.cfg.FreshAge {
+	if _, sess, ok := a.userFrom(ctx); ok && sess.UserID == userID && a.now().Sub(sess.CreatedAt) >= a.cfg.FreshAge {
 		return ErrSessionNotFresh
 	}
 	if err := a.checkCallbackURL(callbackURL, ErrInvalidCallbackURL); err != nil {
@@ -138,7 +141,7 @@ func (a *Auth) ChangeEmail(ctx context.Context, userID, newEmail, callbackURL st
 // A browser signed in as someone else gets ErrInvalidUser instead of being
 // switched into this account.
 func (a *Auth) confirmEmailChange(ctx context.Context, c verificationClaims) (User, Session, error) {
-	if current, _, ok := UserFrom(ctx); ok && current.ID != c.UserID {
+	if current, _, ok := a.userFrom(ctx); ok && current.ID != c.UserID {
 		return User{}, Session{}, ErrInvalidUser
 	}
 	if c.UserID == "" || c.Nonce == "" {
@@ -154,8 +157,11 @@ func (a *Auth) confirmEmailChange(ctx context.Context, c verificationClaims) (Us
 	if err != nil {
 		return User{}, Session{}, err
 	}
-	if current, sess, ok := UserFrom(ctx); ok && current.ID == user.ID {
+	if current, sess, ok := a.userFrom(ctx); ok && current.ID == user.ID {
 		return user, sess, nil
+	}
+	if needs, err := a.needsSecondFactor(ctx, user.ID); err != nil || needs {
+		return user, Session{}, err // an email link is no second factor: sign in normally
 	}
 	sess, err := a.createSession(ctx, user.ID)
 	if err != nil {

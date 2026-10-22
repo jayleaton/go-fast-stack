@@ -69,5 +69,15 @@ func one(u sqlc.User, err error) (model.User, error) {
 	if err != nil {
 		return model.User{}, err
 	}
-	return model.User(u), nil
+	// Field by field: "user" belongs to packages/auth, whose admin and 2FA
+	// columns (role, banned, twoFactorEnabled, ...) are not part of model.User.
+	return model.User{
+		ID:            u.ID,
+		Name:          u.Name,
+		Email:         u.Email,
+		EmailVerified: u.EmailVerified,
+		Image:         u.Image,
+		CreatedAt:     u.CreatedAt,
+		UpdatedAt:     u.UpdatedAt,
+	}, nil
 }

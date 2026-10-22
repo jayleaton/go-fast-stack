@@ -6,14 +6,21 @@ package sqlc
 
 import (
 	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type User struct {
-	ID            string    `json:"id"`
-	Name          string    `json:"name"`
-	Email         string    `json:"email"`
-	EmailVerified bool      `json:"emailVerified"`
-	Image         *string   `json:"image"`
-	CreatedAt     time.Time `json:"createdAt"`
-	UpdatedAt     time.Time `json:"updatedAt"`
+	ID               string             `json:"id"`
+	Name             string             `json:"name"`
+	Email            string             `json:"email"`
+	EmailVerified    bool               `json:"emailVerified"`
+	Image            *string            `json:"image"`
+	CreatedAt        time.Time          `json:"createdAt"`
+	UpdatedAt        time.Time          `json:"updatedAt"`
+	Role             string             `json:"role"`
+	Banned           bool               `json:"banned"`
+	BanReason        *string            `json:"banReason"`
+	BanExpires       pgtype.Timestamptz `json:"banExpires"`
+	TwoFactorEnabled bool               `json:"twoFactorEnabled"`
 }

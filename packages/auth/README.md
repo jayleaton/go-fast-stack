@@ -33,6 +33,19 @@ app envelope, because the original API used Better Auth's own responses there.
 original route wrapper, or redirects HTML requests (`Accept: text/html`) to
 `Config.LoginPath`.
 
+## Two-factor, admin and invites
+
+Ports of Better Auth's `twoFactor` and `admin` plugins and an invite flow; the full Go API is in [ADMIN.md](ADMIN.md).
+
+| Area | Behaviour |
+|---|---|
+| 2FA (opt-in: `Config.TwoFactor`) | TOTP (RFC 6238, SHA-1, 6 digits, 30 s, ±1 step) with 10 single-use backup codes. `POST /two-factor/enable {password}` → `{totpURI, secret, backupCodes}`; the first `POST /two-factor/verify-totp {code}` turns it on. Sign-in then answers `{"twoFactorRedirect": true, "twoFactorMethods": [...]}` with a `<prefix>.two_factor` cookie (10 min, single use, 5 attempts) instead of a session; `verify-totp` / `verify-backup-code {code, trustDevice?}` finish it. A TOTP code is accepted once (the last used time step is stored), 10 failures lock the second factor for 15 minutes, `trustDevice` skips 2FA on that browser for 30 days. `disable` and `generate-backup-codes` need the password. With `Required`, users without 2FA get `twoFactorSetupRequired: true` and must enrol (`enable` with the challenge cookie, then `verify-totp`) before their first session. Email links (verification, change-email) never sign in past 2FA; a reset forgets trusted devices. |
+| Bans and roles | `user.role` (default `user`), `banned`, `banReason`, `banExpires`. `UserAdmin` (`a.Users()` or `NewUserAdmin(pool)`, which needs no secret): `ListUsers` (search, filter, sort, paginate), `GetUserDetail`, `BanUser` (revokes sessions), `UnbanUser`, `SetRole`, `RevokeSession(s)`, `ResetTwoFactor` (recovery). Banned users get `403 BANNED_USER` after their password matched, and their sessions stop working; expired bans lift themselves. Methods only: there are no `/admin/*` endpoints, and authorisation belongs to the caller. |
+| Invites | `Config.DisableSignUp` turns public sign-up off (`400 EMAIL_PASSWORD_SIGN_UP_DISABLED`); invites keep working. `CreateUserWithoutPassword` + `IssueSetPasswordLink` email a single-use "Set your password" link (`InviteTTL`, default 72 h; a newer link replaces older ones). The page posts `POST /set-password {token, newPassword}` (`CompleteSetPassword`): sets the password, verifies the email and signs in, or continues into 2FA enrolment when it is required. |
+| Several instances | `CookiePrefix` (cookies `<prefix>.session_token`, `.two_factor`, `.trust_device`), own `Secret`, `MigrateTable` for a separate goose table. Request data is tagged per instance, so nested middleware never mixes sessions. |
+
+Security notes for this part: TOTP secrets are AES-256-GCM encrypted with a key derived from `AUTH_SECRET` (user id as associated data) and backup codes are stored as keyed hashes bound to the user, so a database dump alone yields neither; rotating `AUTH_SECRET` therefore invalidates every enrolment (recover users with `UserAdmin.ResetTwoFactor`). Trusted-device cookies are not rotated on use (Better Auth rotates them); disable 2FA, reset the password or revoke other sessions to forget them. The per-challenge attempt limit uses the configured `RateLimiter` (in-memory by default); the per-user lockout is in the database.
+
 ## Usage
 
 ```go

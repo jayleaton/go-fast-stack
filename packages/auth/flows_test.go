@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"errors"
+	"io/fs"
 	"net/http"
 	"net/url"
 	"slices"
@@ -22,8 +23,9 @@ func TestMigrateIsIdempotent(t *testing.T) {
 	if err := testPool.QueryRow(ctx, `SELECT max(version_id) FROM goose_auth`).Scan(&version); err != nil {
 		t.Fatal(err)
 	}
-	if version != 1 {
-		t.Fatalf("goose_auth version = %d, want 1", version)
+	files, _ := fs.Glob(Migrations, "*.sql")
+	if version != int64(len(files)) {
+		t.Fatalf("goose_auth version = %d, want %d", version, len(files))
 	}
 	for _, table := range []string{"user", "session", "account", "verification"} {
 		var exists bool

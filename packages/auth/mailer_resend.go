@@ -66,6 +66,11 @@ func (m *ResendMailer) SendPasswordResetEmail(ctx context.Context, to, url strin
 	return m.send(ctx, to, "Reset your password", "password_reset", emailData{Email: to, URL: url})
 }
 
+// SendSetPasswordEmail sends the "set your password" invitation containing url to to.
+func (m *ResendMailer) SendSetPasswordEmail(ctx context.Context, to, url string) error {
+	return m.send(ctx, to, "Set your password", "set_password", emailData{Email: to, URL: url})
+}
+
 // SendEmailChangeNotice tells to that the account's email is being changed to newEmail.
 func (m *ResendMailer) SendEmailChangeNotice(ctx context.Context, to, newEmail string) error {
 	return m.send(ctx, to, "Your email address is being changed", "email_change_notice", emailData{Email: to, NewEmail: newEmail})

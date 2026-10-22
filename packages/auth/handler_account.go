@@ -13,7 +13,7 @@ func (a *Auth) account(w http.ResponseWriter, r *http.Request) (User, Session, b
 			return User{}, Session{}, false
 		}
 	}
-	user, sess, ok := UserFrom(r.Context())
+	user, sess, ok := a.userFrom(r.Context())
 	if !ok {
 		a.writeError(w, r, ErrUnauthorized)
 	}

@@ -46,6 +46,19 @@ var (
 	ErrSessionNotFound           = &Error{http.StatusNotFound, "SESSION_NOT_FOUND", "Session not found"}
 	ErrSessionNotFresh           = &Error{http.StatusForbidden, "SESSION_NOT_FRESH", "Session is not fresh"}
 	ErrInvalidUser               = &Error{http.StatusBadRequest, "INVALID_USER", "Invalid user"}
+
+	// Admin plugin.
+	ErrBannedUser     = &Error{http.StatusForbidden, "BANNED_USER", "You have been banned from this application. Please contact support if you believe this is an error."}
+	ErrInvalidRole    = &Error{http.StatusBadRequest, "INVALID_ROLE_TYPE", "Invalid role type"}
+	ErrSignUpDisabled = &Error{http.StatusBadRequest, "EMAIL_PASSWORD_SIGN_UP_DISABLED", "Email and password sign up is not enabled"}
+
+	// Two-factor plugin.
+	ErrInvalidCode            = &Error{http.StatusUnauthorized, "INVALID_CODE", "Invalid code"}
+	ErrInvalidBackupCode      = &Error{http.StatusUnauthorized, "INVALID_BACKUP_CODE", "Invalid backup code"}
+	ErrInvalidTwoFactorCookie = &Error{http.StatusUnauthorized, "INVALID_TWO_FACTOR_COOKIE", "Invalid two factor cookie"}
+	ErrTwoFactorNotEnabled    = &Error{http.StatusBadRequest, "TWO_FACTOR_NOT_ENABLED", "Two factor isn't enabled"}
+	ErrTOTPAlreadyEnabled     = &Error{http.StatusBadRequest, "TOTP_ALREADY_ENABLED", "TOTP is already enabled"}
+	ErrTwoFactorLocked        = &Error{http.StatusTooManyRequests, "ACCOUNT_TEMPORARILY_LOCKED", "Too many failed verification attempts. Your account is temporarily locked. Please try again later."}
 )
 
 // RateLimitError is returned when a client exceeded a rate limit. It matches

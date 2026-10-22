@@ -30,6 +30,13 @@ func (a *Auth) Handler() http.Handler {
 	mux.HandleFunc("GET "+BasePath+"/list-sessions", a.handleListSessions)
 	mux.HandleFunc("POST "+BasePath+"/revoke-session", a.handleRevokeSession)
 	mux.HandleFunc("POST "+BasePath+"/revoke-other-sessions", a.handleRevokeOtherSessions)
+	mux.HandleFunc("POST "+BasePath+"/set-password", a.handleSetPassword)
+	mux.HandleFunc("POST "+BasePath+"/two-factor/enable", a.handleTwoFactorEnable)
+	mux.HandleFunc("POST "+BasePath+"/two-factor/get-totp-uri", a.handleTwoFactorURI)
+	mux.HandleFunc("POST "+BasePath+"/two-factor/verify-totp", a.handleTwoFactorVerify(TwoFactorMethodTOTP))
+	mux.HandleFunc("POST "+BasePath+"/two-factor/verify-backup-code", a.handleTwoFactorVerify(TwoFactorMethodBackup))
+	mux.HandleFunc("POST "+BasePath+"/two-factor/generate-backup-codes", a.handleTwoFactorBackupCodes)
+	mux.HandleFunc("POST "+BasePath+"/two-factor/disable", a.handleTwoFactorDisable)
 	mux.HandleFunc("GET "+BasePath+"/ok", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	})
@@ -94,6 +101,9 @@ func (a *Auth) handleSignUp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user, sess, err := a.SignUpEmail(r.Context(), in)
+	if a.writeChallenge(w, err) {
+		return
+	}
 	if err != nil {
 		a.writeError(w, r, err)
 		return
@@ -117,6 +127,9 @@ func (a *Auth) handleSignIn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user, sess, err := a.SignInEmail(r.Context(), in)
+	if a.writeChallenge(w, err) {
+		return
+	}
 	if err != nil {
 		a.writeError(w, r, err)
 		return
@@ -137,7 +150,7 @@ func (a *Auth) handleSignOut(w http.ResponseWriter, r *http.Request) {
 	}
 	// Revoke the presented session and, when a bearer token and a cookie
 	// both came in, the cookie's session too.
-	tokens := []string{metaFrom(r.Context()).token}
+	tokens := []string{a.meta(r.Context()).token}
 	if c, err := r.Cookie(a.cookieName()); err == nil {
 		if t, ok := a.verifySigned(c.Value); ok && isTokenString(t) {
 			tokens = append(tokens, t)
@@ -156,7 +169,7 @@ func (a *Auth) handleSignOut(w http.ResponseWriter, r *http.Request) {
 func (a *Auth) handleGetSession(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Pragma", "no-cache")
-	user, sess, ok := UserFrom(r.Context())
+	user, sess, ok := a.userFrom(r.Context())
 	if !ok {
 		writeJSON(w, http.StatusOK, nil)
 		return

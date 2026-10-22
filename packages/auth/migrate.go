@@ -4,6 +4,7 @@ import (
 	"context"
 	"embed"
 	"fmt"
+	"hash/fnv"
 	"io/fs"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -30,22 +31,36 @@ var Migrations = func() fs.FS {
 const MigrationTable = "goose_auth"
 
 // migrationLockID is the Postgres advisory lock held while auth migrations
-// run, distinct from goose's default so app migrations never contend with it.
-const migrationLockID int64 = 0x617574685f6d6967 // "auth_mig"
+// tracked in table run: distinct from goose's default so app migrations never
+// contend with it, and per table so separate auth instances do not either.
+func migrationLockID(table string) int64 {
+	h := fnv.New64a()
+	_, _ = h.Write([]byte("auth_mig:" + table))
+	return int64(h.Sum64() >> 1) //nolint:gosec // shifted into int64 range
+}
 
 // Migrate applies the embedded auth migrations (tables user, session, account,
-// verification). Safe to call from several instances at once: an advisory lock
-// serialises them.
+// verification, twoFactor), tracked in MigrationTable. Safe to call from several
+// instances at once: an advisory lock serialises them.
 func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
+	return MigrateTable(ctx, pool, MigrationTable)
+}
+
+// MigrateTable is Migrate with its own goose version table, for a second auth
+// instance (e.g. an admin app) that should not share the default name.
+func MigrateTable(ctx context.Context, pool *pgxpool.Pool, table string) error {
+	if table == "" {
+		table = MigrationTable
+	}
 	db := stdlib.OpenDBFromPool(pool)
 	defer func() { _ = db.Close() }()
 
-	locker, err := lock.NewPostgresSessionLocker(lock.WithLockID(migrationLockID))
+	locker, err := lock.NewPostgresSessionLocker(lock.WithLockID(migrationLockID(table)))
 	if err != nil {
 		return err
 	}
 	provider, err := goose.NewProvider(goose.DialectPostgres, db, Migrations,
-		goose.WithTableName(MigrationTable),
+		goose.WithTableName(table),
 		goose.WithSessionLocker(locker),
 		goose.WithDisableGlobalRegistry(true),
 	)
