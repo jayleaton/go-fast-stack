@@ -14,6 +14,7 @@
 #   sqlc=true|false     sqlc inputs or output changed
 #   templ=true|false    .templ files or their output changed
 #   generate=<dirs>     packages whose //go:generate inputs or outputs changed
+#   db=true|false       some affected package's tests need Postgres
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -51,6 +52,7 @@ if [ "$full" = true ]; then
   out sqlc true
   out templ true
   out generate ./...
+  out db true
   exit 0
 fi
 
@@ -130,7 +132,16 @@ while IFS=: read -r file _ directive; do
   done
 done < <(git grep -n '^//go:generate' -- '*.go' || true)
 
+# Postgres is needed when an affected package's tests use it (dbtest or
+# TEST_DATABASE_URL). A miss fails loudly: CI sets TEST_DATABASE_URL, so a
+# database test without a server gets "connection refused", never a skip.
+db=false
+for d in $dirs; do
+  if grep -lqE 'dbtest|TEST_DATABASE_URL' "$d"/*_test.go 2>/dev/null; then db=true && break; fi
+done
+
 out full false
+out db "$db"
 out packages "$(tr '\n' ' ' <<<"$pkgs" | sed 's/ *$//')"
 out dirs "$(tr '\n' ' ' <<<"$dirs" | sed 's/ *$//')"
 out sqlc "$sqlc"
