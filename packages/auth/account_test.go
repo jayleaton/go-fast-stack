@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -183,23 +184,19 @@ func TestChangeEmail(t *testing.T) {
 func TestChangeEmailLinkExpiresAndRechecksTheAddress(t *testing.T) {
 	h := newHarness(t, nil)
 	ctx := context.Background()
-	email := uniqueEmail(t)
-	headers := hdr{"Cookie": cookieHeader(t, h.signUp(email, "password123"))}
-	id := h.userID(headers)
+	first, second := uniqueEmail(t), uniqueEmail(t)
+	wantStatus(t, h.signUp(first, "password123"), http.StatusOK)
+	wantStatus(t, h.signUp(second, "password123"), http.StatusOK)
+	firstID, secondID := h.userID(hdr{"Cookie": h.loginCookie(first)}), h.userID(hdr{"Cookie": h.loginCookie(second)})
 
-	expiring, claimed := uniqueEmail(t), uniqueEmail(t)
-	if err := h.a.ChangeEmail(ctx, id, expiring, ""); err != nil {
+	claimed, expiring := uniqueEmail(t), uniqueEmail(t)
+	if err := h.a.ChangeEmail(ctx, firstID, claimed, ""); err != nil {
 		t.Fatal(err)
 	}
-	if err := h.a.ChangeEmail(ctx, id, claimed, ""); err != nil {
+	if err := h.a.ChangeEmail(ctx, secondID, expiring, ""); err != nil {
 		t.Fatal(err)
 	}
-	links := map[string]string{}
-	for _, m := range h.mails() {
-		if m.kind == "verification" {
-			links[m.to] = mustQuery(t, m.url, "token")
-		}
-	}
+	links := h.changeLinks()
 
 	// Someone registers the target address before the link is opened.
 	wantStatus(t, h.signUp(claimed, "password123"), http.StatusOK)
@@ -211,11 +208,189 @@ func TestChangeEmailLinkExpiresAndRechecksTheAddress(t *testing.T) {
 	if _, _, err := h.a.VerifyEmail(ctx, links[expiring]); !errors.Is(err, ErrTokenExpired) {
 		t.Fatalf("expired link err = %v", err)
 	}
-	if got := h.getSession(headers)["user"].(map[string]any)["email"]; got != email {
-		t.Fatalf("email changed to %v", got)
-	}
 	if err := h.a.ChangeEmail(ctx, generateID(32), uniqueEmail(t), ""); !errors.Is(err, ErrUserNotFound) {
 		t.Fatalf("unknown user err = %v", err)
+	}
+}
+
+// loginCookie signs email in and returns its Cookie header value.
+func (h *harness) loginCookie(email string) string {
+	h.t.Helper()
+	return cookieHeader(h.t, h.signIn(email, "password123"))
+}
+
+// changeLinks maps each new address to the token of its change-email link.
+func (h *harness) changeLinks() map[string]string {
+	h.t.Helper()
+	links := map[string]string{}
+	for _, m := range h.mails() {
+		if m.kind == "verification" && strings.Contains(m.url, "token=") {
+			links[m.to] = mustQuery(h.t, m.url, "token")
+		}
+	}
+	return links
+}
+
+func TestChangeEmailLinksAreBoundToTheirUserAndRequest(t *testing.T) {
+	h := newHarness(t, nil)
+	ctx := context.Background()
+	a, b, c := uniqueEmail(t), uniqueEmail(t), uniqueEmail(t)
+	wantStatus(t, h.signUp(a, "password123"), http.StatusOK)
+	x := h.userID(hdr{"Cookie": h.loginCookie(a)})
+
+	// Attacker X keeps an A→B link, moves to C, and A is recycled by victim Y.
+	if err := h.a.ChangeEmail(ctx, x, b, ""); err != nil {
+		t.Fatal(err)
+	}
+	stale := h.changeLinks()[b]
+	if err := h.a.ChangeEmail(ctx, x, c, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := h.a.VerifyEmail(ctx, stale); !errors.Is(err, ErrInvalidToken) {
+		t.Fatalf("superseded link err = %v", err)
+	}
+	if _, _, err := h.a.VerifyEmail(ctx, h.changeLinks()[c]); err != nil {
+		t.Fatal(err)
+	}
+	wantStatus(t, h.signUp(a, "password123"), http.StatusOK)
+	victim := h.userID(hdr{"Cookie": h.loginCookie(a)})
+	if user, _, err := h.a.VerifyEmail(ctx, stale); !errors.Is(err, ErrInvalidToken) {
+		t.Fatalf("stale link hit %s (victim %s): %v", user.ID, victim, err)
+	}
+
+	// A→B→A: the first link cannot be replayed after moving back.
+	if err := h.a.ChangeEmail(ctx, victim, b, ""); err != nil {
+		t.Fatal(err)
+	}
+	toB := h.changeLinks()[b]
+	if _, _, err := h.a.VerifyEmail(ctx, toB); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.a.ChangeEmail(ctx, victim, a, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := h.a.VerifyEmail(ctx, h.changeLinks()[a]); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := h.a.VerifyEmail(ctx, toB); !errors.Is(err, ErrInvalidToken) {
+		t.Fatalf("replayed A→B link err = %v", err)
+	}
+
+	// A link opened in a browser signed in as someone else does not switch accounts.
+	if err := h.a.ChangeEmail(ctx, victim, b, "/done"); err != nil {
+		t.Fatal(err)
+	}
+	link := h.changeLinks()[b]
+	stranger := cookieHeader(t, h.signUp(uniqueEmail(t), "password123"))
+	rec := h.do("GET", BasePath+"/verify-email?callbackURL=/done&token="+link, nil, hdr{"Cookie": stranger})
+	if loc := rec.Header().Get("Location"); loc != "/done?error=INVALID_USER" || sessionCookie(rec) != nil {
+		t.Fatalf("other user's browser: %d %q", rec.Code, loc)
+	}
+	// The JSON form returns the updated user, as Better Auth does.
+	rec = h.do("GET", BasePath+"/verify-email?token="+link, nil, nil)
+	wantStatus(t, rec, http.StatusOK)
+	if u := jsonBody(t, rec)["user"].(map[string]any); u["email"] != b || u["emailVerified"] != true {
+		t.Fatalf("user = %v", u)
+	}
+}
+
+func TestPendingEmailChangeIsCancelledByRecovery(t *testing.T) {
+	ctx := context.Background()
+	for name, recover := range map[string]func(h *harness, userID, email string){
+		"change password": func(h *harness, userID, _ string) {
+			if err := h.a.ChangePassword(ctx, userID, "password123", "new-password", false, ""); err != nil {
+				t.Fatal(err)
+			}
+		},
+		"revoke other sessions": func(h *harness, userID, _ string) {
+			if err := h.a.RevokeOtherSessions(ctx, userID, ""); err != nil {
+				t.Fatal(err)
+			}
+		},
+		"password reset": func(h *harness, _, email string) {
+			if err := h.a.RequestPasswordReset(ctx, email, "/r"); err != nil {
+				t.Fatal(err)
+			}
+			var link string
+			for _, m := range h.mails() {
+				if m.kind == "reset" {
+					link = m.url
+				}
+			}
+			token := mustQuery(t, h.do("GET", pathOf(t, link), nil, nil).Header().Get("Location"), "token")
+			if err := h.a.ResetPassword(ctx, token, "new-password"); err != nil {
+				t.Fatal(err)
+			}
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			h := newHarness(t, nil)
+			email, attacker := uniqueEmail(t), uniqueEmail(t)
+			wantStatus(t, h.signUp(email, "password123"), http.StatusOK)
+			id := h.userID(hdr{"Cookie": h.loginCookie(email)})
+			if err := h.a.ChangeEmail(ctx, id, attacker, ""); err != nil {
+				t.Fatal(err)
+			}
+			link := h.changeLinks()[attacker]
+			recover(h, id, email)
+			if _, _, err := h.a.VerifyEmail(ctx, link); !errors.Is(err, ErrInvalidToken) {
+				t.Fatalf("pending change survived: %v", err)
+			}
+		})
+	}
+}
+
+func TestChangeEmailNeedsAFreshSession(t *testing.T) {
+	h := newHarness(t, nil)
+	email := uniqueEmail(t)
+	cookie := hdr{"Cookie": cookieHeader(t, h.signUp(email, "password123")), "Origin": testBase}
+	h.clock.Advance(DefaultFreshAge + time.Minute)
+	rec := h.do("POST", BasePath+"/change-email", map[string]any{"newEmail": uniqueEmail(t)}, cookie)
+	wantCode(t, rec, http.StatusForbidden, "SESSION_NOT_FRESH")
+	// Signing in again gives a fresh session.
+	fresh := hdr{"Cookie": h.loginCookie(email), "Origin": testBase}
+	wantStatus(t, h.do("POST", BasePath+"/change-email", map[string]any{"newEmail": uniqueEmail(t)}, fresh), http.StatusOK)
+}
+
+func TestChangePasswordConcurrencyAndPerUserLimit(t *testing.T) {
+	h := newHarness(t, nil)
+	ctx := context.Background()
+	email := uniqueEmail(t)
+	wantStatus(t, h.signUp(email, "password123"), http.StatusOK)
+	id := h.userID(hdr{"Cookie": h.loginCookie(email)})
+
+	var wg sync.WaitGroup
+	results := make([]error, 6)
+	for i := range results {
+		wg.Go(func() {
+			results[i] = h.a.ChangePassword(ctx, id, "password123", "new-password-"+string(rune('a'+i)), true, "")
+		})
+	}
+	wg.Wait()
+	won := 0
+	for _, err := range results {
+		if err == nil {
+			won++
+		} else if !errors.Is(err, ErrInvalidPassword) {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	}
+	if won != 1 {
+		t.Fatalf("%d concurrent password changes succeeded, want 1", won)
+	}
+
+	// The per-user budget holds even when every attempt comes from a new IP.
+	limited := newHarness(t, func(c *Config) { c.RateLimiter = NewMemoryRateLimiter(); c.ClientIPHeader = "X-Real-IP" })
+	victim := uniqueEmail(t)
+	cookie := cookieHeader(t, limited.signUp(victim, "password123"))
+	codes := []int{}
+	for i := range 4 {
+		rec := limited.do("POST", BasePath+"/change-password", map[string]any{"currentPassword": "guess-guess", "newPassword": "new-password"},
+			hdr{"Cookie": cookie, "Origin": testBase, "X-Real-IP": "203.0.113." + string(rune('1'+i))})
+		codes = append(codes, rec.Code)
+	}
+	if !slices.Equal(codes, []int{400, 400, 400, 429}) {
+		t.Fatalf("codes = %v, want three guesses then 429", codes)
 	}
 }
 

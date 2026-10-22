@@ -289,17 +289,51 @@ func (s *store) deleteOtherSessions(ctx context.Context, q querier, userID, keep
 	return err
 }
 
-// changeEmail moves the user who currently has email to newEmail and marks it
-// verified, dropping their outstanding reset links (they went to the old
-// address). It returns errNotFound when no user has email any more, and a
-// unique violation when newEmail was taken meanwhile.
-func (s *store) changeEmail(ctx context.Context, email, newEmail string, now time.Time) (User, error) {
+// changeEmailPrefix prefixes the verification row of a pending email change;
+// its value is the user id.
+const changeEmailPrefix = "change-email:"
+
+// deleteEmailChanges cancels every pending email change of a user.
+func (s *store) deleteEmailChanges(ctx context.Context, q querier, userID string) error {
+	_, err := q.Exec(ctx, `DELETE FROM "verification" WHERE "identifier" LIKE 'change-email:%' AND "value" = $1`, userID)
+	return err
+}
+
+// startEmailChange records a pending email change (nonce) for userID,
+// replacing any earlier one so only the newest link works.
+func (s *store) startEmailChange(ctx context.Context, userID, nonce string, expiresAt, now time.Time) error {
+	return s.tx(ctx, func(q querier) error {
+		if err := s.deleteEmailChanges(ctx, q, userID); err != nil {
+			return err
+		}
+		_, err := q.Exec(ctx, `
+			INSERT INTO "verification" ("id", "identifier", "value", "expiresAt", "createdAt", "updatedAt")
+			VALUES ($1, $2, $3, $4, $5, $5)`,
+			generateID(32), changeEmailPrefix+nonce, userID, expiresAt, now)
+		return err
+	})
+}
+
+// changeEmail applies a pending email change: it consumes the nonce row
+// (which must belong to userID), moves the user from email to newEmail,
+// marks it verified and drops their reset links (they went to the old
+// address). It returns errNotFound when the change is no longer pending or the
+// user's email moved on, and a unique violation when newEmail was taken
+// meanwhile.
+func (s *store) changeEmail(ctx context.Context, userID, nonce, email, newEmail string, now time.Time) (User, error) {
 	var out User
 	err := s.tx(ctx, func(q querier) error {
+		owner, err := s.consumeVerification(ctx, q, changeEmailPrefix+nonce, now)
+		if err != nil {
+			return err
+		}
+		if owner != userID {
+			return errNotFound
+		}
 		u, err := scanUser(q.QueryRow(ctx, `
-			UPDATE "user" u SET "email" = $2, "emailVerified" = true, "updatedAt" = $3
-			WHERE u."email" = $1
-			RETURNING `+userColumns, email, newEmail, now))
+			UPDATE "user" u SET "email" = $3, "emailVerified" = true, "updatedAt" = $4
+			WHERE u."id" = $1 AND u."email" = $2
+			RETURNING `+userColumns, userID, email, newEmail, now))
 		if err != nil {
 			return err
 		}
@@ -307,4 +341,21 @@ func (s *store) changeEmail(ctx context.Context, email, newEmail string, now tim
 		return s.deleteResetTokens(ctx, q, u.ID)
 	})
 	return out, err
+}
+
+// changePassword replaces the credential password only if it is still
+// oldHash, so concurrent changes cannot both win. It returns errNotFound when
+// the password changed meanwhile.
+func (s *store) changePassword(ctx context.Context, q querier, userID, oldHash, newHash string, now time.Time) error {
+	tag, err := q.Exec(ctx, `
+		UPDATE "account" SET "password" = $4, "updatedAt" = $5
+		WHERE "userId" = $1 AND "providerId" = $2 AND "accountId" = $1 AND "password" = $3`,
+		userID, credentialProvider, oldHash, newHash, now)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return errNotFound
+	}
+	return nil
 }

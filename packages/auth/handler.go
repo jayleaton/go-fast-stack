@@ -182,7 +182,7 @@ func (a *Auth) handleVerifyEmail(w http.ResponseWriter, r *http.Request) {
 		a.writeError(w, r, err)
 		return
 	}
-	_, sess, err := a.VerifyEmail(r.Context(), r.URL.Query().Get("token"))
+	user, sess, changed, err := a.verifyEmail(r.Context(), r.URL.Query().Get("token"))
 	if err != nil {
 		e := asError(err)
 		if e == nil {
@@ -201,6 +201,10 @@ func (a *Auth) handleVerifyEmail(w http.ResponseWriter, r *http.Request) {
 	}
 	if callbackURL != "" {
 		http.Redirect(w, r, callbackURL, http.StatusFound) //nolint:gosec // callbackURL passed checkCallbackURL
+		return
+	}
+	if changed {
+		writeJSON(w, http.StatusOK, map[string]any{"status": true, "user": user})
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"status": true, "user": nil})

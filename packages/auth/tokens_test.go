@@ -123,8 +123,8 @@ func TestVerificationToken(t *testing.T) {
 	if c, err := a.parseVerificationToken(tok); err != nil || c.Email != "user@example.com" || c.Cred != "fp" || c.UpdateTo != "" {
 		t.Fatalf("parse = %+v %v", c, err)
 	}
-	change := a.signChangeEmailToken("Old@Example.com", "New@Example.com", time.Hour)
-	if c, err := a.parseVerificationToken(change); err != nil || c.Email != "old@example.com" || c.UpdateTo != "new@example.com" || c.RequestType != changeEmailRequest {
+	change := a.signChangeEmailToken("uid1", "Old@Example.com", "New@Example.com", "nonce1", time.Hour)
+	if c, err := a.parseVerificationToken(change); err != nil || c.Email != "old@example.com" || c.UpdateTo != "new@example.com" || c.RequestType != changeEmailRequest || c.UserID != "uid1" || c.Nonce != "nonce1" {
 		t.Fatalf("parse change-email = %+v %v", c, err)
 	}
 

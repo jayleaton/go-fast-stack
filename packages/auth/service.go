@@ -233,8 +233,8 @@ func (a *Auth) resetTokenValid(ctx context.Context, token string) (bool, error) 
 }
 
 // ResetPassword spends a reset token, sets the new password and revokes every
-// session and every other outstanding reset link of the user, all in one
-// transaction. Used, expired or unknown
+// session, every other outstanding reset link and any pending email change of
+// the user, all in one transaction. Used, expired or unknown
 // tokens return ErrInvalidToken.
 func (a *Auth) ResetPassword(ctx context.Context, token, newPassword string) error {
 	if err := a.rateLimit(ctx, "reset-password", RuleResetPassword); err != nil {
@@ -271,6 +271,9 @@ func (a *Auth) ResetPassword(ctx context.Context, token, newPassword string) err
 		if err := a.store.deleteResetTokens(ctx, q, userID); err != nil {
 			return err
 		}
+		if err := a.store.deleteEmailChanges(ctx, q, userID); err != nil {
+			return err
+		}
 		return a.store.setCredentialPassword(ctx, q, userID, hash, now)
 	})
 }
@@ -286,16 +289,30 @@ func (a *Auth) ResetPassword(ctx context.Context, token, newPassword string) err
 // mark it verified and sign in; they are single-use because the old address
 // they name is gone afterwards.
 func (a *Auth) VerifyEmail(ctx context.Context, token string) (User, Session, error) {
+	user, sess, _, err := a.verifyEmail(ctx, token)
+	return user, sess, err
+}
+
+// verifyEmail is VerifyEmail that also reports whether the link was an email
+// change (Better Auth then returns the updated user).
+func (a *Auth) verifyEmail(ctx context.Context, token string) (User, Session, bool, error) {
 	claims, err := a.parseVerificationToken(token)
 	if errors.Is(err, errTokenExpired) {
-		return User{}, Session{}, ErrTokenExpired
+		return User{}, Session{}, false, ErrTokenExpired
 	}
 	if err != nil {
-		return User{}, Session{}, err
+		return User{}, Session{}, false, err
 	}
 	if claims.RequestType == changeEmailRequest {
-		return a.confirmEmailChange(ctx, claims.Email, claims.UpdateTo)
+		user, sess, err := a.confirmEmailChange(ctx, claims)
+		return user, sess, true, err
 	}
+	user, sess, err := a.verifyAddress(ctx, claims)
+	return user, sess, false, err
+}
+
+// verifyAddress handles an ordinary verification link.
+func (a *Auth) verifyAddress(ctx context.Context, claims verificationClaims) (User, Session, error) {
 	email, cred := claims.Email, claims.Cred
 	user, err := a.store.userByEmail(ctx, email)
 	if errors.Is(err, errNotFound) {

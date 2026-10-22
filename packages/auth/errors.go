@@ -44,6 +44,8 @@ var (
 	ErrEmailTaken                = &Error{http.StatusUnprocessableEntity, "USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL", "User already exists. Use another email."}
 	ErrEmailUnchanged            = &Error{http.StatusBadRequest, "EMAIL_IS_THE_SAME", "Email is the same"}
 	ErrSessionNotFound           = &Error{http.StatusNotFound, "SESSION_NOT_FOUND", "Session not found"}
+	ErrSessionNotFresh           = &Error{http.StatusForbidden, "SESSION_NOT_FRESH", "Session is not fresh"}
+	ErrInvalidUser               = &Error{http.StatusBadRequest, "INVALID_USER", "Invalid user"}
 )
 
 // RateLimitError is returned when a client exceeded a rate limit. It matches

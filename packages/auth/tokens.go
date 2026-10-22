@@ -111,7 +111,9 @@ func isTokenString(s string) bool {
 // "cred", a fingerprint of the password hash the link was issued for, so a
 // link stops working when someone else's sign-up replaces that password.
 // Change-email links are Better Auth's "change-email-verification" tokens:
-// {"email": <current>, "updateTo": <new>, "requestType": ...}.
+// {"email": <current>, "updateTo": <new>, "requestType": ...}, plus "uid" and
+// a "jti" nonce that must still exist as a verification row, which makes them
+// single-use and revocable.
 
 var jwtHeader = base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"HS256","typ":"JWT"}`))
 
@@ -120,6 +122,8 @@ type verificationClaims struct {
 	UpdateTo    string `json:"updateTo,omitempty"`
 	RequestType string `json:"requestType,omitempty"`
 	Cred        string `json:"cred,omitempty"`
+	UserID      string `json:"uid,omitempty"`
+	Nonce       string `json:"jti,omitempty"`
 	IssuedAt    int64  `json:"iat"`
 	Expires     int64  `json:"exp"`
 }
@@ -141,12 +145,15 @@ func (a *Auth) signVerificationToken(email, cred string, ttl time.Duration) stri
 	return a.signClaims(verificationClaims{Email: strings.ToLower(email), Cred: cred}, ttl)
 }
 
-// signChangeEmailToken signs a change-email link from email to newEmail.
-func (a *Auth) signChangeEmailToken(email, newEmail string, ttl time.Duration) string {
+// signChangeEmailToken signs a change-email link moving userID from email to
+// newEmail; nonce names its verification row.
+func (a *Auth) signChangeEmailToken(userID, email, newEmail, nonce string, ttl time.Duration) string {
 	return a.signClaims(verificationClaims{
 		Email:       strings.ToLower(email),
 		UpdateTo:    strings.ToLower(newEmail),
 		RequestType: changeEmailRequest,
+		UserID:      userID,
+		Nonce:       nonce,
 	}, ttl)
 }
 
