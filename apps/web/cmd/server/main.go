@@ -22,6 +22,7 @@ import (
 	"github.com/jayleaton/ai-patterns-go/apps/web/internal/config"
 	"github.com/jayleaton/ai-patterns-go/apps/web/internal/server"
 	"github.com/jayleaton/ai-patterns-go/apps/web/internal/services"
+	"github.com/jayleaton/ai-patterns-go/apps/web/ui"
 	"github.com/jayleaton/ai-patterns-go/packages/auth"
 	"github.com/jayleaton/ai-patterns-go/packages/database"
 )
@@ -101,6 +102,10 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		DB:     pool,
 		Auth:   authn,
 		Users:  api.NewUsers(users, server.CallerFrom),
+		UI: ui.New(ui.Deps{
+			Auth: authn, Users: users, Features: cfg.Features,
+			SecureCookies: cfg.PublicURL.Scheme == "https", Logger: log,
+		}).Handler(),
 	})
 
 	srv := &http.Server{

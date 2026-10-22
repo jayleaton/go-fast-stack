@@ -43,6 +43,10 @@ generate: ## Regenerate sqlc (and templ, once apps/web/ui exists)
 	$(TOOL) sqlc generate -f packages/database/sqlc.yaml
 	@if [ -d apps/web/ui ] && $(GO) tool -n templ >/dev/null 2>&1; then $(GO) tool templ generate -path apps/web/ui; fi
 
+.PHONY: css
+css: ## Rebuild apps/web/ui/static/app.css (Tailwind standalone CLI, pinned + checksum-verified)
+	"$$(apps/web/ui/scripts/tailwind.sh)" -i apps/web/ui/styles/input.css -o apps/web/ui/static/app.css --minify
+
 .PHONY: check-generated
 check-generated: generate ## Fail if generated code is out of date
 	@git diff --exit-code -- '*.go' || (echo 'generated code is stale: run make generate and commit' && exit 1)
