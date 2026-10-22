@@ -1,7 +1,10 @@
 # Single required check for branch protection and the merge queue: `ci-ok`.
 # Other jobs may be skipped by path filters; ci-ok treats skipped as success.
 # Draft PRs run nothing: mark ready for review to run CI (merge_group, push to
-# main and workflow_dispatch always run everything).
+# main and workflow_dispatch always run everything). GitHub cannot filter
+# drafts at the trigger, so a draft still starts a run whose jobs are all
+# skipped; those jobs are renamed "<job> (draft, not run)" so a skipped draft
+# job can never stand in for the required ci-ok on the same SHA.
 name: CI
 
 on:
@@ -12,9 +15,14 @@ on:
     branches: [main]
   merge_group:
 
+# Draft and real runs use separate groups: a skipped draft run (e.g. a push
+# landing a second before "ready for review") must never cancel the real run.
+# Only PR runs cancel superseded ones; a cancelled run's ci-ok still runs and
+# fails, so an old SHA never keeps a green required check. Pushes to main,
+# merge queue and manual runs always finish.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.workflow }}-${{ github.ref }}-${{ github.event.pull_request.draft && 'draft' || 'run' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -22,6 +30,7 @@ permissions:
 jobs:
   # PRs only: push to main and merge_group always run everything.
   changes:
+    name: ${{ github.event.pull_request.draft && 'changes (draft, not run)' || 'changes' }}
     if: github.event_name == 'pull_request' && github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     timeout-minutes: 2
@@ -55,6 +64,7 @@ jobs:
 
   # One job, not lint/test in parallel: a second runner's checkout + setup-go + cache restore (~20 s) outweighs warm lint time on a repo this size.
   go:
+    name: ${{ github.event.pull_request.draft && 'go (draft, not run)' || 'go' }}
     needs: changes
     if: ${{ !cancelled() && (github.event_name != 'pull_request' || (github.event.pull_request.draft == false && needs.changes.outputs.go == 'true')) }}
     runs-on: ubuntu-latest
@@ -119,6 +129,7 @@ jobs:
   # Typecheck, lint, Expo SDK version check and unit tests. The contract test
   # (pnpm test:contract) needs Go + Docker and runs locally.
   mobile:
+    name: ${{ github.event.pull_request.draft && 'mobile (draft, not run)' || 'mobile' }}
     needs: changes
     if: ${{ !cancelled() && (github.event_name != 'pull_request' || (github.event.pull_request.draft == false && needs.changes.outputs.mobile == 'true')) }}
     runs-on: ubuntu-latest
@@ -147,6 +158,7 @@ jobs:
       - run: pnpm test
 
   ci-ok:
+    name: ${{ github.event.pull_request.draft && 'ci-ok (draft, not run)' || 'ci-ok' }}
     if: ${{ always() && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) }}
     needs: [changes, go, mobile]
     runs-on: ubuntu-latest
