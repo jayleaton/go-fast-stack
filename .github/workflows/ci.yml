@@ -115,8 +115,8 @@ jobs:
           fi
 
       # Modules (and the go.mod toolchain) are keyed by go.sum; module zips and
-      # dependencies' testdata are left out (builds read only the extracted
-      # sources). Absolute paths: "!" patterns do not expand "~". Build/lint caches are keyed
+      # dependencies' testdata are deleted before saving (builds read only the
+      # extracted sources and .ziphash files). Build/lint caches are keyed
       # by commit and saved on every push to main, so PRs restore the newest
       # main state by prefix. Bump the "v4" prefix when what is cached changes.
       - uses: actions/cache/restore@v6
@@ -124,11 +124,9 @@ jobs:
         id: mod-cache
         with:
           path: |
-            /home/runner/go/pkg/mod
-            !/home/runner/go/pkg/mod/cache/download/**/*.zip
-            !/home/runner/go/pkg/mod/**/testdata/**
-          key: v6-gomod-${{ runner.os }}-${{ hashFiles('go.sum') }}
-          restore-keys: v6-gomod-${{ runner.os }}-
+            ~/go/pkg/mod
+          key: v7-gomod-${{ runner.os }}-${{ hashFiles('go.sum') }}
+          restore-keys: v7-gomod-${{ runner.os }}-
       - uses: actions/cache/restore@v6
         if: steps.scope.outputs.go == 'true'
         with:
@@ -238,8 +236,8 @@ jobs:
           fi
 
       # Modules (and the go.mod toolchain) are keyed by go.sum; module zips and
-      # dependencies' testdata are left out (builds read only the extracted
-      # sources). Absolute paths: "!" patterns do not expand "~". Build/lint caches are keyed
+      # dependencies' testdata are deleted before saving (builds read only the
+      # extracted sources and .ziphash files). Build/lint caches are keyed
       # by commit and saved on every push to main, so PRs restore the newest
       # main state by prefix. Bump the "v4" prefix when what is cached changes.
       - uses: actions/cache/restore@v6
@@ -247,11 +245,9 @@ jobs:
         id: mod-cache
         with:
           path: |
-            /home/runner/go/pkg/mod
-            !/home/runner/go/pkg/mod/cache/download/**/*.zip
-            !/home/runner/go/pkg/mod/**/testdata/**
-          key: v6-gomod-${{ runner.os }}-${{ hashFiles('go.sum') }}
-          restore-keys: v6-gomod-${{ runner.os }}-
+            ~/go/pkg/mod
+          key: v7-gomod-${{ runner.os }}-${{ hashFiles('go.sum') }}
+          restore-keys: v7-gomod-${{ runner.os }}-
       # No setup-go: the runner's preinstalled go switches to the go.mod
       # version itself (GOTOOLCHAIN=auto); the toolchain lives in the module cache.
       - name: Go toolchain
@@ -266,14 +262,6 @@ jobs:
         run: ./scripts/affected.sh HEAD^1
         env:
           AFFECTED_FULL: ${{ github.event_name != 'pull_request' && '1' || '' }}
-
-      - name: TEMP module cache sizes
-        if: github.event_name == 'workflow_dispatch'
-        run: |
-          set +e
-          ls -la ~/go/pkg/mod | head; ls ~/go/pkg/mod/cache 2>&1 | head
-          du -sm ~/go/pkg/mod/*/* ~/go/pkg/mod/cache/* 2>/dev/null | sort -n | tail -15
-          find ~/go/pkg/mod -name '*.zip' -size +1M -printf '%s %p\n' 2>/dev/null | sort -n | tail -5
 
       # Only when an affected package's tests use it; boots in the background
       # while the build runs. tmpfs and no fsync: test data is throwaway.
@@ -347,14 +335,21 @@ jobs:
           path: |
             ~/.cache/go-build
           key: v4-gotest-${{ runner.os }}-${{ github.sha }}
+      # "!" exclusions in the cache paths did not apply, so trim explicitly:
+      # zips (~125 MB incl. the 71 MB toolchain zip) and dependency testdata.
+      - name: Trim module cache
+        if: (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && steps.mod-cache.outputs.cache-hit != 'true'
+        run: |
+          chmod -R u+w ~/go/pkg/mod
+          find ~/go/pkg/mod/cache/download -name '*.zip' -delete
+          find ~/go/pkg/mod -mindepth 2 -type d -name testdata -prune -exec rm -rf {} +
+          du -sh ~/go/pkg/mod
       - uses: actions/cache/save@v6
         if: (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && steps.mod-cache.outputs.cache-hit != 'true'
         with:
           path: |
-            /home/runner/go/pkg/mod
-            !/home/runner/go/pkg/mod/cache/download/**/*.zip
-            !/home/runner/go/pkg/mod/**/testdata/**
-          key: v6-gomod-${{ runner.os }}-${{ hashFiles('go.sum') }}
+            ~/go/pkg/mod
+          key: v7-gomod-${{ runner.os }}-${{ hashFiles('go.sum') }}
 
   # Typecheck, lint, Expo SDK version check and unit tests. The contract test
   # (pnpm test:contract) needs Go + Docker and runs locally.
