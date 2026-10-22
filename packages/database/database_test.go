@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/jayleaton/ai-patterns-go/packages/database"
-	"github.com/jayleaton/ai-patterns-go/packages/database/dbtest"
+	"github.com/jayleaton/go-fast-stack/packages/database"
+	"github.com/jayleaton/go-fast-stack/packages/database/dbtest"
 )
 
 func TestMigrateIsIdempotent(t *testing.T) {

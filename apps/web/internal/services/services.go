@@ -11,7 +11,7 @@ package services
 import (
 	"errors"
 
-	"github.com/jayleaton/ai-patterns-go/packages/database/model"
+	"github.com/jayleaton/go-fast-stack/packages/database/model"
 )
 
 // Actor is the signed-in user a service call acts for, and the session the

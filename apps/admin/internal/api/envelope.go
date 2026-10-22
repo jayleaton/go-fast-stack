@@ -9,8 +9,8 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/jayleaton/ai-patterns-go/apps/admin/internal/services"
-	"github.com/jayleaton/ai-patterns-go/apps/admin/internal/validate"
+	"github.com/jayleaton/go-fast-stack/apps/admin/internal/services"
+	"github.com/jayleaton/go-fast-stack/apps/admin/internal/validate"
 )
 
 // Envelope is the shape of every JSON response. Details is only set for

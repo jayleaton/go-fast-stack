@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/jayleaton/ai-patterns-go/apps/admin/internal/services"
-	"github.com/jayleaton/ai-patterns-go/packages/auth"
+	"github.com/jayleaton/go-fast-stack/apps/admin/internal/services"
+	"github.com/jayleaton/go-fast-stack/packages/auth"
 )
 
 // UserDirectory adapts *auth.UserAdmin (over the main app's database) to

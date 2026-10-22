@@ -18,8 +18,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jayleaton/ai-patterns-go/apps/web/ui/i18n"
-	"github.com/jayleaton/ai-patterns-go/apps/web/ui/static"
+	"github.com/jayleaton/go-fast-stack/apps/web/ui/i18n"
+	"github.com/jayleaton/go-fast-stack/apps/web/ui/static"
 )
 
 // keyLiteral matches message keys written as string literals in templates

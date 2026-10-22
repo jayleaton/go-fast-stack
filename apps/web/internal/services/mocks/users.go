@@ -13,7 +13,7 @@ import (
 	context "context"
 	reflect "reflect"
 
-	services "github.com/jayleaton/ai-patterns-go/apps/web/internal/services"
+	services "github.com/jayleaton/go-fast-stack/apps/web/internal/services"
 	gomock "go.uber.org/mock/gomock"
 )
 

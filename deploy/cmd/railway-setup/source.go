@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jayleaton/ai-patterns-go/deploy/platform"
+	"github.com/jayleaton/go-fast-stack/deploy/platform"
 )
 
 // Code source: with repo set, services deploy on push once Railway's GitHub

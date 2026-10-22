@@ -1,4 +1,4 @@
-module github.com/jayleaton/ai-patterns-go/tools
+module github.com/jayleaton/go-fast-stack/tools
 
 go 1.26.8
 

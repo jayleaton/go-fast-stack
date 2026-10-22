@@ -7,7 +7,7 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/jayleaton/ai-patterns-go/packages/uikit"
+	"github.com/jayleaton/go-fast-stack/packages/uikit"
 )
 
 // DefaultAppName is the brand when Deps.AppName is empty.

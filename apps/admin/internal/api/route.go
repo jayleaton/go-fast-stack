@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/jayleaton/ai-patterns-go/apps/admin/internal/services"
+	"github.com/jayleaton/go-fast-stack/apps/admin/internal/services"
 )
 
 // maxBody caps JSON request bodies.

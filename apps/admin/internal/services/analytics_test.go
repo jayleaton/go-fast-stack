@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jayleaton/ai-patterns-go/apps/admin/internal/services"
+	"github.com/jayleaton/go-fast-stack/apps/admin/internal/services"
 )
 
 func TestOverview(t *testing.T) {

@@ -14,11 +14,11 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/jayleaton/ai-patterns-go/apps/web/internal/config"
-	"github.com/jayleaton/ai-patterns-go/apps/web/internal/services"
-	"github.com/jayleaton/ai-patterns-go/apps/web/internal/validate"
-	"github.com/jayleaton/ai-patterns-go/apps/web/ui/i18n"
-	"github.com/jayleaton/ai-patterns-go/packages/auth"
+	"github.com/jayleaton/go-fast-stack/apps/web/internal/config"
+	"github.com/jayleaton/go-fast-stack/apps/web/internal/services"
+	"github.com/jayleaton/go-fast-stack/apps/web/internal/validate"
+	"github.com/jayleaton/go-fast-stack/apps/web/ui/i18n"
+	"github.com/jayleaton/go-fast-stack/packages/auth"
 )
 
 // The auth types, used as they are so *auth.Auth satisfies Auth directly.

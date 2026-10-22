@@ -6,8 +6,8 @@ import (
 
 	"go.uber.org/mock/gomock"
 
-	"github.com/jayleaton/ai-patterns-go/apps/admin/internal/services"
-	"github.com/jayleaton/ai-patterns-go/apps/admin/internal/services/mocks"
+	"github.com/jayleaton/go-fast-stack/apps/admin/internal/services"
+	"github.com/jayleaton/go-fast-stack/apps/admin/internal/services/mocks"
 )
 
 func newAuthEventService(t *testing.T) (*services.AuthEventService, *mocks.MockAuditLog) {

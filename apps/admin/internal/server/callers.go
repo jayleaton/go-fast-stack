@@ -4,9 +4,9 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/jayleaton/ai-patterns-go/apps/admin/internal/api"
-	"github.com/jayleaton/ai-patterns-go/apps/admin/ui"
-	"github.com/jayleaton/ai-patterns-go/packages/auth"
+	"github.com/jayleaton/go-fast-stack/apps/admin/internal/api"
+	"github.com/jayleaton/go-fast-stack/apps/admin/ui"
+	"github.com/jayleaton/go-fast-stack/packages/auth"
 )
 
 // Callers turns the admin session that the admin auth.Middleware loaded into

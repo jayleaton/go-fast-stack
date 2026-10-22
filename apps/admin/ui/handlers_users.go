@@ -6,10 +6,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/jayleaton/ai-patterns-go/apps/admin/internal/config"
-	"github.com/jayleaton/ai-patterns-go/apps/admin/internal/services"
-	"github.com/jayleaton/ai-patterns-go/apps/admin/internal/validate"
-	"github.com/jayleaton/ai-patterns-go/apps/admin/ui/i18n"
+	"github.com/jayleaton/go-fast-stack/apps/admin/internal/config"
+	"github.com/jayleaton/go-fast-stack/apps/admin/internal/services"
+	"github.com/jayleaton/go-fast-stack/apps/admin/internal/validate"
+	"github.com/jayleaton/go-fast-stack/apps/admin/ui/i18n"
 )
 
 func (u *UI) usersPage(w http.ResponseWriter, r *http.Request) {

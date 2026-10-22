@@ -15,12 +15,12 @@ import (
 
 	"go.uber.org/mock/gomock"
 
-	"github.com/jayleaton/ai-patterns-go/apps/admin/internal/config"
-	"github.com/jayleaton/ai-patterns-go/apps/admin/internal/services"
-	"github.com/jayleaton/ai-patterns-go/apps/admin/internal/validate"
-	"github.com/jayleaton/ai-patterns-go/apps/admin/ui"
-	"github.com/jayleaton/ai-patterns-go/apps/admin/ui/mocks"
-	"github.com/jayleaton/ai-patterns-go/apps/admin/ui/routes"
+	"github.com/jayleaton/go-fast-stack/apps/admin/internal/config"
+	"github.com/jayleaton/go-fast-stack/apps/admin/internal/services"
+	"github.com/jayleaton/go-fast-stack/apps/admin/internal/validate"
+	"github.com/jayleaton/go-fast-stack/apps/admin/ui"
+	"github.com/jayleaton/go-fast-stack/apps/admin/ui/mocks"
+	"github.com/jayleaton/go-fast-stack/apps/admin/ui/routes"
 )
 
 var (

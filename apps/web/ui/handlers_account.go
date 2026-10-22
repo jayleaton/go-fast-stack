@@ -7,10 +7,10 @@ import (
 
 	"github.com/a-h/templ"
 
-	"github.com/jayleaton/ai-patterns-go/apps/web/internal/config"
-	"github.com/jayleaton/ai-patterns-go/apps/web/internal/services"
-	"github.com/jayleaton/ai-patterns-go/apps/web/internal/validate"
-	"github.com/jayleaton/ai-patterns-go/apps/web/ui/i18n"
+	"github.com/jayleaton/go-fast-stack/apps/web/internal/config"
+	"github.com/jayleaton/go-fast-stack/apps/web/internal/services"
+	"github.com/jayleaton/go-fast-stack/apps/web/internal/validate"
+	"github.com/jayleaton/go-fast-stack/apps/web/ui/i18n"
 )
 
 // signedIn returns the caller, or sends the browser to the login page.

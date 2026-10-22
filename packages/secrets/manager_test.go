@@ -9,8 +9,8 @@ import (
 	"testing/synctest"
 	"time"
 
-	"github.com/jayleaton/ai-patterns-go/packages/secrets"
-	"github.com/jayleaton/ai-patterns-go/packages/secrets/reveal"
+	"github.com/jayleaton/go-fast-stack/packages/secrets"
+	"github.com/jayleaton/go-fast-stack/packages/secrets/reveal"
 )
 
 const key = "RESEND_API_KEY"

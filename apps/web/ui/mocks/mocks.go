@@ -14,9 +14,9 @@ import (
 	http "net/http"
 	reflect "reflect"
 
-	services "github.com/jayleaton/ai-patterns-go/apps/web/internal/services"
-	validate "github.com/jayleaton/ai-patterns-go/apps/web/internal/validate"
-	ui "github.com/jayleaton/ai-patterns-go/apps/web/ui"
+	services "github.com/jayleaton/go-fast-stack/apps/web/internal/services"
+	validate "github.com/jayleaton/go-fast-stack/apps/web/internal/validate"
+	ui "github.com/jayleaton/go-fast-stack/apps/web/ui"
 	gomock "go.uber.org/mock/gomock"
 )
 

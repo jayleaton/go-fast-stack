@@ -11,11 +11,11 @@ import templruntime "github.com/a-h/templ/runtime"
 import (
 	"context"
 
-	"github.com/jayleaton/ai-patterns-go/apps/web/internal/config"
-	"github.com/jayleaton/ai-patterns-go/apps/web/ui/i18n"
-	"github.com/jayleaton/ai-patterns-go/apps/web/ui/routes"
-	"github.com/jayleaton/ai-patterns-go/apps/web/ui/static"
-	"github.com/jayleaton/ai-patterns-go/packages/uikit"
+	"github.com/jayleaton/go-fast-stack/apps/web/internal/config"
+	"github.com/jayleaton/go-fast-stack/apps/web/ui/i18n"
+	"github.com/jayleaton/go-fast-stack/apps/web/ui/routes"
+	"github.com/jayleaton/go-fast-stack/apps/web/ui/static"
+	"github.com/jayleaton/go-fast-stack/packages/uikit"
 )
 
 // AppName is the product name of the request (State.AppName or the default).

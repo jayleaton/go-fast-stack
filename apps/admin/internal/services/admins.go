@@ -7,7 +7,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/jayleaton/ai-patterns-go/apps/admin/internal/validate"
+	"github.com/jayleaton/go-fast-stack/apps/admin/internal/validate"
 )
 
 // Admin is an admin of this dashboard: a user of the admin app's own auth

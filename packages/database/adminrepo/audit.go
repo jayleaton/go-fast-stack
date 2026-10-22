@@ -8,8 +8,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/jayleaton/ai-patterns-go/packages/database/adminrepo/adminsql"
-	"github.com/jayleaton/ai-patterns-go/packages/database/adminrepo/model"
+	"github.com/jayleaton/go-fast-stack/packages/database/adminrepo/adminsql"
+	"github.com/jayleaton/go-fast-stack/packages/database/adminrepo/model"
 )
 
 // AuditLog appends to and pages admin_audit_log in the admin database. It

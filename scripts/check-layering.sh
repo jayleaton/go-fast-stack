@@ -10,7 +10,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 lint=${GOLANGCI_LINT:-go tool -modfile=tools/go.mod golangci-lint}
-mod=github.com/jayleaton/ai-patterns-go
+mod=github.com/jayleaton/go-fast-stack
 probe=zz_layering_probe
 
 # Production code. layer dir | forbidden import

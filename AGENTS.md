@@ -1,6 +1,6 @@
 # AGENTS.md: instructions for AI assistants
 
-This is a **Go + Datastar monorepo template**: one Go module, one static binary, server-rendered `templ` pages with Datastar, a JSON API for the mobile app, Postgres through `pgx` + `sqlc` + `goose`, and Go-native auth modelled on Better Auth. It replaces the Next.js template `jayleaton/ai-patterns-monorepo` and keeps the same patterns.
+This is **Go Fast Stack**, a Go + Datastar monorepo template: one Go module, one static binary, server-rendered `templ` pages with Datastar, a JSON API for the mobile app, Postgres through `pgx` + `sqlc` + `goose`, and Go-native auth modelled on Better Auth. It replaces the Next.js template `jayleaton/ai-patterns-monorepo` and keeps the same patterns.
 
 Shared vocabulary lives in [CONTEXT.md](CONTEXT.md). Use those words.
 

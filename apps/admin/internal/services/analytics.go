@@ -5,7 +5,7 @@ package services
 import (
 	"context"
 
-	"github.com/jayleaton/ai-patterns-go/packages/database/adminrepo/model"
+	"github.com/jayleaton/go-fast-stack/packages/database/adminrepo/model"
 )
 
 // Overview is the analytics placeholder's headline numbers (re-exported).

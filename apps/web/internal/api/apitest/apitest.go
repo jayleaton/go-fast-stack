@@ -17,8 +17,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jayleaton/ai-patterns-go/apps/web/internal/api"
-	"github.com/jayleaton/ai-patterns-go/apps/web/internal/services"
+	"github.com/jayleaton/go-fast-stack/apps/web/internal/api"
+	"github.com/jayleaton/go-fast-stack/apps/web/internal/services"
 )
 
 // Session decides who a test request is signed in as.

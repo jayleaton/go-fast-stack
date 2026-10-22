@@ -12,13 +12,13 @@ import (
 	"github.com/a-h/templ"
 	"github.com/starfederation/datastar-go/datastar"
 
-	"github.com/jayleaton/ai-patterns-go/apps/admin/internal/config"
-	"github.com/jayleaton/ai-patterns-go/apps/admin/internal/services"
-	"github.com/jayleaton/ai-patterns-go/apps/admin/internal/validate"
-	"github.com/jayleaton/ai-patterns-go/apps/admin/ui/i18n"
-	"github.com/jayleaton/ai-patterns-go/apps/admin/ui/routes"
-	"github.com/jayleaton/ai-patterns-go/apps/admin/ui/static"
-	"github.com/jayleaton/ai-patterns-go/apps/admin/ui/view"
+	"github.com/jayleaton/go-fast-stack/apps/admin/internal/config"
+	"github.com/jayleaton/go-fast-stack/apps/admin/internal/services"
+	"github.com/jayleaton/go-fast-stack/apps/admin/internal/validate"
+	"github.com/jayleaton/go-fast-stack/apps/admin/ui/i18n"
+	"github.com/jayleaton/go-fast-stack/apps/admin/ui/routes"
+	"github.com/jayleaton/go-fast-stack/apps/admin/ui/static"
+	"github.com/jayleaton/go-fast-stack/apps/admin/ui/view"
 )
 
 // UI serves the admin pages and their Datastar actions.

@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/jayleaton/ai-patterns-go/packages/database/adminrepo/appsql"
-	"github.com/jayleaton/ai-patterns-go/packages/database/adminrepo/model"
+	"github.com/jayleaton/go-fast-stack/packages/database/adminrepo/appsql"
+	"github.com/jayleaton/go-fast-stack/packages/database/adminrepo/model"
 )
 
 // Stats answers the analytics placeholder with counts over the main app's

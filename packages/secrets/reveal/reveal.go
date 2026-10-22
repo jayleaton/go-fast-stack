@@ -7,8 +7,8 @@
 package reveal
 
 import (
-	"github.com/jayleaton/ai-patterns-go/packages/secrets"
-	"github.com/jayleaton/ai-patterns-go/packages/secrets/internal/access"
+	"github.com/jayleaton/go-fast-stack/packages/secrets"
+	"github.com/jayleaton/go-fast-stack/packages/secrets/internal/access"
 )
 
 // Value returns the secret's value. Pass it straight to the client that needs

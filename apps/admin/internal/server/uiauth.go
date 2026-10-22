@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/jayleaton/ai-patterns-go/apps/admin/ui"
-	"github.com/jayleaton/ai-patterns-go/packages/auth"
+	"github.com/jayleaton/go-fast-stack/apps/admin/ui"
+	"github.com/jayleaton/go-fast-stack/packages/auth"
 )
 
 // UIAuth adapts the admin *auth.Auth to ui.Auth: it converts types and

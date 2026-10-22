@@ -15,7 +15,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/jayleaton/ai-patterns-go/packages/database/adminrepo/model"
+	"github.com/jayleaton/go-fast-stack/packages/database/adminrepo/model"
 )
 
 // Actor is the admin a service call acts for and the session the request

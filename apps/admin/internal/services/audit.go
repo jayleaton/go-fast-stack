@@ -6,8 +6,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/jayleaton/ai-patterns-go/apps/admin/internal/validate"
-	"github.com/jayleaton/ai-patterns-go/packages/database/adminrepo/model"
+	"github.com/jayleaton/go-fast-stack/apps/admin/internal/validate"
+	"github.com/jayleaton/go-fast-stack/packages/database/adminrepo/model"
 )
 
 // The audit models, re-exported so transports never import adminrepo.

@@ -8,7 +8,7 @@
 # Usage: scripts/check-coverage.sh <profile> [<import path>]
 set -euo pipefail
 
-mod=github.com/jayleaton/ai-patterns-go
+mod=github.com/jayleaton/go-fast-stack
 
 # package | minimum statement coverage (%)
 floors=(

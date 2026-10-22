@@ -9,10 +9,10 @@ import (
 
 	"github.com/a-h/templ"
 
-	"github.com/jayleaton/ai-patterns-go/apps/web/internal/services"
-	"github.com/jayleaton/ai-patterns-go/apps/web/ui/i18n"
-	"github.com/jayleaton/ai-patterns-go/apps/web/ui/view"
-	"github.com/jayleaton/ai-patterns-go/apps/web/ui/welcome"
+	"github.com/jayleaton/go-fast-stack/apps/web/internal/services"
+	"github.com/jayleaton/go-fast-stack/apps/web/ui/i18n"
+	"github.com/jayleaton/go-fast-stack/apps/web/ui/view"
+	"github.com/jayleaton/go-fast-stack/apps/web/ui/welcome"
 )
 
 // rawKey catches a message key that rendered as itself (missing translation).

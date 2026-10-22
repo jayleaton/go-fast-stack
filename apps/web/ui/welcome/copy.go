@@ -8,7 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/jayleaton/ai-patterns-go/apps/web/ui/i18n"
+	"github.com/jayleaton/go-fast-stack/apps/web/ui/i18n"
 )
 
 // Copy is the page text for one locale. It lives in copy/<locale>.json

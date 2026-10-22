@@ -144,7 +144,7 @@ The actual cause appears only with `--json`:
 
 ```json
 {"changes":[{"kind":"resource.update","path":"service.657241f7-…","status":"failed"}],
- "diagnostics":[{"message":"You don't have access to the GitHub repo jayleaton/ai-patterns-go. Make sure the Railway GitHub App is installed on it and your GitHub account can read it."}]}
+ "diagnostics":[{"message":"You don't have access to the GitHub repo <owner>/<repo>. Make sure the Railway GitHub App is installed on it and your GitHub account can read it."}]}
 ```
 
 **Repro.** `railway config apply --yes` with a `github()` source the Railway GitHub app cannot read.

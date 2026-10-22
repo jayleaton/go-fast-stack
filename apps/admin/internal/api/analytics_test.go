@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jayleaton/ai-patterns-go/apps/admin/internal/api/apitest"
-	"github.com/jayleaton/ai-patterns-go/apps/admin/internal/services"
+	"github.com/jayleaton/go-fast-stack/apps/admin/internal/api/apitest"
+	"github.com/jayleaton/go-fast-stack/apps/admin/internal/services"
 )
 
 var overview = services.Overview{

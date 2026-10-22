@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jayleaton/ai-patterns-go/packages/secrets"
-	"github.com/jayleaton/ai-patterns-go/packages/secrets/reveal"
+	"github.com/jayleaton/go-fast-stack/packages/secrets"
+	"github.com/jayleaton/go-fast-stack/packages/secrets/reveal"
 )
 
 const testToken = "dp.st.test_token_value"

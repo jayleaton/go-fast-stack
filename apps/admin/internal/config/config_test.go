@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jayleaton/ai-patterns-go/packages/secrets"
+	"github.com/jayleaton/go-fast-stack/packages/secrets"
 )
 
 func env(kv map[string]string) func(string) string {

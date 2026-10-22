@@ -9,10 +9,10 @@ import (
 
 	"github.com/starfederation/datastar-go/datastar"
 
-	"github.com/jayleaton/ai-patterns-go/apps/web/internal/config"
-	"github.com/jayleaton/ai-patterns-go/apps/web/ui/i18n"
-	"github.com/jayleaton/ai-patterns-go/apps/web/ui/welcome"
-	"github.com/jayleaton/ai-patterns-go/packages/auth"
+	"github.com/jayleaton/go-fast-stack/apps/web/internal/config"
+	"github.com/jayleaton/go-fast-stack/apps/web/ui/i18n"
+	"github.com/jayleaton/go-fast-stack/apps/web/ui/welcome"
+	"github.com/jayleaton/go-fast-stack/packages/auth"
 )
 
 // resendCooldown matches the original's five minutes between resends.

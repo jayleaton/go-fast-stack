@@ -14,7 +14,7 @@ import (
 	http "net/http"
 	reflect "reflect"
 
-	ui "github.com/jayleaton/ai-patterns-go/apps/admin/ui"
+	ui "github.com/jayleaton/go-fast-stack/apps/admin/ui"
 	gomock "go.uber.org/mock/gomock"
 )
 

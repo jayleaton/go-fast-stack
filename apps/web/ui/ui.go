@@ -14,13 +14,13 @@ import (
 	"github.com/a-h/templ"
 	"github.com/starfederation/datastar-go/datastar"
 
-	"github.com/jayleaton/ai-patterns-go/apps/web/internal/config"
-	"github.com/jayleaton/ai-patterns-go/apps/web/internal/services"
-	"github.com/jayleaton/ai-patterns-go/apps/web/ui/i18n"
-	"github.com/jayleaton/ai-patterns-go/apps/web/ui/routes"
-	"github.com/jayleaton/ai-patterns-go/apps/web/ui/static"
-	"github.com/jayleaton/ai-patterns-go/apps/web/ui/view"
-	"github.com/jayleaton/ai-patterns-go/packages/auth"
+	"github.com/jayleaton/go-fast-stack/apps/web/internal/config"
+	"github.com/jayleaton/go-fast-stack/apps/web/internal/services"
+	"github.com/jayleaton/go-fast-stack/apps/web/ui/i18n"
+	"github.com/jayleaton/go-fast-stack/apps/web/ui/routes"
+	"github.com/jayleaton/go-fast-stack/apps/web/ui/static"
+	"github.com/jayleaton/go-fast-stack/apps/web/ui/view"
+	"github.com/jayleaton/go-fast-stack/packages/auth"
 )
 
 // UI serves the HTML pages and their Datastar actions.

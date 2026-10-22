@@ -6,8 +6,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/jayleaton/ai-patterns-go/packages/database/model"
-	"github.com/jayleaton/ai-patterns-go/packages/database/sqlc"
+	"github.com/jayleaton/go-fast-stack/packages/database/model"
+	"github.com/jayleaton/go-fast-stack/packages/database/sqlc"
 )
 
 // UserRepository reads and updates the non-credential columns of the Better
