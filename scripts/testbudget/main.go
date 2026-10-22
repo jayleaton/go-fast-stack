@@ -33,10 +33,13 @@ import (
 	"time"
 )
 
-// Default budgets. Raise one only with a reason in the commit message.
+// Default budgets, about twice the slowest package (~25 s) and test (~5 s,
+// CPU-bound scrypt) seen on CI under -race while the cold build cache also
+// compiles: tight enough to catch a doubling, loose enough not to flake.
+// Raise one only with a reason in the commit message.
 const (
-	defaultPackageBudget = 30 * time.Second
-	defaultTestBudget    = 5 * time.Second
+	defaultPackageBudget = 60 * time.Second
+	defaultTestBudget    = 10 * time.Second
 )
 
 // event is one line of `go test -json` (cmd/test2json).
