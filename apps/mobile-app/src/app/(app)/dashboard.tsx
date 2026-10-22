@@ -15,7 +15,7 @@ import { updateUserSettingsSchema } from '@/lib/validators/userSchemas'
 
 /**
  * Protected home screen. Doubles as the canonical example of calling the Go
- * envelope API with the mobile session: GET /api/core/v1/users renders the
+ * envelope API with the mobile session: GET /api/core/v1/users/me renders the
  * data card, PATCH saves settings and DELETE removes the account. Failures
  * render the envelope error or the unreachable-network ApiError.
  */
@@ -133,7 +133,7 @@ export default function DashboardScreen() {
         </ThemedText>
 
         <ThemedView type="backgroundElement" style={styles.card}>
-          <ThemedText type="smallBold">GET /api/core/v1/users</ThemedText>
+          <ThemedText type="smallBold">GET /api/core/v1/users/me</ThemedText>
 
           {apiUser ? (
             <View style={styles.cardBody}>

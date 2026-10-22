@@ -53,9 +53,13 @@ function buildServer(): string {
   if (process.env.CONTRACT_SERVER_BIN) return path.resolve(process.env.CONTRACT_SERVER_BIN)
   const src = path.resolve(process.env.GO_SERVER_SRC ?? path.join(appDir, '../..'))
   const bin = path.join(workDir, 'server')
+  // Build scratch beside the output, not in a (possibly RAM-backed) /tmp.
+  const goTmp = path.join(workDir, 'gotmp')
+  mkdirSync(goTmp, { recursive: true })
   execFileSync(process.env.GO ?? 'go', ['build', '-o', bin, './apps/web/cmd/server'], {
     cwd: src,
     stdio: 'inherit',
+    env: { ...process.env, GOTMPDIR: process.env.GOTMPDIR ?? goTmp },
   })
   return bin
 }

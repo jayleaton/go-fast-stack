@@ -28,19 +28,30 @@ export type ApiSession = {
   expiresAt: string
 }
 
-/** GET /api/core/v1/users */
+/** GET /api/core/v1/users/me */
 export type CurrentUser = { user: ApiUser; session: ApiSession }
 
-/** PATCH /api/core/v1/users and /api/core/v1/users/{id} */
+/** PATCH /api/core/v1/users/me and /api/core/v1/users/{id} */
 export type UserUpdated = { success: boolean; user: ApiUser }
 
-/** DELETE /api/core/v1/users */
+/** DELETE /api/core/v1/users/me */
 export type UserDeleted = { success: boolean }
 
 /**
  * validate.UpdateUserSettings: omitted fields are unchanged, `image: null`
  * clears the image.
  */
+/** services.Session: one of the user's sessions (GET /api/core/v1/users/me/sessions). */
+export type UserSession = {
+  id: string
+  createdAt: string
+  expiresAt: string
+  ipAddress: string | null
+  userAgent: string | null
+  /** the session that made the request */
+  current: boolean
+}
+
 export type UpdateUserSettingsBody = {
   name?: string
   image?: string | null
