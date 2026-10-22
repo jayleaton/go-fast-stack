@@ -250,17 +250,6 @@ jobs:
           GO: ${{ github.event_name != 'pull_request' || steps.filter.outputs.go == 'true' }}
         run: echo "go=$GO" >> "$GITHUB_OUTPUT"
 
-      # Started for any Go change, before anything else, so it is up by the
-      # time tests run; only tests that need it wait for it (see Test).
-      # tmpfs and no fsync: test data is throwaway.
-      - name: Start Postgres
-        if: steps.scope.outputs.go == 'true'
-        run: |
-          nohup docker run -d --name pg -p 5432:5432 -e POSTGRES_PASSWORD=postgres \
-            --tmpfs /var/lib/postgresql postgres:18-alpine \
-            -c fsync=off -c synchronous_commit=off -c full_page_writes=off -c max_connections=200 \
-            > "$RUNNER_TEMP/pg.log" 2>&1 &
-
       # Depth 2: a PR checkout is the merge commit, and HEAD^1 is the base.
       - uses: actions/checkout@v7
         if: steps.scope.outputs.go == 'true'
@@ -295,6 +284,17 @@ jobs:
         env:
           AFFECTED_FULL: ${{ github.event_name != 'pull_request' && '1' || '' }}
 
+      # Only when an affected package's tests use it. It boots while the build
+      # cache restores and tests compile; only test binaries wait for it (see
+      # Test). tmpfs and no fsync: test data is throwaway.
+      - name: Start Postgres
+        if: steps.affected.outputs.db == 'true'
+        run: |
+          nohup docker run -d --name pg -p 5432:5432 -e POSTGRES_PASSWORD=postgres \
+            --tmpfs /var/lib/postgresql postgres:18-alpine \
+            -c fsync=off -c synchronous_commit=off -c full_page_writes=off -c max_connections=200 \
+            > "$RUNNER_TEMP/pg.log" 2>&1 &
+
       - uses: actions/cache/restore@v6
         if: steps.scope.outputs.go == 'true'
         with:
@@ -302,13 +302,6 @@ jobs:
             ~/.cache/go-build
           key: v4-gotest-${{ runner.os }}-${{ github.sha }}
           restore-keys: v4-gotest-${{ runner.os }}-
-
-      # -race: compiles exactly what the race tests link, so Test reuses it.
-      - name: Build
-        if: steps.affected.outputs.packages != ''
-        run: go build -race $PACKAGES # word splitting intended
-        env:
-          PACKAGES: ${{ steps.affected.outputs.packages }}
 
       - name: Test boundary probes
         if: steps.affected.outputs.full == 'true'
@@ -322,6 +315,8 @@ jobs:
           DB: ${{ steps.affected.outputs.db }}
         run: |
           mkdir -p .cache
+          # With -coverprofile, go test also compiles packages without tests,
+          # so there is no separate build step (lint type-checks everything too).
           # Test binaries wait for Postgres themselves (-exec wrapper), so
           # compiling them overlaps its boot. Checked inside the container over
           # TCP: docker's port proxy accepts host connections before Postgres
