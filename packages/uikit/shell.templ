@@ -154,7 +154,6 @@ templ LocaleMenu(l Locales) {
 			type="button"
 			id="language-button"
 			data-on:click="$_langOpen = !$_langOpen"
-			aria-label={ l.Label }
 			aria-haspopup="true"
 			aria-expanded="false"
 			data-attr:aria-expanded="$_langOpen ? 'true' : 'false'"
@@ -162,6 +161,7 @@ templ LocaleMenu(l Locales) {
 			class={ ButtonClass(Ghost, Small, false), "h-9 gap-1.5 px-2.5" }
 		>
 			<svg class="size-4 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"></path></svg>
+			<span class="sr-only">{ l.Label }:</span>
 			<span class="uppercase">{ l.Current }</span>
 		</button>
 		<form method="post" action={ templ.SafeURL(l.Action) }>
