@@ -144,7 +144,7 @@ func TestEventsForAccountFlows(t *testing.T) {
 			resetLink = m.url
 		}
 	}
-	resetToken := mustQuery(t, h.do("GET", pathOf(t, resetLink), nil, nil).Header().Get("Location"), "token")
+	resetToken := mustQuery(t, resetLink, "token")
 	log.take(t, h.a)
 	if err := h.a.ResetPassword(ctx, resetToken, "password789"); err != nil {
 		t.Fatal(err)

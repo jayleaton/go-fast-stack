@@ -499,7 +499,7 @@ func TestAuthEventsExactAcrossInstances(t *testing.T) {
 	w.do("POST", config.APIRoutes.AdminInvites, `{"email":"eve@example.com"}`, root, 200, &invited)
 	_ = w.admins.Shutdown(ctx) // flush the invite email
 	link, _ := url.Parse(w.mail.link(t, "eve@example.com"))
-	w.do("POST", "/api/auth/set-password", `{"token":"`+link.Path[strings.LastIndex(link.Path, "/")+1:]+`","newPassword":"eve-password-1"}`, "", 200, nil)
+	w.do("POST", "/api/auth/set-password", `{"token":"`+link.Query().Get("token")+`","newPassword":"eve-password-1"}`, "", 200, nil)
 	var admins struct{ Data []services.Admin }
 	w.do("GET", config.APIRoutes.Admins, "", root, 200, &admins)
 	ids := map[string]string{}
