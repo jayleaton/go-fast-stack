@@ -116,7 +116,8 @@ jobs:
         env:
           TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable
 
-  # Placeholder; finalized when apps/mobile-app lands.
+  # Typecheck, lint, Expo SDK version check and unit tests. The contract test
+  # (pnpm test:contract) needs Go + Docker and runs locally.
   mobile:
     needs: changes
     if: ${{ !cancelled() && (github.event_name != 'pull_request' || (github.event.pull_request.draft == false && needs.changes.outputs.mobile == 'true')) }}
@@ -128,22 +129,22 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # hashFiles is not available in job-level `if`, so each step checks it.
+      # Version from packageManager in package.json.
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: apps/mobile-app/package.json
+
       - uses: actions/setup-node@v7
-        if: hashFiles('apps/mobile-app/package.json') != ''
         with:
           node-version: 22
-          cache: npm
-          cache-dependency-path: apps/mobile-app/package-lock.json
+          cache: pnpm
+          cache-dependency-path: apps/mobile-app/pnpm-lock.yaml
 
-      - if: hashFiles('apps/mobile-app/package.json') != ''
-        run: npm ci
-
-      - if: hashFiles('apps/mobile-app/package.json') != ''
-        run: npm run --if-present lint
-
-      - if: hashFiles('apps/mobile-app/package.json') != ''
-        run: npm run --if-present typecheck
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec tsc --noEmit
+      - run: pnpm exec expo lint
+      - run: pnpm exec expo install --check
+      - run: pnpm test
 
   ci-ok:
     if: ${{ always() && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) }}
