@@ -142,6 +142,9 @@ func TestOptInAPIIsHiddenFromBrowsers(t *testing.T) {
 			}
 		}
 	}
+	if rec := serve(h, httptest.NewRequest(http.MethodGet, "/api", nil)); rec.Code != http.StatusNotFound || rec.Header().Get("Location") != "" {
+		t.Errorf("/api: %d %q", rec.Code, rec.Header().Get("Location"))
+	}
 	rec := serve(h, httptest.NewRequest(http.MethodPatch, config.APIRoutes.Users, nil))
 	if rec.Code != http.StatusNotFound || rec.Header().Get("Allow") != "" {
 		t.Errorf("wrong method: %d Allow %q", rec.Code, rec.Header().Get("Allow"))

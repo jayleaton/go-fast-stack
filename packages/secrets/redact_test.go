@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"net/url"
 	"strings"
 	"testing"
@@ -178,5 +179,32 @@ func TestRedactingHandlerDevMailLinks(t *testing.T) {
 				t.Errorf("other attrs: %s", out)
 			}
 		})
+	}
+}
+
+// Maps log as groups and structs by their JSON, so a logged header set or
+// session never carries its credentials.
+func TestRedactingHandlerMapsAndStructs(t *testing.T) {
+	type session struct {
+		ID    string `json:"id"`
+		Token string `json:"token"`
+	}
+	out := redactLog(t, secrets.RedactOptions{}, func(l *slog.Logger) {
+		l.Info("m",
+			"headers", http.Header{"Authorization": {"Bearer s3cr3t-a"}, "Cookie": {"sid=s3cr3t-b"}, "Accept": {"text/html"}},
+			"query", url.Values{"token": {"s3cr3t-c"}, "page": {"2"}},
+			"labels", map[string]string{"api_key": "s3cr3t-d", "region": "eu"},
+			"session", session{ID: "sess-1", Token: "s3cr3t-e"},
+			"ptr", &session{ID: "sess-2", Token: "s3cr3t-f"},
+			"plain", struct{ N int }{7},
+		)
+	})
+	if strings.Contains(out, "s3cr3t") {
+		t.Fatalf("leaked: %s", out)
+	}
+	for _, want := range []string{"text/html", "page=2", "eu", "sess-1", "sess-2", "N:7"} {
+		if !strings.Contains(out, want) && !strings.Contains(out, strings.ReplaceAll(want, "=", `":"`)) {
+			t.Errorf("lost %q: %s", want, out)
+		}
 	}
 }

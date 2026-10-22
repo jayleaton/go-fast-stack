@@ -2,9 +2,12 @@ package secrets
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
+	"reflect"
 	"regexp"
+	"slices"
 	"strings"
 	"unicode"
 )
@@ -105,13 +108,58 @@ func redactAttr(a slog.Attr) slog.Attr {
 	case slog.KindString:
 		return slog.String(a.Key, RedactString(v.String()))
 	case slog.KindAny:
-		if s, ok := textOf(v.Any()); ok {
+		if g, ok := mapGroup(v.Any()); ok {
+			return redactAttr(slog.Attr{Key: a.Key, Value: g})
+		}
+		s, ok := textOf(v.Any())
+		if !ok {
+			s, ok = jsonOf(v.Any())
+		}
+		if ok {
 			if red := RedactString(s); red != s {
 				return slog.String(a.Key, red)
 			}
 		}
 	}
 	return slog.Attr{Key: a.Key, Value: v}
+}
+
+// mapGroup turns a map with string keys (http.Header, url.Values,
+// map[string]string) into a group, so each entry is redacted by its key.
+// Single-value slices log as their value.
+func mapGroup(x any) (slog.Value, bool) {
+	rv := reflect.ValueOf(x)
+	if rv.Kind() != reflect.Map || rv.Type().Key().Kind() != reflect.String {
+		return slog.Value{}, false
+	}
+	keys := rv.MapKeys()
+	slices.SortFunc(keys, func(a, b reflect.Value) int { return strings.Compare(a.String(), b.String()) })
+	attrs := make([]slog.Attr, 0, len(keys))
+	for _, k := range keys {
+		e := rv.MapIndex(k)
+		if e.Kind() == reflect.Slice && e.Len() == 1 {
+			e = e.Index(0)
+		}
+		attrs = append(attrs, slog.Any(k.String(), e.Interface()))
+	}
+	return slog.GroupValue(attrs...), true
+}
+
+// jsonOf is the JSON a handler would print for a struct (or pointer to
+// one), so credential fields inside it ("token":"…") are seen.
+func jsonOf(x any) (string, bool) {
+	rv := reflect.ValueOf(x)
+	for rv.Kind() == reflect.Pointer && !rv.IsNil() {
+		rv = rv.Elem()
+	}
+	if rv.Kind() != reflect.Struct {
+		return "", false
+	}
+	b, err := json.Marshal(x)
+	if err != nil {
+		return "", false
+	}
+	return string(b), true
 }
 
 // textOf returns the text a handler would print for errors, Stringers and
@@ -211,6 +259,8 @@ var stringRules = []struct {
 	{regexp.MustCompile(`([A-Za-z][A-Za-z0-9+.\-]*://[^\s:/@]*):[^\s/?#]+@`), "${1}:" + redacted + "@"},
 	// Token path segment of emailed auth links.
 	{regexp.MustCompile(`(?i)(/(?:reset-password|verify-email|set-password|magic-link|accept-invite|invite)/)[^/?#\s"'<>]+`), "${1}" + redacted},
+	// "name":"value" in JSON where the name looks like a credential.
+	{regexp.MustCompile(`(?i)("[A-Za-z0-9_.\-]*(?:token|secret|password|passwd|apikey|api_key|authorization|cookie|credential)[A-Za-z0-9_.\-]*"\s*:\s*")(?:[^"\\]|\\.)*"`), "${1}" + redacted + `"`},
 	// name=value where the name looks like a credential: query strings,
 	// cookie pairs, "token=abc" in messages.
 	{regexp.MustCompile(`(?i)((?:^|[?&;,\s])[A-Za-z0-9_.\-]*(?:token|code|secret|key|pass|pwd|signature|sig|otp|auth|credential|session)[A-Za-z0-9_.\-]*=)[^&#;,\s"'<>]+`), "${1}" + redacted},

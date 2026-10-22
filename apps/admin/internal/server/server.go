@@ -11,6 +11,7 @@ import (
 	"maps"
 	"net/http"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/jayleaton/ai-patterns-go/apps/admin/internal/api"
@@ -84,6 +85,8 @@ func New(d Deps) http.Handler {
 			r.Routes(apiMux)
 		}
 		mux.Handle(apiPrefix, apiOnly(hideMethods(apiMux)))
+		// Without this, ServeMux would answer /api with a 307 to /api/.
+		mux.Handle(strings.TrimSuffix(apiPrefix, "/"), http.NotFoundHandler())
 	}
 	if d.UI != nil {
 		mux.Handle("/", d.UI)

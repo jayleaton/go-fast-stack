@@ -11,11 +11,15 @@ package ui_test
 import (
 	"context"
 	"errors"
+	"html"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -38,6 +42,11 @@ const (
 	canaryToken    = "tok_CANARY_session_7f3a9c"    // the caller's session token
 	canaryInternal = "pq: relation CANARY_internal" // an unexpected service error
 	canaryPath     = "/srv/app/CANARY_internal.go:42"
+	// xssProbe goes wherever user data or the query reaches a page: it must
+	// come out escaped, never as a tag or as code in a data-* expression.
+	xssProbe = `X'+XSSPROBE+'"><img data-init="XSSPROBE">`
+	// evil is where open-redirect probes try to send the browser.
+	evil = "evil.example"
 )
 
 // leaks are patterns no UI response body may contain.
@@ -55,6 +64,11 @@ var leaks = []*regexp.Regexp{
 var (
 	scriptTag = regexp.MustCompile(`<script\b[^>]*>`)
 	nonceAttr = regexp.MustCompile(`\snonce="([^"]+)"`)
+	dataAttr  = regexp.MustCompile(`\sdata-[\w:.\-]+="([^"]*)"`)
+	// jsBreakout is the probe's quote closing a JS string: not escaped.
+	jsBreakout = regexp.MustCompile(`(^|[^\\])'\+XSSPROBE\+'`)
+	// navTarget is where a link, assign() or Datastar redirect sends the browser.
+	navTarget = regexp.MustCompile(`(?:assign\('|location\.href = "|href=")([^'"]*)`)
 	cspNonce  = regexp.MustCompile(`'nonce-([^']+)'`)
 )
 
@@ -74,16 +88,16 @@ var crawlTargets = []crawlTarget{
 	{"GET " + routes.Static, []string{static.URL(static.CSSFile), static.URL(static.DatastarFile), static.URL(static.FaviconFile), routes.Static, routes.Static + "nope.js"}},
 	{"GET /favicon.ico", []string{"/favicon.ico"}},
 	{"GET /{$}", []string{"/"}},
-	{"GET " + config.AppRoutes.Login, []string{config.AppRoutes.Login, config.AppRoutes.Login + "?next=%2Fusers"}},
+	{"GET " + config.AppRoutes.Login, []string{config.AppRoutes.Login, config.AppRoutes.Login + "?next=%2Fusers", config.AppRoutes.Login + "?next=%2F%09%2F" + evil, config.AppRoutes.Login + "?next=" + url.QueryEscape(xssProbe)}},
 	{"POST " + config.AppRoutes.Login, []string{config.AppRoutes.Login}},
-	{"GET " + config.AppRoutes.SetPassword, []string{config.AppRoutes.SetPassword, config.AppRoutes.SetPassword + "?token=invite-tok"}},
+	{"GET " + config.AppRoutes.SetPassword, []string{config.AppRoutes.SetPassword, config.AppRoutes.SetPassword + "?token=" + url.QueryEscape(xssProbe)}},
 	{"POST " + config.AppRoutes.SetPassword, []string{config.AppRoutes.SetPassword}},
 	{"GET " + config.AppRoutes.TwoFactor, []string{config.AppRoutes.TwoFactor}},
 	{"POST " + config.AppRoutes.TwoFactor, []string{config.AppRoutes.TwoFactor}},
 	{"GET " + config.AppRoutes.TwoFactorSetup, []string{config.AppRoutes.TwoFactorSetup}},
 	{"POST " + config.AppRoutes.TwoFactorSetup, []string{config.AppRoutes.TwoFactorSetup}},
 	{"POST " + routes.EnableTwoFactor, []string{routes.EnableTwoFactor}},
-	{"GET " + config.AppRoutes.Users, []string{config.AppRoutes.Users, config.AppRoutes.Users + "?search=ada&banned=true&sortBy=email"}},
+	{"GET " + config.AppRoutes.Users, []string{config.AppRoutes.Users, config.AppRoutes.Users + "?search=ada&banned=true&sortBy=email", config.AppRoutes.Users + "?search=" + url.QueryEscape(xssProbe)}},
 	{"GET " + config.AppRoutes.UserByID, []string{config.UserPage("u1")}},
 	{"POST " + routes.UserBan, []string{routes.User(routes.UserBan, "u1")}},
 	{"POST " + routes.UserUnban, []string{routes.User(routes.UserUnban, "u1")}},
@@ -92,18 +106,19 @@ var crawlTargets = []crawlTarget{
 	{"POST " + routes.UserSession, []string{routes.Session("u1", "us1")}},
 	{"GET " + config.AppRoutes.Admins, []string{config.AppRoutes.Admins}},
 	{"POST " + routes.AdminInvite, []string{routes.AdminInvite}},
-	{"GET " + config.AppRoutes.Audit, []string{config.AppRoutes.Audit, config.AppRoutes.Audit + "?targetId=u1"}},
+	{"GET " + config.AppRoutes.Audit, []string{config.AppRoutes.Audit, config.AppRoutes.Audit + "?targetId=u1", config.AppRoutes.Audit + "?targetId=" + url.QueryEscape(xssProbe)}},
 	{"GET " + config.AppRoutes.Analytics, []string{config.AppRoutes.Analytics}},
 	{"POST " + routes.Logout, []string{routes.Logout}},
 	{"POST " + routes.Locale, []string{routes.Locale}},
 }
 
-// crawlForm carries every field any admin form posts.
+// crawlForm carries every field any admin form posts; next tries to leave
+// the site and the name carries markup.
 var crawlForm = url.Values{
 	"email": {"root@example.com"}, "password": {"admin-password-1"}, "confirmPassword": {"admin-password-1"},
-	"name": {"Root"}, "token": {"invite-tok"}, "code": {"123456"}, "method": {ui.MethodTOTP}, "trustDevice": {"on"},
+	"name": {xssProbe}, "token": {"invite-tok"}, "code": {"123456"}, "method": {ui.MethodTOTP}, "trustDevice": {"on"},
 	"secret": {"JBSWY3DPEHPK3PXP"}, "uri": {"otpauth://totp/Admin:root@example.com?secret=JBSWY3DPEHPK3PXP"},
-	"banReason": {"spam"}, "banExpiresIn": {"3600"}, "role": {"admin"}, "locale": {"ja"}, "next": {"/users"},
+	"banReason": {"spam"}, "banExpiresIn": {"3600"}, "role": {"admin"}, "locale": {"ja"}, "next": {"/\t/" + evil},
 }
 
 func TestCrawlCoversEveryRoute(t *testing.T) {
@@ -126,6 +141,32 @@ func TestCrawlCoversEveryRoute(t *testing.T) {
 		if !slices.Contains(rec.patterns, p) {
 			t.Errorf("crawlTargets has %q, which the UI no longer registers", p)
 		}
+	}
+}
+
+// escapeHatch is templ's unescaped output. templ escaping is what stops
+// injected markup (the CSP cannot: Datastar runs any data-* expression with
+// the page nonce), so templates and handlers never bypass it. Generated
+// _templ.go files are skipped by golangci-lint, so this scans the sources.
+var escapeHatch = regexp.MustCompile(`templ\.(Raw|Unsafe\w*|SafeScript\w*|SafeCSS\w*|JSUnsafeFuncCall|ComponentScript)\b`)
+
+func TestNoUnescapedOutput(t *testing.T) {
+	err := filepath.WalkDir(".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || strings.HasSuffix(path, "_templ.go") || strings.HasSuffix(path, "_test.go") ||
+			(!strings.HasSuffix(path, ".templ") && !strings.HasSuffix(path, ".go")) {
+			return err
+		}
+		src, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		for _, m := range escapeHatch.FindAllString(string(src), -1) {
+			t.Errorf("%s uses %s: render through templ's escaping instead", path, m)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -164,13 +205,13 @@ func crawlUI(t *testing.T, failing, signedIn bool) http.Handler {
 		fail = errors.New(canaryInternal + " at " + canaryPath)
 	}
 	now := time.Now()
-	admin := ui.Admin{ID: "a1", Name: "Root", Email: "root@example.com", TwoFactorEnabled: true}
+	admin := ui.Admin{ID: "a1", Name: "Root " + xssProbe, Email: "root@example.com", TwoFactorEnabled: true}
 	sess := ui.Session{ID: "s1", Token: canaryToken, ExpiresAt: now.Add(time.Hour)}
 	setup := ui.TOTPSetup{Secret: "JBSWY3DPEHPK3PXP", URI: "otpauth://totp/Admin:root@example.com?secret=JBSWY3DPEHPK3PXP", BackupCodes: []string{"aaaa-bbbb", "cccc-dddd"}}
-	ip, agent, reason := "192.0.2.1", "Mozilla/5.0 (X11; Linux x86_64)", "spam"
-	user := services.User{ID: "u1", Name: "Ada", Email: "ada@example.com", EmailVerified: true, CreatedAt: now, UpdatedAt: now, Role: "user", Banned: true, BanReason: &reason, HasPassword: true}
+	ip, agent, reason := "192.0.2.1", "Mozilla/5.0 "+xssProbe, "spam "+xssProbe
+	user := services.User{ID: "u1", Name: "Ada " + xssProbe, Email: "ada@example.com", EmailVerified: true, CreatedAt: now, UpdatedAt: now, Role: "user", Banned: true, BanReason: &reason, HasPassword: true}
 	detail := services.UserDetail{User: user, Sessions: []services.Session{{ID: "us1", CreatedAt: now, ExpiresAt: now.Add(time.Hour), IPAddress: &ip, UserAgent: &agent}}}
-	audit := services.AuditPage{Total: 1, Limit: 50, Entries: []services.AuditEntry{{ID: 1, ActorID: "a1", ActorEmail: "root@example.com", Action: services.ActionUserBan, TargetType: "user", TargetID: "u1", TargetLabel: "ada@example.com", Details: map[string]string{"reason": "spam"}, CreatedAt: now}}}
+	audit := services.AuditPage{Total: 1, Limit: 50, Entries: []services.AuditEntry{{ID: 1, ActorID: "a1", ActorEmail: "root@example.com", Action: services.ActionUserBan, TargetType: "user", TargetID: "u1", TargetLabel: "ada " + xssProbe, Details: map[string]string{"reason": xssProbe}, CreatedAt: now}}}
 
 	a.EXPECT().SignIn(gomock.Any(), gomock.Any(), gomock.Any()).Return(sess, fail).AnyTimes()
 	a.EXPECT().SignOut(gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
@@ -191,7 +232,7 @@ func crawlUI(t *testing.T, failing, signedIn bool) http.Handler {
 	us.EXPECT().SetRole(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
 	us.EXPECT().RevokeSession(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
 	us.EXPECT().RevokeSessions(gomock.Any(), gomock.Any(), gomock.Any()).Return(fail).AnyTimes()
-	ad.EXPECT().ListAdmins(gomock.Any(), gomock.Any()).Return([]services.Admin{{ID: "a1", Name: "Root", Email: "root@example.com", CreatedAt: now, TwoFactorEnabled: true, HasPassword: true}}, fail).AnyTimes()
+	ad.EXPECT().ListAdmins(gomock.Any(), gomock.Any()).Return([]services.Admin{{ID: "a1", Name: "Root " + xssProbe, Email: "root@example.com", CreatedAt: now, TwoFactorEnabled: true, HasPassword: true}}, fail).AnyTimes()
 	ad.EXPECT().InviteAdmin(gomock.Any(), gomock.Any(), gomock.Any()).Return(services.Admin{ID: "a2", Email: "new@example.com", CreatedAt: now}, fail).AnyTimes()
 	au.EXPECT().List(gomock.Any(), gomock.Any(), gomock.Any()).Return(audit, fail).AnyTimes()
 	an.EXPECT().Overview(gomock.Any(), gomock.Any()).Return(services.Overview{TotalUsers: 3, VerifiedUsers: 2, BannedUsers: 1, GeneratedAt: now}, fail).AnyTimes()
@@ -225,21 +266,24 @@ func crawl(h http.Handler, method, path string, ds bool) *httptest.ResponseRecor
 	if ds {
 		r.Header.Set("Datastar-Request", "true")
 	}
-	rec := &firstWrite{ResponseRecorder: httptest.NewRecorder(), cancel: cancel}
+	rec := &firstEvent{ResponseRecorder: httptest.NewRecorder(), cancel: cancel}
 	h.ServeHTTP(rec, r)
 	return rec.ResponseRecorder
 }
 
-// firstWrite ends the request after the first flush, so live streams return.
-type firstWrite struct {
+// firstEvent ends the request once a whole SSE event has been flushed, so
+// live streams return; every other response runs to completion.
+type firstEvent struct {
 	*httptest.ResponseRecorder
 	cancel context.CancelFunc
 	once   sync.Once
 }
 
-func (f *firstWrite) Flush() {
+func (f *firstEvent) Flush() {
 	f.ResponseRecorder.Flush()
-	f.once.Do(f.cancel)
+	if strings.Contains(f.Body.String(), "\n\n") {
+		f.once.Do(f.cancel)
+	}
 }
 
 func checkResponse(t *testing.T, name string, rec *httptest.ResponseRecorder) {
@@ -301,15 +345,46 @@ func checkResponse(t *testing.T, name string, rec *httptest.ResponseRecorder) {
 	}
 
 	// Every script is this response's own: nonced, and the nonce is the
-	// header's (Datastar reads it from <html data-nonce>).
+	// header's (Datastar reads it from <html data-nonce>). An SSE patch may
+	// carry only Datastar's redirect script, which it re-creates with the
+	// page's nonce.
+	sse := strings.HasPrefix(h.Get("Content-Type"), "text/event-stream")
+	if sse && !strings.Contains(body, "event: datastar-") {
+		t.Errorf("%s: SSE response without an event: nothing was checked", name)
+	}
 	if m := cspNonce.FindStringSubmatch(csp); m != nil {
 		for _, tag := range scriptTag.FindAllString(body, -1) {
-			if n := nonceAttr.FindStringSubmatch(tag); n == nil || n[1] != m[1] {
+			if sse && tag == `<script data-effect="el.remove()">` {
+				continue
+			}
+			if n := nonceAttr.FindStringSubmatch(tag); sse || n == nil || n[1] != m[1] {
 				t.Errorf("%s: script without this response's nonce: %s", name, tag)
 			}
 		}
 		if strings.Contains(body, "<html") && !strings.Contains(body, `data-nonce="`+m[1]+`"`) {
 			t.Errorf("%s: <html> lacks data-nonce", name)
+		}
+	}
+
+	// Injected markup stays text, and never breaks out of a JS string in a
+	// Datastar expression.
+	if strings.Contains(body, `<img data-init="XSSPROBE"`) {
+		t.Errorf("%s: probe rendered as a tag", name)
+	}
+	for _, v := range dataAttr.FindAllStringSubmatch(body, -1) {
+		if jsBreakout.MatchString(html.UnescapeString(v[1])) {
+			t.Errorf("%s: probe breaks out of a data-* expression: %s", name, v[0])
+		}
+	}
+	// Open-redirect probes never become a destination.
+	if loc := h.Get("Location"); strings.Contains(loc, evil) {
+		t.Errorf("%s: redirects to %s", name, loc)
+	}
+	for _, m := range navTarget.FindAllStringSubmatch(html.UnescapeString(body), -1) {
+		// Browsers drop tabs and newlines and treat \ as /.
+		target := strings.NewReplacer("\t", "", "\n", "", "\r", "", `\\`, "/").Replace(m[1])
+		if strings.Contains(target, evil) && (strings.HasPrefix(target, "//") || strings.Contains(target, "://")) {
+			t.Errorf("%s: navigates off-site: %q", name, m[1])
 		}
 	}
 }
