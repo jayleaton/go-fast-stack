@@ -1,7 +1,8 @@
 # Single required check for branch protection and the merge queue: `ci-ok`.
 # Other jobs may be skipped by path filters; ci-ok treats skipped as success.
-# Draft PRs run no checks: mark ready for review to run CI (merge_group, push
-# to main and workflow_dispatch always run everything). GitHub cannot filter
+# Draft PRs run no checks: mark ready for review to run CI. PRs and pushes to
+# main run only the jobs whose paths changed; merge_group and
+# workflow_dispatch run everything. GitHub cannot filter
 # drafts at the trigger, so a draft push still starts a run; its final job
 # reports as "ci (draft, not run)", never as ci-ok, so it cannot stand in for
 # the required check on that SHA.
@@ -63,10 +64,11 @@ jobs:
           echo "PR #$PR ready-now run=$run"
           echo "run=$run" >> "$GITHUB_OUTPUT"
 
-  # PRs only: push to main and merge_group always run everything.
+  # PRs and pushes to main run only the jobs whose paths changed; merge_group
+  # and workflow_dispatch run everything.
   changes:
     needs: draft
-    if: ${{ !cancelled() && github.event_name == 'pull_request' && (!github.event.pull_request.draft || needs.draft.outputs.run == 'true') }}
+    if: ${{ !cancelled() && (github.event_name == 'push' || (github.event_name == 'pull_request' && (!github.event.pull_request.draft || needs.draft.outputs.run == 'true'))) }}
     runs-on: ubuntu-latest
     timeout-minutes: 2
     permissions:
@@ -76,6 +78,9 @@ jobs:
       go: ${{ steps.filter.outputs.go }}
       mobile: ${{ steps.filter.outputs.mobile }}
     steps:
+      # PR events list changed files through the API; pushes diff with git.
+      - uses: actions/checkout@v7
+        if: github.event_name == 'push'
       - uses: dorny/paths-filter@v4
         id: filter
         with:
@@ -98,32 +103,54 @@ jobs:
               - 'apps/mobile-app/**'
               # The mobile route test reads the Go route table.
               - 'apps/web/internal/config/routes.go'
+              - '.github/workflows/**'
 
   # One job, not lint/test in parallel: a second runner's checkout + setup-go + cache restore (~20 s) outweighs warm lint time on a repo this size.
   go:
     needs: changes
-    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.go == 'true') }}
+    if: ${{ !cancelled() && (github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch' || needs.changes.outputs.go == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    services:
-      postgres:
-        image: postgres:18-alpine
-        env:
-          POSTGRES_PASSWORD: postgres
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 2s
-          --health-timeout 3s
-          --health-retries 20
+    env:
+      TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable
     steps:
+      # Not a service container: those start (pull + init) before the first
+      # step. Started in the background here, Postgres boots while Go sets up.
+      # tmpfs and no fsync: test data is throwaway.
+      - name: Start Postgres
+        run: |
+          nohup docker run -d --name pg -p 5432:5432 -e POSTGRES_PASSWORD=postgres \
+            --tmpfs /var/lib/postgresql postgres:18-alpine \
+            -c fsync=off -c synchronous_commit=off -c full_page_writes=off -c max_connections=200 \
+            > "$RUNNER_TEMP/pg.log" 2>&1 &
+
       - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v7
+      # setup-go's cache only matched go.sum exactly, so any dependency change
+      # started cold (3+ min). Restore by prefix instead: same go.sum first,
+      # else the newest cache from main. Only pushes to main (and manual runs)
+      # save, once per go.sum per day, so PRs never evict main's cache.
+      # Bump the "go3" prefix when what is cached changes (e.g. the toolchain).
+      - name: Go cache key
+        id: go-cache
+        run: echo "day=$(date -u +%Y%m%d)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@v6
+        id: go-restore
         with:
-          go-version-file: go.mod
-          cache-dependency-path: go.sum
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+            ~/.cache/golangci-lint
+          key: go3-${{ runner.os }}-${{ hashFiles('go.sum') }}-${{ steps.go-cache.outputs.day }}
+          restore-keys: |
+            go3-${{ runner.os }}-${{ hashFiles('go.sum') }}-
+            go3-${{ runner.os }}-
+
+      # No setup-go: extracting and copying Go into the tool cache took ~12 s.
+      # The runner's preinstalled go switches to the go.mod version itself
+      # (GOTOOLCHAIN=auto); the toolchain lives in the module cache restored above.
+      - name: Go toolchain
+        run: go version && go env GOROOT GOMODCACHE GOCACHE
 
       - name: gofmt
         run: |
@@ -149,9 +176,12 @@ jobs:
       - name: Build
         run: go build ./...
 
+      # Its own cache key only changes with go.sum or weekly, so an exact hit
+      # kept a stale cache forever; its directory rides in the Go cache instead.
       - uses: golangci/golangci-lint-action@v9
         with:
           version: v2.15.0
+          skip-cache: true
 
       - name: Test boundaries
         run: ./scripts/check-test-boundaries.sh
@@ -164,19 +194,36 @@ jobs:
       - name: Test boundary probes
         run: ./scripts/check-test-probes.sh
 
+      # TCP, not the unix socket: the image's first-boot init server answers
+      # on the socket only and is then restarted.
+      - name: Wait for Postgres
+        run: |
+          for _ in $(seq 1 120); do
+            docker exec pg pg_isready -h 127.0.0.1 -U postgres >/dev/null 2>&1 && exit 0
+            sleep 0.5
+          done
+          cat "$RUNNER_TEMP/pg.log"; docker logs pg; exit 1
+
       - name: Test
         run: |
           mkdir -p .cache
           go test -race -coverprofile=.cache/coverage.out ./...
           ./scripts/check-coverage.sh .cache/coverage.out
-        env:
-          TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable
+
+      - uses: actions/cache/save@v6
+        if: (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && steps.go-restore.outputs.cache-hit != 'true'
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+            ~/.cache/golangci-lint
+          key: go3-${{ runner.os }}-${{ hashFiles('go.sum') }}-${{ steps.go-cache.outputs.day }}
 
   # Typecheck, lint, Expo SDK version check and unit tests. The contract test
   # (pnpm test:contract) needs Go + Docker and runs locally.
   mobile:
     needs: changes
-    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.mobile == 'true') }}
+    if: ${{ !cancelled() && (github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch' || needs.changes.outputs.mobile == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     defaults:

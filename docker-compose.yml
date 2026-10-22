@@ -16,8 +16,8 @@ services:
       - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d app"]
+    healthcheck: # TCP: the first-boot init server answers on the unix socket only
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d app"]
       interval: 2s
       timeout: 3s
       retries: 15
@@ -47,8 +47,8 @@ services:
       - "127.0.0.1:${TEST_POSTGRES_PORT:-}:5432" # empty: Docker picks a free port
     tmpfs:
       - /var/lib/postgresql
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+    healthcheck: # TCP: the first-boot init server answers on the unix socket only
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres"]
       interval: 1s
       timeout: 3s
       retries: 30
