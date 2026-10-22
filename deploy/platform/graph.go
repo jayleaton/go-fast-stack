@@ -55,6 +55,10 @@ type Secret struct {
 // DopplerPlaceholder marks a DOPPLER_TOKEN nobody has set yet.
 const DopplerPlaceholder = "REPLACE_WITH_DOPPLER_SERVICE_TOKEN"
 
+// ResendPlaceholder lets production boot before anyone has a Resend key:
+// the app requires RESEND_API_KEY there, and sending with this one fails.
+const ResendPlaceholder = "re_REPLACE_WITH_RESEND_API_KEY"
+
 // SecretVars lists every bootstrap variable for the configured services.
 func (c Config) SecretVars() []Secret {
 	out := []Secret{
@@ -108,6 +112,9 @@ func (p Project) Graph() map[string]any {
 func (c Config) Build(env string) (Project, error) {
 	if !c.Has(env) {
 		return Project{}, fmt.Errorf("environment %q is not in deploy/platform.yaml environments %v", env, []string(c.Environments))
+	}
+	if c.Project == Auto || c.Repo == Auto {
+		return Project{}, fmt.Errorf("project/repo: auto is unresolved: load platform.yaml with LoadResolved")
 	}
 	db := c.postgres(ServicePostgres)
 	web := railway.ServiceNamed(ServiceWeb, c.service(env, app{

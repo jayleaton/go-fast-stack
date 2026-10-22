@@ -126,6 +126,28 @@ Secrets never reach templates, SSE, JSON or logs:
 3. **Consumer.** In `cmd/server`, register the hook: build the new client and swap it in atomically (see `auth.SwapMailer`); on a zero value fall back or keep the old client; return an error to keep the previous client (the manager retries it after each later fetch). A hook must not call back into the manager (`OnChange`, `Refresh`, `Stop`). Log `v.Fingerprint()`, never the value. Never cache the value elsewhere.
 4. **Tests and docs.** Cover the swap at the consumer's boundary (like `TestSwapMailerUsesTheLatestMailer`), add the name to `.env.example` and README "Secrets", and add it to every Doppler config.
 
+## Deploy to Railway (for agents)
+
+Only when the developer asks: it creates billed resources in their Railway account.
+
+1. **Preflight.** `bin/railway-setup` is built by any `make railway-*` target. Run `make railway-doctor ARGS=--json` and fix every check with `"status": "fail"`; each check carries a `fix`. Typical fixes: `railway login` (the developer's browser), `--workspace` when they belong to several, and `railway ssh keys add` when there is more than one environment.
+2. **Setup.** `make railway-setup ARGS="--yes --json --environments staging,production"`. Add `--admin true`, `--region`, `--project` or `--workspace` as asked. Every flag has a `PLATFORM_*` env equivalent (`PLATFORM_YES=1`, `PLATFORM_JSON=1`, `PLATFORM_ENVIRONMENTS`, ...). The flags are written into `deploy/platform.yaml`: commit that file. Without `--yes`, and with no terminal to ask on, creating a project stops with exit 3.
+3. **Read the summary.** stdout is one JSON object: `ok`, `project.{id,url}`, `source` (`github` or `upload`), each environment's services with `url`, `deployment` and `health`, and `nextSteps`. Logs go to stderr. Relay `nextSteps` to the developer verbatim. They are things only a person can do, such as installing the GitHub app, Doppler tokens or a real `RESEND_API_KEY`. Never invent or fill in secrets yourself.
+4. **Re-run anytime.** `make railway-setup` is idempotent: no changes, no redeploys when healthy. Removing an environment or `admin` never deletes anything without `CONFIRM_DESTRUCTIVE=1`; ask before passing it.
+
+Exit codes:
+
+| Code | Meaning |
+|---|---|
+| 0 | ok |
+| 1 | error: read `error` |
+| 2 | plan: changes pending |
+| 3 | needs `--yes` |
+| 4 | doctor: a required check failed |
+| 5 | applied, but a public service is unhealthy |
+
+`make` itself turns any failure into exit 2, so read `exitCode` from the JSON, or run `bin/railway-setup <command> -config deploy/platform.yaml -iac deploy/.railway/railway.go` directly.
+
 ## Pull requests
 
 - Never open a PR unless the developer asks.

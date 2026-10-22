@@ -72,19 +72,21 @@ Go stdlib `net/http` · `templ` + Datastar + Tailwind (standalone CLI) · `pgx` 
 
 ## Deploy to Railway
 
-One file decides the whole Railway project: [`deploy/platform.yaml`](deploy/platform.yaml) (admin yes/no, which environments, previews, region, sizes). `make railway-apply` makes Railway match it using Railway's [Infrastructure as Code](https://docs.railway.com/infrastructure-as-code) (Go authoring, beta). Re-running converges, and editing the file (add `qa`, turn on `admin`) updates the project.
+One file decides the whole Railway project: [`deploy/platform.yaml`](deploy/platform.yaml) (admin yes/no, which environments, previews, region, sizes). From a fresh clone, one command creates everything and deploys it: the project, the environments, the services and databases, the domains, the secrets (generated, or placeholders), and a first healthy deploy. It runs on Railway's [Infrastructure as Code](https://docs.railway.com/infrastructure-as-code) (Go authoring, beta). Re-running converges, and editing the file (add `qa`, turn on `admin`) updates the project.
 
-Needs the [Railway CLI](https://docs.railway.com/cli) 5.71.0 or newer, logged in, and Go. From clone to live:
+Needs the [Railway CLI](https://docs.railway.com/cli) 5.71.0 or newer and Go. No dashboard or GitHub step first:
 
 ```sh
 railway login
-$EDITOR deploy/platform.yaml   # project name, repo, environments, admin
-make railway-apply             # creates the project, environments, services, databases, domains, secrets
+make railway-doctor   # login, workspace, SSH key, GitHub access, Doppler: prints fixes
+make railway-setup    # asks once before creating the project; ends with every /healthz checked
 ```
 
-`make railway-plan` shows what would change without touching anything. `make railway-verify` checks `/healthz` on every public URL. `make railway-rotate-db` gives every Postgres a new superuser password (see below).
+The defaults come from the checkout: the project is named after your repo, and production is the only environment. Choose on the first run: `make railway-setup ARGS="--environments staging,production --admin true --workspace acme"`. These flags (and `--project`, `--region`, `--repo`; or `PLATFORM_*` env vars) are written into `platform.yaml`, so commit it afterwards.
 
-**Code source.** With `repo: owner/name`, Railway builds on every push to `branch`. Install the [Railway GitHub app](https://github.com/apps/railway-app) on that repo first, or the first apply fails with "You don't have access to the GitHub repo". With `repo: ""`, nothing deploys on push: `make railway-up` uploads your checkout (`PLATFORM_ENV=staging` for one environment).
+`make railway-plan` shows what would change without touching anything (exit 2 when something would). `make railway-verify` checks `/healthz` on every public URL. `make railway-rotate-db` gives every Postgres a new superuser password (see below). Agents: see AGENTS.md "Deploy to Railway (for agents)" for `--yes`, `--json` and exit codes.
+
+**Code source.** With `repo: auto` (the default: this checkout's `origin`), Railway builds on every push to `branch` once its GitHub app can read the repo. Until then, setup still creates everything and deploys your checkout by upload (`railway up`), then prints the [Railway GitHub app](https://github.com/apps/railway-app) install link for your account. Install it, pick the repo, and re-run `make railway-setup` to switch every service to deploy-on-push (no duplicate services). With `repo: ""`, setup never connects GitHub: deploy new code with `make railway-up` (`PLATFORM_ENV=staging` for one environment).
 
 ### Profiles
 
@@ -127,6 +129,7 @@ Real traffic, egress ($0.05/GB) and backups come on top. Each Postgres also gets
 ### Secrets and Doppler
 
 Setup provisions per service and environment, and never overwrites a value that exists:
+- `RESEND_API_KEY`: from `RESEND_API_KEY_<ENV>` in your shell (sealed), else a placeholder, so production boots (emails fail until you set a real key; setup lists it as a next step).
 - `AUTH_SECRET` / `ADMIN_AUTH_SECRET`: generated, not sealed. Rotating one needs its old value (`AUTH_SECRET_PREVIOUS` / `_REVOKED`), and a sealed value can never be read back.
 - `SECRETS_PROVIDER`
 - a `DOPPLER_TOKEN` placeholder.
