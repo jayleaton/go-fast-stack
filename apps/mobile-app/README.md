@@ -56,17 +56,26 @@ clicked.
 | `pnpm typecheck` | `tsc --noEmit` |
 | `pnpm lint` | `expo lint` |
 | `pnpm exec expo install --check` | dependency versions match the Expo SDK |
-| `pnpm test` | unit tests (`src/**/*.test.ts`) |
+| `pnpm test` | unit tests (`src/**/*.test.ts`), including the API route check below |
 | `pnpm test:contract` | the app's auth and API clients against a real Go server |
+
+### API route check
+
+`src/lib/config/routes.test.ts` reads the Go route table
+(`apps/web/internal/config/routes.go`) from this checkout and fails if any
+path in `ApiRoutes` is missing there. `ApiRoutes` therefore uses the same
+patterns as Go (`/api/core/v1/users/{id}`); build concrete paths with the
+helpers in `routes.ts`. It runs in plain `pnpm test`, so CI catches a renamed
+endpoint without Docker. CI runs the mobile job when that Go file changes too.
 
 ### Contract test
 
 `pnpm test:contract` builds `apps/web/cmd/server` from this repo, starts a
 throwaway Postgres 18 container on a free port, migrates, serves on a free
 port in development mode, and runs `contract/app.contract.test.ts`: sign-up,
-get-session, sign-out, wrong password, sign-in, `GET`/`PATCH /users`
-(including validation and the 403 for another user), session restore on a
-cold launch, and delete account. The app's real modules run in Node; only the
+get-session, sign-out, wrong password, sign-in, `GET`/`PATCH /users/me`
+(including validation and the 403 for another user), `GET /users/me/sessions`,
+session restore on a cold launch, and `DELETE /users/me`. The app's real modules run in Node; only the
 native modules are stubbed (`contract/stubs/`). Server output goes to
 `.contract/server.log`.
 
@@ -90,7 +99,7 @@ src/
     api/          apiFetch client, envelope helpers, API types
     auth/         Better Auth client (SecureStore cookies)
     config/       env.ts (EXPO_PUBLIC_API_URL) and routes.ts (AppRoutes/ApiRoutes)
-    services/     userService: get, update settings, delete account
+    services/     userService: get, update settings, list sessions, delete account
     validators/   Zod schemas, mirroring apps/web/internal/validate
 contract/         contract test against the Go server
 ```

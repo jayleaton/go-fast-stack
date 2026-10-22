@@ -96,6 +96,8 @@ jobs:
               - '.github/workflows/**'
             mobile:
               - 'apps/mobile-app/**'
+              # The mobile route test reads the Go route table.
+              - 'apps/web/internal/config/routes.go'
 
   # One job, not lint/test in parallel: a second runner's checkout + setup-go + cache restore (~20 s) outweighs warm lint time on a repo this size.
   go:

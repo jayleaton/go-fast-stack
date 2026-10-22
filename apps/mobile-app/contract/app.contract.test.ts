@@ -7,7 +7,7 @@ import * as keychain from './stubs/expo-secure-store'
 /**
  * The app's own clients against the real Go server: the Better Auth Expo
  * client (src/lib/auth/authClient.ts) for /api/auth/*, and apiFetch via
- * userService for /api/core/v1/users. Nothing here talks HTTP directly
+ * userService for /api/core/v1/users/me. Nothing here talks HTTP directly
  * except where noted, so a passing run proves the shipped code works.
  */
 
@@ -61,7 +61,7 @@ describe('mobile app against the Go server', () => {
     expect(error?.code).toBe('INVALID_EMAIL_OR_PASSWORD')
   })
 
-  it('signs in and calls GET /api/core/v1/users with the session', async () => {
+  it('signs in and calls GET /api/core/v1/users/me with the session', async () => {
     const { error } = await app.signIn.email({ email, password })
     expect(error).toBeNull()
 
@@ -71,7 +71,7 @@ describe('mobile app against the Go server', () => {
     expect(me.data?.session.userId).toBe(me.data?.user.id)
   })
 
-  it('updates settings with PATCH /api/core/v1/users', async () => {
+  it('updates settings with PATCH /api/core/v1/users/me', async () => {
     const updated = await app.updateUserSettings({ name: 'Ada Lovelace', image: 'https://example.com/ada.png' })
     expect(updated.error).toBeNull()
     expect(updated.data?.user).toMatchObject({ name: 'Ada Lovelace', image: 'https://example.com/ada.png' })
@@ -87,13 +87,22 @@ describe('mobile app against the Go server', () => {
     expect(invalid.data).toBeNull()
     expect(invalid.error).toEqual(expect.any(String))
 
-    const { ApiRoutes } = await import('@/lib/config/routes')
-    const other = await app.apiFetch(ApiRoutes.users.byId('someone-else'), {
+    const { userPath } = await import('@/lib/config/routes')
+    const other = await app.apiFetch(userPath('someone-else'), {
       method: 'PATCH',
       body: JSON.stringify({ name: 'Mallory' }),
     })
     expect(other.data).toBeNull()
     expect(other.error).toEqual(expect.any(String))
+  })
+
+  it('lists the sessions with GET /api/core/v1/users/me/sessions', async () => {
+    const me = await app.getCurrentUser()
+    const { data, error } = await app.listSessions()
+    expect(error).toBeNull()
+    // Signed in once (the sign-up session was signed out), so one session: this one.
+    expect(data).toHaveLength(1)
+    expect(data?.[0]).toMatchObject({ id: me.data?.session.id, current: true })
   })
 
   it('restores the session on the next launch from the keychain', async () => {
@@ -115,7 +124,7 @@ describe('mobile app against the Go server', () => {
 })
 
 describe('delete account', () => {
-  it('deletes the user, clears the local session and blocks sign-in', async () => {
+  it('DELETE /api/core/v1/users/me deletes the user, clears the local session and blocks sign-in', async () => {
     keychain.clearAll()
     const app = await launchApp()
     const email = newEmail()
