@@ -7,9 +7,19 @@ export
 GO        ?= go
 TOOL      := $(GO) tool -modfile=tools/go.mod
 COMPOSE   := docker compose
-TEST_POSTGRES_PORT ?= 54329
-TEST_DATABASE_URL  ?= postgres://postgres:postgres@127.0.0.1:$(TEST_POSTGRES_PORT)/postgres?sslmode=disable
 BIN       := bin/server
+
+# Every checkout (clone or git worktree) gets its own compose project and dev
+# ports, derived from its path, so parallel worktrees never share containers.
+# Override any of these in the environment or .env.
+CHECKOUT_ID          := $(shell printf %s '$(CURDIR)' | cksum | cut -d' ' -f1)
+SLOT                 := $(shell expr $(CHECKOUT_ID) % 1000)
+COMPOSE_PROJECT_NAME ?= $(shell basename '$(CURDIR)' | tr 'A-Z' 'a-z' | tr -c 'a-z0-9\n' '-' | cut -c1-30)-$(shell printf %x $(CHECKOUT_ID) | cut -c1-6)
+POSTGRES_PORT        ?= $(shell expr 25000 + $(SLOT))
+PGWEB_PORT           ?= $(shell expr 26000 + $(SLOT))
+DATABASE_URL         ?= postgres://postgres:postgres@127.0.0.1:$(POSTGRES_PORT)/app?sslmode=disable
+# Empty: the test server gets a free port from Docker on every start.
+TEST_POSTGRES_PORT   ?=
 
 .DEFAULT_GOAL := help
 
@@ -48,8 +58,15 @@ lint-layering: ## Prove forbidden imports fail lint
 	./scripts/check-layering.sh
 
 .PHONY: test
-test: test-db-up ## go test -race against a throwaway Postgres
-	TEST_DATABASE_URL='$(TEST_DATABASE_URL)' $(GO) test -race ./...
+test: ## go test -race against this checkout's throwaway Postgres (or TEST_DATABASE_URL)
+ifdef TEST_DATABASE_URL
+	$(GO) test -race ./...
+else
+	@$(MAKE) --no-print-directory test-db-up
+	@port=$$($(COMPOSE) port postgres-test 5432 | sed 's/.*://'); \
+	  echo "test db: 127.0.0.1:$$port (project $(COMPOSE_PROJECT_NAME))"; \
+	  TEST_DATABASE_URL="postgres://postgres:postgres@127.0.0.1:$$port/postgres?sslmode=disable" $(GO) test -race ./...
+endif
 
 .PHONY: ci
 ci: ## Run the same checks as CI
@@ -63,8 +80,15 @@ ci: ## Run the same checks as CI
 migrate: ## Run auth then app migrations against DATABASE_URL
 	$(GO) run ./apps/web/cmd/server migrate
 
+.PHONY: env
+env: ## Print this checkout's compose project, ports and DATABASE_URL
+	@echo "compose project: $(COMPOSE_PROJECT_NAME)"
+	@echo "postgres:        127.0.0.1:$(POSTGRES_PORT)  (DATABASE_URL=$(DATABASE_URL))"
+	@echo "pgweb:           http://127.0.0.1:$(PGWEB_PORT)"
+	@echo "test postgres:   127.0.0.1:$(if $(TEST_POSTGRES_PORT),$(TEST_POSTGRES_PORT),<free port per start>)"
+
 .PHONY: db-up
-db-up: ## Start Postgres + pgweb (127.0.0.1 only)
+db-up: env ## Start Postgres + pgweb (127.0.0.1 only)
 	$(COMPOSE) up -d --wait postgres pgweb
 
 .PHONY: db-down
@@ -73,7 +97,7 @@ db-down: ## Stop Postgres + pgweb (keeps the data volume)
 
 .PHONY: test-db-up
 test-db-up:
-	$(COMPOSE) --profile test up -d --wait postgres-test
+	$(COMPOSE) --profile test up -d --wait --quiet-pull postgres-test
 
 .PHONY: docker
 docker: ## Build the production image

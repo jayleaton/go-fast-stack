@@ -44,16 +44,17 @@ The most common defect is a change that works on the path you tested and is miss
 
 **Killing by pattern.** Never `pkill -f`, `pgrep | kill`, or kill a PID found by matching a name, path or port. Many servers run on this machine and yours can match. Kill only the PID you captured at spawn.
 
-**Trusting the wrong database.** The Docker Postgres from `make db-up` is the sandbox: seed it, reset it, break it. A hosted database (Railway, Neon, production) is never a playground: don't point dev at one, migrate one, or copy real data in or out unless explicitly asked. `docker compose down -v` deletes the local volume.
+**Trusting the wrong database.** The Docker Postgres from `make db-up` is the sandbox: seed it, reset it, break it. A hosted database (Railway, Neon, production) is never a playground: don't point dev at one, migrate one, or copy real data in or out unless explicitly asked. `make db-down` keeps the volume; `docker compose down -v` deletes it.
 
 **Baking in origins.** Never hardcode `http://localhost:3000` in code, emails or auth callbacks. Origins come from `PUBLIC_URL`, `INTERNAL_URL` and `TRUSTED_ORIGINS` through `config.Config`, or every non-local client breaks.
 
 ## Dev loop
 
-- `make db-up && make migrate && make dev` starts Postgres + pgweb (bound to 127.0.0.1), runs migrations, and serves on `0.0.0.0:3000`. `.env` is created from `.env.example` on first run; set `POSTGRES_PORT` etc. there if the defaults are taken.
+- `make db-up && make migrate && make dev` starts Postgres + pgweb (bound to 127.0.0.1), runs migrations, and serves on `0.0.0.0:3000`. `.env` is created from `.env.example` on first run.
+- Each checkout (clone or git worktree) gets its own compose project and dev database ports, derived from its path; the test Postgres takes a free port on every start. Parallel worktrees never share or collide. `make env` prints the values; override `COMPOSE_PROJECT_NAME`, `POSTGRES_PORT`, `PGWEB_PORT`, `TEST_POSTGRES_PORT` or `DATABASE_URL` in `.env` only when you need fixed ones. Always go through `make`: bare `docker compose` uses the shared default project. `PORT` (the app) is not derived; set it in `.env` when two worktrees run `make dev` at once.
 - Auth is real in every environment. In development email verification is off and the dev mailer logs verification and reset links to the server log, so sign up through `/api/auth/sign-up/email` (or the UI) and copy links from the log. `packages/auth/README.md` has the endpoints, the security model and how to port more Better Auth features.
 - A running dev server is fine to leave up. Stop only what you started, by PID.
-- Inspect data with pgweb (`127.0.0.1:5050`). Seed realistic data before verifying a user-facing flow; an empty database is a bad test. Secrets go in `.env` only when the flow needs them, and never get committed.
+- Inspect data with pgweb (URL from `make env`). Seed realistic data before verifying a user-facing flow; an empty database is a bad test. Secrets go in `.env` only when the flow needs them, and never get committed.
 
 ## Verifying
 

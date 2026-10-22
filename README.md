@@ -7,7 +7,7 @@ A Go + Datastar monorepo template: one static binary serving server-rendered `te
 Needs Go (version in `mise.toml`; `mise install`) and Docker.
 
 ```sh
-make db-up      # Postgres 18 + pgweb on 127.0.0.1 (creates .env from .env.example)
+make db-up      # Postgres 18 + pgweb on 127.0.0.1, ports per checkout (creates .env)
 make migrate    # auth migrations, then app migrations
 make dev        # http://<this-machine>:3000, reachable over LAN/Tailscale
 ```
@@ -29,19 +29,20 @@ curl -b jar -H 'Origin: http://localhost:3000' -X POST localhost:3000/api/auth/s
 
 Auth endpoints live under `/api/auth/` (sign-up, sign-in, sign-out, get-session, verify-email, send-verification-email, request-password-reset, reset-password); see [packages/auth/README.md](packages/auth/README.md).
 
-Ports taken? Set `POSTGRES_PORT`, `PGWEB_PORT`, `TEST_POSTGRES_PORT` and `PORT` in `.env` (and the port in `DATABASE_URL`).
+Each checkout gets its own compose project and database ports, derived from its path, so any number of clones or git worktrees can run `make db-up` and `make test` at once. `make env` prints them (pgweb URL included). To pin them, set `COMPOSE_PROJECT_NAME`, `POSTGRES_PORT`, `PGWEB_PORT`, `TEST_POSTGRES_PORT` or `DATABASE_URL` in `.env`. The app's `PORT` stays 3000 unless you set it.
 
 ## Commands
 
 | | |
 |---|---|
 | `make dev` | run the server with `.env` |
-| `make test` | `go test -race ./...` against a throwaway tmpfs Postgres |
+| `make test` | `go test -race ./...` against this checkout's throwaway tmpfs Postgres (or `TEST_DATABASE_URL`) |
 | `make lint` | gofmt + golangci-lint (includes layering rules) |
 | `make ci` | everything CI runs |
 | `make generate` | sqlc (and templ) code generation |
 | `make build` / `make docker` | static binary / production image |
 | `make db-up` / `make db-down` | start / stop the local databases |
+| `make env` | print this checkout's compose project, ports and `DATABASE_URL` |
 
 ## Stack
 
