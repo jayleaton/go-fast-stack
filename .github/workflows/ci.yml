@@ -225,13 +225,33 @@ jobs:
             ~/.cache/golangci-lint
           key: v4-golint-${{ runner.os }}-${{ github.sha }}
 
+      # The lint job loads every package and its test imports, so it saves the
+      # module cache. "!" exclusions in cache paths did not apply, so trim
+      # explicitly:
+      # zips (~125 MB incl. the 71 MB toolchain zip) and dependency testdata.
+      - name: Trim module cache
+        if: (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && steps.mod-cache.outputs.cache-hit != 'true'
+        run: |
+          chmod -R u+w ~/go/pkg/mod
+          find ~/go/pkg/mod/cache/download -name '*.zip' -delete
+          find ~/go/pkg/mod -mindepth 2 -type d -name testdata -prune -exec rm -rf {} +
+          du -sh ~/go/pkg/mod
+      - uses: actions/cache/save@v6
+        if: (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && steps.mod-cache.outputs.cache-hit != 'true'
+        with:
+          path: |
+            ~/go/pkg/mod
+          key: v7-gomod-${{ runner.os }}-${{ hashFiles('go.sum') }}
+
   # Two shards: private-repo runners have 2 vCPUs and race-compiling the
-  # affected packages is CPU-bound, so splitting them halves the Test step.
+  # affected packages is CPU-bound. "db" tests the packages whose tests use
+  # Postgres and starts it first thing, on a runner not yet busy compiling
+  # (its boot took 12-22 s next to the build); "other" tests the rest.
   test:
     name: test (${{ matrix.shard }})
     strategy:
       matrix:
-        shard: [0, 1]
+        shard: [db, other]
     needs: draft
     if: ${{ !cancelled() && (github.event_name != 'pull_request' || !github.event.pull_request.draft || needs.draft.outputs.run == 'true') }}
     runs-on: ubuntu-latest
@@ -259,6 +279,16 @@ jobs:
         env:
           GO: ${{ github.event_name != 'pull_request' || steps.filter.outputs.go == 'true' }}
         run: echo "go=$GO" >> "$GITHUB_OUTPUT"
+
+      # db shard, any Go change: first thing, so it is up before tests run.
+      # tmpfs and no fsync: test data is throwaway.
+      - name: Start Postgres
+        if: steps.scope.outputs.go == 'true' && matrix.shard == 'db'
+        run: |
+          nohup docker run -d --name pg -p 5432:5432 -e POSTGRES_PASSWORD=postgres \
+            --tmpfs /var/lib/postgresql postgres:18-alpine \
+            -c fsync=off -c synchronous_commit=off -c full_page_writes=off -c max_connections=200 \
+            > "$RUNNER_TEMP/pg.log" 2>&1 &
 
       # Depth 2: a PR checkout is the merge commit, and HEAD^1 is the base.
       - uses: actions/checkout@v7
@@ -297,20 +327,9 @@ jobs:
       - name: Shard
         if: steps.affected.outputs.packages != ''
         id: shard
-        run: ./scripts/ci-shard.sh "${{ matrix.shard }}" 2
+        run: ./scripts/ci-shard.sh "${{ matrix.shard }}"
         env:
           PACKAGES: ${{ steps.affected.outputs.packages }}
-
-      # Only when this shard has a package whose tests use it. It boots while
-      # the build cache restores and tests compile; only those test binaries
-      # wait for it (see Test). tmpfs and no fsync: test data is throwaway.
-      - name: Start Postgres
-        if: steps.shard.outputs.db_dirs != ''
-        run: |
-          nohup docker run -d --name pg -p 5432:5432 -e POSTGRES_PASSWORD=postgres \
-            --tmpfs /var/lib/postgresql postgres:18-alpine \
-            -c fsync=off -c synchronous_commit=off -c full_page_writes=off -c max_connections=200 \
-            > "$RUNNER_TEMP/pg.log" 2>&1 &
 
       - uses: actions/cache/restore@v6
         if: steps.scope.outputs.go == 'true'
@@ -321,14 +340,14 @@ jobs:
           restore-keys: v4-gotest-${{ matrix.shard }}-${{ runner.os }}-
 
       - name: Test boundary probes
-        if: steps.affected.outputs.full == 'true' && matrix.shard == 0
+        if: steps.affected.outputs.full == 'true' && matrix.shard == 'other'
         run: ./scripts/check-test-probes.sh
 
       - name: Test
         if: steps.shard.outputs.packages != ''
         env:
           PACKAGES: ${{ steps.shard.outputs.packages }}
-          DB_DIRS: ${{ steps.shard.outputs.db_dirs }}
+          SHARD: ${{ matrix.shard }}
         run: |
           mkdir -p .cache
           # With -coverprofile, go test also compiles packages without tests,
@@ -339,18 +358,14 @@ jobs:
           # listens, and the image's first-boot init server answers on the unix
           # socket only.
           exec_flag=()
-          if [ -n "$DB_DIRS" ]; then
-            # go test runs each binary in its package directory.
+          if [ "$SHARD" = db ]; then
             cat > "$RUNNER_TEMP/wait-db" <<'SH'
           #!/usr/bin/env bash
-          if [[ " $DB_DIRS " == *" $PWD "* ]]; then
-            for _ in $(seq 1 480); do
-              docker exec pg pg_isready -q -h 127.0.0.1 -U postgres 2>/dev/null && exec "$@"
-              sleep 0.25
-            done
-            echo "postgres did not start:" >&2; cat "$RUNNER_TEMP/pg.log" >&2; docker logs pg >&2; exit 1
-          fi
-          exec "$@"
+          for _ in $(seq 1 480); do
+            docker exec pg pg_isready -q -h 127.0.0.1 -U postgres 2>/dev/null && exec "$@"
+            sleep 0.25
+          done
+          echo "postgres did not start:" >&2; cat "$RUNNER_TEMP/pg.log" >&2; docker logs pg >&2; exit 1
           SH
             chmod +x "$RUNNER_TEMP/wait-db"
             exec_flag=(-exec "$RUNNER_TEMP/wait-db")
@@ -365,36 +380,6 @@ jobs:
           path: |
             ~/.cache/go-build
           key: v4-gotest-${{ matrix.shard }}-${{ runner.os }}-${{ github.sha }}
-      # "!" exclusions in the cache paths did not apply, so trim explicitly:
-      # zips (~125 MB incl. the 71 MB toolchain zip) and dependency testdata.
-      - name: Trim module cache
-        if: (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && steps.mod-cache.outputs.cache-hit != 'true' && matrix.shard == 0
-        run: |
-          chmod -R u+w ~/go/pkg/mod
-          find ~/go/pkg/mod/cache/download -name '*.zip' -delete
-          find ~/go/pkg/mod -mindepth 2 -type d -name testdata -prune -exec rm -rf {} +
-          du -sh ~/go/pkg/mod
-      - uses: actions/cache/save@v6
-        if: (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && steps.mod-cache.outputs.cache-hit != 'true' && matrix.shard == 0
-        with:
-          path: |
-            ~/go/pkg/mod
-          key: v7-gomod-${{ runner.os }}-${{ hashFiles('go.sum') }}
-
-  pulltest:
-    if: github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    steps:
-      - name: TEMP time Postgres image pulls
-        run: |
-          for round in 1 2 3; do
-            for img in docker.io/library/postgres:18-alpine mirror.gcr.io/library/postgres:18-alpine public.ecr.aws/docker/library/postgres:18-alpine; do
-              docker rmi -f "$img" >/dev/null 2>&1; docker image prune -af >/dev/null 2>&1
-              s=$(date +%s%N); docker pull -q "$img" >/dev/null 2>&1; rc=$?
-              echo "round $round rc=$rc $(( ($(date +%s%N)-s)/1000000 )) ms $img"
-            done
-          done
-
   # Typecheck, lint, Expo SDK version check and unit tests. The contract test
   # (pnpm test:contract) needs Go + Docker and runs locally.
   mobile:
