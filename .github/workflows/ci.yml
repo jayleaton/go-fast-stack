@@ -130,6 +130,7 @@ jobs:
       # started cold (3+ min). Restore by prefix instead: same go.sum first,
       # else the newest cache from main. Only pushes to main (and manual runs)
       # save, once per go.sum per day, so PRs never evict main's cache.
+      # Bump the "go2" prefix when what is cached changes (e.g. the toolchain).
       - name: Go cache key
         id: go-cache
         run: echo "day=$(date -u +%Y%m%d)" >> "$GITHUB_OUTPUT"
@@ -139,10 +140,10 @@ jobs:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-          key: go-${{ runner.os }}-${{ hashFiles('go.sum') }}-${{ steps.go-cache.outputs.day }}
+          key: go2-${{ runner.os }}-${{ hashFiles('go.sum') }}-${{ steps.go-cache.outputs.day }}
           restore-keys: |
-            go-${{ runner.os }}-${{ hashFiles('go.sum') }}-
-            go-${{ runner.os }}-
+            go2-${{ runner.os }}-${{ hashFiles('go.sum') }}-
+            go2-${{ runner.os }}-
 
       # No setup-go: extracting and copying Go into the tool cache took ~12 s.
       # The runner's preinstalled go switches to the go.mod version itself
@@ -211,7 +212,7 @@ jobs:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-          key: go-${{ runner.os }}-${{ hashFiles('go.sum') }}-${{ steps.go-cache.outputs.day }}
+          key: go2-${{ runner.os }}-${{ hashFiles('go.sum') }}-${{ steps.go-cache.outputs.day }}
 
   # Typecheck, lint, Expo SDK version check and unit tests. The contract test
   # (pnpm test:contract) needs Go + Docker and runs locally.
