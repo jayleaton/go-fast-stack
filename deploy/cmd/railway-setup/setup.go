@@ -407,6 +407,41 @@ func (s *setup) up(ctx context.Context, env string) error {
 // It sets a random password inside the running container (railway ssh,
 // SQL on stdin), then stores it in POSTGRES_PASSWORD.
 func (s *setup) repairDatabases(ctx context.Context, env string) error {
+	return s.setDatabasePasswords(ctx, env, false)
+}
+
+// rotateDatabases gives every database in env a new random superuser
+// password (after a provider incident: Railway holds POSTGRES_PASSWORD),
+// then redeploys the app services that read DATABASE_URL from Railway.
+// Services on Doppler read it from Doppler: update it there.
+func (s *setup) rotateDatabases(ctx context.Context, env string) error {
+	if s.project == nil || s.project.Environments[env] == "" {
+		return fmt.Errorf("%s is not set up yet: run make railway-apply first", env)
+	}
+	if err := s.setDatabasePasswords(ctx, env, true); err != nil {
+		return err
+	}
+	for _, svc := range s.services() {
+		if s.project.Services[svc] == "" {
+			continue
+		}
+		vars, err := s.variables(ctx, svc, env)
+		if err != nil {
+			return err
+		}
+		if s.usesDoppler(vars) {
+			s.say("  ! %s/%s reads DATABASE_URL from Doppler: if it uses the superuser, update it there (README: rotate the database password)", env, svc)
+			continue
+		}
+		if _, err := s.rw.output(ctx, nil, "redeploy", "--service", svc, "--environment", env, "--yes"); err != nil {
+			return err
+		}
+		s.change("%s/%s redeployed with the new DATABASE_URL", env, svc)
+	}
+	return nil
+}
+
+func (s *setup) setDatabasePasswords(ctx context.Context, env string, force bool) error {
 	if s.project == nil || s.project.Environments[env] == "" {
 		return nil
 	}
@@ -418,8 +453,15 @@ func (s *setup) repairDatabases(ctx context.Context, env string) error {
 		if err != nil {
 			return err
 		}
-		pw := vars["POSTGRES_PASSWORD"]
-		if pw == nil || !strings.Contains(*pw, "secret(") {
+		pw, ok := vars["POSTGRES_PASSWORD"]
+		if !ok || pw == nil { // missing or sealed by hand: not ours to change
+			if force {
+				s.say("  ! %s/%s has no readable POSTGRES_PASSWORD; rotate it in the dashboard", env, db)
+			}
+			continue
+		}
+		broken := strings.Contains(*pw, "secret(")
+		if !force && !broken {
 			continue
 		}
 		if !s.apply {
@@ -445,7 +487,11 @@ func (s *setup) repairDatabases(ctx context.Context, env string) error {
 		if err := s.commit(ctx, env, map[string]map[string]secretWrite{db: {"POSTGRES_PASSWORD": {fresh, false}}}); err != nil {
 			return err
 		}
-		s.change("%s/%s POSTGRES_PASSWORD was Railway's unevaluated generator: replaced with a random password", env, db)
+		if broken {
+			s.change("%s/%s POSTGRES_PASSWORD was Railway's unevaluated generator: replaced with a random password", env, db)
+		} else {
+			s.change("%s/%s POSTGRES_PASSWORD rotated", env, db)
+		}
 	}
 	return nil
 }
@@ -529,11 +575,11 @@ type secretWrite struct {
 
 // bootstrap provisions the variables IaC ignores (platform.SecretVars):
 // generated auth secrets, the Doppler token placeholder, SECRETS_PROVIDER
-// and an operator-supplied RESEND_API_KEY. Existing values are never
+// and an operator-supplied RESEND_API_KEY (Manual ones are left alone). Existing values are never
 // replaced; all writes for an environment land in one commit (one deploy).
 func (s *setup) bootstrap(ctx context.Context, env string) error {
 	if s.project == nil || s.project.Environments[env] == "" || !s.servicesExist() {
-		s.change("bootstrap secrets in %s (auth secrets generated and sealed, SECRETS_PROVIDER, Doppler token placeholder)", env)
+		s.change("bootstrap secrets in %s (auth secrets generated, SECRETS_PROVIDER, Doppler token placeholder)", env)
 		return nil
 	}
 	writes := map[string]map[string]secretWrite{} // service -> name -> value
@@ -548,6 +594,9 @@ func (s *setup) bootstrap(ctx context.Context, env string) error {
 	}
 	for _, sec := range s.cfg.SecretVars() {
 		_, exists := current[sec.Service][sec.Name]
+		if s.usesDoppler(current[sec.Service]) && (sec.Kind == platform.Generated || sec.Kind == platform.Operator) {
+			continue // Doppler holds them; Railway copies were deleted on purpose
+		}
 		switch sec.Kind {
 		case platform.Generated:
 			if !exists {
@@ -555,8 +604,8 @@ func (s *setup) bootstrap(ctx context.Context, env string) error {
 				if err != nil {
 					return err
 				}
-				writes[sec.Service][sec.Name] = secretWrite{v, true}
-				s.change("%s/%s %s: generate (sealed)", env, sec.Service, sec.Name)
+				writes[sec.Service][sec.Name] = secretWrite{v, false} // not sealed: see platform.Generated
+				s.change("%s/%s %s: generate", env, sec.Service, sec.Name)
 			}
 		case platform.DopplerToken:
 			if !exists && s.cfg.Secrets.Provider == platform.ProviderDoppler {

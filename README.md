@@ -72,7 +72,7 @@ $EDITOR deploy/platform.yaml   # project name, repo, environments, admin
 make railway-apply             # creates the project, environments, services, databases, domains, secrets
 ```
 
-`make railway-plan` shows what would change without touching anything. `make railway-verify` checks `/healthz` on every public URL.
+`make railway-plan` shows what would change without touching anything. `make railway-verify` checks `/healthz` on every public URL. `make railway-rotate-db` gives every Postgres a new superuser password (see below).
 
 **Code source.** With `repo: owner/name`, Railway builds on every push to `branch`. Install the [Railway GitHub app](https://github.com/apps/railway-app) on that repo first, or the first apply fails with "You don't have access to the GitHub repo". With `repo: ""`, nothing deploys on push: `make railway-up` uploads your checkout (`PLATFORM_ENV=staging` for one environment).
 
@@ -117,7 +117,7 @@ Real traffic, egress ($0.05/GB) and backups come on top. Each Postgres also gets
 ### Secrets and Doppler
 
 Setup provisions per service and environment, and never overwrites a value that exists:
-- `AUTH_SECRET` / `ADMIN_AUTH_SECRET`: generated and sealed (nobody can read them back, not even you).
+- `AUTH_SECRET` / `ADMIN_AUTH_SECRET`: generated, not sealed. Rotating one needs its old value (`AUTH_SECRET_PREVIOUS` / `_REVOKED`), and a sealed value can never be read back.
 - `SECRETS_PROVIDER`
 - a `DOPPLER_TOKEN` placeholder.
 
@@ -140,6 +140,36 @@ Without Doppler, set `secrets.provider: env` and give `RESEND_API_KEY` the same 
 
 Railway currently gives a database added to a second environment the literal text of its password generator as its password, a public string ([issue draft 0](docs/railway-go-iac-issues.md)). `make railway-apply` detects this and sets a random password inside the database over `railway ssh`. That needs an SSH key registered with Railway (`railway ssh keys`).
 
+### Where secrets live, and rotating after an incident
+
+Keep app secrets in **Doppler**, not in Railway variables. A Railway variable changes only with a redeploy and sits with whoever runs your hosting. Doppler values rotate live and stay readable to you, which a rotation needs.
+
+| Where | What |
+|---|---|
+| Doppler, one config per service and environment | `DATABASE_URL`, `AUTH_SECRET` (+ `AUTH_SECRET_PREVIOUS` / `_REVOKED` while rotating), `RESEND_API_KEY`; admin also `ADMIN_DATABASE_URL`, `ADMIN_AUTH_SECRET` |
+| Railway, sealed | `DOPPLER_TOKEN`, the only secret Railway needs |
+| Railway, plain | non-secrets (`APP_ENV`, `PUBLIC_URL`, `SECRETS_PROVIDER`, ...) |
+
+Once a service runs `SECRETS_PROVIDER=doppler` (after `make railway-secrets`), delete its Railway copies, for example `railway variable delete AUTH_SECRET --service web --environment production`. Do the same for `RESEND_API_KEY`, and on admin for `ADMIN_AUTH_SECRET`. Setup no longer recreates them for a service on Doppler. Two values unavoidably stay on Railway:
+- each Postgres service's own superuser password;
+- the IaC `DATABASE_URL` reference (ignored under Doppler).
+
+That is why the runbook below gives the app its own login roles.
+
+**After a provider incident**, treat every value the provider held as leaked and rotate it. Railway's 2026-10-21 security disclosure is such a case: assume every Railway variable leaked.
+1. **Doppler tokens:** create a new read-only service token per service and environment in Doppler. Run `make railway-secrets`, which seals them and redeploys. Then revoke the old tokens in Doppler.
+2. **Database passwords:** `make railway-rotate-db` (one environment: `PLATFORM_ENV=production`) sets a new random superuser password inside each Postgres over `railway ssh`, then stores it. Services that read `DATABASE_URL` from Railway are redeployed; for services on Doppler it tells you to update Doppler. If the app uses its own roles, also run the database-password runbook in [Secrets](#secrets).
+3. **Auth secrets:** on Doppler, follow the **Leaked secret** step of the `AUTH_SECRET` runbook in [Secrets](#secrets): new `AUTH_SECRET`, old value in `AUTH_SECRET_REVOKED`, both in one save (same for `ADMIN_AUTH_SECRET`). Still on the `env` provider? Do it in Railway in one deploy:
+   ```sh
+   old=$(railway variable list --service web --environment production --json | jq -r .AUTH_SECRET)
+   printf %s "$old" | railway variable set AUTH_SECRET_REVOKED --stdin --service web --environment production --skip-deploys
+   openssl rand -base64 48 | tr -d '\n' | railway variable set AUTH_SECRET --stdin --service web --environment production
+   ```
+   Delete `AUTH_SECRET_REVOKED` once the new deployment is live. Everyone signs in again, and 2FA enrolments survive.
+4. **Everything else in Doppler:** roll `RESEND_API_KEY` in Resend, save it in Doppler (live), then revoke the old key.
+
+If the incident is at Doppler instead, rotate the same values in Doppler and revoke and reissue its tokens (step 1); the Railway side is untouched.
+
 ### Preview environments
 
 Off by default. `previews: true` (needs `staging`) turns on Railway PR environments: each pull request gets a temporary copy of staging, deleted when the PR closes. Each preview runs its own web + Postgres while open, at roughly a staging environment's cost. Sealed values are not copied into previews, so give previews their own `AUTH_SECRET` (and Doppler token) as shared variables if you rely on them.
@@ -150,7 +180,7 @@ Off by default. `previews: true` (needs `staging`) turns on Railway PR environme
 - `deploy/platform` turns the YAML into the IaC graph.
 - `deploy/.railway/railway.go` is what `railway config plan|apply --file deploy/.railway/railway.go --environment <env>` evaluates.
 - `deploy/cmd/railway-setup` does what IaC cannot: create the project and environments, seal secrets, generate domains and toggle previews.
-- The root `railway.json` (Config as Code) is gone; Railway stops reading those files on 2026-12-01. Services created by IaC never read `apps/admin/railway.json` either.
+- There is no `railway.json` (Config as Code) any more, for web or admin: Railway stops reading those files on 2026-12-01.
 - Railway bugs found on the way: [docs/railway-go-iac-issues.md](docs/railway-go-iac-issues.md).
 
 `/healthz` is only the deploy gate: Railway checks it until a new deployment goes live, never afterwards. It answers 503 when Doppler secrets go stale (`SECRETS_MAX_STALENESS`), so never wire it up as a liveness or restart probe, or a Doppler outage turns into a restart loop. Services restart only when the process exits (`ON_FAILURE`, 5 retries).

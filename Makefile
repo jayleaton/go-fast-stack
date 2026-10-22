@@ -178,6 +178,10 @@ railway-secrets: ## Add Doppler tokens (or RESEND_API_KEY) to Railway, sealed
 railway-up: ## Upload this checkout to Railway and deploy it (repo: "" in platform.yaml; PLATFORM_ENV=staging for one)
 	$(DEPLOY_SETUP) up -config $(PLATFORM_FILE) $(if $(PLATFORM_ENV),-env $(PLATFORM_ENV))
 
+.PHONY: railway-rotate-db
+railway-rotate-db: ## New Postgres superuser passwords on Railway, then redeploy (PLATFORM_ENV=staging for one)
+	$(DEPLOY_SETUP) rotate-db -config $(PLATFORM_FILE) $(if $(PLATFORM_ENV),-env $(PLATFORM_ENV))
+
 .PHONY: railway-verify
 railway-verify: ## GET /healthz on every public Railway service
 	$(DEPLOY_SETUP) verify -config $(PLATFORM_FILE)

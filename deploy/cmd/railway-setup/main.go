@@ -4,6 +4,7 @@
 //	railway-setup apply     create or update the project, every environment
 //	railway-setup secrets   add Doppler tokens / RESEND_API_KEY (sealed)
 //	railway-setup up        upload this checkout and deploy it (repo: "")
+//	railway-setup rotate-db new Postgres superuser passwords (after an incident)
 //	railway-setup verify    GET /healthz on every public service
 //
 // Run it through make (railway-plan, railway-apply, railway-secrets,
@@ -34,9 +35,9 @@ func run() error {
 	config := fs.String("config", "platform.yaml", "path to platform.yaml")
 	iac := fs.String("iac", ".railway/railway.go", "path to the IaC entry point")
 	destruct := fs.Bool("confirm-destructive", false, "let apply delete resources removed from platform.yaml")
-	only := fs.String("env", "", "up: deploy only this environment (default: all)")
+	only := fs.String("env", "", "up, rotate-db: only this environment (default: all)")
 	fs.Usage = func() {
-		fmt.Fprintln(fs.Output(), "usage: railway-setup plan|apply|secrets|up|verify [flags]")
+		fmt.Fprintln(fs.Output(), "usage: railway-setup plan|apply|secrets|up|rotate-db|verify [flags]")
 		fs.PrintDefaults()
 	}
 	if len(os.Args) < 2 {
@@ -78,6 +79,22 @@ func run() error {
 			return err
 		}
 		return s.secrets(ctx)
+	case "rotate-db":
+		if *only != "" && !cfg.Has(*only) {
+			return fmt.Errorf("-env %q is not in platform.yaml environments %v", *only, []string(cfg.Environments))
+		}
+		s.apply = true
+		if err := s.findProject(ctx); err != nil {
+			return err
+		}
+		for _, env := range cfg.Environments {
+			if *only == "" || *only == env {
+				if err := s.rotateDatabases(ctx, env); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
 	case "up":
 		if *only != "" && !cfg.Has(*only) {
 			return fmt.Errorf("-env %q is not in platform.yaml environments %v", *only, []string(cfg.Environments))

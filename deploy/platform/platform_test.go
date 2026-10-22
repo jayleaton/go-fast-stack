@@ -167,6 +167,12 @@ func TestBuildWebOnly(t *testing.T) {
 		}
 	}
 	ignore := g["variables"].(map[string]any)["ignore"].([]any)
+	// Rotation variables set by hand must never be planned for deletion.
+	for _, v := range []string{"web/AUTH_SECRET_PREVIOUS", "web/AUTH_SECRET_REVOKED"} {
+		if !slices.Contains(ignore, any(v)) {
+			t.Errorf("%s not ignored", v)
+		}
+	}
 	if !slices.Contains(ignore, any("web/AUTH_SECRET")) || !slices.Contains(ignore, any("web/DOPPLER_TOKEN")) || slices.ContainsFunc(ignore, func(v any) bool { return strings.HasPrefix(v.(string), "admin/") }) {
 		t.Fatalf("ignore: %v", ignore)
 	}

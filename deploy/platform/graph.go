@@ -23,8 +23,10 @@ const AppPort = 3000
 type SecretKind int
 
 const (
-	// Generated: 48 random bytes, created once per service and environment
-	// and sealed. Never copied between environments.
+	// Generated: 48 random bytes, created once per service and environment,
+	// never copied between environments. Not sealed: rotating an auth secret
+	// needs its old value (AUTH_SECRET_PREVIOUS / _REVOKED, see README
+	// "Secrets"), and a sealed value can never be read back.
 	Generated SecretKind = iota
 	// Provider: SECRETS_PROVIDER, set by setup from whether this service and
 	// environment has a real DOPPLER_TOKEN yet (doppler) or not (env).
@@ -34,8 +36,11 @@ const (
 	// real one.
 	DopplerToken
 	// Operator: supplied by the person running setup (RESEND_API_KEY from
-	// their shell); never generated.
+	// their shell); never generated. Sealed.
 	Operator
+	// Manual: set by hand during a rotation (AUTH_SECRET_PREVIOUS, ...);
+	// setup never writes it, IaC must never delete it.
+	Manual
 )
 
 // Secret is a bootstrap variable on one service. These are kept out of the
@@ -54,6 +59,8 @@ const DopplerPlaceholder = "REPLACE_WITH_DOPPLER_SERVICE_TOKEN"
 func (c Config) SecretVars() []Secret {
 	out := []Secret{
 		{ServiceWeb, "AUTH_SECRET", Generated},
+		{ServiceWeb, "AUTH_SECRET_PREVIOUS", Manual},
+		{ServiceWeb, "AUTH_SECRET_REVOKED", Manual},
 		{ServiceWeb, "SECRETS_PROVIDER", Provider},
 		{ServiceWeb, "RESEND_API_KEY", Operator},
 	}
@@ -63,6 +70,8 @@ func (c Config) SecretVars() []Secret {
 	if c.Admin {
 		out = append(out,
 			Secret{ServiceAdmin, "ADMIN_AUTH_SECRET", Generated},
+			Secret{ServiceAdmin, "ADMIN_AUTH_SECRET_PREVIOUS", Manual},
+			Secret{ServiceAdmin, "ADMIN_AUTH_SECRET_REVOKED", Manual},
 			Secret{ServiceAdmin, "SECRETS_PROVIDER", Provider},
 			Secret{ServiceAdmin, "RESEND_API_KEY", Operator},
 			Secret{ServiceAdmin, "DOPPLER_TOKEN", DopplerToken},
