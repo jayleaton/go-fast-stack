@@ -179,6 +179,7 @@ templ AuditPage(d AuditData) {
 	@view.Layout(i18n.T(ctx, "pages.audit.title")) {
 		<div class="container-balanced py-8">
 			@view.PageHeader(i18n.T(ctx, "pages.audit.title"), i18n.T(ctx, "pages.audit.subtitle"))
+			<p data-testid="audit-how-recorded" class="-mt-2 mb-4 max-w-3xl text-xs text-neutral-500 dark:text-neutral-400">{ i18n.T(ctx, "pages.audit.howRecorded") }</p>
 			<form method="get" action={ templ.SafeURL(config.AppRoutes.Audit) } class={ "flex flex-wrap items-end gap-3 p-4", view.CardClass } data-signals="{_filtering: false}" data-on:submit="$_filtering = true; el.submit()">
 				if d.Filters.TargetID != "" {
 					<input type="hidden" name="targetId" value={ d.Filters.TargetID }/>

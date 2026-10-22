@@ -341,3 +341,14 @@ func TestAuditReasonInternal(t *testing.T) {
 		}
 	}
 }
+
+// The audit page says how its two kinds of entries are recorded: admin
+// changes fail closed, authentication events are best-effort.
+func TestAuditPageExplainsRecording(t *testing.T) {
+	for _, l := range i18n.Locales {
+		html := renderIn(t, l, view.State{Authenticated: true}, AuditPage(AuditData{}))
+		if !strings.Contains(html, templ.EscapeString(i18n.Translator{Locale: l}.T("pages.audit.howRecorded"))) {
+			t.Errorf("%s: audit page lacks the recording note", l)
+		}
+	}
+}

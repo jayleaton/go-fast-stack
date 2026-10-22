@@ -82,3 +82,10 @@ the adapter must see the request (for example through the context its middleware
   word order differs (`Invite sent to {0}` / `{0} に招待を送信しました`). `TestPlaceholdersMatch` keeps them aligned.
 - **Tests** (`apps/admin/ui/**` is a test boundary): generated mocks of the ports plus a mock session through
   `Deps.UserFrom`. `TestRenderStopsWhenClientHangsUp` fails the connection at every write of every page.
+
+## Audit log: two ways of recording
+
+- **Admin changes** (the services' `mutate`) fail closed: a pending row before the change, the outcome after. No row, no change (`ErrAuditUnavailable`, translated alert). A pending row whose outcome was never written shows as "Outcome unknown" until the reconciler resolves it.
+- **Authentication events** (sign-in, sign-out, refused 2FA code) come from packages/auth's event hook (`server.NewAuditEvents`) after the fact, on auth's event worker. They are best-effort by design: they never block or undo a sign-in, a failed write is logged at error level, and auth drops events (with a counted warning) if its queue is full. They have no status beyond "Done".
+
+The page says this in one line under the title (`pages.audit.howRecorded`).
