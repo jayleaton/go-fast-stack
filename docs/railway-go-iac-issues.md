@@ -243,3 +243,4 @@ A template that only talks to Postgres over the private network still gets a pub
 **Summary.** `projectCreate` rejects names over 32 characters (`Project names must be between 1 and 32 characters.`). Nothing documents the limit, and IaC `project("…")` accepts longer names. An automated setup finds out only when it tries to create the project.
 
 **Workaround here.** `platform.yaml` validation enforces 32 characters, and `project: auto` truncates long repo names.
+<!-- ci timing probe -->
