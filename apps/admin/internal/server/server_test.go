@@ -79,7 +79,9 @@ func TestMountsAndMiddleware(t *testing.T) {
 		snippet string
 	}{
 		{"ui mounted at /", httptest.NewRequest(http.MethodGet, config.AppRoutes.Users, nil), 200, "ui"},
-		{"auth mounted", httptest.NewRequest(http.MethodPost, "/api/auth/sign-in/email", nil), 501, `"error"`},
+		{"auth sign-in mounted", httptest.NewRequest(http.MethodPost, "/api/auth/sign-in/email", nil), 501, `"error"`},
+		{"auth set-password link mounted", httptest.NewRequest(http.MethodGet, "/api/auth/reset-password/tok", nil), 501, `"error"`},
+		{"auth 2FA step mounted", httptest.NewRequest(http.MethodPost, "/api/auth/two-factor/verify-totp", nil), 501, `"error"`},
 		{"users api needs a session", httptest.NewRequest(http.MethodGet, config.APIRoutes.Users, nil), 401, `"Unauthorized"`},
 		{"admins api needs a session", httptest.NewRequest(http.MethodGet, config.APIRoutes.Admins, nil), 401, `"Unauthorized"`},
 		{"audit api needs a session", httptest.NewRequest(http.MethodGet, config.APIRoutes.Audit, nil), 401, `"Unauthorized"`},
@@ -93,8 +95,8 @@ func TestMountsAndMiddleware(t *testing.T) {
 		if rec.Code != c.status || !strings.Contains(rec.Body.String(), c.snippet) {
 			t.Errorf("%s: %d %s", c.name, rec.Code, rec.Body)
 		}
-		if rec.Header().Get("X-Frame-Options") != "DENY" {
-			t.Errorf("%s: dashboard may be framed", c.name)
+		if rec.Header().Get("X-Frame-Options") != "DENY" || rec.Header().Get("Cache-Control") != "no-store" {
+			t.Errorf("%s: headers %v", c.name, rec.Header())
 		}
 	}
 }
@@ -104,4 +106,27 @@ func crossSite(origin string) *http.Request {
 	req.Header.Set("Origin", origin)
 	req.Header.Set("Sec-Fetch-Site", "cross-site")
 	return req
+}
+
+// Self-service account changes would bypass the audit log, so the admin
+// auth endpoints are an allowlist.
+func TestUnauditedAuthEndpointsAreNotMounted(t *testing.T) {
+	h := newHandler(map[string]Pinger{"app": pinger{}}, nil)
+	for _, p := range []string{"sign-up/email", "change-password", "change-email", "revoke-session", "revoke-other-sessions", "two-factor/disable", "two-factor/generate-backup-codes", "request-password-reset"} {
+		req := httptest.NewRequest(http.MethodPost, "/api/auth/"+p, strings.NewReader(`{}`))
+		if rec := serve(h, req); rec.Code != http.StatusNotFound {
+			t.Errorf("POST /api/auth/%s: %d, want 404", p, rec.Code)
+		}
+	}
+}
+
+// Emailed set-password links carry a credential in the path; logs keep the
+// route only.
+func TestRequestLogsDropTokens(t *testing.T) {
+	var logs strings.Builder
+	h := New(Deps{Log: slog.New(slog.NewTextHandler(&logs, nil)), DBs: map[string]Pinger{}, Auth: noAuth{}})
+	serve(h, httptest.NewRequest(http.MethodGet, "/api/auth/reset-password/s3cret-token?callbackURL=%2Fset-password", nil))
+	if strings.Contains(logs.String(), "s3cret-token") || !strings.Contains(logs.String(), "/api/auth/reset-password/{token}") {
+		t.Fatalf("log = %s", logs.String())
+	}
 }

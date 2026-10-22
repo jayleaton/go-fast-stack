@@ -16,6 +16,7 @@ import (
 
 	"github.com/jayleaton/ai-patterns-go/apps/admin/internal/api"
 	"github.com/jayleaton/ai-patterns-go/apps/admin/internal/config"
+	"github.com/jayleaton/ai-patterns-go/packages/auth"
 )
 
 // Auth is the part of the admin *auth.Auth the server mounts.
@@ -44,11 +45,30 @@ type Deps struct {
 	UI     http.Handler // apps/admin/ui routes, mounted at "/"
 }
 
+// authRoutes are the admin auth endpoints mounted: sign-in (with the 2FA
+// step and enrolment), sign-out, the session, and the emailed set-password
+// link. Self-service account changes (password, email, disabling 2FA, backup
+// codes, other sessions) are not exposed: they would bypass the audit log.
+// Sign-up is off in the admin auth.Config.
+var authRoutes = []string{
+	"POST " + auth.BasePath + "/sign-in/email",
+	"POST " + auth.BasePath + "/sign-out",
+	"GET " + auth.BasePath + "/get-session",
+	"GET " + auth.BasePath + "/reset-password/{token}",
+	"POST " + auth.BasePath + "/set-password",
+	"POST " + auth.BasePath + "/two-factor/enable",
+	"POST " + auth.BasePath + "/two-factor/verify-totp",
+	"POST " + auth.BasePath + "/two-factor/verify-backup-code",
+}
+
 // New returns the root handler.
 func New(d Deps) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET "+config.APIRoutes.Healthz, healthz(d.DBs))
-	mux.Handle(config.APIRoutes.Auth, d.Auth.Handler())
+	authHandler := d.Auth.Handler()
+	for _, p := range authRoutes {
+		mux.Handle(p, authHandler)
+	}
 	for _, r := range d.API {
 		r.Routes(mux)
 	}
@@ -74,10 +94,13 @@ func New(d Deps) http.Handler {
 	return securityHeaders(logRequests(d.Log, recoverPanics(d.Log, h)))
 }
 
-// securityHeaders: the dashboard is never framed or indexed.
+// securityHeaders: the dashboard is never framed, indexed or cached (pages,
+// API responses, set-password and 2FA screens all carry user data or
+// secrets); the static handler overrides Cache-Control for its assets.
 func securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
+		h.Set("Cache-Control", "no-store")
 		h.Set("X-Frame-Options", "DENY")
 		h.Set("X-Robots-Tag", "noindex, nofollow")
 		h.Set("Referrer-Policy", "same-origin")

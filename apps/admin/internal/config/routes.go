@@ -23,7 +23,7 @@ var AppRoutes = struct {
 
 // APIRoutes are the admin JSON endpoints.
 var APIRoutes = struct {
-	Auth string // prefix, the admin auth.Handler() is mounted here
+	Auth string // prefix of the admin auth endpoints (server mounts an allowlist of them)
 
 	// App users (the main app's database).
 	Users, UserByID, UserBan, UserUnban, UserRole string

@@ -643,7 +643,7 @@ func TestLocaleSwitch(t *testing.T) {
 	if !strings.Contains(page.Body.String(), "ダッシュボードにサインイン") {
 		t.Error("cookie locale not applied over Accept-Language")
 	}
-	for _, next := range []string{"//evil.example", "https://evil.example", `/\evil.example`} {
+	for _, next := range []string{"//evil.example", "https://evil.example", `/\evil.example`, "/\t/evil.example", "/\n/evil.example"} {
 		rec := e.do("POST", routes.Locale, url.Values{"locale": {"xx"}, "next": {next}})
 		assertSeeOther(t, rec, config.AppRoutes.Home)
 	}

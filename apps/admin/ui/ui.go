@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"unicode"
 
 	"github.com/a-h/templ"
 	"github.com/starfederation/datastar-go/datastar"
@@ -290,7 +291,9 @@ func actor(a Admin, s Session) services.Actor {
 
 // safeNext keeps redirects on this site.
 func safeNext(next string) string {
-	if !strings.HasPrefix(next, "/") || strings.HasPrefix(next, "//") || strings.HasPrefix(next, `/\`) {
+	// Browsers drop tabs and newlines and treat \ as /, so "/\t/evil.com" would
+	// leave the site: refuse control characters and backslashes outright.
+	if !strings.HasPrefix(next, "/") || strings.HasPrefix(next, "//") || strings.ContainsRune(next, '\\') || strings.IndexFunc(next, unicode.IsControl) >= 0 {
 		return config.AppRoutes.Home
 	}
 	return next
