@@ -218,6 +218,11 @@ jobs:
     env:
       TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable
     steps:
+      # The image pull is most of Postgres' ~13 s startup: start it now, run
+      # the server only once we know a DB-backed package is affected.
+      - name: Pull Postgres image
+        run: nohup docker pull -q postgres:18-alpine > "$RUNNER_TEMP/pull.log" 2>&1 &
+
       # Depth 2: a PR checkout is the merge commit, and HEAD^1 is the base.
       - uses: actions/checkout@v7
         with:
@@ -282,9 +287,10 @@ jobs:
           key: v4-gotest-${{ runner.os }}-${{ github.sha }}
           restore-keys: v4-gotest-${{ runner.os }}-
 
+      # -race: compiles exactly what the race tests link, so Test reuses it.
       - name: Build
         if: steps.affected.outputs.packages != ''
-        run: go build $PACKAGES # word splitting intended
+        run: go build -race $PACKAGES # word splitting intended
         env:
           PACKAGES: ${{ steps.affected.outputs.packages }}
 
