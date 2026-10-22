@@ -401,10 +401,3 @@ func initial(brand string) string {
 	}
 	return "·"
 }
-
-func boolString(b bool) string {
-	if b {
-		return "true"
-	}
-	return "false"
-}
