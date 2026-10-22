@@ -93,11 +93,12 @@ func (a *Auth) IssueSetPasswordLink(ctx context.Context, userID, redirectTo stri
 // with SetupRequired when TwoFactorConfig.Required and the user has not
 // enrolled: the invite then continues into TOTP enrolment.
 func (a *Auth) CompleteSetPassword(ctx context.Context, token, newPassword string) (User, Session, error) {
-	userID, err := a.setPassword(ctx, token, newPassword, true)
+	userID, revoked, err := a.setPassword(ctx, token, newPassword, true)
 	if err != nil {
 		return User{}, Session{}, err
 	}
 	a.emit(ctx, Event{Kind: EventPasswordReset, UserID: userID, Method: SignInMethodSetPassword})
+	a.emitRevoked(ctx, userID, "", revoked, "password_reset")
 	user, err := a.store.userByID(ctx, a.store.pool, userID)
 	if err != nil {
 		return User{}, Session{}, err
@@ -111,6 +112,6 @@ func (a *Auth) CompleteSetPassword(ctx context.Context, token, newPassword strin
 	if err != nil {
 		return User{}, Session{}, err
 	}
-	a.emit(ctx, Event{Kind: EventSignIn, UserID: userID, SessionID: sess.ID, Method: SignInMethodSetPassword})
+	a.emit(ctx, Event{Kind: EventSignIn, UserID: userID, Email: user.Email, SessionID: sess.ID, Method: SignInMethodSetPassword})
 	return user, sess, nil
 }

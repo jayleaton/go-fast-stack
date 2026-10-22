@@ -72,7 +72,10 @@ func (a *Auth) SignUpEmail(ctx context.Context, in SignUpInput) (User, Session, 
 		if !a.cfg.RequireEmailVerification {
 			return User{}, Session{}, ErrUserAlreadyExists
 		}
-		err := a.store.replaceUnverifiedPassword(ctx, email, hash, now)
+		id, revoked, err := a.store.replaceUnverifiedPassword(ctx, email, hash, now)
+		if err == nil && revoked > 0 {
+			a.emitRevoked(ctx, id, "", revoked, "sign_up")
+		}
 		if err == nil {
 			a.sendVerification(ctx, email, a.credFingerprint(&hash), in.CallbackURL)
 		} else if !errors.Is(err, errNotFound) {
@@ -111,7 +114,7 @@ func (a *Auth) SignUpEmail(ctx context.Context, in SignUpInput) (User, Session, 
 	if err != nil {
 		return User{}, Session{}, err
 	}
-	a.emit(ctx, Event{Kind: EventSignIn, UserID: user.ID, SessionID: sess.ID, Method: SignInMethodSignUp})
+	a.emit(ctx, Event{Kind: EventSignIn, UserID: user.ID, Email: user.Email, SessionID: sess.ID, Method: SignInMethodSignUp})
 	return user, sess, nil
 }
 
@@ -122,7 +125,7 @@ func (a *Auth) SignUpEmail(ctx context.Context, in SignUpInput) (User, Session, 
 func (a *Auth) SignInEmail(ctx context.Context, in SignInInput) (User, Session, error) {
 	user, sess, knownID, err := a.signInEmail(ctx, in)
 	if _, challenged := errors.AsType[*TwoFactorChallenge](err); err == nil {
-		a.emit(ctx, Event{Kind: EventSignIn, UserID: user.ID, SessionID: sess.ID, Method: SignInMethodPassword})
+		a.emit(ctx, Event{Kind: EventSignIn, UserID: user.ID, Email: user.Email, SessionID: sess.ID, Method: SignInMethodPassword})
 	} else if !challenged {
 		a.emitFailure(ctx, EventSignInFailed, knownID, SignInMethodPassword, err)
 	}
@@ -274,28 +277,29 @@ func (a *Auth) resetTokenValid(ctx context.Context, token string) (bool, error) 
 // Used, expired or unknown tokens return ErrInvalidToken. It does not sign in;
 // CompleteSetPassword does.
 func (a *Auth) ResetPassword(ctx context.Context, token, newPassword string) error {
-	userID, err := a.setPassword(ctx, token, newPassword, false)
+	userID, revoked, err := a.setPassword(ctx, token, newPassword, false)
 	if err == nil {
 		a.emit(ctx, Event{Kind: EventPasswordReset, UserID: userID, Method: "reset"})
+		a.emitRevoked(ctx, userID, "", revoked, "password_reset")
 	}
 	return err
 }
 
 // setPassword is ResetPassword returning the user id; verifyEmail also marks
 // the email verified (invites: the link proves the inbox).
-func (a *Auth) setPassword(ctx context.Context, token, newPassword string, verifyEmail bool) (string, error) {
+func (a *Auth) setPassword(ctx context.Context, token, newPassword string, verifyEmail bool) (_ string, revoked int64, _ error) {
 	if err := a.rateLimit(ctx, "reset-password", RuleResetPassword); err != nil {
-		return "", err
+		return "", 0, err
 	}
 	if !isTokenString(token) {
-		return "", ErrInvalidToken
+		return "", 0, ErrInvalidToken
 	}
 	if err := a.checkPasswordLength(newPassword); err != nil {
-		return "", err
+		return "", 0, err
 	}
 	hash, err := hashPassword(newPassword, a.argon)
 	if err != nil {
-		return "", err
+		return "", 0, err
 	}
 	now := a.now()
 	var userID string
@@ -314,8 +318,11 @@ func (a *Auth) setPassword(ctx context.Context, token, newPassword string, verif
 			}
 			return err
 		}
+		if revoked, err = a.store.deleteUserSessionsCount(ctx, q, id); err != nil {
+			return err
+		}
 		for _, revoke := range []func(context.Context, querier, string) error{
-			a.store.deleteUserSessions, a.store.deleteResetTokens, a.store.deleteEmailChanges,
+			a.store.deleteResetTokens, a.store.deleteEmailChanges,
 			a.store.deleteChallenges, a.store.deleteTrustedDevices,
 		} {
 			if err := revoke(ctx, q, id); err != nil {
@@ -329,7 +336,7 @@ func (a *Auth) setPassword(ctx context.Context, token, newPassword string, verif
 		}
 		return a.store.setCredentialPassword(ctx, q, id, hash, now)
 	})
-	return userID, err
+	return userID, revoked, err
 }
 
 // VerifyEmail checks an email verification token, marks the email verified
@@ -392,9 +399,11 @@ func (a *Auth) verifyAddress(ctx context.Context, claims verificationClaims) (Us
 		return User{}, Session{}, err
 	}
 	user = verified
-	if err := a.store.deleteUserSessions(ctx, a.store.pool, user.ID); err != nil {
+	revoked, err := a.store.deleteUserSessionsCount(ctx, a.store.pool, user.ID)
+	if err != nil {
 		return User{}, Session{}, err
 	}
+	a.emitRevoked(ctx, user.ID, "", revoked, "email_verification")
 	if needs, err := a.needsSecondFactor(ctx, user.ID); err != nil || needs {
 		return user, Session{}, err // an email link is no second factor: sign in normally
 	}
@@ -402,7 +411,7 @@ func (a *Auth) verifyAddress(ctx context.Context, claims verificationClaims) (Us
 	if err != nil {
 		return User{}, Session{}, err
 	}
-	a.emit(ctx, Event{Kind: EventSignIn, UserID: user.ID, SessionID: sess.ID, Method: SignInMethodEmailVerified})
+	a.emit(ctx, Event{Kind: EventSignIn, UserID: user.ID, Email: user.Email, SessionID: sess.ID, Method: SignInMethodEmailVerified})
 	return user, sess, nil
 }
 

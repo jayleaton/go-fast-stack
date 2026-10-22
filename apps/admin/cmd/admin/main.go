@@ -224,15 +224,17 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	log.Info("shutting down")
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
-	if err := srv.Shutdown(shutdownCtx); err != nil {
+	err = srv.Shutdown(shutdownCtx)
+	if err != nil {
 		_ = srv.Close() // streams still open after the timeout
-		return err
+	} else if serveErr := <-errc; !errors.Is(serveErr, http.ErrServerClosed) {
+		err = serveErr
 	}
-	if err := <-errc; !errors.Is(err, http.ErrServerClosed) {
-		return err
-	}
-	// Requests are done; let invite emails queued by them go out.
-	return admins.Shutdown(shutdownCtx)
+	// Whatever happened above, let the invite emails and audit events the
+	// requests queued go out, on their own time budget.
+	drainCtx, cancelDrain := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer cancelDrain()
+	return errors.Join(err, admins.Shutdown(drainCtx))
 }
 
 // rotationTimeout bounds one live rotation (connecting a new pool, rewrapping

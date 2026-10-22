@@ -20,7 +20,7 @@ type UserAdmin struct {
 	store *store
 	now   func() time.Time
 	emit  func(ctx context.Context, e Event) // nil: no events
-	sink  *eventSink                         // WithEvents' own sink (drained by tests)
+	sink  *eventSink                         // where emit queues (drained by Shutdown)
 }
 
 // NewUserAdmin returns a UserAdmin over pool (a database migrated by Migrate).
@@ -30,13 +30,14 @@ func NewUserAdmin(pool DB) *UserAdmin {
 
 // Users returns a UserAdmin over this instance's database.
 func (a *Auth) Users() *UserAdmin {
-	return &UserAdmin{store: a.store, now: a.now, emit: a.emit}
+	return &UserAdmin{store: a.store, now: a.now, emit: a.emit, sink: a.events}
 }
 
 // WithEvents returns a copy of u that reports bans, unbans, session
 // revocations and 2FA resets to h, with the same delivery guarantees as
-// Config.Events. A UserAdmin from Auth.Users already reports to that
-// instance's Config.Events. Events carry no request metadata here (a
+// Config.Events. Call it once at startup and keep the result: each call
+// starts its own delivery worker. A UserAdmin from Auth.Users already reports
+// to that instance's Config.Events. Events carry no request metadata here (a
 // standalone UserAdmin has no request context of its own).
 func (u *UserAdmin) WithEvents(h EventHandler) *UserAdmin {
 	sink := newEventSink(h, slog.Default(), u.store.userEmail)
@@ -47,6 +48,12 @@ func (u *UserAdmin) WithEvents(h EventHandler) *UserAdmin {
 		sink.emit(ctx, e)
 	}
 	return &c
+}
+
+// Shutdown waits for this UserAdmin's queued events to be delivered (or ctx).
+// Call it on graceful shutdown after the last admin action.
+func (u *UserAdmin) Shutdown(ctx context.Context) error {
+	return u.sink.drain(ctx)
 }
 
 func (u *UserAdmin) event(ctx context.Context, e Event) {

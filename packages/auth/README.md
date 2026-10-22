@@ -53,7 +53,7 @@ Security notes for this part: TOTP secrets are AES-256-GCM encrypted (user id as
 - sign-outs and session revocations;
 - password and email changes, bans.
 
-Events never carry tokens, passwords or codes. They can't block or fail auth: they're delivered in order on a background worker, through a bounded, panic-safe queue. The kinds and guarantees are in [ADMIN.md](ADMIN.md#events-audit-hooks).
+Events never carry tokens, passwords or codes. They can't block or fail auth: they're delivered in order on a background worker, through a bounded, panic-safe queue. Delivery is best-effort, so call `Shutdown` on graceful shutdown. The kinds and guarantees are in [ADMIN.md](ADMIN.md#events-audit-hooks).
 
 ## Usage
 

@@ -509,7 +509,10 @@ func TestAuthEventsExactAcrossInstances(t *testing.T) {
 
 	// A second replica: its own auth instance and handler, same database.
 	replica := newAdminInstance(t, w.adminPool, w.auditLog, w.mail, w.log)
-	instances := map[string]*auth.Auth{"root@example.com": w.admins, "eve@example.com": replica}
+	// Each admin signs in on one instance and fails 2FA on the other: the
+	// challenge lives in the shared database, the audit follows the admin.
+	signInOn := map[string]*auth.Auth{"root@example.com": w.admins, "eve@example.com": replica}
+	failOn := map[string]*auth.Auth{"root@example.com": replica, "eve@example.com": w.admins}
 	const failures = 3 // under the per-IP 2FA rate limit of each instance
 	var wg sync.WaitGroup
 	for email, password := range map[string]string{"root@example.com": "admin-password-1", "eve@example.com": "eve-password-1"} {
@@ -520,17 +523,15 @@ func TestAuthEventsExactAcrossInstances(t *testing.T) {
 		if err := w.admins.ConfirmTwoFactor(ctx, ids[email], totp(t, setup.Secret, 0)); err != nil {
 			t.Fatal(err)
 		}
-		a := instances[email]
-		handler := a.Handler()
-		post := func(path, body string, headers ...string) *httptest.ResponseRecorder {
+		post := func(a *auth.Auth, path, body string, headers ...string) *httptest.ResponseRecorder {
 			req := httptest.NewRequest("POST", adminOrigin+path, strings.NewReader(body))
 			req.Header.Set("Content-Type", "application/json")
 			for i := 0; i+1 < len(headers); i += 2 {
 				req.Header.Set(headers[i], headers[i+1])
 			}
-			return serve(handler, req)
+			return serve(a.Handler(), req)
 		}
-		rec := post("/api/auth/sign-in/email", `{"email":"`+email+`","password":"`+password+`"}`)
+		rec := post(signInOn[email], "/api/auth/sign-in/email", `{"email":"`+email+`","password":"`+password+`"}`)
 		var challenge string
 		for _, c := range rec.Result().Cookies() {
 			if strings.HasSuffix(c.Name, "two_factor") {
@@ -543,7 +544,7 @@ func TestAuthEventsExactAcrossInstances(t *testing.T) {
 		wrong := wrongTOTP(t, setup.Secret)
 		for range failures {
 			wg.Go(func() {
-				if rec := post("/api/auth/two-factor/verify-totp", `{"code":"`+wrong+`"}`, "Cookie", challenge, "Origin", adminOrigin); rec.Code != http.StatusUnauthorized {
+				if rec := post(failOn[email], "/api/auth/two-factor/verify-totp", `{"code":"`+wrong+`"}`, "Cookie", challenge, "Origin", adminOrigin); rec.Code != http.StatusUnauthorized {
 					t.Errorf("%s: wrong code answered %d %s", email, rec.Code, rec.Body)
 				}
 			})

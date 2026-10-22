@@ -198,32 +198,42 @@ func (a *Auth) pendingFor(ctx context.Context, userID string) bool {
 // spent on success; a TOTP code is accepted once.
 func (a *Auth) VerifyTwoFactor(ctx context.Context, in VerifyTwoFactorInput) (TwoFactorResult, error) {
 	res, att, err := a.verifyTwoFactor(ctx, in)
-	switch {
-	case errors.Is(err, errTwoFactorOff):
-	case err != nil:
-		a.emitFailure(ctx, EventTwoFactorFailed, att.userID, att.method, err)
-	default:
-		a.emit(ctx, Event{Kind: EventTwoFactorSucceeded, UserID: res.User.ID, Method: att.method})
-		if att.setup {
-			a.emit(ctx, Event{Kind: EventTwoFactorEnabled, UserID: res.User.ID})
-		}
-		a.emit(ctx, Event{Kind: EventSignIn, UserID: res.User.ID, SessionID: res.Session.ID, Method: SignInMethodTwoFactor,
-			Details: map[string]string{"factor": att.method}})
+	if att.userID == "" {
+		return res, err // no valid pending sign-in: nobody to report it about
 	}
-	return res, err
+	if !att.accepted {
+		a.emitFailure(ctx, EventTwoFactorFailed, att.userID, att.method, err)
+		return res, err
+	}
+	a.emit(ctx, Event{Kind: EventTwoFactorSucceeded, UserID: att.userID, Method: att.method})
+	if att.enabled {
+		a.emit(ctx, Event{Kind: EventTwoFactorEnabled, UserID: att.userID})
+	}
+	if err != nil {
+		// The factor was right but no session came of it (spent challenge,
+		// ban, database error).
+		a.emitFailure(ctx, EventSignInFailed, att.userID, SignInMethodTwoFactor, err)
+		return res, err
+	}
+	a.emit(ctx, Event{Kind: EventSignIn, UserID: res.User.ID, Email: res.User.Email, SessionID: res.Session.ID,
+		Method: SignInMethodTwoFactor, Details: map[string]string{"factor": att.method}})
+	return res, nil
 }
 
 // twoFactorAttempt is what an attempt is known to be about, for events: the
-// user from the pending sign-in (empty if the challenge was not valid).
+// user from the pending sign-in (empty if the challenge was not valid),
+// whether the code was accepted and whether that turned 2FA on.
 type twoFactorAttempt struct {
-	userID, method string
-	setup          bool
+	userID, method    string
+	accepted, enabled bool
 }
 
 func (a *Auth) verifyTwoFactor(ctx context.Context, in VerifyTwoFactorInput) (_ TwoFactorResult, att twoFactorAttempt, _ error) {
-	att.method = in.Method
-	if att.method == "" {
-		att.method = TwoFactorMethodTOTP
+	att.method = TwoFactorMethodTOTP
+	if in.Method == TwoFactorMethodBackup {
+		att.method = TwoFactorMethodBackup
+	} else if in.Method != "" && in.Method != TwoFactorMethodTOTP {
+		return TwoFactorResult{}, att, ErrInvalidCode
 	}
 	if err := a.twoFactorOn(); err != nil {
 		return TwoFactorResult{}, att, err
@@ -236,7 +246,7 @@ func (a *Auth) verifyTwoFactor(ctx context.Context, in VerifyTwoFactorInput) (_ 
 	if err != nil {
 		return TwoFactorResult{}, att, err
 	}
-	att.userID, att.setup = userID, setup
+	att.userID = userID
 	if retry, err := a.limiter.Allow(ctx, "2fa-challenge|"+token, RateRule{Window: challengeTTL, Max: challengeAttempts}); err == nil && retry > 0 {
 		return TwoFactorResult{}, att, &RateLimitError{RetryAfter: retry}
 	}
@@ -244,9 +254,10 @@ func (a *Auth) verifyTwoFactor(ctx context.Context, in VerifyTwoFactorInput) (_ 
 		att.method = TwoFactorMethodTOTP
 	}
 	method := att.method
-	if err := a.checkSecondFactor(ctx, userID, method, in.Code, !setup); err != nil {
+	if att.enabled, err = a.checkSecondFactor(ctx, userID, method, in.Code, !setup); err != nil {
 		return TwoFactorResult{}, att, err
 	}
+	att.accepted = true
 	// Spend the challenge: of two concurrent successes only one gets a session.
 	var consumed string
 	if err := a.store.tx(ctx, func(q querier) error {
@@ -274,7 +285,9 @@ func (a *Auth) verifyTwoFactor(ctx context.Context, in VerifyTwoFactorInput) (_ 
 		res.TrustToken = generateID(32)
 		now := a.now()
 		if err := a.store.createVerification(ctx, trustDevicePrefix+res.TrustToken, userID, now.Add(a.cfg.TwoFactor.TrustDeviceTTL), now); err != nil {
-			return TwoFactorResult{}, att, err
+			// The sign-in stands; this device just is not remembered.
+			a.log.ErrorContext(ctx, "auth: remembering trusted device failed", "userId", userID, "err", err)
+			res.TrustToken = ""
 		}
 	}
 	return res, att, nil
@@ -283,25 +296,25 @@ func (a *Auth) verifyTwoFactor(ctx context.Context, in VerifyTwoFactorInput) (_ 
 // checkSecondFactor verifies code for userID, enforcing the lockout. With
 // requireVerified the enrolment must already be confirmed (sign-in);
 // otherwise a TOTP code confirms it (enrolment).
-func (a *Auth) checkSecondFactor(ctx context.Context, userID, method, code string, requireVerified bool) error {
+func (a *Auth) checkSecondFactor(ctx context.Context, userID, method, code string, requireVerified bool) (enabled bool, _ error) {
 	if len(code) > maxTwoFactorCodeLength {
-		return ErrInvalidCode
+		return false, ErrInvalidCode
 	}
 	row, err := a.store.twoFactor(ctx, userID)
 	if errors.Is(err, errNotFound) || (err == nil && requireVerified && !row.verified) {
-		return ErrTwoFactorNotEnabled
+		return false, ErrTwoFactorNotEnabled
 	}
 	if err != nil {
-		return err
+		return false, err
 	}
 	now := a.now()
 	if row.lockedUntil != nil {
 		if row.lockedUntil.After(now) {
-			return ErrTwoFactorLocked
+			return false, ErrTwoFactorLocked
 		}
 		// The lock has run out: start counting failures afresh.
 		if err := a.store.resetTwoFactorFailures(ctx, userID, now); err != nil {
-			return err
+			return false, err
 		}
 	}
 	fail := func(e error) error {
@@ -314,30 +327,31 @@ func (a *Auth) checkSecondFactor(ctx context.Context, userID, method, code strin
 	case TwoFactorMethodTOTP:
 		key, err := a.openTOTPKey(userID, row.secret)
 		if err != nil {
-			return err
+			return false, err
 		}
 		step, ok := matchTOTP(key, code, now)
 		if !ok {
-			return fail(ErrInvalidCode)
+			return false, fail(ErrInvalidCode)
 		}
-		if err := a.store.acceptTOTPStep(ctx, userID, row.secret, step, now); errors.Is(err, errNotFound) {
-			return fail(ErrInvalidCode) // replayed, or the enrolment was replaced meanwhile
+		on, err := a.store.acceptTOTPStep(ctx, userID, row.secret, step, now)
+		if errors.Is(err, errNotFound) {
+			return false, fail(ErrInvalidCode) // replayed, or the enrolment was replaced meanwhile
 		} else if err != nil {
-			return err
+			return false, err
 		}
-		return nil
+		return on, nil
 	case TwoFactorMethodBackup:
 		if !row.verified {
-			return ErrTwoFactorNotEnabled
+			return false, ErrTwoFactorNotEnabled
 		}
 		if err := a.store.useBackupCode(ctx, userID, a.hashBackupCode(userID, code), now); errors.Is(err, errNotFound) {
-			return fail(ErrInvalidBackupCode)
+			return false, fail(ErrInvalidBackupCode)
 		} else if err != nil {
-			return err
+			return false, err
 		}
-		return nil
+		return false, nil
 	default:
-		return ErrInvalidCode
+		return false, ErrInvalidCode
 	}
 }
 
@@ -411,16 +425,15 @@ func (a *Auth) ConfirmTwoFactor(ctx context.Context, userID, code string) error 
 		return err
 	}
 	if err := a.rateLimitUser(ctx, "two-factor", userID, RuleSignIn); err != nil {
-		a.emitFailure(ctx, EventTwoFactorFailed, userID, TwoFactorMethodTOTP, err)
 		return err
 	}
-	wasOn, _ := a.store.twoFactorEnabled(ctx, userID)
-	if err := a.checkSecondFactor(ctx, userID, TwoFactorMethodTOTP, code, false); err != nil {
+	enabled, err := a.checkSecondFactor(ctx, userID, TwoFactorMethodTOTP, code, false)
+	if err != nil {
 		a.emitFailure(ctx, EventTwoFactorFailed, userID, TwoFactorMethodTOTP, err)
 		return err
 	}
 	a.emit(ctx, Event{Kind: EventTwoFactorSucceeded, UserID: userID, Method: TwoFactorMethodTOTP})
-	if !wasOn {
+	if enabled {
 		a.emit(ctx, Event{Kind: EventTwoFactorEnabled, UserID: userID})
 	}
 	return nil

@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"runtime/debug"
 	"sync"
@@ -20,7 +21,7 @@ const (
 	EventTwoFactorEnabled     EventKind = "two_factor_enabled"     // enrolment confirmed
 	EventTwoFactorDisabled    EventKind = "two_factor_disabled"    // by the user (DisableTwoFactor) or an admin (ResetTwoFactor)
 	EventSignOut              EventKind = "sign_out"               // the user ended their own session
-	EventSessionRevoked       EventKind = "session_revoked"        // sessions ended by the user elsewhere, an admin or a ban; Details["count"]
+	EventSessionRevoked       EventKind = "session_revoked"        // sessions ended other than by signing out; Details["count"], Details["by"]
 	EventPasswordChanged      EventKind = "password_changed"       // ChangePassword
 	EventPasswordReset        EventKind = "password_reset"         // a reset or invite (set-password) link was used; Method "reset" or "set_password"
 	EventEmailChangeRequested EventKind = "email_change_requested" // Details["newEmail"]
@@ -63,88 +64,96 @@ type Event struct {
 }
 
 // EventHandler receives events (Config.Events). It runs on a background
-// worker, one event at a time in the order they happened, with a context that
-// keeps the request's values but not its cancellation and expires after 5s.
-// It cannot block or fail auth: events wait in a bounded queue (1024) and are
-// dropped with a warning when it is full, and a panic is recovered and logged.
-// Auth.Shutdown waits for queued events.
+// worker, one event at a time in the order they happened, with a fresh
+// context (no request values, so nothing like a session token reaches it)
+// that expires after 5s. It cannot block or fail auth: events wait in a
+// bounded queue (1024) and are dropped with a warning when it is full, a
+// panic is recovered and logged, and emitting never waits, even while
+// Shutdown is draining or when the handler itself calls back into Auth.
+// Delivery is best-effort: events still queued when the process exits are
+// lost, so call Auth.Shutdown on graceful shutdown.
 type EventHandler func(ctx context.Context, e Event)
 
 // eventSink delivers events to a handler in order on one worker goroutine.
 type eventSink struct {
 	handler EventHandler
 	log     *slog.Logger
-	queue   chan queuedEvent
-	pending sync.WaitGroup
-	mu      sync.RWMutex                                    // emit holds it shared so drain's Wait never races an Add
-	email   func(ctx context.Context, userID string) string // fills Event.Email
-}
+	queue   chan Event
+	email   func(ctx context.Context, userID string) string // fills Event.Email when the emitter could not
 
-type queuedEvent struct {
-	ctx context.Context
-	ev  Event
+	mu      sync.Mutex
+	pending int           // queued or being delivered
+	idle    chan struct{} // closed while pending == 0
 }
 
 func newEventSink(h EventHandler, log *slog.Logger, email func(context.Context, string) string) *eventSink {
 	if h == nil {
 		return nil
 	}
-	s := &eventSink{handler: h, log: log, queue: make(chan queuedEvent, eventQueueSize), email: email}
+	idle := make(chan struct{})
+	close(idle)
+	s := &eventSink{handler: h, log: log, queue: make(chan Event, eventQueueSize), email: email, idle: idle}
 	go s.run()
 	return s
 }
 
-// emit queues ev without ever waiting: a full queue drops it.
+// emit queues ev and never waits: a full queue drops it.
 func (s *eventSink) emit(ctx context.Context, ev Event) {
 	if s == nil {
 		return
 	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	s.pending.Add(1)
+	s.mu.Lock()
 	select {
-	case s.queue <- queuedEvent{ctx: context.WithoutCancel(ctx), ev: ev}:
+	case s.queue <- ev:
+		if s.pending == 0 {
+			s.idle = make(chan struct{})
+		}
+		s.pending++
+		s.mu.Unlock()
 	default:
-		s.pending.Done()
+		s.mu.Unlock()
 		s.log.WarnContext(ctx, "auth: event queue full, event dropped", "kind", ev.Kind, "userId", ev.UserID)
 	}
 }
 
 func (s *eventSink) run() {
-	for q := range s.queue {
-		s.deliver(q)
+	for ev := range s.queue {
+		s.deliver(ev)
+		s.mu.Lock()
+		if s.pending--; s.pending == 0 {
+			close(s.idle)
+		}
+		s.mu.Unlock()
 	}
 }
 
-func (s *eventSink) deliver(q queuedEvent) {
-	defer s.pending.Done()
-	ctx, cancel := context.WithTimeout(q.ctx, eventDeliveryTimeout)
-	defer cancel()
+func (s *eventSink) deliver(ev Event) {
 	defer func() {
 		if r := recover(); r != nil {
-			s.log.ErrorContext(ctx, "auth: event handler panicked", "kind", q.ev.Kind, "panic", r, "stack", string(debug.Stack()))
+			s.log.Error("auth: event handler panicked", "kind", ev.Kind, "panic", r, "stack", string(debug.Stack()))
 		}
 	}()
-	if q.ev.Email == "" && q.ev.UserID != "" && s.email != nil {
-		q.ev.Email = s.email(ctx, q.ev.UserID)
+	if ev.Email == "" && ev.UserID != "" && s.email != nil {
+		lookup, cancel := context.WithTimeout(context.Background(), eventDeliveryTimeout)
+		ev.Email = s.email(lookup, ev.UserID)
+		cancel()
 	}
-	s.handler(ctx, q.ev)
+	ctx, cancel := context.WithTimeout(context.Background(), eventDeliveryTimeout)
+	defer cancel()
+	s.handler(ctx, ev)
 }
 
-// drain waits until every queued event has been delivered (or ctx ends).
+// drain waits until the queue is empty and the worker idle (or ctx ends). It
+// never stops new events from being emitted meanwhile.
 func (s *eventSink) drain(ctx context.Context) error {
 	if s == nil {
 		return nil
 	}
-	done := make(chan struct{})
-	go func() {
-		s.mu.Lock()
-		s.pending.Wait()
-		s.mu.Unlock()
-		close(done)
-	}()
+	s.mu.Lock()
+	idle := s.idle
+	s.mu.Unlock()
 	select {
-	case <-done:
+	case <-idle:
 		return nil
 	case <-ctx.Done():
 		return ctx.Err()
@@ -172,7 +181,13 @@ func (a *Auth) emit(ctx context.Context, ev Event) {
 }
 
 // emitFailure reports a refused sign-in or second factor with the error code.
+// Rate-limited attempts are not reported: they never reached a credential
+// check, cost an attacker nothing, and would crowd real events out of the
+// queue.
 func (a *Auth) emitFailure(ctx context.Context, kind EventKind, userID, method string, err error) {
+	if errors.Is(err, ErrTooManyRequests) {
+		return
+	}
 	code := "INTERNAL_ERROR"
 	if e := asError(err); e != nil {
 		code = e.Code

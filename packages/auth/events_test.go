@@ -145,8 +145,12 @@ func TestEventsForAccountFlows(t *testing.T) {
 		}
 	}
 	resetToken := mustQuery(t, h.do("GET", pathOf(t, resetLink), nil, nil).Header().Get("Location"), "token")
+	log.take(t, h.a)
 	if err := h.a.ResetPassword(ctx, resetToken, "password789"); err != nil {
 		t.Fatal(err)
+	}
+	if ev = log.take(t, h.a); kinds(ev) != "password_reset,session_revoked" || ev[1].Details["by"] != "password_reset" {
+		t.Fatalf("reset events = %+v", ev)
 	}
 	h.session(newEmail, "password789")
 	log.take(t, h.a)
@@ -178,14 +182,14 @@ func TestTwoFactorEventsNameTheChallengedUser(t *testing.T) {
 	pending := hdr{"Cookie": h.challenge(email, "password123"), "Origin": testBase}
 	wantStatus(t, h.do("POST", BasePath+"/two-factor/verify-totp", map[string]any{"code": h.wrongCode(setup.Secret)}, pending), http.StatusUnauthorized)
 	wantStatus(t, h.do("POST", BasePath+"/two-factor/verify-backup-code", map[string]any{"code": setup.BackupCodes[0]}, pending), http.StatusOK)
+	// No valid pending sign-in: nobody to attribute it to, so no event.
 	wantStatus(t, h.do("POST", BasePath+"/two-factor/verify-totp", map[string]any{"code": "123456"}, nil), http.StatusUnauthorized)
 	ev = log.take(t, h.a)
-	want := "two_factor_failed,two_factor_succeeded,sign_in,two_factor_failed"
+	want := "two_factor_failed,two_factor_succeeded,sign_in"
 	if kinds(ev) != want ||
 		ev[0].UserID != id || ev[0].Email != email || ev[0].Reason != "INVALID_CODE" || ev[0].Method != TwoFactorMethodTOTP ||
 		ev[1].UserID != id || ev[1].Method != TwoFactorMethodBackup ||
-		ev[2].Method != SignInMethodTwoFactor || ev[2].Details["factor"] != TwoFactorMethodBackup || ev[2].SessionID == "" ||
-		ev[3].UserID != "" || ev[3].Reason != "INVALID_TWO_FACTOR_COOKIE" {
+		ev[2].Method != SignInMethodTwoFactor || ev[2].Details["factor"] != TwoFactorMethodBackup || ev[2].SessionID == "" {
 		t.Fatalf("2FA events = %+v", ev)
 	}
 	// The sign-in that stopped at the challenge is not itself an event.
@@ -230,6 +234,65 @@ func TestEventHandlerCannotBreakAuth(t *testing.T) {
 	}
 	if !strings.Contains(panicky.logBuf.String(), "event handler panicked") {
 		t.Fatalf("panic not logged: %s", panicky.logBuf)
+	}
+
+	// The worker survives a panic: events after it are still delivered.
+	var calls int
+	var callsMu sync.Mutex
+	survivor := newHarness(t, func(c *Config) {
+		c.Events = func(context.Context, Event) {
+			callsMu.Lock()
+			calls++
+			n := calls
+			callsMu.Unlock()
+			if n == 1 {
+				panic("first event")
+			}
+		}
+	})
+	wantStatus(t, survivor.signUp(uniqueEmail(t), "password123"), http.StatusOK)
+	wantStatus(t, survivor.signUp(uniqueEmail(t), "password123"), http.StatusOK)
+	if err := survivor.a.Shutdown(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	callsMu.Lock()
+	if calls != 2 {
+		t.Fatalf("handler called %d times after a panic, want 2", calls)
+	}
+	callsMu.Unlock()
+
+	// A handler that calls back into Auth while Shutdown is draining with a
+	// short deadline: Shutdown gives up on time and auth keeps working.
+	release := make(chan struct{})
+	var reentrant *harness
+	reentrant = newHarness(t, func(c *Config) {
+		c.Events = func(ctx context.Context, e Event) {
+			if e.Kind == EventSignIn {
+				<-release
+				_ = reentrant.a.Users().UnbanUser(ctx, e.UserID) // emits from inside the handler
+			}
+		}
+	})
+	reEmail := uniqueEmail(t)
+	wantStatus(t, reentrant.signUp(reEmail, "password123"), http.StatusOK)
+	short, cancelShort := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancelShort()
+	if err := reentrant.a.Shutdown(short); err == nil {
+		t.Fatal("Shutdown returned while the handler was still blocked")
+	}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		reentrant.signIn(reEmail, "password123") // must not wait for the drain or the handler
+	}()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("sign-in blocked behind a draining Shutdown")
+	}
+	close(release)
+	if err := reentrant.a.Shutdown(context.Background()); err != nil {
+		t.Fatal(err)
 	}
 
 	// A handler that never returns: sign-ins go on, the bounded queue fills
@@ -291,7 +354,7 @@ func TestStandaloneUserAdminEvents(t *testing.T) {
 	if err := NewUserAdmin(testPool).BanUser(ctx, id, "", 0); err != nil {
 		t.Fatal(err)
 	}
-	if err := admin.sink.drain(ctx); err != nil {
+	if err := admin.Shutdown(ctx); err != nil {
 		t.Fatal(err)
 	}
 	log.mu.Lock()

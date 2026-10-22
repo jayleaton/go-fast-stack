@@ -80,6 +80,9 @@ func (a *Auth) ChangePassword(ctx context.Context, userID, currentPassword, newP
 // emitRevoked reports sessions ended by someone other than their holder
 // signing out: by is "user", "password_change", "admin" or "ban".
 func (a *Auth) emitRevoked(ctx context.Context, userID, sessionID string, count int64, by string) {
+	if count <= 0 {
+		return
+	}
 	a.emit(ctx, Event{Kind: EventSessionRevoked, UserID: userID, SessionID: sessionID,
 		Details: map[string]string{"count": strconv.FormatInt(count, 10), "by": by}})
 }
@@ -127,7 +130,7 @@ func (a *Auth) ChangeEmail(ctx context.Context, userID, newEmail, callbackURL st
 	if _, err := a.store.userByEmail(ctx, newEmail); err == nil {
 		if a.cfg.RequireEmailVerification {
 			a.log.InfoContext(ctx, "auth: change-email to an existing address", "userId", userID)
-			a.emit(ctx, Event{Kind: EventEmailChangeRequested, UserID: userID,
+			a.emit(ctx, Event{Kind: EventEmailChangeRequested, UserID: userID, Email: user.Email,
 				Details: map[string]string{"newEmail": newEmail, "outcome": "address_taken"}})
 			return nil
 		}
@@ -147,7 +150,7 @@ func (a *Auth) ChangeEmail(ctx context.Context, userID, newEmail, callbackURL st
 	a.sendMail(ctx, "change-email-notice", user.Email, func(ctx context.Context) error {
 		return a.mailer.SendEmailChangeNotice(ctx, user.Email, newEmail)
 	})
-	a.emit(ctx, Event{Kind: EventEmailChangeRequested, UserID: userID, Details: map[string]string{"newEmail": newEmail}})
+	a.emit(ctx, Event{Kind: EventEmailChangeRequested, UserID: userID, Email: user.Email, Details: map[string]string{"newEmail": newEmail}})
 	return nil
 }
 
@@ -173,7 +176,7 @@ func (a *Auth) confirmEmailChange(ctx context.Context, c verificationClaims) (Us
 	if err != nil {
 		return User{}, Session{}, err
 	}
-	a.emit(ctx, Event{Kind: EventEmailChanged, UserID: user.ID, Details: map[string]string{"oldEmail": c.Email, "newEmail": user.Email}})
+	a.emit(ctx, Event{Kind: EventEmailChanged, UserID: user.ID, Email: user.Email, Details: map[string]string{"oldEmail": c.Email, "newEmail": user.Email}})
 	if current, sess, ok := a.userFrom(ctx); ok && current.ID == user.ID {
 		return user, sess, nil
 	}
@@ -184,7 +187,7 @@ func (a *Auth) confirmEmailChange(ctx context.Context, c verificationClaims) (Us
 	if err != nil {
 		return User{}, Session{}, err
 	}
-	a.emit(ctx, Event{Kind: EventSignIn, UserID: user.ID, SessionID: sess.ID, Method: SignInMethodEmailChanged})
+	a.emit(ctx, Event{Kind: EventSignIn, UserID: user.ID, Email: user.Email, SessionID: sess.ID, Method: SignInMethodEmailChanged})
 	return user, sess, nil
 }
 
@@ -204,6 +207,9 @@ func (a *Auth) RevokeSession(ctx context.Context, userID, sessionID string) erro
 func (a *Auth) revokeSession(ctx context.Context, userID, sessionID, token string) error {
 	if sessionID == "" && token == "" {
 		return ErrSessionNotFound
+	}
+	if sessionID != "" {
+		token = "" // one session: the id wins, so a body with both cannot revoke two
 	}
 	id, err := a.store.deleteUserSession(ctx, userID, sessionID, token)
 	if errors.Is(err, errNotFound) {
