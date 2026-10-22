@@ -163,3 +163,37 @@ func TestAuditLogIntentsAndOutcomes(t *testing.T) {
 		t.Error("outcome for a missing entry / bad status accepted")
 	}
 }
+
+// A fact delivered late (auth's event worker) is stored with when it
+// happened, so the log orders it before an action that followed it even
+// though it was written after.
+func TestAuditLogOrdersFactsByWhenTheyHappened(t *testing.T) {
+	t.Parallel()
+	pool := dbtest.New(t, adminDB)
+	log := adminrepo.NewAuditLog(pool)
+	ctx := context.Background()
+	entry := model.NewAuditEntry{ActorID: "a2", ActorEmail: "eve@example.com", TargetType: model.TargetAdmin, TargetID: "a2", TargetLabel: "eve@example.com"}
+
+	signedInAt := time.Now().Add(-time.Second) // the sign-in happened first...
+	remove := entry
+	remove.Action = "admin.remove"
+	if _, err := log.Begin(ctx, remove); err != nil { // ...the removal was written first
+		t.Fatal(err)
+	}
+	signIn := entry
+	signIn.Action, signIn.At = "admin.sign_in", signedInAt
+	if err := log.Append(ctx, signIn); err != nil {
+		t.Fatal(err)
+	}
+
+	page, err := log.List(ctx, model.AuditQuery{TargetID: "a2", Limit: 10})
+	if err != nil || len(page.Entries) != 2 {
+		t.Fatalf("List = %+v, %v", page, err)
+	}
+	if page.Entries[0].Action != "admin.remove" || page.Entries[1].Action != "admin.sign_in" {
+		t.Fatalf("newest first = %s, %s; want admin.remove, admin.sign_in", page.Entries[0].Action, page.Entries[1].Action)
+	}
+	if got := page.Entries[1].CreatedAt; !got.Equal(signedInAt.Truncate(time.Microsecond)) {
+		t.Fatalf("sign-in stored at %v, want %v", got, signedInAt)
+	}
+}

@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"time"
 )
 
 // Audit actions for admin authentication. The admin is both actor and target.
@@ -32,22 +33,24 @@ func NewAuthEventService(log AuditLog) *AuthEventService {
 }
 
 // SignedIn records a new admin session; method is one of the SignIn* values.
-func (s *AuthEventService) SignedIn(ctx context.Context, adminID, email, method string) error {
-	return s.record(ctx, ActionAdminSignIn, adminID, email, map[string]string{"method": method})
+// at is when it happened: events arrive after the fact, and the log is
+// ordered by it.
+func (s *AuthEventService) SignedIn(ctx context.Context, at time.Time, adminID, email, method string) error {
+	return s.record(ctx, at, ActionAdminSignIn, adminID, email, map[string]string{"method": method})
 }
 
 // SignedOut records an admin ending their session.
-func (s *AuthEventService) SignedOut(ctx context.Context, adminID, email string) error {
-	return s.record(ctx, ActionAdminSignOut, adminID, email, nil)
+func (s *AuthEventService) SignedOut(ctx context.Context, at time.Time, adminID, email string) error {
+	return s.record(ctx, at, ActionAdminSignOut, adminID, email, nil)
 }
 
 // TwoFactorFailed records a refused second-factor code for the admin whose
 // pending sign-in (or enrolment) it was; reason is auth's error code.
-func (s *AuthEventService) TwoFactorFailed(ctx context.Context, adminID, email, reason string) error {
-	return s.record(ctx, ActionAdminTwoFactorFailed, adminID, email, map[string]string{"reason": reason})
+func (s *AuthEventService) TwoFactorFailed(ctx context.Context, at time.Time, adminID, email, reason string) error {
+	return s.record(ctx, at, ActionAdminTwoFactorFailed, adminID, email, map[string]string{"reason": reason})
 }
 
-func (s *AuthEventService) record(ctx context.Context, action, adminID, email string, details map[string]string) error {
+func (s *AuthEventService) record(ctx context.Context, at time.Time, action, adminID, email string, details map[string]string) error {
 	self := Actor{AdminID: adminID, Email: email}
-	return audit(ctx, s.log, self, NewAuditEntry{Action: action, TargetType: TargetAdmin, TargetID: adminID, TargetLabel: email, Details: details})
+	return audit(ctx, s.log, self, NewAuditEntry{Action: action, TargetType: TargetAdmin, TargetID: adminID, TargetLabel: email, Details: details, At: at})
 }

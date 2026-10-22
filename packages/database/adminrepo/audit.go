@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgtype"
+
 	"github.com/jayleaton/ai-patterns-go/packages/database/adminrepo/adminsql"
 	"github.com/jayleaton/ai-patterns-go/packages/database/adminrepo/model"
 )
@@ -31,6 +33,7 @@ func (l *AuditLog) Append(ctx context.Context, e model.NewAuditEntry) error {
 	return l.q.AppendAuditEntry(ctx, adminsql.AppendAuditEntryParams{
 		ActorID: e.ActorID, ActorEmail: e.ActorEmail, Action: e.Action,
 		TargetType: e.TargetType, TargetID: e.TargetID, TargetLabel: e.TargetLabel, Details: raw,
+		At: pgtype.Timestamptz{Time: e.At, Valid: !e.At.IsZero()}, // zero: now()
 	})
 }
 
