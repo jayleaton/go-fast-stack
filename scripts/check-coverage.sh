@@ -3,6 +3,8 @@
 # `go test -race -coverprofile=<profile> ./...`. A floor package missing from
 # the profile fails. A package argument (or ONLY=<import path>) checks just
 # that floor package.
+# TESTED="<import paths>" (CI runs that test only affected packages) checks
+# just the floors of packages that were tested.
 # Usage: scripts/check-coverage.sh <profile> [<import path>]
 set -euo pipefail
 
@@ -53,6 +55,10 @@ pcts=$(awk 'NR > 1 && NF == 3 {
 failed=0
 for f in "${floors[@]}"; do
   pkg=${f%%|*} floor=${f#*|}
+  if [ -n "${TESTED:-}" ] && [[ " $TESTED " != *" $pkg "* ]]; then
+    echo "skip  $pkg (not affected)"
+    continue
+  fi
   pct=$(awk -v p="$pkg" '$1 == p { print $2 }' <<<"$pcts")
   if [ -z "$pct" ]; then
     echo "FAIL  $pkg not in profile (floor $floor%)"

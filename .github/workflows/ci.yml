@@ -125,7 +125,10 @@ jobs:
             -c fsync=off -c synchronous_commit=off -c full_page_writes=off -c max_connections=200 \
             > "$RUNNER_TEMP/pg.log" 2>&1 &
 
+      # Depth 2: a PR checkout is the merge commit, and HEAD^1 is the base.
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
 
       # setup-go's cache only matched go.sum exactly, so any dependency change
       # started cold (3+ min). Restore by prefix instead: same go.sum first,
@@ -153,6 +156,17 @@ jobs:
       - name: Go toolchain
         run: go version && go env GOROOT GOMODCACHE GOCACHE
 
+      # PRs check only the packages their changes can affect (changed packages
+      # plus everything importing them, tests included) and only the touched
+      # generators; shared inputs (go.mod, tooling, workflows, lint config,
+      # migrations) mean everything. Pushes to main, merge queue and manual
+      # runs always check everything. See scripts/affected.sh.
+      - name: Affected packages
+        id: affected
+        run: ./scripts/affected.sh HEAD^1
+        env:
+          AFFECTED_FULL: ${{ github.event_name != 'pull_request' && '1' || '' }}
+
       - name: gofmt
         run: |
           unformatted="$(gofmt -l .)"
@@ -163,41 +177,59 @@ jobs:
           fi
 
       - uses: sqlc-dev/setup-sqlc@v5
+        if: steps.affected.outputs.sqlc == 'true'
         with:
           sqlc-version: '1.31.1'
 
       - name: Generated code is up to date
+        if: steps.affected.outputs.sqlc == 'true' || steps.affected.outputs.templ == 'true' || steps.affected.outputs.generate != ''
+        env:
+          SQLC: ${{ steps.affected.outputs.sqlc }}
+          TEMPL: ${{ steps.affected.outputs.templ }}
+          GENERATE: ${{ steps.affected.outputs.generate }}
         run: |
-          sqlc generate -f packages/database/sqlc.yaml
-          go generate ./...
-          for ui in apps/web/ui apps/admin/ui; do if [ -d "$ui" ]; then go tool templ generate -path "$ui"; fi; done
+          if [ "$SQLC" = true ]; then sqlc generate -f packages/database/sqlc.yaml; fi
+          for p in $GENERATE; do go generate "$p"; done
+          if [ "$TEMPL" = true ]; then
+            for ui in apps/web/ui apps/admin/ui; do if [ -d "$ui" ]; then go tool templ generate -path "$ui"; fi; done
+          fi
           git diff --exit-code
           test -z "$(git status --porcelain)" || { git status --short; echo 'untracked generated files: run make generate and commit'; exit 1; }
 
       - name: Build
-        run: go build ./...
+        if: steps.affected.outputs.packages != ''
+        run: go build $PACKAGES # word splitting intended
+        env:
+          PACKAGES: ${{ steps.affected.outputs.packages }}
 
       # Its own cache key only changes with go.sum or weekly, so an exact hit
       # kept a stale cache forever; its directory rides in the Go cache instead.
       - uses: golangci/golangci-lint-action@v9
+        if: steps.affected.outputs.packages != ''
         with:
           version: v2.15.0
           skip-cache: true
+          args: ${{ steps.affected.outputs.dirs }}
 
       - name: Test boundaries
         run: ./scripts/check-test-boundaries.sh
 
+      # The probes prove the lint and test rules still bite; their inputs
+      # (scripts/, .golangci.yml) always force a full run.
       - name: Layering rules
+        if: steps.affected.outputs.full == 'true'
         run: ./scripts/check-layering.sh
         env:
           GOLANGCI_LINT: golangci-lint
 
       - name: Test boundary probes
+        if: steps.affected.outputs.full == 'true'
         run: ./scripts/check-test-probes.sh
 
       # TCP, not the unix socket: the image's first-boot init server answers
       # on the socket only and is then restarted.
       - name: Wait for Postgres
+        if: steps.affected.outputs.packages != ''
         run: |
           for _ in $(seq 1 120); do
             docker exec pg pg_isready -h 127.0.0.1 -U postgres >/dev/null 2>&1 && exit 0
@@ -206,10 +238,18 @@ jobs:
           cat "$RUNNER_TEMP/pg.log"; docker logs pg; exit 1
 
       - name: Test
+        if: steps.affected.outputs.packages != ''
+        env:
+          PACKAGES: ${{ steps.affected.outputs.packages }}
+          FULL: ${{ steps.affected.outputs.full }}
         run: |
           mkdir -p .cache
-          go test -race -coverprofile=.cache/coverage.out ./...
-          ./scripts/check-coverage.sh .cache/coverage.out
+          go test -race -coverprofile=.cache/coverage.out $PACKAGES # word splitting intended
+          if [ "$FULL" = true ]; then
+            ./scripts/check-coverage.sh .cache/coverage.out
+          else
+            TESTED="$PACKAGES" ./scripts/check-coverage.sh .cache/coverage.out
+          fi
 
       - uses: actions/cache/save@v6
         if: (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && steps.go-restore.outputs.cache-hit != 'true'

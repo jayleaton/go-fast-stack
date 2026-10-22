@@ -60,6 +60,7 @@ The most common defect is a change that works on the path you tested and is miss
 ## Verifying
 
 - `make lint test` before every commit. `make ci` runs exactly what CI runs: build, generated-code diff (sqlc, mocks, templ), gofmt + golangci-lint, the test-location check, `go test -race` against a throwaway Postgres with per-boundary coverage floors, and the probes that prove the layering and test rules still bite (`make lint-layering lint-tests`).
+- CI on a PR checks only what the change can affect: `scripts/affected.sh` maps changed files to Go packages and adds every package whose code or tests import them (`go list -test -deps`), then builds, lints, tests and coverage-checks just those, and reruns only the generators whose inputs or outputs changed. Changes to go.mod/go.sum, tools/, scripts/, workflows, `.golangci.yml`, the Makefile, migrations or sqlc config run everything, as do pushes to main and the merge queue. `make affected` shows what your branch would run. A new shared input (a file that can change many packages' results without being in their package graph) belongs in the script's full-run list.
 - Run the narrowest thing first: `go test ./apps/web/internal/services/...`.
 - Behaviour changes ship with tests at the boundaries below, and only there.
 - A test that needs a sleep or timeout to pass is wrong.
