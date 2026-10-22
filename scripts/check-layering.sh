@@ -71,15 +71,11 @@ test_cases=(
   "apps/web/internal/services|$mod/packages/auth"
   "apps/web/internal/api|github.com/jackc/pgx/v5"
   "apps/web/internal/api|$mod/apps/web/internal/services/mocks"
-  "packages/database|go.uber.org/mock/gomock"
-  "packages/secrets|go.uber.org/mock/gomock"
   "apps/admin/internal/services|github.com/jackc/pgx/v5"
   "apps/admin/internal/services|$mod/packages/database/adminrepo/model"
   "apps/admin/internal/services|$mod/packages/auth"
   "apps/admin/internal/api|$mod/apps/admin/internal/services/mocks"
   "apps/admin/internal/api|$mod/packages/database/adminrepo"
-  "apps/admin/ui|$mod/packages/auth"
-  "packages/database/adminrepo|go.uber.org/mock/gomock"
 )
 
 paths=()

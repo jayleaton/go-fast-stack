@@ -13,7 +13,6 @@ here: re-theme in `packages/uikit/theme.css`.
 | `ui/i18n` | `messages/{en,ja}.json`, locale negotiation, `i18n.T(ctx, key)` |
 | `ui/routes` | the UI's own action endpoints (logout, locale, live stream, settings, delete, static); pages use `config.AppRoutes` |
 | `ui/static` | embedded `app.css` (generated), pinned `datastar-1.0.4.js`, favicon |
-| `ui/mocks` | mockgen mocks of `ui.Auth` and `ui.Users` (`go generate`, committed, CI diff-checked) |
 | `ui/cmd/preview` | all pages on `0.0.0.0:3001` over an in-memory backend (`backend.go`) with the auth and service rules |
 
 ## Commands (for the Makefile)
@@ -80,11 +79,8 @@ the others. Revocations are pushed to open dashboard tabs, and a revoked tab goe
 
 ## Tests
 
-Handler tests (`*_test.go` in this directory, the UI's test boundary) run the real router with mockgen mocks of
-`ui.Auth` and `ui.Users` and a mock session (`Deps.UserFrom`); they never import `packages/auth` or the database. Auth
-errors come from `ui.AuthErrors`. Each Account action is tested anonymously (redirect), on its happy path, and with
-every service error it can show. `guards_test.go` holds the two non-handler guards (every template key exists in every
-locale; the Datastar bundle matches its pin) and `render_test.go` renders every page and state in en and ja.
+None. The UI is not a test boundary (AGENTS.md "Test boundaries"): its behaviour lives in the services, which are
+tested with mocked ports. Check UI changes in a real browser (`go run ./apps/web/ui/cmd/preview`).
 
 ## Patterns
 
@@ -105,8 +101,8 @@ locale; the Datastar bundle matches its pin) and `render_test.go` renders every 
   `config.DefaultAppName`), read in templates with `view.AppName(view.StateFrom(ctx))`.
 - **i18n**: messages are flat strings with no plurals or placeholders, so `i18n` is a map lookup (no library; add
   go-i18n when a message needs plural rules). Locale = `locale` cookie, then the highest-weighted supported
-  `Accept-Language`, then `en`. Keys must be string literals: `TestUsedKeysExistInEveryLocale` scans the templates
-  and fails when any locale is missing one, and the render tests fail on any key that renders as itself.
+  `Accept-Language`, then `en`. Keys must be string literals, and every key must exist in every locale (a missing one renders
+  as the key itself).
   Keys beyond the original app's: `components.{themeToggle,nav,toast}.*`, `pages.home.*`,
   `pages.{login,signup}.description`, `pages.dashboard.live.*`, `pages.account.*`,
   `errors.{emailTaken,invalidInput,passwordTooLong,tooManyRequests}`.

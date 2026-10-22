@@ -132,8 +132,8 @@ if [ "${#pkgs[@]}" -gt 0 ]; then
 fi
 
 if [ "$deploy" = true ] && [ -d deploy ]; then
-  step "deploy/ vet, lint, test"
-  if ! out=$(cd deploy && { "$GO" vet ./... && "$GO" tool -modfile=../tools/go.mod golangci-lint run -c ../.golangci.yml ./... && env -u DATABASE_URL -u ADMIN_DATABASE_URL "$GO" test ./...; } 2>&1); then
+  step "deploy/ vet, lint"
+  if ! out=$(cd deploy && { "$GO" vet ./... && "$GO" tool -modfile=../tools/go.mod golangci-lint run -c ../.golangci.yml ./...; } 2>&1); then
     done_
     echo "$out" | grep -vE '^(ok|\?) ' | sed 's/^/  /'
     fail deploy

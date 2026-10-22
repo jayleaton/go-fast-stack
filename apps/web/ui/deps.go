@@ -5,8 +5,6 @@
 // Mount it with ui.New(deps).Routes(mux).
 package ui
 
-//go:generate go tool mockgen -source=deps.go -destination=mocks/mocks.go -package=mocks
-
 import (
 	"context"
 	"errors"

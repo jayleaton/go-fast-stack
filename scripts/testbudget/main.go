@@ -148,7 +148,7 @@ func run(in io.Reader, out io.Writer, pkgBudget, testBudget time.Duration, top i
 		for _, o := range over {
 			fmt.Fprintf(w, "  %s\n", o)
 		}
-		fmt.Fprintf(w, "make it fast (AGENTS.md \"Fast tests\"): t.Parallel(), dbtest clones, fake clocks, no sleeps\n")
+		fmt.Fprintf(w, "make it fast (AGENTS.md \"Fast tests\"): t.Parallel(), cloned databases, fake clocks, no sleeps\n")
 		failed = true
 	}
 	if failed {

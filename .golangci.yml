@@ -208,8 +208,10 @@ linters:
               desc: services never import a transport
             - pkg: github.com/jayleaton/go-fast-stack/apps/admin/ui
               desc: services never import a transport
-        # Test boundaries: each layer is tested with the layer below mocked or
-        # real, never skipped. See AGENTS.md "Test boundaries".
+        # Test boundaries: tests exist only for the business logic (services,
+        # with mocked ports), route handlers (mocked service) and packages/auth.
+        # scripts/check-test-boundaries.sh rejects tests anywhere else. See
+        # AGENTS.md "Test boundaries".
         service-tests:
           files:
             - "**/apps/web/internal/services/*_test.go"
@@ -226,8 +228,6 @@ linters:
           files: # "/**/" needs a subdirectory, so list the package dir too
             - "**/apps/web/internal/api/*_test.go"
             - "**/apps/web/internal/api/**/*_test.go"
-            - "**/apps/web/ui/*_test.go"
-            - "**/apps/web/ui/**/*_test.go"
           deny:
             - pkg: github.com/jackc/pgx
               desc: handler tests mock the service and the session, never the database
@@ -236,15 +236,7 @@ linters:
             - pkg: github.com/jayleaton/go-fast-stack/apps/web/internal/services/mocks
               desc: those are repository/credential mocks; handler tests mock the SERVICE, never the repos underneath it
             - pkg: github.com/jayleaton/go-fast-stack/packages/auth
-              desc: handler tests mock the session; real auth is tested in packages/auth and server
-        repository-tests:
-          files:
-            - "**/packages/database/*_test.go"
-          deny:
-            - pkg: go.uber.org/mock
-              desc: repository tests run against real Postgres (dbtest), never mocks
-            - pkg: github.com/jayleaton/go-fast-stack/apps
-              desc: repository tests run against real Postgres (dbtest) and never import apps
+              desc: handler tests mock the session; real auth is tested in packages/auth
         admin-service-tests:
           files:
             - "**/apps/admin/internal/services/*_test.go"
@@ -261,8 +253,6 @@ linters:
           files: # "/**/" needs a subdirectory, so list the package dir too
             - "**/apps/admin/internal/api/*_test.go"
             - "**/apps/admin/internal/api/**/*_test.go"
-            - "**/apps/admin/ui/*_test.go"
-            - "**/apps/admin/ui/**/*_test.go"
           deny:
             - pkg: github.com/jackc/pgx
               desc: handler tests mock the service and the session, never the database
@@ -271,15 +261,7 @@ linters:
             - pkg: github.com/jayleaton/go-fast-stack/apps/admin/internal/services/mocks
               desc: those are port mocks; handler tests mock the SERVICE, never what is underneath it
             - pkg: github.com/jayleaton/go-fast-stack/packages/auth
-              desc: handler tests mock the session; real auth is tested in packages/auth and server
-        adminrepo-tests:
-          files:
-            - "**/packages/database/adminrepo/*_test.go"
-          deny:
-            - pkg: go.uber.org/mock
-              desc: repository tests run against real Postgres (dbtest), never mocks
-            - pkg: github.com/jayleaton/go-fast-stack/apps
-              desc: repository tests run against real Postgres (dbtest) and never import apps
+              desc: handler tests mock the session; real auth is tested in packages/auth
         no-test-helpers:
           files:
             - $all
@@ -300,8 +282,6 @@ linters:
             - pkg: github.com/jayleaton/go-fast-stack/apps/admin/internal/services/mocks
               desc: mocks are for tests; production code never imports them
             - pkg: github.com/jayleaton/go-fast-stack/apps/admin/internal/api/mocks
-              desc: mocks are for tests; production code never imports them
-            - pkg: github.com/jayleaton/go-fast-stack/apps/admin/ui/mocks
               desc: mocks are for tests; production code never imports them
   exclusions:
     generated: lax

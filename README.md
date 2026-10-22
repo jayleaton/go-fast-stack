@@ -49,7 +49,7 @@ Each checkout gets its own compose project and database ports, derived from its 
 | | |
 |---|---|
 | `make dev` | run the server with `.env` |
-| `make test` | `go test -race ./...` against this checkout's throwaway tmpfs Postgres (or `TEST_DATABASE_URL`), then per-package and per-test time budgets and per-boundary coverage floors |
+| `make test` | `go test -race ./...` (services, route handlers, and `packages/auth` against this checkout's throwaway tmpfs Postgres or `TEST_DATABASE_URL`), then per-package and per-test time budgets and per-boundary coverage floors |
 | `make lint` | gofmt + golangci-lint (layering and test-import rules) + test file locations |
 | `make lint-layering` / `make lint-tests` | prove the layering, test-location, coverage and test-time rules still reject planted violations |
 | `make check-fast` | before every push: gofmt, vet, golangci-lint and plain tests for only what your changes vs origin/main affect (seconds) |
@@ -302,7 +302,7 @@ The browser only ever talks to the UI: server-rendered pages, Datastar actions t
 - **Cookies** are `HttpOnly`, `SameSite=Lax` and `Secure` behind https; the admin session uses the `__Host-` prefix (the web app keeps Better Auth's `__Secure-` names for the mobile client).
 - **Secrets** are `secrets.Secret` values from config to the client that uses them (see [Secrets](#secrets)); logs are redacted.
 
-Enforced by tests and lint, not review: each UI has an exposure crawl (`apps/*/ui/crawl_test.go`) that requests every registered route in every state, with markup and off-site redirect probes in user data and the query, and fails on `/api/` references, canary secrets, internal error text, Go type names, JSON, inline script/style, unescaped probes, off-site navigation, unsafe cookies or a missing header, and fails when a new route is not crawled; `TestNoUnescapedOutput` rejects templ's unescaped-output helpers in UI sources; `server_test.go` proves browsers get 404s from the API; depguard keeps UIs from importing their JSON API or `packages/secrets`, and keeps `packages/secrets/reveal` (`reveal.Value`, the only way to read a secret: `Secret` has no method that returns it) in `cmd` (`make lint-layering` proves both bite, and that reading a secret around `reveal.Value` does not compile).
+Enforced by lint, not review: depguard keeps UIs from importing their JSON API or `packages/secrets`, and keeps `packages/secrets/reveal` (`reveal.Value`, the only way to read a secret: `Secret` has no method that returns it) in `cmd` (`make lint-layering` proves both bite, and that reading a secret around `reveal.Value` does not compile). Tests live only in the services, route handlers and `packages/auth` (AGENTS.md "Test boundaries").
 
 ## Admin dashboard (optional)
 

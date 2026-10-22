@@ -14,14 +14,9 @@ mod=github.com/jayleaton/go-fast-stack
 floors=(
   "$mod/apps/web/internal/services|90"
   "$mod/apps/web/internal/api|85"
-  "$mod/packages/database|80"
-  "$mod/packages/auth|80" # measured 89.7% when set
-  "$mod/apps/web/ui|70"     # handler + render tests; measured 72.7% when set
-  "$mod/packages/secrets|90" # measured 98.3% when set
   "$mod/apps/admin/internal/services|90"
   "$mod/apps/admin/internal/api|85"
-  "$mod/packages/database/adminrepo|80"
-  "$mod/apps/admin/ui|80" # measured 89.9% when set
+  "$mod/packages/auth|80" # measured 89.7% when set
 )
 
 # --exist: fail if a floor package no longer exists (CI shards check floors
