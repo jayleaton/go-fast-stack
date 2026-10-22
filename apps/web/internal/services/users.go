@@ -1,3 +1,4 @@
+// Scratch: CI one job (multi-package).
 package services
 
 //go:generate go tool mockgen -source=users.go -destination=mocks/users.go -package=mocks
