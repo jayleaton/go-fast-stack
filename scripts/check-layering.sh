@@ -56,7 +56,7 @@ cases=(
   "apps/web/ui|$mod/apps/web/internal/api"
   # The shared component set renders values only, for either app.
   "packages/uikit|$mod/apps/web/ui/view"
-  "packages/uikit|$mod/apps/admin/internal/services"
+  "packages/uikit|$mod/apps/admin/ui/view"
   "packages/uikit|$mod/packages/database"
   "packages/uikit|$mod/packages/auth"
   "packages/uikit|$mod/packages/secrets"
