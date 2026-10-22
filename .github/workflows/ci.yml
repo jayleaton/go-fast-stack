@@ -114,8 +114,9 @@ jobs:
             echo "no Go-relevant changes"; echo go=false >> "$GITHUB_OUTPUT"
           fi
 
-      # Modules (and the go.mod toolchain) are keyed by go.sum; module zips are
-      # left out (builds read the extracted trees). Build/lint caches are keyed
+      # Modules (and the go.mod toolchain) are keyed by go.sum; module zips and
+      # dependencies' testdata are left out (builds read only the extracted
+      # sources). Build/lint caches are keyed
       # by commit and saved on every push to main, so PRs restore the newest
       # main state by prefix. Bump the "v4" prefix when what is cached changes.
       - uses: actions/cache/restore@v6
@@ -125,8 +126,9 @@ jobs:
           path: |
             ~/go/pkg/mod
             !~/go/pkg/mod/cache/download/**/*.zip
-          key: v4-gomod-${{ runner.os }}-${{ hashFiles('go.sum') }}
-          restore-keys: v4-gomod-${{ runner.os }}-
+            !~/go/pkg/mod/**/testdata/**
+          key: v5-gomod-${{ runner.os }}-${{ hashFiles('go.sum') }}
+          restore-keys: v5-gomod-${{ runner.os }}-
       - uses: actions/cache/restore@v6
         if: steps.scope.outputs.go == 'true'
         with:
@@ -235,8 +237,9 @@ jobs:
             echo "no Go-relevant changes"; echo go=false >> "$GITHUB_OUTPUT"
           fi
 
-      # Modules (and the go.mod toolchain) are keyed by go.sum; module zips are
-      # left out (builds read the extracted trees). Build/lint caches are keyed
+      # Modules (and the go.mod toolchain) are keyed by go.sum; module zips and
+      # dependencies' testdata are left out (builds read only the extracted
+      # sources). Build/lint caches are keyed
       # by commit and saved on every push to main, so PRs restore the newest
       # main state by prefix. Bump the "v4" prefix when what is cached changes.
       - uses: actions/cache/restore@v6
@@ -246,8 +249,9 @@ jobs:
           path: |
             ~/go/pkg/mod
             !~/go/pkg/mod/cache/download/**/*.zip
-          key: v4-gomod-${{ runner.os }}-${{ hashFiles('go.sum') }}
-          restore-keys: v4-gomod-${{ runner.os }}-
+            !~/go/pkg/mod/**/testdata/**
+          key: v5-gomod-${{ runner.os }}-${{ hashFiles('go.sum') }}
+          restore-keys: v5-gomod-${{ runner.os }}-
       # No setup-go: the runner's preinstalled go switches to the go.mod
       # version itself (GOTOOLCHAIN=auto); the toolchain lives in the module cache.
       - name: Go toolchain
@@ -341,7 +345,8 @@ jobs:
           path: |
             ~/go/pkg/mod
             !~/go/pkg/mod/cache/download/**/*.zip
-          key: v4-gomod-${{ runner.os }}-${{ hashFiles('go.sum') }}
+            !~/go/pkg/mod/**/testdata/**
+          key: v5-gomod-${{ runner.os }}-${{ hashFiles('go.sum') }}
 
   # Typecheck, lint, Expo SDK version check and unit tests. The contract test
   # (pnpm test:contract) needs Go + Docker and runs locally.
