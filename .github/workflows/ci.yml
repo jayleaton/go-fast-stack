@@ -236,9 +236,10 @@ jobs:
       # Timeouts (minutes) for the Check step (the work), ~2x its measured
       # average for the case, by whether the build cache is warm (a lookup-only
       # probe, no download) and whether all packages are checked:
-      #   affected set:  warm 9-77 s (heaviest: admin ~75 s) -> 3; cold 131-159 s -> 6
-      #   all packages:  warm 138 s -> 5;                          cold 312 s -> 11
-      #   mobile/deploy only (no Go packages): 40-45 s -> 2
+      # (scripts/ci-check.sh runs the checks in parallel; measured 2026-10-22):
+      #   affected set:  warm 13-24 s -> 3;  cold ~2.5 min -> 6
+      #   all packages:  warm 36-66 s (with mobile + deploy) -> 5;  cold 228 s -> 11
+      #   mobile/deploy only (no Go packages): ~45 s -> 2
       #   opt-in fan-out jobs: warm 59-97 s -> 3; cold 185-233 s -> 8
       - uses: actions/cache/restore@v6
         if: steps.affected.outputs.packages != ''
