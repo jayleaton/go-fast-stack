@@ -1,3 +1,4 @@
+// Scratch: CI reuse proof (do not merge).
 package ui
 
 import (

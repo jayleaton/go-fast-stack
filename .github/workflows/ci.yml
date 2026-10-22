@@ -18,7 +18,7 @@ on:
         type: boolean
         default: false
   push:
-    branches: [main]
+    branches: [main, 'scratch/foundation-reuse-push-*'] # TEMP scratch: reuse proof
   merge_group:
   # Refreshes the caches PRs restore (pushes to main that reuse a PR's result
   # do not); skipped when main has not moved since the last saved cache.
