@@ -14,7 +14,6 @@ import (
 
 	"github.com/jayleaton/ai-patterns-go/apps/web/internal/config"
 	"github.com/jayleaton/ai-patterns-go/apps/web/internal/services"
-	"github.com/jayleaton/ai-patterns-go/apps/web/internal/validate"
 	"github.com/jayleaton/ai-patterns-go/apps/web/ui/i18n"
 	"github.com/jayleaton/ai-patterns-go/apps/web/ui/routes"
 	"github.com/jayleaton/ai-patterns-go/apps/web/ui/static"
@@ -96,8 +95,13 @@ func (u *UI) Routes(mux *http.ServeMux) {
 	action("POST "+config.AppRoutes.VerifyEmailSuccess, u.verifyEmail)
 	page("GET "+config.AppRoutes.Dashboard, u.dashboard)
 	page("GET "+routes.DashboardLive, u.dashboardLive)
-	action("POST "+routes.UpdateSettings, u.updateSettings)
-	action("POST "+routes.DeleteAccount, u.deleteAccount)
+	page("GET "+config.AppRoutes.Account, u.accountPage)
+	action("POST "+routes.AccountProfile, u.updateProfile)
+	action("POST "+routes.AccountEmail, u.requestEmailChange)
+	action("POST "+routes.AccountPassword, u.changePassword)
+	action("POST "+routes.AccountRevokeSession, u.revokeSession)
+	action("POST "+routes.AccountRevokeOthers, u.revokeOtherSessions)
+	action("POST "+routes.AccountDelete, u.deleteAccount)
 	action("POST "+routes.Logout, u.logout)
 	action("POST "+routes.Locale, u.setLocale)
 }
@@ -149,12 +153,20 @@ func (u *UI) patch(w http.ResponseWriter, r *http.Request, status int, page temp
 	}
 	sse := datastar.NewSSE(w, r)
 	for _, f := range fragments {
-		if err := sse.PatchElementTempl(f); err != nil {
+		var opts []datastar.PatchElementOption
+		if rf, ok := f.(replaced); ok {
+			f, opts = rf.Component, []datastar.PatchElementOption{datastar.WithModeReplace()}
+		}
+		if err := sse.PatchElementTempl(f, opts...); err != nil {
 			u.log.WarnContext(r.Context(), "ui: patch", "path", r.URL.Path, "err", err)
 			return
 		}
 	}
 }
+
+// replaced patches a fragment without morphing: the element is swapped, so
+// typed input values (passwords) are cleared. Default patches morph and keep them.
+type replaced struct{ templ.Component }
 
 // redirect navigates the browser: via SSE for Datastar, 303 otherwise.
 // Set cookies before calling it.
@@ -170,28 +182,18 @@ func (u *UI) redirect(w http.ResponseWriter, r *http.Request, to string) {
 
 // errorMessage translates a service error; unknown errors are logged.
 func (u *UI) errorMessage(ctx context.Context, err error) string {
-	for _, e := range errorKeys {
-		if errors.Is(err, e.err) {
-			return i18n.T(ctx, e.key)
+	for _, e := range AuthErrors {
+		if errors.Is(err, e.Err) {
+			return i18n.T(ctx, e.Key)
 		}
 	}
 	u.log.ErrorContext(ctx, "ui: service error", "err", err)
 	return i18n.T(ctx, "errors.somethingWentWrong")
 }
 
-// serviceMessage translates a validation or user-service error.
-func (u *UI) serviceMessage(ctx context.Context, err error) string {
-	var verr *validate.Error
-	if errors.As(err, &verr) || services.KindOf(err) == services.KindInvalid {
-		return i18n.T(ctx, "errors.invalidInput")
-	}
-	u.log.ErrorContext(ctx, "ui: user service", "err", err)
-	return i18n.T(ctx, "errors.somethingWentWrong")
-}
-
 // actor is the signed-in user as the services see it.
-func actor(u User) services.Actor {
-	return services.Actor{UserID: u.ID, Email: u.Email}
+func actor(u User, s Session) services.Actor {
+	return services.Actor{UserID: u.ID, Email: u.Email, SessionID: s.ID}
 }
 
 // userFromService converts the service's user row; both describe the

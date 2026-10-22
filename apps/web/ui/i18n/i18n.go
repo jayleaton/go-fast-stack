@@ -1,9 +1,10 @@
 // Package i18n loads the web UI messages (ported from the original
 // apps/web-app/messages/*.json) and resolves the request locale.
 //
-// The messages are flat strings addressed by dotted keys ("pages.login.title").
-// They contain no ICU plurals or placeholders, so a map lookup is all we need;
-// add a library such as go-i18n only when a message needs plural rules.
+// The messages are flat strings addressed by dotted keys ("pages.login.title"),
+// optionally with named placeholders ("{email}", filled by Tf). They contain no
+// plurals, so a map lookup is all we need; add a library such as go-i18n only
+// when a message needs plural rules.
 package i18n
 
 import (
@@ -109,6 +110,15 @@ func (t Translator) T(key string) string {
 	return key
 }
 
+// Tf is T with named placeholders: Tf("k", "email", e) fills "{email}".
+func (t Translator) Tf(key string, pairs ...string) string {
+	msg := t.T(key)
+	for i := 0; i+1 < len(pairs); i += 2 {
+		msg = strings.ReplaceAll(msg, "{"+pairs[i]+"}", pairs[i+1])
+	}
+	return msg
+}
+
 // Has reports whether key exists in the translator's locale.
 func (t Translator) Has(key string) bool {
 	_, ok := catalogs[t.Locale][key]
@@ -160,6 +170,11 @@ func From(ctx context.Context) Translator {
 // T is the shorthand templates use: { i18n.T(ctx, "pages.login.title") }.
 func T(ctx context.Context, key string) string {
 	return From(ctx).T(key)
+}
+
+// Tf is the template shorthand for Translator.Tf.
+func Tf(ctx context.Context, key string, pairs ...string) string {
+	return From(ctx).Tf(key, pairs...)
 }
 
 // Negotiate picks the locale for a request: the switcher cookie first, then the

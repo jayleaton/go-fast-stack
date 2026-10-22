@@ -21,8 +21,7 @@ templ AuthHeading(title, description string) {
 	</div>
 }
 
-// Input renders a labelled input. Required is always on: every form field in
-// the original is required.
+// Input renders a labelled input, required unless f.Optional.
 templ Input(f Field) {
 	<div>
 		<label for={ f.ID } class={ labelClass }>{ f.Label }</label>
@@ -31,9 +30,14 @@ templ Input(f Field) {
 			name={ f.ID }
 			type={ f.Type }
 			autocomplete={ f.Autocomplete }
-			required
+			if !f.Optional {
+				required
+			}
 			if f.MinLength > 0 {
 				minlength={ strconv.Itoa(f.MinLength) }
+			}
+			if f.MaxLength > 0 {
+				maxlength={ strconv.Itoa(f.MaxLength) }
 			}
 			class={ inputClass }
 			placeholder={ f.Placeholder }

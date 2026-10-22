@@ -65,20 +65,6 @@
           "description": "設定と構成を管理します。"
         }
       },
-      "settingsForm": {
-        "title": "アカウント設定",
-        "description": "アカウントに表示される名前を更新します。メールアドレスはサインインに使われるため、ここでは変更できません。",
-        "saving": "保存中...",
-        "saved": "設定を保存しました。"
-      },
-      "deleteAccount": {
-        "title": "アカウントを削除",
-        "description": "アカウントとすべてのデータを完全に削除します。元に戻すことはできません。",
-        "button": "アカウントを削除",
-        "confirm": "本当によろしいですか？アカウントは完全に削除されます。",
-        "confirmButton": "はい、削除します",
-        "deleting": "削除中..."
-      },
       "live": {
         "title": "ライブセッション",
         "description": "サーバーから SSE で配信されています。",
@@ -157,13 +143,90 @@
       "unexpectedErrorDuringVerification": "確認中に予期しないエラーが発生しました",
       "emailVerifiedSuccessfully": "メールが正常に確認されました！",
       "accountVerifiedRedirect": "アカウントが確認されました。ログイン済みです。まもなくリダイレクトします。",
-      "continueToDashboard": "ダッシュボードに続行"
+      "continueToDashboard": "ダッシュボードに続行",
+      "invalidUser": "このリンクは別のアカウント用です。サインアウトしてからもう一度リンクを開いてください。"
     },
     "home": {
       "title": "アプリが起動しています",
       "body": "スターターの案内ページはオフになっています。サインインするか、この画面を自分のホームページに置き換えてください。",
       "signUp": "サインアップ",
       "signIn": "サインイン"
+    },
+    "account": {
+      "title": "アカウント",
+      "subtitle": "プロフィール、サインイン情報、デバイスを管理します。",
+      "backToDashboard": "ダッシュボードに戻る",
+      "emailChanged": "メールアドレスが {email} に変更されました。",
+      "profile": {
+        "title": "プロフィール",
+        "description": "表示される名前と画像です。",
+        "image": "画像URL",
+        "imageHint": "任意。http(s) の画像リンクです。空にすると画像を削除します。",
+        "saving": "保存中...",
+        "saved": "プロフィールを保存しました。"
+      },
+      "email": {
+        "title": "メールアドレス",
+        "description": "新しいアドレスに確認リンクを送ります。リンクを開くとメールアドレスが変わります。",
+        "current": "現在のメールアドレス",
+        "new": "新しいメールアドレス",
+        "newPlaceholder": "you@example.com",
+        "submit": "確認リンクを送信",
+        "sending": "送信中...",
+        "checkInbox": "新しい受信箱を確認してください",
+        "sentTo": "{email} に確認リンクを送りました。リンクを開くまでメールアドレスは変わりません。",
+        "useDifferent": "別のアドレスを使う"
+      },
+      "password": {
+        "title": "パスワード",
+        "description": "8〜128文字で設定してください。",
+        "current": "現在のパスワード",
+        "new": "新しいパスワード",
+        "confirm": "新しいパスワード（確認）",
+        "revokeOthers": "他のすべてのデバイスからサインアウトする",
+        "submit": "パスワードを変更",
+        "changing": "変更中...",
+        "changed": "パスワードを変更しました。",
+        "changedRevoked": "パスワードを変更しました。他のデバイスはサインアウトされました。",
+        "mismatch": "パスワードが一致しません"
+      },
+      "sessions": {
+        "title": "デバイス",
+        "description": "現在サインインしている場所です。",
+        "thisDevice": "このデバイス",
+        "unknownDevice": "不明なデバイス",
+        "device": "{os} の {browser}",
+        "signedIn": "{date} にサインイン",
+        "expires": "有効期限 {date}",
+        "ip": "IP {ip}",
+        "revoke": "サインアウト",
+        "revokeOthers": "他のすべてのデバイスからサインアウト",
+        "working": "サインアウト中...",
+        "revoked": "デバイスをサインアウトしました。",
+        "othersRevoked": "他のすべてのデバイスをサインアウトしました。",
+        "none": "他にサインインしているデバイスはありません。"
+      },
+      "danger": {
+        "title": "アカウントを削除",
+        "description": "アカウントとすべてのデータを完全に削除します。元に戻すことはできません。",
+        "summary": "有効なセッション: {count}",
+        "button": "アカウントを削除",
+        "confirm": "本当によろしいですか？アカウントは完全に削除されます。",
+        "confirmButton": "はい、削除します",
+        "deleting": "削除中..."
+      },
+      "errors": {
+        "wrongPassword": "現在のパスワードが正しくありません",
+        "passwordPolicy": "パスワードは8〜128文字で設定してください",
+        "sameEmail": "新しいメールアドレスは現在のものと異なる必要があります",
+        "samePassword": "新しいパスワードは現在のものと異なる必要があります",
+        "sessionNotFound": "そのデバイスは既にサインアウトしています",
+        "currentSession": "このデバイスのセッションはサインアウトボタンで終了してください",
+        "name": "名前は1〜255文字で入力してください",
+        "image": "画像は http(s) のURLで指定してください",
+        "sessionNotFresh": "安全のため、メールアドレスを変更するにはもう一度サインインしてください",
+        "noPassword": "このアカウントには変更できるパスワードがありません"
+      }
     }
   },
   "errors": {
@@ -177,6 +240,9 @@
     "emailTaken": "このメールアドレスは既に使用されています",
     "invalidInput": "入力内容を確認して、もう一度お試しください",
     "tooManyRequests": "試行回数が多すぎます。しばらくしてからもう一度お試しください。",
-    "passwordTooLong": "パスワードは128文字以内である必要があります"
+    "passwordTooLong": "パスワードは128文字以内である必要があります",
+    "forbidden": "自分のアカウントのみ管理できます",
+    "notFound": "対象が見つかりません。ページを再読み込みしてもう一度お試しください。",
+    "conflict": "既存のデータと競合しています。ページを再読み込みしてもう一度お試しください。"
   }
 }

@@ -97,5 +97,8 @@ type Field struct {
 	Autocomplete string
 	Value        string
 	MinLength    int
+	MaxLength    int
 	Hint         string
+	// Optional drops the required attribute (fields are required by default).
+	Optional bool
 }

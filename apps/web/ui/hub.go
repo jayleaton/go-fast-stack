@@ -4,10 +4,19 @@ import "sync"
 
 // userEvent is pushed to every open dashboard stream of a user.
 type userEvent struct {
+	// User is set when the profile changed.
 	User User
 	// Tab is the dashboard tab that caused the change ("" when unknown).
 	Tab     string
 	Deleted bool
+	// RevokedSession ends one session; KeepSession, when set, ends all others.
+	RevokedSession string
+	KeepSession    string
+}
+
+// revokes reports whether ev signs out the session with id.
+func (ev userEvent) revokes(id string) bool {
+	return (ev.RevokedSession != "" && ev.RevokedSession == id) || (ev.KeepSession != "" && ev.KeepSession != id)
 }
 
 // hub fans user events out to the live dashboard streams of this process.

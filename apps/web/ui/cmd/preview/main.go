@@ -17,7 +17,6 @@ import (
 
 	"github.com/jayleaton/ai-patterns-go/apps/web/internal/config"
 	"github.com/jayleaton/ai-patterns-go/apps/web/ui"
-	"github.com/jayleaton/ai-patterns-go/apps/web/ui/uifake"
 )
 
 func main() {
@@ -27,18 +26,22 @@ func main() {
 	flag.Parse()
 
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
-	store := uifake.NewStore()
+	store := NewStore()
 	store.RequireEmailVerification = *verify
-	store.OnMail = func(m uifake.Mail) {
+	store.OnMail = func(m Mail) {
 		log.Info("email (not sent)", "kind", m.Kind, "to", m.To, "link", m.URL)
 	}
-	store.AddUser("Demo User", "demo@example.com", "password123", true)
+	demo := store.AddUser("Demo User", "demo@example.com", "password123", true)
+	// Two other devices so the Account page has sessions to revoke.
+	store.NewSession(demo.ID, "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1", "192.0.2.24", 26*time.Hour)
+	store.NewSession(demo.ID, "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36 Edg/141.0.0.0", "198.51.100.7", 72*time.Hour)
 
-	fakeAuth := uifake.Auth{S: store}
+	fakeAuth := Auth{S: store}
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET "+confirmEmailPath, store.ConfirmEmail)
 	ui.New(ui.Deps{
 		Auth:     fakeAuth,
-		Users:    uifake.Users{S: store},
+		Users:    Users{S: store},
 		UserFrom: fakeAuth.UserFrom,
 		Features: config.Features{EmailVerification: *verify, TemplateWelcome: *welcome},
 		Logger:   log,
