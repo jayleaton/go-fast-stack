@@ -93,6 +93,8 @@ type wired struct {
 	adminPool *pgxpool.Pool
 	auditLog  *adminrepo.AuditLog
 	log       *slog.Logger
+
+	reconciler *services.AuditReconciler
 }
 
 // newAdminInstance is one admin auth instance (as each replica of the admin
@@ -142,7 +144,8 @@ func newWired(t *testing.T) *wired {
 			api.NewAnalytics(services.NewAnalyticsService(adminrepo.NewStats(appPool), p), callers.API),
 		},
 	})
-	return &wired{t: t, admin: h, app: app, admins: admins, mail: mail, adminSvc: adminSvc, adminPool: adminPool, auditLog: auditLog, log: log}
+	reconciler := services.NewAuditReconciler(auditLog, NewUserDirectory(auth.NewUserAdmin(appPool)), NewAdminAccounts(admins, adminrepo.NewAdmins(adminPool)))
+	return &wired{t: t, admin: h, app: app, admins: admins, mail: mail, adminSvc: adminSvc, adminPool: adminPool, auditLog: auditLog, log: log, reconciler: reconciler}
 }
 
 // appSignedIn asks the app's auth endpoints (as the web app serves them)
@@ -432,8 +435,13 @@ func TestAdminManagement(t *testing.T) {
 		t.Fatalf("admins after remove = %+v", admins.Data)
 	}
 
-	want := []string{"admin.remove", "admin.sign_in method=password", "admin.enable", "admin.disable", "admin.sign_in method=set_password", "admin.invite"}
+	want := []string{"admin.remove", "admin.sign_in method=password", "admin.enable", "admin.disable", "admin.sign_in method=set_password"}
 	if got := w.auditActions(root, eve.Data.ID); !slices.Equal(got, want) {
+		t.Fatalf("eve's audit trail = %v\nwant %v", got, want)
+	}
+	// Her first invite was written before she had an id: it targets the email.
+	want = []string{"admin.invite"}
+	if got := w.auditActions(root, "eve@example.com"); !slices.Equal(got, want) {
 		t.Fatalf("eve's audit trail = %v\nwant %v", got, want)
 	}
 }
@@ -565,5 +573,71 @@ func TestAuthEventsExactAcrossInstances(t *testing.T) {
 		if n != failures {
 			t.Errorf("%s has %d failed-2FA audit entries, want exactly %d", email, n, failures)
 		}
+	}
+}
+
+// breakAudit makes every insert into table fail (even for the superuser the
+// tests connect as) until the returned func restores it.
+func (w *wired) breakAudit(table string) func() {
+	w.t.Helper()
+	ctx := context.Background()
+	if _, err := w.adminPool.Exec(ctx, `ALTER TABLE `+table+` ADD CONSTRAINT zz_broken CHECK (false) NOT VALID`); err != nil {
+		w.t.Fatal(err)
+	}
+	return func() {
+		if _, err := w.adminPool.Exec(ctx, `ALTER TABLE `+table+` DROP CONSTRAINT zz_broken`); err != nil {
+			w.t.Fatal(err)
+		}
+	}
+}
+
+// TestAuditFailsClosed: without an intent row nothing changes; without an
+// outcome row the change stays pending (and the caller sees a 500) until
+// the reconciler resolves it from the current state.
+func TestAuditFailsClosed(t *testing.T) {
+	t.Parallel()
+	w := newWired(t)
+	ctx := context.Background()
+	ada, adaSession, err := w.app.SignUpEmail(ctx, auth.SignUpInput{Name: "Ada", Email: "ada@example.com", Password: "password123"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := w.inviteAdmin("root@example.com", "admin-password-1")
+	status := func() (banned bool, entry services.AuditEntry) {
+		t.Helper()
+		var d struct{ Data services.UserDetail }
+		w.do("GET", config.UserPath(ada.ID, ""), "", root, 200, &d)
+		var page struct{ Data services.AuditPage }
+		w.do("GET", config.APIRoutes.Audit+"?action=user.ban&targetId="+ada.ID, "", root, 200, &page)
+		if len(page.Data.Entries) > 0 {
+			entry = page.Data.Entries[0]
+		}
+		return d.Data.User.Banned, entry
+	}
+
+	restore := w.breakAudit("admin_audit_log")
+	body := w.do("POST", config.UserPath(ada.ID, "/ban"), `{"banReason":"spam"}`, root, 503, nil)
+	restore()
+	if !strings.Contains(body, "nothing was changed") {
+		t.Fatalf("refusal = %s", body)
+	}
+	if banned, entry := status(); banned || entry.ID != 0 || !w.appSignedIn(adaSession.Token) {
+		t.Fatalf("refused ban changed something: banned=%v entry=%+v", banned, entry)
+	}
+
+	restore = w.breakAudit("admin_audit_outcome")
+	w.do("POST", config.UserPath(ada.ID, "/ban"), `{"banReason":"spam"}`, root, 500, nil)
+	restore()
+	banned, entry := status()
+	if !banned || entry.Status != services.StatusPending || w.appSignedIn(adaSession.Token) {
+		t.Fatalf("applied ban without outcome: banned=%v entry=%+v", banned, entry)
+	}
+
+	res, err := w.reconciler.Reconcile(ctx, 0)
+	if err != nil || res.Succeeded != 1 || res.Failed+res.Unknown+res.Skipped != 0 {
+		t.Fatalf("Reconcile = %+v, %v", res, err)
+	}
+	if _, entry = status(); entry.Status != services.StatusSucceeded || !entry.Reconciled {
+		t.Fatalf("reconciled entry = %+v", entry)
 	}
 }
