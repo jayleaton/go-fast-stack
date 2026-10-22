@@ -1,3 +1,4 @@
+// ci timing probe
 package api
 
 //go:generate go tool mockgen -source=admins.go -destination=mocks/admins.go -package=mocks

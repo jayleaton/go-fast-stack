@@ -1,3 +1,4 @@
+// ci timing probe
 // Package api is the JSON transport (/api/core/v1). Handlers decode input with
 // validate, call a service, and return a value; the route wrapper turns it into
 // the envelope {"data": T|null, "error": string|null}.
