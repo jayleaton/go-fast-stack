@@ -16,6 +16,9 @@ import (
 type AdminService interface {
 	ListAdmins(ctx context.Context, actor services.Actor) ([]services.Admin, error)
 	InviteAdmin(ctx context.Context, actor services.Actor, in validate.CreateAdminInvite) (services.Admin, error)
+	DisableAdmin(ctx context.Context, actor services.Actor, adminID string) error
+	EnableAdmin(ctx context.Context, actor services.Actor, adminID string) error
+	RemoveAdmin(ctx context.Context, actor services.Actor, adminID string) error
 }
 
 var _ AdminService = (*services.AdminService)(nil)
@@ -36,6 +39,9 @@ func (a *Admins) Routes(mux *http.ServeMux) {
 	r := config.APIRoutes
 	mux.Handle("GET "+r.Admins, Authenticated(a.caller, a.list))
 	mux.Handle("POST "+r.AdminInvites, Authenticated(a.caller, a.invite))
+	mux.Handle("POST "+r.AdminDisable, Authenticated(a.caller, a.disable))
+	mux.Handle("POST "+r.AdminEnable, Authenticated(a.caller, a.enable))
+	mux.Handle("DELETE "+r.AdminByID, Authenticated(a.caller, a.remove))
 }
 
 func (a *Admins) list(r *http.Request, c Caller) ([]services.Admin, error) {
@@ -48,4 +54,19 @@ func (a *Admins) invite(r *http.Request, c Caller) (services.Admin, error) {
 		return services.Admin{}, err
 	}
 	return a.svc.InviteAdmin(r.Context(), c.Actor(), in)
+}
+
+func (a *Admins) disable(r *http.Request, c Caller) (Success, error) {
+	err := a.svc.DisableAdmin(r.Context(), c.Actor(), r.PathValue("id"))
+	return Success{err == nil}, err
+}
+
+func (a *Admins) enable(r *http.Request, c Caller) (Success, error) {
+	err := a.svc.EnableAdmin(r.Context(), c.Actor(), r.PathValue("id"))
+	return Success{err == nil}, err
+}
+
+func (a *Admins) remove(r *http.Request, c Caller) (Success, error) {
+	err := a.svc.RemoveAdmin(r.Context(), c.Actor(), r.PathValue("id"))
+	return Success{err == nil}, err
 }
