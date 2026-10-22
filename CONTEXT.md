@@ -38,3 +38,9 @@ Use these words when talking about this repo, in code review, commits and agent 
 | max staleness | how long the last good snapshot may be served while the provider fails before `/healthz` reports 503 | `SECRETS_MAX_STALENESS` |
 | sandbox database | the Docker Postgres from `make db-up`; the only database you may break | `docker-compose.yml` |
 | Datastar | the SSE-first hypermedia library the UI uses (core only, no Pro) | `apps/web/ui/` |
+| admin app | the optional dashboard for the people running the app (`apps/admin`), its own binary, database and auth instance | `apps/admin/` |
+| admin | a person who can sign in to the admin app (row in the admin database's `"user"`); never a row in the app's `"user"` | admin database |
+| admin database | `ADMIN_DATABASE_URL`: the admin auth tables + `admin_audit_log` | `packages/database/adminrepo/migrations/` |
+| audit log | append-only record of every mutating admin action (`admin_audit_log`), written by the admin services | `packages/database/adminrepo/` |
+| invite | a set-password link for a new admin, from the Admins page or `admin invite <email>`; there is no admin sign-up | `apps/admin/internal/services/admins.go` |
+| ban | an admin blocking a user's sign-in (reason, optional expiry); revokes every session at once | `packages/auth` (`UserAdmin.BanUser`) |

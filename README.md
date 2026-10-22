@@ -107,6 +107,25 @@ Secrets that can change while the server runs come from one place, `SECRETS_PROV
 
 Infisical and 1Password adapters are stubs with an implementation plan (`packages/secrets/infisical.go`, `onepassword.go`, outside the default build).
 
+## Admin dashboard (optional)
+
+`apps/admin` is a separate binary and Railway service for the people who run the app: browse, search and inspect users (sessions, verification, role, ban state), ban (reason + expiry) and unban, revoke sessions, set roles, manage admins, and read the audit log of every admin action. An analytics page is a placeholder behind a port.
+
+- **Isolated.** Admins are users of the admin app's own auth instance in its own database (`ADMIN_DATABASE_URL`, cookie `admin.session_token`, secret `ADMIN_AUTH_SECRET`), never rows in the app's `user` table. It reads and administers the app's users through `DATABASE_URL`. depguard keeps `apps/web` and `apps/admin` from importing each other and keeps the higher-privilege `packages/database/adminrepo` out of the web app.
+- **Invite only.** There is no sign-up. `admin migrate` seeds `ADMIN_BOOTSTRAP_EMAIL` without a password; `admin invite <email>` (or `make admin-invite EMAIL=...`, or the Admins page) emails a one-time set-password link. With `ADMIN_REQUIRE_2FA=true` (the default in production) setting the password continues into TOTP enrolment with backup codes before the first session.
+- **Banning** revokes every session of the user at once; the web app refuses their sign-in until the ban is lifted or expires.
+
+```sh
+make db-up                         # also creates the "admin" database on the dev Postgres
+make migrate                       # the app database (web)
+make admin-dev                     # migrates the admin database, seeds ADMIN_BOOTSTRAP_EMAIL, serves 0.0.0.0:3001
+make admin-invite EMAIL=admin@example.com   # dev: the set-password link is printed in the log
+```
+
+Locally the admin database is a second database on the same per-checkout Postgres: no extra container, and worktrees stay isolated. Hosted, give it its own small Postgres so its credentials and backups are separate from the app's.
+
+**Deploy:** a second Railway service from this repo with config file `apps/admin/railway.json` (builds `apps/admin/Dockerfile`, runs `/admin migrate` before deploy, health-checks `/healthz`, which pings both databases). Set `APP_ENV=production`, `ADMIN_PUBLIC_URL`, `ADMIN_DATABASE_URL` (the admin Postgres), `DATABASE_URL` (a reference to the app's Postgres), `ADMIN_AUTH_SECRET`, `ADMIN_BOOTSTRAP_EMAIL`, `RESEND_API_KEY`, `FROM_EMAIL` and `CLIENT_IP_HEADER=X-Real-IP`. Deploy the web service first: it migrates the app database the admin app reads. Not using it? Delete `apps/admin`, `packages/database/adminrepo` and the `admin-*` make targets.
+
 ## Working on it
 
 Read [AGENTS.md](AGENTS.md) (architecture, test boundaries, how to add a service, PR rules) and [CONTEXT.md](CONTEXT.md) (shared vocabulary).
