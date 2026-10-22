@@ -8,6 +8,7 @@ GO        ?= go
 TOOL      := $(GO) tool -modfile=tools/go.mod
 COMPOSE   := docker compose
 BIN       := bin/server
+ADMIN_BIN := bin/admin
 
 # Every checkout (clone or git worktree) gets its own compose project and dev
 # ports, derived from its path, so parallel worktrees never share containers.
@@ -18,6 +19,9 @@ COMPOSE_PROJECT_NAME ?= $(shell basename '$(CURDIR)' | tr 'A-Z' 'a-z' | tr -c 'a
 POSTGRES_PORT        ?= $(shell expr 25000 + $(SLOT))
 PGWEB_PORT           ?= $(shell expr 26000 + $(SLOT))
 DATABASE_URL         ?= postgres://postgres:postgres@127.0.0.1:$(POSTGRES_PORT)/app?sslmode=disable
+# The admin app's own database: a second database on the same dev server
+# (created by db-up). Hosted, it is a separate small Postgres.
+ADMIN_DATABASE_URL   ?= postgres://postgres:postgres@127.0.0.1:$(POSTGRES_PORT)/admin?sslmode=disable
 # Empty: the test server gets a free port from Docker on every start.
 TEST_POSTGRES_PORT   ?=
 
@@ -39,14 +43,15 @@ build: ## Build a static binary into bin/server
 	CGO_ENABLED=0 $(GO) build -trimpath -ldflags='-s -w' -o $(BIN) ./apps/web/cmd/server
 
 .PHONY: generate
-generate: ## Regenerate sqlc, go:generate (mocks) and templ (once apps/web/ui exists)
+generate: ## Regenerate sqlc, go:generate (mocks) and templ (web + admin UIs)
 	$(TOOL) sqlc generate -f packages/database/sqlc.yaml
 	$(GO) generate ./...
-	@if [ -d apps/web/ui ] && $(GO) tool -n templ >/dev/null 2>&1; then $(GO) tool templ generate -path apps/web/ui; fi
+	@for ui in apps/web/ui apps/admin/ui; do [ -d $$ui ] && $(GO) tool templ generate -path $$ui || true; done
 
 .PHONY: css
-css: ## Rebuild apps/web/ui/static/app.css (Tailwind standalone CLI, pinned + checksum-verified)
+css: ## Rebuild the web and admin app.css (Tailwind standalone CLI, pinned + checksum-verified)
 	"$$(apps/web/ui/scripts/tailwind.sh)" -i apps/web/ui/styles/input.css -o apps/web/ui/static/app.css --minify
+	@if [ -d apps/admin/ui ]; then "$$(apps/web/ui/scripts/tailwind.sh)" -i apps/admin/ui/styles/input.css -o apps/admin/ui/static/app.css --minify; fi
 
 .PHONY: check-generated
 check-generated: generate ## Fail if generated code is out of date
@@ -94,15 +99,17 @@ migrate: ## Run auth then app migrations against DATABASE_URL
 	$(GO) run ./apps/web/cmd/server migrate
 
 .PHONY: env
-env: ## Print this checkout's compose project, ports and DATABASE_URL
+env: ## Print this checkout's compose project, ports and database URLs
 	@echo "compose project: $(COMPOSE_PROJECT_NAME)"
 	@echo "postgres:        127.0.0.1:$(POSTGRES_PORT)  (DATABASE_URL=$(DATABASE_URL))"
+	@echo "admin database:  ADMIN_DATABASE_URL=$(ADMIN_DATABASE_URL)"
 	@echo "pgweb:           http://127.0.0.1:$(PGWEB_PORT)"
 	@echo "test postgres:   127.0.0.1:$(if $(TEST_POSTGRES_PORT),$(TEST_POSTGRES_PORT),<free port per start>)"
 
 .PHONY: db-up
-db-up: env ## Start Postgres + pgweb (127.0.0.1 only)
+db-up: env ## Start Postgres + pgweb (127.0.0.1 only) and make sure the admin database exists
 	$(COMPOSE) up -d --wait postgres pgweb
+	@$(COMPOSE) exec -T postgres sh -c 'psql -U postgres -tAc "SELECT 1 FROM pg_database WHERE datname = '"'"'admin'"'"'" | grep -q 1 || createdb -U postgres admin'
 
 .PHONY: db-down
 db-down: ## Stop Postgres + pgweb (keeps the data volume)
@@ -115,6 +122,29 @@ test-db-up:
 .PHONY: docker
 docker: ## Build the production image
 	docker build -t ai-patterns-go .
+
+# --- Admin app (optional; delete apps/admin and these targets to drop it) ---
+
+.PHONY: admin-dev
+admin-dev: db-up admin-migrate ## Run the admin dashboard (0.0.0.0, ADMIN_PORT or 3001) with .env
+	$(GO) run ./apps/admin/cmd/admin serve
+
+.PHONY: admin-migrate
+admin-migrate: ## Migrate the admin database (auth + audit log) and seed ADMIN_BOOTSTRAP_EMAIL
+	$(GO) run ./apps/admin/cmd/admin migrate
+
+.PHONY: admin-invite
+admin-invite: ## Send an admin set-password link: make admin-invite EMAIL=you@example.com
+	@test -n "$(EMAIL)" || (echo 'usage: make admin-invite EMAIL=you@example.com' && exit 2)
+	$(GO) run ./apps/admin/cmd/admin invite $(EMAIL)
+
+.PHONY: admin-build
+admin-build: ## Build the admin static binary into bin/admin
+	CGO_ENABLED=0 $(GO) build -trimpath -ldflags='-s -w' -o $(ADMIN_BIN) ./apps/admin/cmd/admin
+
+.PHONY: admin-docker
+admin-docker: ## Build the admin production image
+	docker build -f apps/admin/Dockerfile -t ai-patterns-go-admin .
 
 .PHONY: actionlint
 actionlint: ## Lint GitHub workflows
