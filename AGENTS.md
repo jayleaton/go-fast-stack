@@ -21,7 +21,8 @@ The template's value is its layers. Do not route around them.
 
 - Each layer talks only to the layer below. Both transports call services **in-process**; nothing calls its own API over HTTP.
 - Transports never import `pgx`, sqlc output or repositories. Services never import `net/http`, templ or Datastar. `packages/database` never imports `apps/`. `depguard` in `.golangci.yml` enforces this, and `make lint-layering` proves the rules still bite.
-- Services return `*services.Error{Kind, Message}`. The transport maps the kind to a status code; the message is safe to show.
+- Ports are defined by the consumer. A service declares the interfaces it needs (`services.UserRepository`, `services.AccountCredentials`); repositories in `packages/database` and adapters in `apps/web/internal/server` implement them. Transports in turn declare the service they call (`api.UserService`). Authorization (who may act on what) is a business rule: it lives in the service, never in a handler.
+- Services return `*services.Error{Kind, Message}`, declared as named values (`services.ErrEmailTaken`) so callers match them with `errors.Is` (the UI picks a translation per error); the kind sentinels `ErrValidation`, `ErrForbidden`, `ErrNotFound`, `ErrConflict` match every error of their kind. The transport maps the kind to a status code; the message is safe to show. Adapters translate their package's errors into these values; transports never see raw `auth` or `pgx` errors.
 - JSON responses always use the envelope `{"data": T|null, "error": string|null}` (plus `details` on validation errors). Use `api.Public` / `api.Authenticated`. A handler is about five lines: decode, call the service, return.
 - Input validation lives in `apps/web/internal/validate`, one type per input with CRUD names (`UpdateUserSettings`). Decode with `validate.Decode[T]`. Never validate inline.
 - Routes and toggles live in `apps/web/internal/config`: `AppRoutes`, `APIRoutes`, and `Features` (email verification off in dev, on in production; `TemplateWelcome`). Never write a path literal or branch on the environment anywhere else.
@@ -58,11 +59,40 @@ The most common defect is a change that works on the path you tested and is miss
 
 ## Verifying
 
-- `make lint test` before every commit. `make ci` runs exactly what CI runs: build, generated-code diff, gofmt + golangci-lint, the layering proof, and `go test -race` against a throwaway Postgres.
+- `make lint test` before every commit. `make ci` runs exactly what CI runs: build, generated-code diff (sqlc, mocks, templ), gofmt + golangci-lint, the test-location check, `go test -race` against a throwaway Postgres with per-boundary coverage floors, and the probes that prove the layering and test rules still bite (`make lint-layering lint-tests`).
 - Run the narrowest thing first: `go test ./apps/web/internal/services/...`.
-- Behaviour changes ship with focused tests. Services and handlers test against `services/servicetest` fakes; repositories test against real Postgres with `dbtest.New(t, dbtest.App)` (each test gets its own cloned database, so use `t.Parallel()`).
+- Behaviour changes ship with tests at the boundaries below, and only there.
 - A test that needs a sleep or timeout to pass is wrong.
 - User-visible UI changes get one pass in a real browser, over the LAN or Tailscale URL when origins matter.
+
+## Test boundaries (mandatory)
+
+Tests live only at these boundaries, so they pin the architecture instead of working around it. All of it is enforced by `make lint` / CI, not by review: `scripts/check-test-boundaries.sh` rejects a `_test.go` anywhere else, depguard rules in `.golangci.yml` reject the wrong imports in test files, and `scripts/check-coverage.sh` holds a coverage floor per boundary package.
+
+| Boundary | Directory (not subdirectories) | What a test does | It may use | Floor |
+|---|---|---|---|---|
+| service | `apps/web/internal/services` | unit-tests every method: happy path, 403 for another user, each rule, every port error mapped | generated mocks of the ports (`services/mocks`) | 90 % |
+| route handler | `apps/web/internal/api` | per route: no session → 401, other user → 403, invalid input → 400, happy path → 2xx + envelope; validators are covered here | generated mock of the service (`api/mocks`), `apitest.AsUser(u)` / `apitest.Anonymous`, the real router and route wrapper | 85 % |
+| ui handler | `apps/web/ui` | same shape as route handlers | fakes of the `ui` interfaces + mock session | set when the UI lands |
+| repository | `packages/database` | integration tests of every repository method | real Postgres via `dbtest.New(t, dbtest.App)` only (each test gets its own cloned database: `t.Parallel()`) | 80 % |
+| auth | `packages/auth` | its own suite | real Postgres | 80 % |
+
+The allowlist in `scripts/check-test-boundaries.sh` names what has no boundary above it: `config/config_test.go` (env validation at boot), `server/{server,auth}_test.go` (wiring: mounts, middleware order, CSRF, and the adapters over real `packages/auth` + Postgres), and the UI's `i18n` (every key in every locale) and `static` (pinned Datastar hash) packages. Do not add to it; if a test does not fit a boundary, test the behaviour through the boundary above it. Service tests may not import pgx, `packages/database` (services re-export `User`, `ErrNotFound`, ...), `packages/auth` or `api`; handler tests may not import pgx, `packages/database`, `packages/auth` or `services/mocks` (mock the service, never what is underneath it); repository tests may not import mocks; production code may not import mocks or `apitest`.
+
+Mocks are generated, never written: `//go:generate go tool mockgen -source=<file>.go -destination=mocks/<file>.go -package=mocks` next to the interfaces, `make generate`, commit the output (CI fails on a stale mock). `mockgen` is a `tool` in the root `go.mod` so it always matches the `go.uber.org/mock` version the mocks import.
+
+## How to add a service
+
+Copy the user account flow; it is the reference for every service and repository. For a `Widget` owned by a user:
+
+1. **Port.** In `apps/web/internal/services/widgets.go`, declare what the service needs from below: `type WidgetRepository interface { ... }` with model types re-exported (`type Widget = model.Widget`). Anything that is not your database (auth, email, payments) gets its own port and `Err*` values the implementation must return (see `AccountCredentials`). Add the `//go:generate go tool mockgen ...` line.
+2. **Repository.** Migration in `packages/database/migrations`, queries in `queries/widgets.sql`, `make generate`, then `packages/database/widgets.go`: a struct whose method set is exactly the port, returning `model.ErrNotFound` for a missing row. A non-database port gets a thin adapter in `apps/web/internal/server` that only converts types and errors.
+3. **Service.** `WidgetService` with `NewWidgetService(ports...)`. Every method takes `(ctx, actor Actor, <target id>, in validate.X)`, checks the actor may act on the target (403 otherwise) before touching a port, applies the business rules, and returns named `*services.Error` values (ports report their failures as those values; unknown errors pass through as 500s).
+4. **Validators.** One type per input in `apps/web/internal/validate` (`CreateWidget`, `UpdateWidget`) for shape only; rules that need state stay in the service.
+5. **Transport.** In `apps/web/internal/api/widgets.go`, declare `type WidgetService interface` (the methods the handlers call, plus `var _ WidgetService = (*services.WidgetService)(nil)`) with its `go:generate` line, routes in `config.APIRoutes`, and handlers of about five lines through `Authenticated`. The UI declares its own interface the same way.
+6. **Wire.** `cmd/server/main.go` builds the repository and adapters and passes them to the service, the service to the transports.
+7. **Tests**, at the boundaries only: `services/widgets_test.go` (mocks of the ports), `api/widgets_test.go` (mock service + `apitest`, the four cases per route), `packages/database/widgets_test.go` (real Postgres). `make generate lint test` must pass, including the coverage floors.
+8. **Every layer.** Walk "Hit every layer" above: the UI, the mobile app, docs.
 
 ## Pull requests
 
@@ -76,9 +106,9 @@ The most common defect is a change that works on the path you tested and is miss
 
 - `apps/web/cmd/server`: the binary (`server serve`, `server migrate`).
 - `apps/web/internal/config`: env config, `AppRoutes`/`APIRoutes`, `Features`.
-- `apps/web/internal/server`: middleware, `/healthz`, and the mounts (auth at `/api/auth/`, API, UI at `/`).
-- `apps/web/internal/api`: JSON transport `/api/core/v1`: envelope, route wrapper, handlers.
-- `apps/web/internal/services`: business rules. `apps/web/internal/validate`: input types.
+- `apps/web/internal/server`: middleware, `/healthz`, the mounts (auth at `/api/auth/`, API, UI at `/`), and the adapters from `packages/auth` to service ports (`CallerFrom`, `AccountCredentials`).
+- `apps/web/internal/api`: JSON transport `/api/core/v1`: envelope, route wrapper, handlers, the service ports they call; `api/mocks` (generated) and `api/apitest` (mock session) for handler tests.
+- `apps/web/internal/services`: business rules and the ports they need; `services/mocks` (generated) for service tests. `apps/web/internal/validate`: input types.
 - `apps/web/ui`: templ pages, Datastar handlers, i18n, static assets.
 - `packages/database`: pool, `migrations/` (goose, embedded), `queries/` (sqlc input), `sqlc/` (generated, never edit), repositories, `model/`, `dbtest/`.
 - `packages/auth`: Better Auth–style auth: its own migrations, queries, endpoints (Better Auth paths and response shapes, not the envelope), sessions, mailers. Self-contained: it never imports `apps/` or `packages/database` (depguard).
@@ -88,7 +118,7 @@ The most common defect is a change that works on the path you tested and is miss
 ## Taste
 
 - Complexity belongs at the layer boundary. Repositories hide SQL, services hide business rules, the route wrapper hides auth and envelopes, and templates stay dumb.
-- Small interfaces, defined by the consumer (`services.UserRepository`). Concrete types out, interfaces in.
+- Small interfaces, defined by the consumer (`services.UserRepository`, `api.UserService`). Concrete types out, interfaces in.
 - Typed values over `any` and `map[string]any`. Generics only where they remove real repetition.
 - Errors are values: wrap with context, compare with `errors.Is`/`errors.As`, and never log and return the same error.
 - Comments say how a thing is used and move with the code. Document functions, not every line.

@@ -83,7 +83,7 @@ JSON endpoints mirror Better Auth paths: `POST /api/auth/sign-up/email`, `POST /
 ## Feature parity checklist (from the original)
 
 Pages: home, `/why`, login, signup, forgot-password, reset-password, verify-email (+ success), dashboard (user settings, delete account), template welcome (feature-flagged), language switcher.
-API: `GET/PATCH /api/core/v1/users`, `PATCH /api/core/v1/users/{id}` (403 when not self), delete user data.
+API: `/api/core/v1/users/me` (GET, PATCH, DELETE) plus `/me/email`, `/me/password`, `/me/sessions[/{id}|/others]`, `/me/data`; `PATCH /api/core/v1/users/{id}` (403 when not self). The pre-account `GET/PATCH/DELETE /api/core/v1/users` routes were replaced by `/users/me`.
 Email: Resend (verification, password reset); dev mode logs links instead of sending.
 Feature toggles: email verification off in dev, on in production.
 Every page has a loading state (Datastar indicator), all text translated in every locale.
