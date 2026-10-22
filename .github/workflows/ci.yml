@@ -381,6 +381,20 @@ jobs:
             ~/go/pkg/mod
           key: v7-gomod-${{ runner.os }}-${{ hashFiles('go.sum') }}
 
+  pulltest:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: TEMP time Postgres image pulls
+        run: |
+          for round in 1 2 3; do
+            for img in docker.io/library/postgres:18-alpine mirror.gcr.io/library/postgres:18-alpine public.ecr.aws/docker/library/postgres:18-alpine; do
+              docker rmi -f "$img" >/dev/null 2>&1; docker image prune -af >/dev/null 2>&1
+              s=$(date +%s%N); docker pull -q "$img" >/dev/null 2>&1; rc=$?
+              echo "round $round rc=$rc $(( ($(date +%s%N)-s)/1000000 )) ms $img"
+            done
+          done
+
   # Typecheck, lint, Expo SDK version check and unit tests. The contract test
   # (pnpm test:contract) needs Go + Docker and runs locally.
   mobile:
