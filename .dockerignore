@@ -1,0 +1,13 @@
+.git
+.github
+.cache
+.t3
+.agents
+.env
+.env.*
+bin
+tools
+docs
+apps/mobile-app
+**/*_test.go
+**/node_modules
