@@ -6,6 +6,9 @@ import "net/url"
 var AppRoutes = struct {
 	Home, Why, Login, Signup, ForgotPassword, ResetPassword string
 	VerifyEmail, VerifyEmailSuccess, Dashboard              string
+	// Account is the account section of the dashboard; EmailChanged is where
+	// a change-email verification link lands (the default callbackURL).
+	Account, EmailChanged string
 }{
 	Home:               "/",
 	Why:                "/why",
@@ -16,6 +19,8 @@ var AppRoutes = struct {
 	VerifyEmail:        "/auth/verify-email",
 	VerifyEmailSuccess: "/auth/verify-email/success",
 	Dashboard:          "/dashboard",
+	Account:            "/dashboard/account",
+	EmailChanged:       "/dashboard/account?email-changed=1",
 }
 
 // APIRoutes are the JSON endpoints. Patterns (with {id}) are for ServeMux;

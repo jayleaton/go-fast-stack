@@ -14,10 +14,6 @@ import (
 	"github.com/jayleaton/ai-patterns-go/packages/database/model"
 )
 
-// ErrNotFound is what repository ports return for a missing row
-// (model.ErrNotFound, re-exported for implementations and mocks).
-var ErrNotFound = model.ErrNotFound
-
 // Actor is the signed-in user a service call acts for, and the session the
 // request came in on. Transports build it from the caller; services decide
 // what the actor may do.
@@ -47,7 +43,29 @@ type Error struct {
 
 func (e *Error) Error() string { return e.Message }
 
-func fail(kind Kind, msg string) *Error { return &Error{Kind: kind, Message: msg} }
+// Kind sentinels: errors.Is(err, ErrNotFound) holds for every not-found
+// error, so callers can branch on a kind without knowing the specific error.
+// Services may also return them as they are.
+var (
+	ErrValidation = &Error{Kind: KindInvalid, Message: "Invalid request"}
+	ErrForbidden  = &Error{Kind: KindForbidden, Message: "Forbidden"}
+	ErrNotFound   = &Error{Kind: KindNotFound, Message: "Not found"}
+	ErrConflict   = &Error{Kind: KindConflict, Message: "Conflict"}
+)
+
+// Is makes the kind sentinels match every error of their kind. Specific
+// errors (ErrEmailTaken...) match only themselves.
+func (e *Error) Is(target error) bool {
+	switch target {
+	case ErrValidation, ErrForbidden, ErrNotFound, ErrConflict:
+		return e.Kind == target.(*Error).Kind
+	}
+	return false
+}
+
+// ErrRecordNotFound is what repository ports return for a missing row
+// (model.ErrNotFound, re-exported so service tests need not import packages/database).
+var ErrRecordNotFound = model.ErrNotFound
 
 // KindOf returns the Kind of err (KindInternal for unknown errors).
 func KindOf(err error) Kind {
@@ -58,10 +76,10 @@ func KindOf(err error) Kind {
 	return KindInternal
 }
 
-// notFound maps a repository miss to a service error and passes others through.
-func notFound(err error, msg string) error {
-	if errors.Is(err, ErrNotFound) {
-		return fail(KindNotFound, msg)
+// notFound maps a repository miss to notFoundErr and passes others through.
+func notFound(err error, notFoundErr *Error) error {
+	if errors.Is(err, ErrRecordNotFound) {
+		return notFoundErr
 	}
 	return err
 }

@@ -4,7 +4,6 @@ package services
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -44,26 +43,19 @@ type UserRepository interface {
 
 // AccountCredentials is the port to the user's credentials and sessions (an
 // adapter over *auth.Auth in apps/web/internal/server). Implementations
-// translate their failures into the Err* values below.
+// report the failures below as the Err* values of this file (wrapping is
+// fine); any other error is an internal error.
 type AccountCredentials interface {
+	// ChangePassword fails with ErrInvalidPassword, ErrPasswordPolicy or ErrUserNotFound.
 	ChangePassword(ctx context.Context, userID, current, next string, revokeOthers bool, currentSessionID string) error
 	// ChangeEmail sends a verification link to newEmail; the address changes
-	// only when the link is opened.
+	// only when the link is opened. Fails with ErrEmailTaken, ErrInvalidCallbackURL or ErrUserNotFound.
 	ChangeEmail(ctx context.Context, userID, newEmail, callbackURL string) error
 	ListSessions(ctx context.Context, userID string) ([]Session, error)
+	// RevokeSession fails with ErrSessionNotFound unless the session is the user's.
 	RevokeSession(ctx context.Context, userID, sessionID string) error
 	RevokeOtherSessions(ctx context.Context, userID, currentSessionID string) error
 }
-
-// Failures an AccountCredentials implementation reports (wrapping is fine).
-var (
-	ErrWrongPassword      = errors.New("credentials: wrong current password")
-	ErrPasswordPolicy     = errors.New("credentials: password violates the length policy")
-	ErrEmailTaken         = errors.New("credentials: email already in use")
-	ErrInvalidCallbackURL = errors.New("credentials: untrusted callback URL")
-	ErrSessionNotFound    = errors.New("credentials: session not found")
-	ErrUserNotFound       = errors.New("credentials: user not found")
-)
 
 // Password length policy, counted in characters. Matches packages/auth's
 // defaults; auth enforces its configured values again (ErrPasswordPolicy).
@@ -72,41 +64,28 @@ const (
 	MaxPasswordLength = 128
 )
 
-const msgUserNotFound = "User not found"
-
-var msgPasswordPolicy = fmt.Sprintf("Password must be %d-%d characters", MinPasswordLength, MaxPasswordLength)
-
-// credentialErrors maps port failures to safe messages; anything else is internal.
-var credentialErrors = []struct {
-	err  error
-	kind Kind
-	msg  string
-}{
-	// Invalid, not Unauthorized: clients treat 401 as "signed out".
-	{ErrWrongPassword, KindInvalid, "Current password is incorrect"},
-	{ErrPasswordPolicy, KindInvalid, msgPasswordPolicy},
-	{ErrEmailTaken, KindConflict, "Email is already in use"},
-	{ErrInvalidCallbackURL, KindInvalid, "Invalid callback URL"},
-	{ErrSessionNotFound, KindNotFound, "Session not found"},
-	{ErrUserNotFound, KindNotFound, msgUserNotFound},
-}
+// UserService errors. Match them with errors.Is (the UI picks a translation
+// per error); the transport maps their Kind to a status.
+var (
+	ErrUserNotFound       = &Error{KindNotFound, "User not found"}
+	ErrSameEmail          = &Error{KindInvalid, "New email must be different from the current email"}
+	ErrEmailTaken         = &Error{KindConflict, "Email is already in use"}
+	ErrInvalidCallbackURL = &Error{KindInvalid, "Invalid callback URL"}
+	// ErrInvalidPassword is Invalid, not Unauthorized: clients treat 401 as "signed out".
+	ErrInvalidPassword = &Error{KindInvalid, "Current password is incorrect"}
+	ErrSamePassword    = &Error{KindInvalid, "New password must be different from the current password"}
+	ErrPasswordPolicy  = &Error{KindInvalid, fmt.Sprintf("Password must be %d-%d characters", MinPasswordLength, MaxPasswordLength)}
+	ErrSessionNotFound = &Error{KindNotFound, "Session not found"}
+	ErrCurrentSession  = &Error{KindInvalid, "Use sign out to end the current session"}
+)
 
 // self is the authorization rule of every UserService method: users manage
 // only their own account.
 func self(actor Actor, userID string) error {
 	if actor.UserID == "" || actor.UserID != userID {
-		return fail(KindForbidden, "You can only manage your own account")
+		return ErrForbidden
 	}
 	return nil
-}
-
-func credentials(err error) error {
-	for _, c := range credentialErrors {
-		if errors.Is(err, c.err) {
-			return fail(c.kind, c.msg)
-		}
-	}
-	return err
 }
 
 // UserService is the signed-in user's account: profile, email, password,
@@ -128,7 +107,7 @@ func (s *UserService) GetProfile(ctx context.Context, actor Actor, userID string
 		return User{}, err
 	}
 	u, err := s.repo.GetByID(ctx, userID)
-	return u, notFound(err, msgUserNotFound)
+	return u, notFound(err, ErrUserNotFound)
 }
 
 // UpdateProfile changes the name and image.
@@ -139,7 +118,7 @@ func (s *UserService) UpdateProfile(ctx context.Context, actor Actor, userID str
 	u, err := s.repo.UpdateProfile(ctx, userID, UserProfileUpdate{
 		Name: in.Name, SetImage: in.Image.Set, Image: in.Image.Value,
 	})
-	return u, notFound(err, msgUserNotFound)
+	return u, notFound(err, ErrUserNotFound)
 }
 
 // RequestEmailChange sends a verification link to the new address.
@@ -148,9 +127,9 @@ func (s *UserService) RequestEmailChange(ctx context.Context, actor Actor, userI
 		return err
 	}
 	if strings.EqualFold(in.NewEmail, actor.Email) {
-		return fail(KindInvalid, "New email must be different from the current email")
+		return ErrSameEmail
 	}
-	return credentials(s.creds.ChangeEmail(ctx, userID, in.NewEmail, in.CallbackURL))
+	return s.creds.ChangeEmail(ctx, userID, in.NewEmail, in.CallbackURL)
 }
 
 // ChangePassword replaces the password after checking the current one, and
@@ -160,12 +139,12 @@ func (s *UserService) ChangePassword(ctx context.Context, actor Actor, userID st
 		return err
 	}
 	if n := utf8.RuneCountInString(in.NewPassword); n < MinPasswordLength || n > MaxPasswordLength {
-		return fail(KindInvalid, msgPasswordPolicy)
+		return ErrPasswordPolicy
 	}
 	if in.NewPassword == in.CurrentPassword {
-		return fail(KindInvalid, "New password must be different from the current password")
+		return ErrSamePassword
 	}
-	return credentials(s.creds.ChangePassword(ctx, userID, in.CurrentPassword, in.NewPassword, in.RevokeOtherSessions, actor.SessionID))
+	return s.creds.ChangePassword(ctx, userID, in.CurrentPassword, in.NewPassword, in.RevokeOtherSessions, actor.SessionID)
 }
 
 // ListSessions returns the user's sessions, marking the actor's own.
@@ -175,7 +154,7 @@ func (s *UserService) ListSessions(ctx context.Context, actor Actor, userID stri
 	}
 	sessions, err := s.creds.ListSessions(ctx, userID)
 	if err != nil {
-		return nil, credentials(err)
+		return nil, err
 	}
 	out := make([]Session, len(sessions)) // never nil: an empty list is [], not null
 	for i, sess := range sessions {
@@ -192,9 +171,9 @@ func (s *UserService) RevokeSession(ctx context.Context, actor Actor, userID, se
 		return err
 	}
 	if sessionID == actor.SessionID {
-		return fail(KindInvalid, "Use sign out to end the current session")
+		return ErrCurrentSession
 	}
-	return credentials(s.creds.RevokeSession(ctx, userID, sessionID))
+	return s.creds.RevokeSession(ctx, userID, sessionID)
 }
 
 // RevokeOtherSessions signs out every session but the actor's.
@@ -202,7 +181,7 @@ func (s *UserService) RevokeOtherSessions(ctx context.Context, actor Actor, user
 	if err := self(actor, userID); err != nil {
 		return err
 	}
-	return credentials(s.creds.RevokeOtherSessions(ctx, userID, actor.SessionID))
+	return s.creds.RevokeOtherSessions(ctx, userID, actor.SessionID)
 }
 
 // DeleteAccount deletes the user; sessions and app rows cascade.
@@ -210,7 +189,7 @@ func (s *UserService) DeleteAccount(ctx context.Context, actor Actor, userID str
 	if err := self(actor, userID); err != nil {
 		return err
 	}
-	return notFound(s.repo.Delete(ctx, userID), msgUserNotFound)
+	return notFound(s.repo.Delete(ctx, userID), ErrUserNotFound)
 }
 
 // DataSummary lists what the app stores for the user (shown before deletion).
@@ -219,5 +198,5 @@ func (s *UserService) DataSummary(ctx context.Context, actor Actor, userID strin
 		return UserDataSummary{}, err
 	}
 	sum, err := s.repo.DataSummary(ctx, userID)
-	return sum, notFound(err, msgUserNotFound)
+	return sum, notFound(err, ErrUserNotFound)
 }

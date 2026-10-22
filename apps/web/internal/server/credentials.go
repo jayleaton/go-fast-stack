@@ -63,9 +63,12 @@ func sessions(in []auth.Session) []services.Session {
 }
 
 // credentialErrors translates auth errors into the port's.
-// TODO(feat/account-auth): add auth.ErrInvalidPassword -> ErrWrongPassword,
+// TODO(feat/account-auth): add auth.ErrInvalidPassword -> ErrInvalidPassword,
 // auth.ErrEmailTaken -> ErrEmailTaken, auth.ErrSessionNotFound -> ErrSessionNotFound.
-var credentialErrors = []struct{ auth, port error }{
+var credentialErrors = []struct {
+	auth error
+	port *services.Error
+}{
 	{auth.ErrPasswordTooShort, services.ErrPasswordPolicy},
 	{auth.ErrPasswordTooLong, services.ErrPasswordPolicy},
 	{auth.ErrUserAlreadyExists, services.ErrEmailTaken},

@@ -5,6 +5,8 @@ import (
 	"net/url"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/jayleaton/ai-patterns-go/apps/web/internal/config"
 )
 
 // UpdateUserSettings is the PATCH body for a user. Email and password changes
@@ -36,14 +38,18 @@ func isHTTPURL(raw string) bool {
 // UpdateUserEmail is the POST /me/email body (Better Auth change-email names).
 // The address changes only after the link sent to NewEmail is opened.
 type UpdateUserEmail struct {
-	NewEmail    string `json:"newEmail"`
-	CallbackURL string `json:"callbackURL"` // optional: where the verification link lands
+	NewEmail string `json:"newEmail"`
+	// CallbackURL is where the verification link lands; config.AppRoutes.EmailChanged when empty.
+	CallbackURL string `json:"callbackURL"`
 }
 
 // Validate normalises the address and checks its shape. Whether it differs
 // from the current address is a business rule (services.UserService).
 func (u *UpdateUserEmail) Validate() error {
 	u.NewEmail = strings.ToLower(strings.TrimSpace(u.NewEmail))
+	if u.CallbackURL == "" {
+		u.CallbackURL = config.AppRoutes.EmailChanged
+	}
 	f := Fields{}
 	f.Add(!isEmail(u.NewEmail), "newEmail", "must be a valid email address")
 	f.Add(len(u.CallbackURL) > 2048, "callbackURL", "must be at most 2048 characters")

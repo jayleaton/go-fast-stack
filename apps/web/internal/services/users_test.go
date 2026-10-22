@@ -29,13 +29,11 @@ func newService(t *testing.T) (*services.UserService, *mocks.MockUserRepository,
 	return services.NewUserService(repo, creds), repo, creds
 }
 
-// wantKind fails unless err is a service error of kind with message msg
-// (any message when msg is empty).
-func wantKind(t *testing.T, err error, kind services.Kind, msg string) {
+// wantErr fails unless errors.Is(err, target).
+func wantErr(t *testing.T, err, target error) {
 	t.Helper()
-	var se *services.Error
-	if !errors.As(err, &se) || se.Kind != kind || (msg != "" && se.Message != msg) {
-		t.Fatalf("err = %#v, want kind %d %q", err, kind, msg)
+	if !errors.Is(err, target) {
+		t.Fatalf("err = %v, want %v", err, target)
 	}
 }
 
@@ -71,8 +69,8 @@ func TestUserServiceForbidsOtherUsers(t *testing.T) {
 	}
 	for name, call := range calls {
 		t.Run(name, func(t *testing.T) {
-			wantKind(t, call(ada, "u2"), services.KindForbidden, "You can only manage your own account")
-			wantKind(t, call(services.Actor{}, ""), services.KindForbidden, "") // no actor is nobody
+			wantErr(t, call(ada, "u2"), services.ErrForbidden)
+			wantErr(t, call(services.Actor{}, ""), services.ErrForbidden) // no actor is nobody
 		})
 	}
 }
@@ -84,9 +82,9 @@ func TestGetProfile(t *testing.T) {
 		t.Fatalf("GetProfile = %+v, %v", u, err)
 	}
 
-	repo.EXPECT().GetByID(ctx, "u1").Return(services.User{}, fmt.Errorf("get: %w", services.ErrNotFound))
+	repo.EXPECT().GetByID(ctx, "u1").Return(services.User{}, fmt.Errorf("get: %w", services.ErrRecordNotFound))
 	_, err := svc.GetProfile(ctx, ada, "u1")
-	wantKind(t, err, services.KindNotFound, "User not found")
+	wantErr(t, err, services.ErrUserNotFound)
 
 	repo.EXPECT().GetByID(ctx, "u1").Return(services.User{}, errDB)
 	_, err = svc.GetProfile(ctx, ada, "u1")
@@ -109,9 +107,9 @@ func TestUpdateProfile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	repo.EXPECT().UpdateProfile(ctx, "u1", gomock.Any()).Return(services.User{}, services.ErrNotFound)
+	repo.EXPECT().UpdateProfile(ctx, "u1", gomock.Any()).Return(services.User{}, services.ErrRecordNotFound)
 	_, err := svc.UpdateProfile(ctx, ada, "u1", validate.UpdateUserSettings{})
-	wantKind(t, err, services.KindNotFound, "User not found")
+	wantErr(t, err, services.ErrUserNotFound)
 
 	repo.EXPECT().UpdateProfile(ctx, "u1", gomock.Any()).Return(services.User{}, errDB)
 	_, err = svc.UpdateProfile(ctx, ada, "u1", validate.UpdateUserSettings{})
@@ -128,13 +126,13 @@ func TestRequestEmailChange(t *testing.T) {
 	}
 
 	err := svc.RequestEmailChange(ctx, ada, "u1", validate.UpdateUserEmail{NewEmail: "ADA@example.com"})
-	wantKind(t, err, services.KindInvalid, "New email must be different from the current email")
+	wantErr(t, err, services.ErrSameEmail)
 
-	creds.EXPECT().ChangeEmail(ctx, "u1", gomock.Any(), gomock.Any()).Return(fmt.Errorf("auth: %w", services.ErrEmailTaken))
-	wantKind(t, svc.RequestEmailChange(ctx, ada, "u1", in), services.KindConflict, "Email is already in use")
-
-	creds.EXPECT().ChangeEmail(ctx, "u1", gomock.Any(), gomock.Any()).Return(services.ErrInvalidCallbackURL)
-	wantKind(t, svc.RequestEmailChange(ctx, ada, "u1", in), services.KindInvalid, "Invalid callback URL")
+	// Port failures keep their identity through the service (the UI translates per error).
+	for _, portErr := range []error{services.ErrEmailTaken, services.ErrInvalidCallbackURL, services.ErrUserNotFound} {
+		creds.EXPECT().ChangeEmail(ctx, "u1", gomock.Any(), gomock.Any()).Return(fmt.Errorf("auth: %w", portErr))
+		wantErr(t, svc.RequestEmailChange(ctx, ada, "u1", in), portErr)
+	}
 
 	creds.EXPECT().ChangeEmail(ctx, "u1", gomock.Any(), gomock.Any()).Return(errDB)
 	wantInternal(t, svc.RequestEmailChange(ctx, ada, "u1", in), errDB)
@@ -150,32 +148,22 @@ func TestChangePassword(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	policy := "Password must be 8-128 characters"
-	for _, next := range []string{"short", strings.Repeat("x", 129), "ééééééé"} {
+	for _, next := range []string{"short", strings.Repeat("x", 129), "\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9"} {
 		err := svc.ChangePassword(ctx, ada, "u1", validate.UpdateUserPassword{CurrentPassword: "password123", NewPassword: next})
-		wantKind(t, err, services.KindInvalid, policy)
+		wantErr(t, err, services.ErrPasswordPolicy)
 	}
 	// Characters, not bytes: eight 2-byte runes pass.
-	creds.EXPECT().ChangePassword(ctx, "u1", "password123", strings.Repeat("é", 8), false, "s1").Return(nil)
-	if err := svc.ChangePassword(ctx, ada, "u1", validate.UpdateUserPassword{CurrentPassword: "password123", NewPassword: strings.Repeat("é", 8)}); err != nil {
+	creds.EXPECT().ChangePassword(ctx, "u1", "password123", strings.Repeat("\u00e9", 8), false, "s1").Return(nil)
+	if err := svc.ChangePassword(ctx, ada, "u1", validate.UpdateUserPassword{CurrentPassword: "password123", NewPassword: strings.Repeat("\u00e9", 8)}); err != nil {
 		t.Fatal(err)
 	}
 
 	err := svc.ChangePassword(ctx, ada, "u1", validate.UpdateUserPassword{CurrentPassword: "password123", NewPassword: "password123"})
-	wantKind(t, err, services.KindInvalid, "New password must be different from the current password")
+	wantErr(t, err, services.ErrSamePassword)
 
-	mapped := []struct {
-		port error
-		kind services.Kind
-		msg  string
-	}{
-		{services.ErrWrongPassword, services.KindInvalid, "Current password is incorrect"},
-		{services.ErrPasswordPolicy, services.KindInvalid, policy},
-		{services.ErrUserNotFound, services.KindNotFound, "User not found"},
-	}
-	for _, m := range mapped {
-		creds.EXPECT().ChangePassword(ctx, "u1", gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(fmt.Errorf("auth: %w", m.port))
-		wantKind(t, svc.ChangePassword(ctx, ada, "u1", in), m.kind, m.msg)
+	for _, portErr := range []error{services.ErrInvalidPassword, services.ErrPasswordPolicy, services.ErrUserNotFound} {
+		creds.EXPECT().ChangePassword(ctx, "u1", gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(fmt.Errorf("auth: %w", portErr))
+		wantErr(t, svc.ChangePassword(ctx, ada, "u1", in), portErr)
 	}
 
 	creds.EXPECT().ChangePassword(ctx, "u1", gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(errDB)
@@ -196,9 +184,9 @@ func TestListSessions(t *testing.T) {
 		t.Fatalf("no sessions = %#v, %v; want an empty, non-nil list", got, err)
 	}
 
-	creds.EXPECT().ListSessions(ctx, "u1").Return(nil, services.ErrUserNotFound)
+	creds.EXPECT().ListSessions(ctx, "u1").Return(nil, fmt.Errorf("auth: %w", services.ErrUserNotFound))
 	_, err = svc.ListSessions(ctx, ada, "u1")
-	wantKind(t, err, services.KindNotFound, "User not found")
+	wantErr(t, err, services.ErrUserNotFound)
 
 	creds.EXPECT().ListSessions(ctx, "u1").Return(nil, errDB)
 	_, err = svc.ListSessions(ctx, ada, "u1")
@@ -213,10 +201,10 @@ func TestRevokeSession(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	wantKind(t, svc.RevokeSession(ctx, ada, "u1", "s1"), services.KindInvalid, "Use sign out to end the current session")
+	wantErr(t, svc.RevokeSession(ctx, ada, "u1", "s1"), services.ErrCurrentSession)
 
 	creds.EXPECT().RevokeSession(ctx, "u1", "other-users-session").Return(fmt.Errorf("auth: %w", services.ErrSessionNotFound))
-	wantKind(t, svc.RevokeSession(ctx, ada, "u1", "other-users-session"), services.KindNotFound, "Session not found")
+	wantErr(t, svc.RevokeSession(ctx, ada, "u1", "other-users-session"), services.ErrSessionNotFound)
 
 	creds.EXPECT().RevokeSession(ctx, "u1", "s2").Return(errDB)
 	wantInternal(t, svc.RevokeSession(ctx, ada, "u1", "s2"), errDB)
@@ -231,7 +219,7 @@ func TestRevokeOtherSessions(t *testing.T) {
 	}
 
 	creds.EXPECT().RevokeOtherSessions(ctx, "u1", "s1").Return(services.ErrUserNotFound)
-	wantKind(t, svc.RevokeOtherSessions(ctx, ada, "u1"), services.KindNotFound, "User not found")
+	wantErr(t, svc.RevokeOtherSessions(ctx, ada, "u1"), services.ErrUserNotFound)
 
 	creds.EXPECT().RevokeOtherSessions(ctx, "u1", "s1").Return(errDB)
 	wantInternal(t, svc.RevokeOtherSessions(ctx, ada, "u1"), errDB)
@@ -245,8 +233,8 @@ func TestDeleteAccount(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	repo.EXPECT().Delete(ctx, "u1").Return(services.ErrNotFound)
-	wantKind(t, svc.DeleteAccount(ctx, ada, "u1"), services.KindNotFound, "User not found")
+	repo.EXPECT().Delete(ctx, "u1").Return(services.ErrRecordNotFound)
+	wantErr(t, svc.DeleteAccount(ctx, ada, "u1"), services.ErrUserNotFound)
 
 	repo.EXPECT().Delete(ctx, "u1").Return(errDB)
 	wantInternal(t, svc.DeleteAccount(ctx, ada, "u1"), errDB)
@@ -261,11 +249,36 @@ func TestDataSummary(t *testing.T) {
 		t.Fatalf("DataSummary = %+v, %v", got, err)
 	}
 
-	repo.EXPECT().DataSummary(ctx, "u1").Return(services.UserDataSummary{}, services.ErrNotFound)
+	repo.EXPECT().DataSummary(ctx, "u1").Return(services.UserDataSummary{}, services.ErrRecordNotFound)
 	_, err := svc.DataSummary(ctx, ada, "u1")
-	wantKind(t, err, services.KindNotFound, "User not found")
+	wantErr(t, err, services.ErrUserNotFound)
 
 	repo.EXPECT().DataSummary(ctx, "u1").Return(services.UserDataSummary{}, errDB)
 	_, err = svc.DataSummary(ctx, ada, "u1")
 	wantInternal(t, err, errDB)
+}
+
+// Kind sentinels match every error of their kind; specific errors only themselves.
+func TestErrorKinds(t *testing.T) {
+	cases := []struct {
+		err, target error
+		want        bool
+	}{
+		{services.ErrEmailTaken, services.ErrConflict, true},
+		{services.ErrSamePassword, services.ErrValidation, true},
+		{fmt.Errorf("wrapped: %w", services.ErrSessionNotFound), services.ErrNotFound, true},
+		{services.ErrForbidden, services.ErrForbidden, true},
+		{services.ErrEmailTaken, services.ErrNotFound, false},
+		{services.ErrSessionNotFound, services.ErrUserNotFound, false},
+		{services.ErrNotFound, services.ErrUserNotFound, false},
+		{errDB, services.ErrNotFound, false},
+	}
+	for _, c := range cases {
+		if got := errors.Is(c.err, c.target); got != c.want {
+			t.Errorf("errors.Is(%v, %v) = %v, want %v", c.err, c.target, got, c.want)
+		}
+	}
+	if services.KindOf(services.ErrEmailTaken) != services.KindConflict || services.KindOf(errDB) != services.KindInternal {
+		t.Error("KindOf")
+	}
 }

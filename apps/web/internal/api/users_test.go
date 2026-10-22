@@ -2,6 +2,7 @@ package api_test
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -155,15 +156,15 @@ func TestUserRoutes(t *testing.T) {
 		})
 		t.Run(name+"/other user is 403", func(t *testing.T) {
 			svc, h := newRouter(t)
-			rt.expect(svc.EXPECT(), &services.Error{Kind: services.KindForbidden, Message: "You can only manage your own account"})
-			wantError(t, apitest.Do(t, h, apitest.AsUser(ada), rt.method, rt.path, rt.body), 403, "You can only manage your own account")
+			rt.expect(svc.EXPECT(), services.ErrForbidden)
+			wantError(t, apitest.Do(t, h, apitest.AsUser(ada), rt.method, rt.path, rt.body), 403, "Forbidden")
 		})
 		t.Run(name+"/invalid input is 400", func(t *testing.T) {
 			svc, h := newRouter(t)
 			body := rt.invalid
 			if body == "" { // no body to get wrong: the service rejects the request
 				body = rt.body
-				rt.expect(svc.EXPECT(), &services.Error{Kind: services.KindInvalid, Message: "Rejected"})
+				rt.expect(svc.EXPECT(), services.ErrValidation)
 			}
 			res := apitest.Do(t, h, apitest.AsUser(ada), rt.method, rt.path, body)
 			if res.Status != 400 {
@@ -192,8 +193,9 @@ func TestErrorMapping(t *testing.T) {
 		status int
 		msg    string
 	}{
-		{&services.Error{Kind: services.KindNotFound, Message: "User not found"}, 404, "User not found"},
-		{&services.Error{Kind: services.KindConflict, Message: "Email is already in use"}, 409, "Email is already in use"},
+		{services.ErrUserNotFound, 404, "User not found"},
+		{fmt.Errorf("auth: %w", services.ErrEmailTaken), 409, "Email is already in use"},
+		{services.ErrInvalidPassword, 400, "Current password is incorrect"},
 		{&services.Error{Kind: services.KindUnauthorized, Message: "Nope"}, 401, "Nope"},
 		{&services.Error{Kind: services.KindInternal, Message: "secret detail"}, 500, "Internal server error"},
 		{errors.New("pq: connection refused"), 500, "Internal server error"}, // never leaks
@@ -229,6 +231,16 @@ func TestDecode(t *testing.T) {
 		if res.Status != 400 || *res.Error != "Invalid request data" || res.Details[c.field] == "" {
 			t.Errorf("%s %s %.40q: %d %v %v, want 400 on %q", c.method, c.path, c.body, res.Status, *res.Error, res.Details, c.field)
 		}
+	}
+}
+
+// TestEmailCallbackDefault: without a callbackURL the link lands on the
+// account page.
+func TestEmailCallbackDefault(t *testing.T) {
+	svc, h := newRouter(t)
+	svc.EXPECT().RequestEmailChange(anyCtx, actor, "u1", validate.UpdateUserEmail{NewEmail: "ada@new.example", CallbackURL: config.AppRoutes.EmailChanged})
+	if res := apitest.Do(t, h, apitest.AsUser(ada), "POST", r.MeEmail, `{"newEmail":"ada@new.example"}`); res.Status != 200 {
+		t.Fatalf("status %d (%s)", res.Status, *res.Error)
 	}
 }
 

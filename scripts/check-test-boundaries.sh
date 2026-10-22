@@ -13,10 +13,13 @@ boundaries=(
   packages/auth              # auth's own self-contained suite
 )
 
+# Files, or directories when a whole non-handler package is allowed.
 allow=(
   apps/web/internal/config/config_test.go # boot-time env validation; nothing above it to test through
   apps/web/internal/server/server_test.go # wiring: mounts, middleware order, CSRF
   apps/web/internal/server/auth_test.go   # wiring: auth adapters against real packages/auth + Postgres
+  apps/web/ui/i18n                        # dir: every message key exists in every locale
+  apps/web/ui/static                      # dir: pinned Datastar bundle hash
 )
 
 offenders=()
