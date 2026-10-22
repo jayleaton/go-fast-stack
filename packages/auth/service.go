@@ -2,7 +2,6 @@ package auth
 
 import (
 	"context"
-	"crypto/hmac"
 	"errors"
 	"net/mail"
 	"strings"
@@ -354,7 +353,7 @@ func (a *Auth) verifyAddress(ctx context.Context, claims verificationClaims) (Us
 		return User{}, Session{}, err
 	}
 	verified, err := a.store.verifyEmail(ctx, email, a.now(), func(hash *string) error {
-		if !hmac.Equal([]byte(cred), []byte(a.credFingerprint(hash))) {
+		if !a.credMatches(cred, hash) {
 			return ErrInvalidToken
 		}
 		return nil

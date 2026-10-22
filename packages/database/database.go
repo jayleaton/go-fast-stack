@@ -23,7 +23,7 @@ var Migrations = mustSub(migrationFiles, "migrations")
 func Open(ctx context.Context, url string) (*pgxpool.Pool, error) {
 	pool, err := pgxpool.New(ctx, url)
 	if err != nil {
-		return nil, fmt.Errorf("database: %w", err)
+		return nil, fmt.Errorf("database: %w", redactConnErr(err))
 	}
 	if err := pool.Ping(ctx); err != nil {
 		pool.Close()
@@ -32,10 +32,13 @@ func Open(ctx context.Context, url string) (*pgxpool.Pool, error) {
 	return pool, nil
 }
 
+// MigrationTable is the goose version table for app migrations.
+const MigrationTable = "goose_app"
+
 // Migrate applies app migrations (version table goose_app). Run it after the
 // auth migrations: app tables may reference "user"(id).
 func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
-	return RunMigrations(ctx, pool, "goose_app", Migrations)
+	return RunMigrations(ctx, pool, MigrationTable, Migrations)
 }
 
 // RunMigrations applies the goose migrations in fsys, tracking them in table.

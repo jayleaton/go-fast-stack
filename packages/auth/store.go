@@ -10,11 +10,17 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // credentialProvider is Better Auth's providerId for email + password accounts.
 const credentialProvider = "credential"
+
+// DB is what Auth needs from Postgres: a *pgxpool.Pool, or a pool holder
+// that swaps pools when DATABASE_URL rotates (database.Pool).
+type DB interface {
+	querier
+	Begin(ctx context.Context) (pgx.Tx, error)
+}
 
 // querier is satisfied by *pgxpool.Pool and pgx.Tx.
 type querier interface {
@@ -25,7 +31,7 @@ type querier interface {
 
 // store holds the hand-written queries over the Better Auth tables.
 type store struct {
-	pool *pgxpool.Pool
+	pool DB
 }
 
 var errNotFound = errors.New("auth: not found")

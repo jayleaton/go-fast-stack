@@ -88,6 +88,33 @@ func TestLoadRefusesSharedSecretsAndDatabases(t *testing.T) {
 	}
 }
 
+func TestLoadLiveSecrets(t *testing.T) {
+	kv := valid()
+	kv["ADMIN_AUTH_SECRET_PREVIOUS"] = strings.Repeat("p", 32)
+	kv["ADMIN_AUTH_SECRET_GRACE"] = "24h"
+	cfg, err := Load(env(kv))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.Secrets.Start(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	defer cfg.Secrets.Stop()
+	app, _ := cfg.Secrets.AppDatabaseURL()
+	admin, _ := cfg.Secrets.AdminDatabaseURL()
+	keys, err := cfg.Secrets.AuthSecrets()
+	if err != nil || !app.Equal(secrets.NewSecret("postgres://x/app")) || !admin.Equal(secrets.NewSecret("postgres://x/admin")) || len(keys.Previous) != 1 || cfg.AuthSecretGrace.Hours() != 24 {
+		t.Fatalf("app=%v admin=%v keys=%v grace=%s err=%v", app.IsZero(), admin.IsZero(), len(keys.Previous), cfg.AuthSecretGrace, err)
+	}
+	if cfg.Secrets.Provider() != "env" || cfg.Secrets.Healthy() != nil {
+		t.Fatal("env provider not healthy")
+	}
+	kv["ADMIN_AUTH_SECRET_REVOKED"] = "short"
+	if _, err := Load(env(kv)); err == nil || !strings.Contains(err.Error(), "ADMIN_AUTH_SECRET_REVOKED entry 1") {
+		t.Fatalf("short revoked secret: %v", err)
+	}
+}
+
 // A loaded Config prints, logs and marshals without its credentials, so
 // logging it (or a struct holding it) can never leak them.
 func TestConfigNeverPrintsSecrets(t *testing.T) {
@@ -101,7 +128,11 @@ func TestConfigNeverPrintsSecrets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !cfg.AuthSecret.Equal(secrets.NewSecret(values[2])) || !cfg.ResendAPIKey.Equal(secrets.NewSecret(values[3])) || cfg.AdminDatabaseURL.Equal(cfg.DatabaseURL) {
+	if err := cfg.Secrets.Start(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	defer cfg.Secrets.Stop()
+	if keys, _ := cfg.Secrets.AuthSecrets(); !keys.Current.Equal(secrets.NewSecret(values[2])) {
 		t.Fatal("credentials not loaded")
 	}
 	var logged bytes.Buffer

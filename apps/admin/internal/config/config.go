@@ -1,5 +1,6 @@
 // Package config loads the admin app's environment config, validated once at
 // boot, plus its routes config. Nothing else in apps/admin reads os.Getenv.
+// Secrets come through Secrets (packages/secrets) and rotate live.
 //
 // The admin app has two databases: its own (ADMIN_DATABASE_URL: admins,
 // their sessions, the audit log) and the main app's (DATABASE_URL: the users
@@ -13,6 +14,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/jayleaton/ai-patterns-go/packages/secrets"
 )
@@ -26,28 +28,26 @@ const (
 	Production  Env = "production"
 )
 
-// Config is the validated environment. Credentials are secrets.Secret, so the
-// whole Config prints, logs and marshals without them; cmd/admin reveals each
-// one where it builds the client that needs it.
+// Config is the validated environment.
 type Config struct {
 	Env            Env
 	Addr           string   // listen address, always 0.0.0.0:ADMIN_PORT (or PORT)
 	PublicURL      *url.URL // ADMIN_PUBLIC_URL: origin admins reach the dashboard on (invite links, auth callbacks)
 	TrustedOrigins []string // PublicURL plus ADMIN_TRUSTED_ORIGINS
-	// DatabaseURL is the main app's database (the users being administered).
-	DatabaseURL secrets.Secret
-	// AdminDatabaseURL is the admin app's own database (admins, audit log).
-	AdminDatabaseURL secrets.Secret
-	// AuthSecret signs admin cookies and tokens; never the app's AUTH_SECRET.
-	AuthSecret secrets.Secret
+	// Secrets: DATABASE_URL (the app database), ADMIN_DATABASE_URL (admins,
+	// audit log), the ADMIN_AUTH_SECRET keyring (never the app's AUTH_SECRET)
+	// and RESEND_API_KEY, from SECRETS_PROVIDER; they rotate live.
+	Secrets Secrets
+	// AuthSecretGrace is ADMIN_AUTH_SECRET_GRACE: how long a retired
+	// ADMIN_AUTH_SECRET is accepted (0: packages/auth default).
+	AuthSecretGrace time.Duration
 	// BootstrapEmail is seeded as the first admin (without a password) by
 	// `admin migrate`; `admin invite <email>` then sends its set-password link.
 	BootstrapEmail string
 	// RequireTwoFactor makes every admin enrol in TOTP before getting a
 	// session. Defaults to on in production.
 	RequireTwoFactor bool
-	AppName          string         // shown in the header and as the TOTP issuer
-	ResendAPIKey     secrets.Secret // empty outside production: invite links are logged
+	AppName          string // shown in the header and as the TOTP issuer
 	FromEmail        string
 	ClientIPHeader   string // header the trusted proxy sets to the client IP; empty uses the TCP peer
 }
@@ -64,15 +64,11 @@ func Load(getenv func(string) string) (Config, error) {
 	}
 
 	cfg := Config{
-		Env:              Env(get("APP_ENV", string(Development))),
-		DatabaseURL:      secrets.NewSecret(get("DATABASE_URL", "")),
-		AdminDatabaseURL: secrets.NewSecret(get("ADMIN_DATABASE_URL", "")),
-		AuthSecret:       secrets.NewSecret(get("ADMIN_AUTH_SECRET", "")),
-		BootstrapEmail:   strings.ToLower(get("ADMIN_BOOTSTRAP_EMAIL", "")),
-		AppName:          get("ADMIN_APP_NAME", "Admin"),
-		ResendAPIKey:     secrets.NewSecret(get("RESEND_API_KEY", "")),
-		FromEmail:        get("FROM_EMAIL", "noreply@example.com"),
-		ClientIPHeader:   get("CLIENT_IP_HEADER", ""),
+		Env:            Env(get("APP_ENV", string(Development))),
+		BootstrapEmail: strings.ToLower(get("ADMIN_BOOTSTRAP_EMAIL", "")),
+		AppName:        get("ADMIN_APP_NAME", "Admin"),
+		FromEmail:      get("FROM_EMAIL", "noreply@example.com"),
+		ClientIPHeader: get("CLIENT_IP_HEADER", ""),
 	}
 	switch cfg.Env {
 	case Development, Test, Production:
@@ -100,25 +96,12 @@ func Load(getenv func(string) string) (Config, error) {
 		errs = append(errs, err)
 	}
 
-	if cfg.DatabaseURL.IsZero() {
-		errs = append(errs, errors.New("DATABASE_URL (the app database) is required"))
-	}
-	switch {
-	case cfg.AdminDatabaseURL.IsZero():
-		errs = append(errs, errors.New("ADMIN_DATABASE_URL is required"))
-	case cfg.AdminDatabaseURL.Equal(cfg.DatabaseURL):
-		errs = append(errs, errors.New("ADMIN_DATABASE_URL must be a different database from DATABASE_URL"))
-	}
-	if cfg.AuthSecret.Len() < 32 {
-		errs = append(errs, errors.New("ADMIN_AUTH_SECRET must be at least 32 characters (openssl rand -base64 32)"))
-	} else if cfg.AuthSecret.Equal(secrets.NewSecret(get("AUTH_SECRET", ""))) {
-		errs = append(errs, errors.New("ADMIN_AUTH_SECRET must differ from the app's AUTH_SECRET"))
+	cfg.Secrets = loadSecrets(cfg.Env, get, &errs)
+	if cfg.AuthSecretGrace, err = secrets.ParseDuration("ADMIN_AUTH_SECRET_GRACE", get("ADMIN_AUTH_SECRET_GRACE", ""), 0); err != nil {
+		errs = append(errs, err)
 	}
 	if cfg.BootstrapEmail != "" && !strings.Contains(cfg.BootstrapEmail, "@") {
 		errs = append(errs, fmt.Errorf("ADMIN_BOOTSTRAP_EMAIL must be an email address, got %q", cfg.BootstrapEmail))
-	}
-	if cfg.Env == Production && cfg.ResendAPIKey.IsZero() {
-		errs = append(errs, errors.New("RESEND_API_KEY is required in production (admin invites are emailed)"))
 	}
 
 	if len(errs) > 0 {

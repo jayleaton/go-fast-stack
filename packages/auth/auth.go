@@ -21,10 +21,9 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
-
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // BasePath is where Handler serves the JSON endpoints.
@@ -47,7 +46,10 @@ const (
 
 // Config configures an Auth. Zero values fall back to the defaults above.
 type Config struct {
-	Secret                   string        // AUTH_SECRET: signs cookies and verification tokens, at least 32 bytes
+	Secret                   string        // AUTH_SECRET: signs cookies and verification tokens, wraps the 2FA data keys; at least 32 bytes
+	PreviousSecrets          []string      // AUTH_SECRET_PREVIOUS: still accepted for SecretGrace after they stop being current (see SetSecrets)
+	RevokedSecrets           []string      // AUTH_SECRET_REVOKED: never accepted; only unwrap data keys after an emergency rotation
+	SecretGrace              time.Duration // how long a retired secret is accepted (default: the longest signed lifetime, see DefaultSecretGrace)
 	BaseURL                  string        // public origin used in email links and as a trusted origin, e.g. https://app.example.com
 	RequireEmailVerification bool          // block sign-in until the email is verified and send a link on sign-up
 	SessionTTL               time.Duration // session lifetime, refreshed on use (default 7 days)
@@ -142,14 +144,21 @@ type Auth struct {
 	argon      argonParams
 	dummyHash  string
 	now        func() time.Time
+	ring       atomic.Pointer[keyring]  // signing secrets (keyring.go)
+	data       atomic.Pointer[dataKeys] // data-at-rest keys
+	keysMu     sync.Mutex               // serializes syncKeys
 	mail       sync.WaitGroup
 	mailMu     sync.RWMutex // sendMail holds it shared so Wait never races an Add
 }
 
 // New validates cfg and returns an Auth backed by pool. Run Migrate first.
-func New(cfg Config, pool *pgxpool.Pool, mailer Mailer) (*Auth, error) {
-	if len(cfg.Secret) < 32 {
-		return nil, errors.New("auth: Secret must be at least 32 bytes")
+//
+// New reads and records the key state in the database ("authKey"), so the
+// auth migrations must be applied.
+func New(cfg Config, pool DB, mailer Mailer) (*Auth, error) {
+	secrets := Secrets{Current: cfg.Secret, Previous: cfg.PreviousSecrets, Revoked: cfg.RevokedSecrets}
+	if err := validateSecrets(secrets); err != nil {
+		return nil, err
 	}
 	if pool == nil {
 		return nil, errors.New("auth: pool is required")
@@ -213,6 +222,9 @@ func New(cfg Config, pool *pgxpool.Pool, mailer Mailer) (*Auth, error) {
 		}
 		cfg.TwoFactor = &copied
 	}
+	if cfg.SecretGrace <= 0 {
+		cfg.SecretGrace = DefaultSecretGrace(cfg)
+	}
 
 	a := &Auth{
 		cfg:        cfg,
@@ -229,7 +241,32 @@ func New(cfg Config, pool *pgxpool.Pool, mailer Mailer) (*Auth, error) {
 	if a.dummyHash, err = hashPassword("dummy-password-for-timing", a.argon); err != nil {
 		return nil, err
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	if err := a.syncKeys(ctx, secrets); err != nil {
+		return nil, err
+	}
 	return a, nil
+}
+
+// DefaultSecretGrace is the grace period New uses when Config.SecretGrace is
+// unset: the longest lifetime of anything signed with the secret (session,
+// verification link, trust-device cookie), so no rotation signs anyone out
+// or breaks a link already sent.
+func DefaultSecretGrace(cfg Config) time.Duration {
+	session := cfg.SessionTTL
+	if session <= 0 {
+		session = DefaultSessionTTL
+	}
+	g := max(session, VerificationTokenTTL)
+	if tf := cfg.TwoFactor; tf != nil {
+		ttl := tf.TrustDeviceTTL
+		if ttl == 0 {
+			ttl = DefaultTrustDeviceTTL
+		}
+		g = max(g, ttl)
+	}
+	return g
 }
 
 // Shutdown waits for emails still being sent in the background, or for ctx.

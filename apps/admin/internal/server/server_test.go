@@ -83,7 +83,18 @@ func TestHealthzPingsEveryDatabase(t *testing.T) {
 	if rec := serve(newHandler(map[string]Pinger{"app": pinger{}}, nil), browser); rec.Code != http.StatusNotFound {
 		t.Fatalf("healthz from a browser: %d", rec.Code)
 	}
+	stale := New(Deps{
+		Config: config.Config{TrustedOrigins: []string{"http://dev-box:3001"}}, Log: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		DBs: map[string]Pinger{"app": pinger{}}, Secrets: staleSecrets{}, Auth: noAuth{},
+	})
+	if rec := serve(stale, httptest.NewRequest(http.MethodGet, config.APIRoutes.Healthz, nil)); rec.Code != 503 || !strings.Contains(rec.Body.String(), "secrets stale") {
+		t.Fatalf("stale secrets: %d %s", rec.Code, rec.Body)
+	}
 }
+
+type staleSecrets struct{}
+
+func (staleSecrets) Healthy() error { return errors.New("stale") }
 
 func TestMountsAndMiddleware(t *testing.T) {
 	h := newHandler(map[string]Pinger{"app": pinger{}}, stubUI)

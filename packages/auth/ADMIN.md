@@ -166,9 +166,11 @@ func (u *UserAdmin) ResetTwoFactor(ctx context.Context, userID string) error // 
 Banned users: sign-in (after the password matched) and every session lookup refuse them; a ban whose `banExpires` has passed lifts itself.
 Admin authorisation (who may call these) belongs to the admin app's services; these methods do not check the caller.
 
-Keep `ADMIN_AUTH_SECRET` stable: TOTP secrets and backup codes are protected with keys derived from it, so rotating it
-makes every enrolled admin unable to pass 2FA (recover each with `UserAdmin.ResetTwoFactor`; with `Required` they re-enrol
-at their next sign-in). `ResetTwoFactor` is also the way back for an admin who lost their authenticator and backup codes.
+`ADMIN_AUTH_SECRET` rotates like the app's `AUTH_SECRET`: pass the old values as `Config.PreviousSecrets` (a leaked one as
+`Config.RevokedSecrets`), or call `Auth.SetSecrets(ctx, auth.Secrets{...})` from a secrets hook, and nobody is signed out. TOTP secrets and backup codes are
+protected by data keys stored in the instance's own database ("authKey", per `CookiePrefix`) and only wrapped by the
+secret, so a rotation rewraps them and 2FA keeps working. `UserAdmin.ResetTwoFactor` is the way back for an admin who
+lost their authenticator and backup codes.
 Turning `TwoFactor` off on an instance skips 2FA even for users who enrolled.
 
 ## Errors (errors.Is)

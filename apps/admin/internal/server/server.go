@@ -40,7 +40,10 @@ type Deps struct {
 	Config config.Config
 	Log    *slog.Logger
 	DBs    map[string]Pinger // by name, every one must answer /healthz
-	Auth   Auth
+	// Secrets reports whether live secrets are loaded and fresh
+	// (config.Secrets); nil: /healthz checks the databases only.
+	Secrets SecretsHealth
+	Auth    Auth
 	// API is the admin JSON API (/api/admin/v1). cmd/admin mounts none: the
 	// dashboard calls the services in-process, so nothing about the API is
 	// on the network. A deployment that wants scripts or agents to call it
@@ -74,7 +77,7 @@ var authRoutes = []string{
 // /set-password page) and runs 2FA through packages/auth in-process.
 func New(d Deps) http.Handler {
 	mux := http.NewServeMux()
-	mux.Handle("GET "+config.APIRoutes.Healthz, apiOnly(healthz(d.DBs)))
+	mux.Handle("GET "+config.APIRoutes.Healthz, apiOnly(healthz(d.DBs, d.Secrets)))
 	if len(d.API) > 0 {
 		apiMux := http.NewServeMux()
 		authHandler := d.AuthEvents.Handler(d.Auth.Handler())
@@ -110,7 +113,14 @@ func securityHeaders(next http.Handler) http.Handler {
 	})
 }
 
-func healthz(dbs map[string]Pinger) http.HandlerFunc {
+// SecretsHealth reports whether live secrets are loaded and fresh.
+type SecretsHealth interface {
+	Healthy() error
+}
+
+// healthz is a readiness check: 503 when a database is down or live secrets
+// are past their max staleness (see the web app's healthz).
+func healthz(dbs map[string]Pinger, sec SecretsHealth) http.HandlerFunc {
 	names := slices.Sorted(maps.Keys(dbs))
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
@@ -120,6 +130,10 @@ func healthz(dbs map[string]Pinger) http.HandlerFunc {
 				api.WriteError(w, http.StatusServiceUnavailable, name+" database unavailable", nil)
 				return
 			}
+		}
+		if sec != nil && sec.Healthy() != nil {
+			api.WriteError(w, http.StatusServiceUnavailable, "secrets stale", nil)
+			return
 		}
 		api.WriteData(w, http.StatusOK, map[string]string{"status": "ok"})
 	}
