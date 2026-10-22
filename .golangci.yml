@@ -140,6 +140,31 @@ linters:
           deny:
             - pkg: github.com/jayleaton/go-fast-stack/apps/web
               desc: apps/admin copies the web app's patterns, never its code (it must stay deletable)
+        # The backup job (apps/backup + packages/backup) stays deletable: it
+        # imports no app and no app imports it; it reads Postgres only
+        # through pg_dump/pg_restore, never the repositories.
+        backup-isolation:
+          files:
+            - "**/apps/backup/**"
+            - "**/packages/backup/**"
+          deny:
+            - pkg: github.com/jayleaton/go-fast-stack/apps/web
+              desc: the backup job never imports an app
+            - pkg: github.com/jayleaton/go-fast-stack/apps/admin
+              desc: the backup job never imports an app
+            - pkg: github.com/jayleaton/go-fast-stack/packages/database
+              desc: backups go through pg_dump/pg_restore, not the repositories
+            - pkg: github.com/jayleaton/go-fast-stack/packages/auth
+              desc: the backup job has no users
+        apps-skip-backup:
+          files:
+            - "**/apps/web/**"
+            - "**/apps/admin/**"
+          deny:
+            - pkg: github.com/jayleaton/go-fast-stack/apps/backup
+              desc: apps never import the backup job (delete apps/backup and packages/backup to drop it)
+            - pkg: github.com/jayleaton/go-fast-stack/packages/backup
+              desc: apps never import the backup job (delete apps/backup and packages/backup to drop it)
         admin-transports:
           files:
             - "**/apps/admin/internal/api/**"

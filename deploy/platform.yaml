@@ -60,6 +60,23 @@ email:
 
 # admin_bootstrap_email: you@example.com   # first admin, seeded by `admin migrate`
 
+# Nightly database backups (README "Backups and restore"): a small cron
+# service, backup, dumps the app database (pg_dump, compressed), encrypts it
+# with BACKUP_ENCRYPTION_KEY (generated; keep a copy outside Railway) and
+# stores it in a Railway storage bucket, then prunes. Restore: make
+# railway-restore. Costs cents a month at template sizes.
+backups:
+  enabled: true
+  schedule: "0 3 * * *"   # cron, UTC
+  keep_daily: 7           # the newest backup of each of the last 7 days
+  keep_weekly: 4          # and of each of the last 4 weeks
+  admin: true             # also admin-postgres, when admin: true
+  region: ""              # bucket region: sjc, iad, ams, sin ("": nearest region:, else sjc)
+  # railway: a Railway storage bucket (no other account). external: your own
+  # S3-compatible bucket off Railway (Cloudflare R2, Backblaze B2, AWS S3);
+  # set backup/BACKUP_S3_* yourself (README "Backups and restore").
+  storage: railway
+
 # Per-service caps (per replica). Railway bills actual usage, so caps only
 # bound a runaway process; a Go service idles at a few tens of MB.
 resources:

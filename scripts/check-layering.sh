@@ -62,6 +62,8 @@ cases=(
   "packages/uikit|$mod/packages/secrets"
   "packages/uikit|github.com/jackc/pgx/v5"
   "apps/admin/ui|$mod/apps/admin/internal/api"
+  "packages/backup|$mod/packages/database"
+  "apps/web/internal/server|$mod/packages/backup"
 )
 
 # Test files. boundary dir | forbidden import

@@ -39,6 +39,8 @@ Use these words when talking about Go Fast Stack (this repo), in code review, co
 | data key | a random key protecting data at rest (TOTP secrets, backup-code hashes), stored wrapped by the auth secret so a rotation rewraps it instead of breaking 2FA | `packages/auth/keyring.go` |
 | pool swap | `database.Pool.Swap`: a rotated `DATABASE_URL` opens and probes a new pool, switches atomically and drains the old one | `packages/database/pool.go` |
 | max staleness | how long the last good snapshot may be served while the provider fails before `/healthz` reports 503 | `SECRETS_MAX_STALENESS` |
+| backup | an encrypted `pg_dump -Fc` of one database, stored as `<db>/<UTC time>.dump.age` (its id) in the backup bucket | `packages/backup/` |
+| backup service | the always-on `backup` Railway service (`apps/backup`): runs nightly, prunes, and is where `railway-restore` runs | `apps/backup/` |
 | sandbox database | the Docker Postgres from `make db-up`; the only database you may break | `docker-compose.yml` |
 | uikit | the templ component set and design tokens both UIs share; `theme.css` holds every color as `light-dark(<light>, <dark>)` | `packages/uikit/` |
 | theme | light, dark or system: the `theme` cookie, rendered by the server as `<html class>`; no class follows `prefers-color-scheme` | `packages/uikit/` |

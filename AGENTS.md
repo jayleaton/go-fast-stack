@@ -156,6 +156,13 @@ Exit codes:
 
 `make` itself turns any failure into exit 2, so read `exitCode` from the JSON, or run `bin/railway-setup <command> -config deploy/platform.yaml -iac deploy/.railway/railway.go` directly.
 
+## Backups
+
+- The backup job (`apps/backup` + `packages/backup`) is deletable like the admin app: it imports no app, no app imports it, and it reaches Postgres only through `pg_dump`/`pg_restore` (depguard, probed). It runs in its own `postgres:18-alpine` image so the tools match the server.
+- A new database (a third service with its own Postgres) gets backed up by passing its URL to the backup service and adding it to the job's database list; keep `<db>/<time>.dump.age` ids and the restore guards (`--yes`, `--force` over a non-empty database, an explicit target).
+- Never weaken the restore guards or log a value: logs carry ids, sizes and fingerprints. The encryption key is a keyring (`BACKUP_ENCRYPTION_KEY`, `_PREVIOUS`), validated with `Len` and revealed only in `apps/backup/cmd`.
+- Retention is the job's (Railway buckets have no lifecycle rules). Before changing `Retention.Expired`, prove the change with a local prune run: plant old backup ids in a local store and check what `backup prune` keeps.
+
 ## Pull requests
 
 - Never open a PR unless the developer asks.
@@ -173,6 +180,7 @@ Exit codes:
 - `apps/web/internal/services`: business rules and the ports they need; `services/mocks` (generated) for service tests. `apps/web/internal/validate`: input types.
 - `apps/web/ui`: templ pages, Datastar handlers, i18n, static assets, and the browser security headers (`security.go`).
 - `packages/uikit`: the templ components and design tokens both UIs share (`theme.css` is the one file to re-theme). It renders translated strings and values only; depguard keeps it from importing `apps/` or the data, auth and secrets packages.
+- `apps/backup`, `packages/backup`: the nightly encrypted Postgres backup and restore (README "Backups and restore").
 - `packages/database`: pool (`Pool`: swaps itself when `DATABASE_URL` rotates), `migrations/` (goose, embedded), `queries/` (sqlc input), `sqlc/` (generated, never edit), repositories, `model/`.
 - `packages/secrets`: live secrets: `Manager` (polling, validation, last-good cache, staleness, change hooks) and providers (`Env`, `Doppler`; Infisical/1Password stubs behind build tags), `Secret`, and the redacting log handler. Self-contained; never reads the env.
 - `packages/auth`: Better Auth–style auth: its own migrations, queries, endpoints (Better Auth paths and response shapes, not the envelope), sessions, mailers. Self-contained: it never imports `apps/` or `packages/database` (depguard).

@@ -14,6 +14,8 @@ const (
 	ServicePostgres      = "postgres"
 	ServiceAdmin         = "admin"
 	ServiceAdminPostgres = "admin-postgres"
+	ServiceBackup        = "backup"  // the nightly backup cron (backups: in platform.yaml)
+	BucketBackups        = "backups" // its Railway storage bucket
 )
 
 // AppPort is the port both apps listen on; public domains target it.
@@ -71,6 +73,20 @@ func (c Config) SecretVars() []Secret {
 	// DOPPLER_TOKEN is listed (ignored by IaC) even with provider env, so
 	// switching provider never plans deleting a real token.
 	out = append(out, Secret{ServiceWeb, "DOPPLER_TOKEN", DopplerToken})
+	if c.Backups.Enabled {
+		// Encrypts every backup (age). Keep a copy outside Railway: without
+		// it a backup cannot be restored. _PREVIOUS decrypts older backups
+		// after a rotation.
+		out = append(out,
+			Secret{ServiceBackup, "BACKUP_ENCRYPTION_KEY", Generated},
+			Secret{ServiceBackup, "BACKUP_ENCRYPTION_KEY_PREVIOUS", Manual},
+		)
+		if c.Backups.Storage == StorageExternal {
+			for _, v := range BackupS3Vars {
+				out = append(out, Secret{ServiceBackup, v, Manual})
+			}
+		}
+	}
 	if c.Admin {
 		out = append(out,
 			Secret{ServiceAdmin, "ADMIN_AUTH_SECRET", Generated},
@@ -128,6 +144,7 @@ func (c Config) Build(env string) (Project, error) {
 		},
 	}))
 	resources := []any{db, web}
+	var adminBackupURL map[string]any
 	if c.Admin {
 		adminDB := c.postgres(ServiceAdminPostgres)
 		vars := map[string]any{
@@ -146,6 +163,12 @@ func (c Config) Build(env string) (Project, error) {
 			env:        vars,
 		}))
 		resources = append(resources, adminDB, admin)
+		if c.Backups.Enabled && c.Backups.Admin {
+			adminBackupURL = adminDB.Env("DATABASE_URL")
+		}
+	}
+	if c.Backups.Enabled {
+		resources = append(resources, c.backups(env, db.Env("DATABASE_URL"), adminBackupURL)...)
 	}
 
 	var ignore []string
@@ -154,6 +177,60 @@ func (c Config) Build(env string) (Project, error) {
 	}
 	ignore = append(ignore, c.Unmanaged...)
 	return Project{Project: railway.ProjectNamed(c.Project, resources), Ignore: ignore}, nil
+}
+
+// backups is the backup service and its storage bucket: it sleeps until
+// backups.schedule (UTC), dumps the app database (and the admin one),
+// encrypts the dumps, stores them in the bucket and prunes. Not a Railway
+// cron: it stays up (a few MB) so people can `railway ssh` in to list,
+// back up or restore over the private network. No domain, no healthcheck,
+// no pre-deploy.
+func (c Config) backups(env string, appURL, adminURL map[string]any) []any {
+	vars := map[string]any{
+		"APP_ENV":            "production",
+		"DATABASE_URL":       appURL,
+		"BACKUP_SCHEDULE":    c.Backups.Schedule,
+		"BACKUP_KEEP_DAILY":  fmt.Sprint(c.Backups.KeepDaily),
+		"BACKUP_KEEP_WEEKLY": fmt.Sprint(c.Backups.KeepWeekly),
+	}
+	var out []any
+	if c.Backups.Storage == StorageRailway {
+		bucket := railway.Bucket(BucketBackups, map[string]any{"region": c.BucketRegion()})
+		for name, output := range map[string]string{
+			"BACKUP_S3_ENDPOINT": "ENDPOINT", "BACKUP_S3_BUCKET": "BUCKET", "BACKUP_S3_REGION": "REGION",
+			"BACKUP_S3_ACCESS_KEY_ID": "ACCESS_KEY_ID", "BACKUP_S3_SECRET_ACCESS_KEY": "SECRET_ACCESS_KEY",
+		} {
+			vars[name] = bucket.Env(output)
+		}
+		out = append(out, bucket)
+	}
+	if adminURL != nil {
+		vars["ADMIN_DATABASE_URL"] = adminURL
+	}
+	sc := railway.ServiceConfig{
+		"build": map[string]any{
+			"builder":        "DOCKERFILE",
+			"dockerfilePath": "apps/backup/Dockerfile",
+			"watchPatterns":  []any{"apps/backup/**", "packages/backup/**", "packages/secrets/**", "go.mod", "go.sum"},
+		},
+		"deploy": map[string]any{
+			"restartPolicyMaxRetries": 5,
+			"limitOverride": map[string]any{"containers": map[string]any{
+				"cpu":         1,
+				"memoryBytes": int64(512) << 20, // pg_dump of a large table
+			}},
+		},
+		"env": vars,
+	}
+	if c.Region != "" {
+		sc["replicas"] = map[string]any{c.Region: 1}
+	}
+	if !c.Upload() {
+		sc["source"] = railway.Github(c.Repo, map[string]any{"branch": c.BranchFor(env)})
+	} else {
+		delete(sc["build"].(map[string]any), "watchPatterns")
+	}
+	return append(out, railway.ServiceNamed(ServiceBackup, sc))
 }
 
 type app struct {

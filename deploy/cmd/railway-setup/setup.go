@@ -24,13 +24,14 @@ import (
 // `railway config plan|apply`; the rest (project, environments, previews,
 // bootstrap secrets, generated domains) is done here, idempotently.
 type setup struct {
-	cfg      platform.Config
-	cfgPath  string // absolute; passed to the IaC file as PLATFORM_CONFIG
-	iacFile  string // absolute path of deploy/.railway/railway.go
-	rw       *cli
-	out      io.Writer
-	apply    bool
-	destruct bool
+	backupArgs []string // backup: the job's arguments (list | run | restore <id> ...)
+	cfg        platform.Config
+	cfgPath    string // absolute; passed to the IaC file as PLATFORM_CONFIG
+	iacFile    string // absolute path of deploy/.railway/railway.go
+	rw         *cli
+	out        io.Writer
+	apply      bool
+	destruct   bool
 
 	yes     bool     // --yes: create the project without asking
 	jsonOut bool     // --json: logs go to stderr, the summary to stdout
@@ -399,7 +400,7 @@ func (s *setup) upload(ctx context.Context, env string, missingOnly bool) error 
 		return fmt.Errorf("%s is not set up yet: run make railway-apply first", env)
 	}
 	var errs []error // one failed service does not stop the others
-	for _, svc := range s.services() {
+	for _, svc := range s.allServices() {
 		if missingOnly {
 			if st, err := s.deploymentStatus(ctx, svc, env); err == nil && (st == "SUCCESS" || !settled(st)) {
 				continue // live, or a deploy is already running
@@ -438,7 +439,7 @@ func (s *setup) rotateDatabases(ctx context.Context, env string) error {
 	if err := s.setDatabasePasswords(ctx, env, true); err != nil {
 		return err
 	}
-	for _, svc := range s.services() {
+	for _, svc := range s.allServices() {
 		if s.project.Services[svc] == "" {
 			continue
 		}
@@ -534,7 +535,7 @@ func (s *setup) clearWatchPaths(ctx context.Context, env string) error {
 		return err
 	}
 	services := map[string]any{}
-	for _, svc := range s.services() {
+	for _, svc := range s.allServices() {
 		id := s.project.Services[svc]
 		if id == "" || len(cfg.Services[id].Build.WatchPatterns) == 0 {
 			continue
@@ -616,7 +617,7 @@ func (s *setup) bootstrap(ctx context.Context, env string) error {
 	}
 	writes := map[string]map[string]secretWrite{} // service -> name -> value
 	current := map[string]map[string]*string{}
-	for _, svc := range s.services() {
+	for _, svc := range s.allServices() {
 		vars, err := s.variables(ctx, svc, env)
 		if err != nil {
 			return err
@@ -764,8 +765,18 @@ func (s *setup) services() []string {
 	return []string{platform.ServiceWeb}
 }
 
+// allServices are services() plus the backup cron when backups are on:
+// everything setup deploys, bootstraps and redeploys. Doppler prompts and
+// checks use services(): the backup job reads Railway references.
+func (s *setup) allServices() []string {
+	if s.cfg.Backups.Enabled {
+		return append(s.services(), platform.ServiceBackup)
+	}
+	return s.services()
+}
+
 func (s *setup) servicesExist() bool {
-	for _, svc := range s.services() {
+	for _, svc := range s.allServices() {
 		if s.project.Services[svc] == "" {
 			return false
 		}
