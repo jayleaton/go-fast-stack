@@ -8,3 +8,4 @@ coverage.out
 .cache/
 /deploy/*.local.yaml
 /deploy/.railway/railway_iac_eval_main.go
+.backups/

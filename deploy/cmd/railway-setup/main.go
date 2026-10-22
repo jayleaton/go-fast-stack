@@ -8,6 +8,8 @@
 //	railway-setup secrets   add Doppler tokens / RESEND_API_KEY (sealed)
 //	railway-setup up        upload this checkout and deploy it (repo: "")
 //	railway-setup rotate-db new Postgres superuser passwords (after an incident)
+//	railway-setup backup -env <env> list | run | restore <id> --yes [--force]
+//	                        the backup job against env's bucket and databases
 //	railway-setup verify    GET /healthz on every public service
 //
 // Flags (or PLATFORM_* env vars) set platform.yaml keys first: --project,
@@ -21,6 +23,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -34,7 +37,7 @@ import (
 	"github.com/jayleaton/go-fast-stack/deploy/platform"
 )
 
-var commands = []string{"doctor", "plan", "apply", "doppler", "secrets", "up", "rotate-db", "verify"}
+var commands = []string{"doctor", "plan", "apply", "doppler", "secrets", "up", "rotate-db", "verify", "backup"}
 
 func main() {
 	os.Exit(run())
@@ -45,7 +48,7 @@ func run() int {
 	config := fs.String("config", "platform.yaml", "path to platform.yaml")
 	iac := fs.String("iac", ".railway/railway.go", "path to the IaC entry point")
 	destruct := fs.Bool("confirm-destructive", false, "let apply delete resources removed from platform.yaml")
-	only := fs.String("env", "", "up, rotate-db: only this environment (default: all)")
+	only := fs.String("env", "", "up, rotate-db: only this environment (default: all); backup: the environment (required)")
 	yes := fs.Bool("yes", envBool("PLATFORM_YES"), "create the project without asking (PLATFORM_YES=1)")
 	jsonOut := fs.Bool("json", envBool("PLATFORM_JSON"), "print a JSON summary on stdout, logs on stderr (PLATFORM_JSON=1)")
 	wait := fs.Duration("wait", 15*time.Minute, "apply: how long to wait for deployments to settle")
@@ -78,6 +81,7 @@ func run() int {
 	}
 	s := &setup{out: out, apply: cmd == "apply", destruct: *destruct, yes: *yes, jsonOut: *jsonOut}
 	s.sum.Command = cmd
+	s.backupArgs = fs.Args()
 	return s.finish(s.main(cmd, *config, *iac, *only, *wait, ovs))
 }
 
@@ -162,6 +166,14 @@ func (s *setup) main(cmd, config, iac, only string, wait time.Duration, ovs []*o
 			return err
 		}
 		return s.health(ctx, 0)
+	case "backup":
+		if only == "" {
+			return errors.New("backup needs -env (PLATFORM_ENV=production): it reads and may restore that environment")
+		}
+		if err := s.findProject(ctx); err != nil {
+			return err
+		}
+		return s.backupJob(ctx, only, s.backupArgs)
 	}
 	return nil
 }

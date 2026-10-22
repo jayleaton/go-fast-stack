@@ -13,6 +13,7 @@ import (
 	"os"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 
 	"go.yaml.in/yaml/v3"
@@ -52,6 +53,8 @@ type Config struct {
 	// AdminBootstrapEmail is seeded as the first admin by `admin migrate`.
 	AdminBootstrapEmail string    `yaml:"admin_bootstrap_email"`
 	Resources           Resources `yaml:"resources"`
+	// Backups: a nightly encrypted pg_dump into a Railway storage bucket.
+	Backups Backups `yaml:"backups"`
 	// Unmanaged are extra variable names (or service/NAME patterns) Railway
 	// keeps but IaC never sets or deletes: values you add in the dashboard.
 	Unmanaged []string `yaml:"unmanaged_variables"`
@@ -95,6 +98,50 @@ type Email struct {
 	From string `yaml:"from"`
 }
 
+// Backups configure the backup cron service (apps/backup).
+type Backups struct {
+	Enabled    bool   `yaml:"enabled"`
+	Schedule   string `yaml:"schedule"`    // cron, UTC
+	KeepDaily  int    `yaml:"keep_daily"`  // newest backup of each of the last N days
+	KeepWeekly int    `yaml:"keep_weekly"` // newest of each of the last N ISO weeks
+	Admin      bool   `yaml:"admin"`       // also the admin database (with admin: true)
+	// Region is the bucket's region: sjc, iad, ams or sin (Railway bucket
+	// regions, not service regions). Empty: the one nearest region:, or sjc.
+	Region string `yaml:"region"`
+	// Storage: railway (a Railway storage bucket, created by setup) or
+	// external (any S3-compatible bucket, e.g. Cloudflare R2 or Backblaze B2,
+	// off Railway: survives losing the project). External: set BACKUP_S3_*
+	// on the backup service yourself; IaC leaves them alone.
+	Storage string `yaml:"storage"`
+}
+
+// Backup storage kinds (backups.storage).
+const (
+	StorageRailway  = "railway"
+	StorageExternal = "external"
+)
+
+// BackupS3Vars are the backup service's bucket settings: references to the
+// Railway bucket, or set by hand with storage: external.
+var BackupS3Vars = []string{"BACKUP_S3_ENDPOINT", "BACKUP_S3_BUCKET", "BACKUP_S3_REGION", "BACKUP_S3_ACCESS_KEY_ID", "BACKUP_S3_SECRET_ACCESS_KEY", "BACKUP_S3_PATH_STYLE"}
+
+// BucketRegions are the regions Railway storage buckets can live in.
+var BucketRegions = []string{"sjc", "iad", "ams", "sin"}
+
+// BucketRegion is backups.region, or the bucket region nearest the
+// services' region (us-west* sjc, us-east* iad, europe* ams, asia* sin).
+func (c Config) BucketRegion() string {
+	if c.Backups.Region != "" {
+		return c.Backups.Region
+	}
+	for prefix, r := range map[string]string{"us-east": "iad", "europe": "ams", "asia": "sin"} {
+		if strings.HasPrefix(c.Region, prefix) {
+			return r
+		}
+	}
+	return "sjc"
+}
+
 // Resources are the per-service caps. Railway bills what a container
 // actually uses; the caps only bound a runaway process.
 type Resources struct {
@@ -116,6 +163,7 @@ var (
 		Environments: Environments{"production"},
 		Secrets:      Secrets{Provider: ProviderDoppler, Project: DefaultDopplerProject},
 		Email:        Email{From: "noreply@example.com"},
+		Backups:      Backups{Enabled: true, Schedule: "0 3 * * *", KeepDaily: 7, KeepWeekly: 4, Admin: true, Storage: StorageRailway},
 		Resources: Resources{
 			Web:   Size{CPU: 1, MemoryMB: 512, Replicas: 1},
 			Admin: Size{CPU: 0.5, MemoryMB: 256, Replicas: 1},
@@ -220,12 +268,69 @@ func (c Config) Validate() error {
 			add("resources.%s.replicas must be between 1 and 50, got %d", name, s.Replicas)
 		}
 	}
+	if c.Backups.Enabled {
+		if !validCron(c.Backups.Schedule) {
+			add("backups.schedule must be a 5-field cron expression in UTC (minute 0-59, hour 0-23, day 1-31, month 1-12, weekday 0-7; e.g. \"0 3 * * *\"), got %q", c.Backups.Schedule)
+		}
+		if c.Backups.KeepDaily < 1 || c.Backups.KeepDaily > 366 {
+			add("backups.keep_daily must be between 1 and 366, got %d", c.Backups.KeepDaily)
+		}
+		if c.Backups.Storage != StorageRailway && c.Backups.Storage != StorageExternal {
+			add("backups.storage must be %s or %s, got %q", StorageRailway, StorageExternal, c.Backups.Storage)
+		}
+		if c.Backups.Region != "" && !slices.Contains(BucketRegions, c.Backups.Region) {
+			add("backups.region must be one of %v (Railway bucket regions), got %q", BucketRegions, c.Backups.Region)
+		}
+		if c.Backups.KeepWeekly < 0 || c.Backups.KeepWeekly > 520 {
+			add("backups.keep_weekly must be between 0 and 520, got %d", c.Backups.KeepWeekly)
+		}
+	}
 	for _, p := range c.Unmanaged {
 		if !varPattern.MatchString(p) {
 			add("unmanaged_variables: %q must be NAME, NAME_* or service/NAME", p)
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// validCron checks what the backup job's parser accepts (packages/backup
+// ParseSchedule; deploy/ is its own module): 5 fields of *, numbers, ranges,
+// lists and steps within each field's bounds.
+func validCron(expr string) bool {
+	f := strings.Fields(expr)
+	if len(f) != 5 {
+		return false
+	}
+	bounds := [5][2]int{{0, 59}, {0, 23}, {1, 31}, {1, 12}, {0, 7}}
+	num := func(s string, lo, hi int) (int, bool) {
+		n, err := strconv.Atoi(s)
+		return n, err == nil && n >= lo && n <= hi
+	}
+	for i, field := range f {
+		lo, hi := bounds[i][0], bounds[i][1]
+		for part := range strings.SplitSeq(field, ",") {
+			rng, step, hasStep := strings.Cut(part, "/")
+			if hasStep {
+				if n, err := strconv.Atoi(step); err != nil || n < 1 {
+					return false
+				}
+			}
+			if rng == "*" {
+				continue
+			}
+			a, b, isRange := strings.Cut(rng, "-")
+			x, ok := num(a, lo, hi)
+			if !ok {
+				return false
+			}
+			if isRange {
+				if y, ok := num(b, lo, hi); !ok || y < x {
+					return false
+				}
+			}
+		}
+	}
+	return true
 }
 
 // Upload reports whether services have no GitHub source: code is shipped

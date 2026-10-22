@@ -146,6 +146,38 @@ db-up: env ## Start Postgres + pgweb (127.0.0.1 only) and make sure the admin da
 db-down: ## Stop Postgres + pgweb (keeps the data volume)
 	$(COMPOSE) --profile test down
 
+# Backups (README "Backups and restore"): the backup job in a
+# postgres:18-alpine container on this checkout's compose network, so its
+# pg_dump matches the server on every OS. Encrypted with BACKUP_ENCRYPTION_KEY
+# (.env); stored in BACKUP_DIR, or in the S3 bucket BACKUP_S3_* names in .env.
+BACKUP_DIR      ?= .backups
+BACKUP_NETWORK  := $(COMPOSE_PROJECT_NAME)_default
+BACKUP_DB       := postgres://postgres:postgres@postgres:5432
+backup_job       = CGO_ENABLED=0 GOOS=linux GOARCH="$$(docker version -f '{{.Server.Arch}}')" $(GO) build -trimpath -o bin/linux/backup ./apps/backup/cmd/backup && \
+	mkdir -p '$(BACKUP_DIR)' && docker run --rm --network '$(BACKUP_NETWORK)' --user "$$(id -u):$$(id -g)" \
+	  -v '$(CURDIR)/bin/linux/backup:/usr/local/bin/backup:ro' -v '$(abspath $(BACKUP_DIR)):/backups' \
+	  -e DATABASE_URL='$(BACKUP_DB)/app?sslmode=disable' $(1) $(if $(BACKUP_ADMIN),-e ADMIN_DATABASE_URL='$(BACKUP_DB)/admin?sslmode=disable') \
+	  -e BACKUP_ENCRYPTION_KEY -e BACKUP_ENCRYPTION_KEY_PREVIOUS -e BACKUP_KEEP_DAILY -e BACKUP_KEEP_WEEKLY \
+	  $(if $(BACKUP_S3_ENDPOINT),-e BACKUP_S3_ENDPOINT -e BACKUP_S3_BUCKET -e BACKUP_S3_REGION -e BACKUP_S3_PATH_STYLE -e BACKUP_S3_ACCESS_KEY_ID -e BACKUP_S3_SECRET_ACCESS_KEY,-e BACKUP_DIR=/backups) \
+	  postgres:18-alpine backup
+
+.PHONY: db-backup
+db-backup: ## Back up this checkout's Postgres (encrypted pg_dump; BACKUP_ADMIN=1 adds the admin database), then prune
+	$(call backup_job) run
+
+.PHONY: db-backups
+db-backups: ## List backups, newest first
+	$(call backup_job) list
+
+.PHONY: db-restore
+# ID, YES and FORCE reach the recipe through the environment (export above),
+# never spliced into the shell text; YES/FORCE count only as exactly 1.
+db-restore: ## Restore ID=<backup id> into this checkout's database it came from: YES=1 required, FORCE=1 replaces a non-empty one
+	@test -n "$$ID" || (echo 'usage: make db-restore ID=app/<time>.dump.age YES=1 [FORCE=1] (ids: make db-backups)' && exit 2)
+	db="$${ID%%/*}"; case "$$db" in app|admin) ;; *) echo "not a backup id: $$ID"; exit 2;; esac; \
+	$(call backup_job,-e RESTORE_DATABASE_URL="$(BACKUP_DB)/$$db?sslmode=disable") \
+	  restore "$$ID" $(if $(filter 1,$(YES)),--yes) $(if $(filter 1,$(FORCE)),--force)
+
 .PHONY: test-db-up
 test-db-up:
 	$(COMPOSE) --profile test up -d --wait --quiet-pull postgres-test
@@ -221,6 +253,19 @@ railway-up: ## Upload this checkout to Railway and deploy it (PLATFORM_ENV=stagi
 .PHONY: railway-rotate-db
 railway-rotate-db: ## New Postgres superuser passwords on Railway, then redeploy (PLATFORM_ENV=staging for one)
 	@$(DEPLOY_SETUP) rotate-db -config $(PLATFORM_FILE) $(if $(PLATFORM_ENV),-env $(PLATFORM_ENV)) $(ARGS)
+
+.PHONY: railway-backups
+railway-backups: ## List the Railway backups of PLATFORM_ENV (railway ssh)
+	@$(DEPLOY_SETUP) backup -config $(PLATFORM_FILE) -env '$(PLATFORM_ENV)' $(ARGS) list
+
+.PHONY: railway-backup
+railway-backup: ## Back up PLATFORM_ENV's Railway databases now (the cron does it nightly)
+	@$(DEPLOY_SETUP) backup -config $(PLATFORM_FILE) -env '$(PLATFORM_ENV)' $(ARGS) run
+
+.PHONY: railway-restore
+railway-restore: ## Restore ID=<backup id> into PLATFORM_ENV's database it came from (railway ssh): YES=1 required, FORCE=1 replaces a non-empty one
+	@test -n "$$ID" || (echo 'usage: make railway-restore PLATFORM_ENV=production ID=app/<time>.dump.age YES=1 [FORCE=1] (ids: make railway-backups)' && exit 2)
+	@$(DEPLOY_SETUP) backup -config $(PLATFORM_FILE) -env '$(PLATFORM_ENV)' $(ARGS) restore "$$ID" $(if $(filter 1,$(YES)),--yes) $(if $(filter 1,$(FORCE)),--force)
 
 .PHONY: railway-verify
 railway-verify: ## GET /healthz on every public Railway service
