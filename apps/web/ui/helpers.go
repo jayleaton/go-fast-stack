@@ -1,3 +1,4 @@
+// Scratch: warm-cache check (do not merge).
 package ui
 
 import (
