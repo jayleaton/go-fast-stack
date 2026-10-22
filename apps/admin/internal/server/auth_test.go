@@ -524,7 +524,7 @@ func TestAuthEventsExactAcrossInstances(t *testing.T) {
 			t.Fatal(err)
 		}
 		post := func(a *auth.Auth, path, body string, headers ...string) *httptest.ResponseRecorder {
-			req := httptest.NewRequest("POST", adminOrigin+path, strings.NewReader(body))
+			req := httptest.NewRequest(http.MethodPost, adminOrigin+path, strings.NewReader(body))
 			req.Header.Set("Content-Type", "application/json")
 			for i := 0; i+1 < len(headers); i += 2 {
 				req.Header.Set(headers[i], headers[i+1])

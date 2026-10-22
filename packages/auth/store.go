@@ -224,11 +224,6 @@ func (s *store) deleteUserSessionsCount(ctx context.Context, q querier, userID s
 	return tag.RowsAffected(), err
 }
 
-func (s *store) deleteUserSessions(ctx context.Context, q querier, userID string) error {
-	_, err := q.Exec(ctx, `DELETE FROM "session" WHERE "userId" = $1`, userID)
-	return err
-}
-
 func (s *store) createVerification(ctx context.Context, identifier, value string, expiresAt, now time.Time) error {
 	_, err := s.pool.Exec(ctx, `
 		INSERT INTO "verification" ("id", "identifier", "value", "expiresAt", "createdAt", "updatedAt")
