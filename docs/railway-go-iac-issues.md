@@ -66,7 +66,7 @@ show(railway.ServiceConfig{"env": map[string]string{"A": "1"}})       // no vari
 
 **Impact.** Losing every variable from `map[string]string` is the most likely first thing a Go user writes. The plan then shows "up to date", or plans deletes of existing variables.
 
-**Workaround here.** `deploy/platform/graph.go` builds every list as `[]any` and every map as `map[string]any`. `deploy/platform/platform_test.go` asserts the resulting graph.
+**Workaround here.** `deploy/platform/graph.go` builds every list as `[]any` and every map as `map[string]any`.
 
 ## 2. go-sdk: unknown or misspelled `ServiceConfig` keys are silently dropped
 
@@ -76,7 +76,7 @@ show(railway.ServiceConfig{"env": map[string]string{"A": "1"}})       // no vari
 
 **Expected.** Panic on unknown keys, as the TypeScript types would reject them at compile time. Or offer a typed `railway.Service{Healthcheck: "/healthz", ...}` struct, so the compiler catches typos. That would be the natural Go surface for a beta that "mirrors" the TypeScript DSL.
 
-**Workaround here.** Assertions in `deploy/platform/platform_test.go` on every key the template relies on.
+**Workaround here.** Keys are spelled once, in `deploy/platform/graph.go`; check `railway config plan` output after changing them (the template keeps no deploy tests).
 
 ## 3. cli: any `railway.go` that mentions "Partial" fails to evaluate
 

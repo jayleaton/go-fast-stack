@@ -1,7 +1,6 @@
 // The preview's in-memory backend: ui.Auth and ui.Users with packages/auth's
 // and services.UserService's rules, close enough to click through every page.
 // Sessions live in a cookie, tokens in maps, and "emails" are logged.
-// Tests use the generated mocks in apps/web/ui/mocks instead.
 package main
 
 import (

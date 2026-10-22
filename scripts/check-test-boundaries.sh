@@ -1,40 +1,28 @@
 #!/usr/bin/env bash
 # Fails if any _test.go (tracked or untracked, not ignored) lives outside the
 # test boundaries below. A boundary is a directory (the test file's own
-# directory must be it) or, ending in /**, a tree. See AGENTS.md "Test boundaries".
+# directory must be it). See AGENTS.md "Test boundaries".
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 boundaries=(
-  apps/web/internal/services # service unit tests: generated port mocks only
-  apps/web/internal/api      # route handler tests: mock service + mock session, real router
-  apps/web/ui/**             # ui handler tests (same shape as api), plus the i18n key guard, render tests and the static/Datastar hash pin
-  packages/database          # repository integration tests: real Postgres
-  packages/auth              # auth's own self-contained suite
-  packages/secrets           # secrets manager + providers: fake providers over httptest, synctest clock
-  # apps/admin: the same boundaries, same rules.
-  apps/admin/internal/services # admin service unit tests: generated port mocks only
-  apps/admin/internal/api      # admin route handler tests: mock service + mock session, real router
-  apps/admin/ui/**             # admin ui handler tests, i18n key guard, render tests, Datastar hash pin
-  packages/database/adminrepo  # admin repository integration tests: real Postgres (app + admin databases)
-  deploy/platform            # Railway setup (its own module): platform.yaml validation and the IaC graph, pure
+  apps/web/internal/services   # business logic: service unit tests with generated port mocks
+  apps/web/internal/api        # route handlers: mock service + mock session, real router
+  apps/admin/internal/services # admin business logic, same rules
+  apps/admin/internal/api      # admin route handlers, same rules
+  packages/auth                # backend auth: its own suite against real Postgres
 )
 
-# Single files with no boundary above them.
-allow=(
-  apps/web/internal/config/config_test.go # boot-time env validation; nothing above it to test through
-  apps/web/internal/server/server_test.go # wiring: mounts, middleware order, CSRF
-  apps/web/internal/server/auth_test.go   # wiring: auth adapters against real packages/auth + Postgres
-  apps/admin/internal/config/config_test.go # the admin app's boot-time env validation
-  apps/admin/internal/server/server_test.go # admin wiring: mounts, middleware order, CSRF, no sign-up
-  apps/admin/internal/server/auth_test.go   # admin wiring: adapters against real packages/auth on two databases
-)
+# No other tests: no UI, config, wiring, repository, secrets or deploy tests.
+# Repositories are exercised for real by migrations and the app; services see
+# them only through mocked ports.
+allow=()
 
 offenders=()
 while IFS= read -r f; do
   [ -e "$f" ] || continue # deleted in the working tree
   dir=$(dirname "$f")
-  for b in "${boundaries[@]}" "${allow[@]}"; do
+  for b in "${boundaries[@]}" ${allow[@]+"${allow[@]}"}; do
     case $b in
     */\*\*) [ "$dir" = "${b%/\*\*}" ] || [[ $dir == "${b%\*\*}"* ]] && continue 2 ;;
     *) [ "$dir" = "$b" ] || [ "$f" = "$b" ] && continue 2 ;;

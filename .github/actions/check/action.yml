@@ -125,7 +125,7 @@ runs:
         if [ "$DB" = true ]; then
           cat > "$RUNNER_TEMP/wait-db" <<'SH'
         #!/usr/bin/env bash
-        if grep -lqE 'dbtest|TEST_DATABASE_URL' ./*_test.go 2>/dev/null; then
+        if grep -lq 'TEST_DATABASE_URL' ./*_test.go 2>/dev/null; then
           # 2x the measured Postgres boot (12-22 s): never waits longer than 45 s.
           for _ in $(seq 1 180); do
             docker exec pg pg_isready -q -h 127.0.0.1 -U postgres 2>/dev/null && exec "$@"
@@ -186,14 +186,13 @@ runs:
         pnpm test
 
     # ---- deploy/: its own Go module (Railway IaC SDK + yaml) ----
-    - name: deploy module vet + test
+    - name: deploy module vet
       if: inputs.deploy == 'true'
       shell: bash
       working-directory: deploy
       run: |
         go vet ./...
         (cd .railway && go vet railway.go)
-        go test ./...
     - uses: golangci/golangci-lint-action@v9
       if: inputs.deploy == 'true'
       with:

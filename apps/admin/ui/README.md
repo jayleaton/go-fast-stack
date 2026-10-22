@@ -14,7 +14,6 @@ white background on purpose).
 | `ui/i18n` | `messages/{en,ja}.json`, locale negotiation, `i18n.T(ctx, key)` and `i18n.Tf(ctx, key, args...)` |
 | `ui/routes` | the UI's own action endpoints (logout, locale, 2FA enable, user actions, invite, admin disable/enable/remove, static); pages use `config.AppRoutes` |
 | `ui/static` | embedded `app.css` (generated), pinned `datastar-1.0.4.js`, favicon |
-| `ui/mocks` | mockgen output for the ports (tests only) |
 
 ## Commands
 
@@ -23,8 +22,6 @@ Run from the repo root. Outputs are committed; `make generate css` does all of i
 ```sh
 go tool templ generate -path apps/admin/ui
 "$(apps/web/ui/scripts/tailwind.sh)" -i apps/admin/ui/styles/input.css -o apps/admin/ui/static/app.css --minify  # after templ
-(cd apps/admin/ui && go generate ./...)   # mocks
-go test -race ./apps/admin/ui/...
 ```
 
 ## Mounting
@@ -85,9 +82,8 @@ the adapter must see the request (for example through the context its middleware
   `errors.auditUnavailable` and is logged with its cause; a change applied but whose outcome was not recorded
   is an internal error (something went wrong; the entry stays "outcome unknown").
 - **i18n**: like the web copy, except that messages may carry ordered placeholders (`{0}`), filled by `Tf`, because
-  word order differs (`Invite sent to {0}` / `{0} に招待を送信しました`). `TestPlaceholdersMatch` keeps them aligned.
-- **Tests** (`apps/admin/ui/**` is a test boundary): generated mocks of the ports plus a mock session through
-  `Deps.UserFrom`. `TestRenderStopsWhenClientHangsUp` fails the connection at every write of every page.
+  word order differs (`Invite sent to {0}` / `{0} に招待を送信しました`). Keep them aligned across locales.
+- **Tests**: none; the UI is not a test boundary (AGENTS.md "Test boundaries"). Its rules live in the services.
 
 ## Audit log: two ways of recording
 

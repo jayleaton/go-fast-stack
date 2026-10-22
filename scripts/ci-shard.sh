@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Picks the packages one CI job tests: "db" = packages whose tests use
-# Postgres (dbtest or TEST_DATABASE_URL in their _test.go files), "other" =
+# Postgres (TEST_DATABASE_URL in their _test.go files), "other" =
 # the rest, "all" = both (a single job that does everything).
 # Usage: PACKAGES="<import paths>|./..." scripts/ci-shard.sh db|other|all
 # Prints (and appends to $GITHUB_OUTPUT when set):
@@ -21,7 +21,7 @@ mine=() db=false
 for p in "${all[@]}"; do
   [ -n "$p" ] || continue
   d=${p/#$mod/.}
-  if grep -lqE 'dbtest|TEST_DATABASE_URL' "$d"/*_test.go 2>/dev/null; then kind=db; else kind=other; fi
+  if grep -lq 'TEST_DATABASE_URL' "$d"/*_test.go 2>/dev/null; then kind=db; else kind=other; fi
   if [ "$shard" = all ] || [ "$kind" = "$shard" ]; then
     mine+=("$p")
     if [ "$kind" = db ]; then db=true; fi

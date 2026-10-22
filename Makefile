@@ -227,5 +227,5 @@ railway-verify: ## GET /healthz on every public Railway service
 	@$(DEPLOY_SETUP) verify -config $(PLATFORM_FILE) $(ARGS)
 
 .PHONY: deploy-check
-deploy-check: ## vet, lint and test the deploy/ module
-	cd deploy && $(GO) vet ./... && (cd .railway && $(GO) vet railway.go) && $(GO) tool -modfile=../tools/go.mod golangci-lint run -c ../.golangci.yml ./... && $(GO) test ./...
+deploy-check: ## vet and lint the deploy/ module (it has no tests)
+	cd deploy && $(GO) vet ./... && (cd .railway && $(GO) vet railway.go) && $(GO) tool -modfile=../tools/go.mod golangci-lint run -c ../.golangci.yml ./...

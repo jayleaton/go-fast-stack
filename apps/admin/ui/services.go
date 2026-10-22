@@ -1,7 +1,5 @@
 package ui
 
-//go:generate go tool mockgen -source=services.go -destination=mocks/services.go -package=mocks
-
 import (
 	"context"
 

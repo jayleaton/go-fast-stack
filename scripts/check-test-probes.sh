@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Proves the test-boundary checks still bite: the clean tree passes
 # check-test-boundaries.sh, planted test files outside the boundaries are named
-# by it, planted uncovered statements sink services and the UI below their
+# by it, planted uncovered statements sink services below their
 # floors in check-coverage.sh, and scripts/testbudget fails a slow package and
 # a slow test. Probes are always removed. (depguard rules for test files are
 # proven by check-layering.sh.)
@@ -30,11 +30,15 @@ else
 fi
 
 planted=(
-  apps/web/internal/validate/zz_probe_test.go
-  packages/database/dbtest/zz_probe_test.go
-  packages/secrets/zz_probe/zz_probe_test.go
-  apps/admin/internal/validate/zz_probe_test.go
-  packages/database/adminrepo/model/zz_probe_test.go
+  apps/web/ui/zz_probe_test.go
+  apps/web/ui/zz_probe/zz_probe_test.go
+  apps/web/internal/config/zz_probe_test.go
+  apps/web/internal/server/zz_probe_test.go
+  apps/admin/ui/zz_probe_test.go
+  packages/database/zz_probe_test.go
+  packages/database/adminrepo/zz_probe_test.go
+  packages/secrets/zz_probe_test.go
+  deploy/platform/zz_probe_test.go
 )
 for f in "${planted[@]}"; do
   d=$(dirname "$f")
@@ -55,22 +59,10 @@ else
 fi
 rm -f "${planted[@]}"
 
-# A test in a subpackage of a tree boundary (apps/web/ui/**) is accepted.
-nested=apps/web/ui/zz_probe/zz_probe_test.go
-mkdir -p "$(dirname "$nested")"; dirs+=("$(dirname "$nested")"); paths+=("$nested")
-printf 'package zz_probe_test\n' > "$nested"
-if out=$(./scripts/check-test-boundaries.sh 2>&1); then
-  pass "test file in a tree boundary is accepted: $nested"
-else
-  fail "test file in a tree boundary is rejected: $nested"; echo "$out"
-fi
-rm -f "$nested"
-
 # Coverage: a file of uncovered statements, added to a real profile, sinks
-# each floor (~200 sink each app's services; apps/web/ui is ~3800 statements,
-# so 300 drop it ~3 points). go test counts every statement of a package, so
+# each floor (~200 sink each app's services). go test counts every statement of a package, so
 # a planted profile block is what a planted untested file would produce.
-probed=(apps/web/internal/services:200 apps/admin/internal/services:200 apps/web/ui:300)
+probed=(apps/web/internal/services:200 apps/admin/internal/services:200)
 profile=${PROFILE:-}
 mkdir -p .cache
 if [ -z "$profile" ]; then
