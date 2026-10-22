@@ -8,6 +8,7 @@ linters:
     - bodyclose
     - copyloopvar
     - depguard
+    - forbidigo
     - errorlint
     - intrange
     - misspell
@@ -19,6 +20,18 @@ linters:
     - usestdlibvars
     - wastedassign
   settings:
+    # User administration lives in packages/auth (it owns the tables), so
+    # depguard cannot keep it from apps/web by import path: forbid the entry
+    # points instead. Only apps/admin (and auth's own tests) may call them.
+    forbidigo:
+      analyze-types: true
+      forbid:
+        - pattern: ^auth\.NewUserAdmin$
+          pkg: ^github\.com/jayleaton/ai-patterns-go/packages/auth$
+          msg: user administration (ban, roles, any user's sessions) is for apps/admin only
+        - pattern: ^auth\.Auth\.Users$
+          pkg: ^github\.com/jayleaton/ai-patterns-go/packages/auth$
+          msg: user administration (ban, roles, any user's sessions) is for apps/admin only
     # Layering: packages/database -> services -> transports (api, ui), for
     # apps/web and apps/admin alike. See AGENTS.md "Architecture".
     depguard:
@@ -239,6 +252,8 @@ linters:
     rules:
       - path: _test\.go
         linters: [noctx]
+      - path: (apps/admin|packages/auth)/
+        linters: [forbidigo]
 
 formatters:
   enable:

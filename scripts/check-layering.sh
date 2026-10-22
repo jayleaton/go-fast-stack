@@ -64,6 +64,13 @@ paths=()
 cleanup() { for p in "${paths[@]}"; do rm -rf "$p"; done; rmdir apps/web/ui 2>/dev/null || true; }
 trap cleanup EXIT
 
+# auth's user-administration entry points (forbidigo, not depguard: they
+# live in packages/auth, which apps/web imports). layer dir | call
+calls=(
+  "apps/web/internal/server|auth.NewUserAdmin(nil)"
+  "apps/web/ui|(*auth.Auth)(nil).Users()"
+)
+
 # label | probe file | package to lint, one per planted probe
 planted=()
 for i in "${!cases[@]}"; do
@@ -84,9 +91,19 @@ for i in "${!test_cases[@]}"; do
   planted+=("$label|$file|./$dir/")
 done
 
+called=()
+for i in "${!calls[@]}"; do
+  layer=${calls[$i]%%|*} call=${calls[$i]#*|}
+  dir="$layer/${probe}_call$i"
+  mkdir -p "$dir"
+  paths+=("$dir")
+  printf 'package %s\n\nimport "%s"\n\nvar _ = %s\n' "${probe}_call$i" "$mod/packages/auth" "$call" > "$dir/probe.go"
+  called+=("$layer must not call $call|$dir/probe.go|./$dir/")
+done
+
 pkgs=()
-for p in "${planted[@]}"; do pkgs+=("${p##*|}"); done
-out=$($lint run --enable-only depguard --max-issues-per-linter 0 --max-same-issues 0 \
+for p in "${planted[@]}" "${called[@]}"; do pkgs+=("${p##*|}"); done
+out=$($lint run --enable-only depguard,forbidigo --max-issues-per-linter 0 --max-same-issues 0 \
   $(printf '%s\n' "${pkgs[@]}" | sort -u) 2>&1 || true)
 
 failed=0
@@ -96,6 +113,15 @@ for p in "${planted[@]}"; do
     echo "ok    $label"
   else
     echo "FAIL  $label (not reported by depguard)"
+    failed=1
+  fi
+done
+for p in "${called[@]}"; do
+  label=${p%%|*} rest=${p#*|}
+  if grep -q "${rest%%|*}:.*(forbidigo)" <<<"$out"; then
+    echo "ok    $label"
+  else
+    echo "FAIL  $label (not reported by forbidigo)"
     failed=1
   fi
 done
