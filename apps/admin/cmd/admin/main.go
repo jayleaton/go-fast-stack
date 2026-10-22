@@ -216,8 +216,8 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 }
 
 // newAdminAuth is the admin app's own packages/auth instance over the admin
-// database: its own secret, cookies (prefix "admin") and 2FA policy. There is
-// no sign-up (server blocks the endpoint); admins are invited.
+// database: its own secret, cookies (prefix "admin") and 2FA policy. Sign-up
+// is off: admins are invited (AdminService.InviteAdmin).
 func newAdminAuth(cfg config.Config, adminPool *pgxpool.Pool, log *slog.Logger) (*auth.Auth, error) {
 	var mailer auth.Mailer = auth.NewDevMailer(log)
 	if cfg.ResendAPIKey != "" {
@@ -229,6 +229,7 @@ func newAdminAuth(cfg config.Config, adminPool *pgxpool.Pool, log *slog.Logger) 
 		Secret:         cfg.AuthSecret,
 		BaseURL:        cfg.PublicURL.String(),
 		CookiePrefix:   "admin",
+		DisableSignUp:  true,
 		AppName:        cfg.AppName,
 		TrustedOrigins: cfg.TrustedOrigins,
 		LoginPath:      config.AppRoutes.Login,

@@ -1,5 +1,6 @@
 // Package server composes the admin app's HTTP handler: global middleware,
-// /healthz over both databases, the admin auth mount (without sign-up), the
+// /healthz over both databases, the admin auth mount (sign-up is off in its
+// auth.Config: admins are invited), the
 // JSON API and the UI. With cmd/admin it is the only place in apps/admin that
 // wires packages together, and the only one that imports packages/auth (the
 // adapters in this package).
@@ -43,19 +44,10 @@ type Deps struct {
 	UI     http.Handler // apps/admin/ui routes, mounted at "/"
 }
 
-// signUpPaths are the auth endpoints that would let anyone create an admin.
-// Admins are invited (services.AdminService.InviteAdmin), so they are gone.
-var signUpPaths = []string{"POST /api/auth/sign-up/email"}
-
 // New returns the root handler.
 func New(d Deps) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET "+config.APIRoutes.Healthz, healthz(d.DBs))
-	for _, p := range signUpPaths {
-		mux.HandleFunc(p, func(w http.ResponseWriter, _ *http.Request) {
-			api.WriteError(w, http.StatusNotFound, "Sign-up is disabled: admins are invited", nil)
-		})
-	}
 	mux.Handle(config.APIRoutes.Auth, d.Auth.Handler())
 	for _, r := range d.API {
 		r.Routes(mux)

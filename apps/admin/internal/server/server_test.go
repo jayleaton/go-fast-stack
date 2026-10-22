@@ -80,7 +80,6 @@ func TestMountsAndMiddleware(t *testing.T) {
 	}{
 		{"ui mounted at /", httptest.NewRequest(http.MethodGet, config.AppRoutes.Users, nil), 200, "ui"},
 		{"auth mounted", httptest.NewRequest(http.MethodPost, "/api/auth/sign-in/email", nil), 501, `"error"`},
-		{"no admin sign-up", httptest.NewRequest(http.MethodPost, "/api/auth/sign-up/email", strings.NewReader(`{}`)), 404, "Sign-up is disabled"},
 		{"users api needs a session", httptest.NewRequest(http.MethodGet, config.APIRoutes.Users, nil), 401, `"Unauthorized"`},
 		{"admins api needs a session", httptest.NewRequest(http.MethodGet, config.APIRoutes.Admins, nil), 401, `"Unauthorized"`},
 		{"audit api needs a session", httptest.NewRequest(http.MethodGet, config.APIRoutes.Audit, nil), 401, `"Unauthorized"`},

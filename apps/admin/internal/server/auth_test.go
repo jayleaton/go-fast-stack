@@ -98,7 +98,7 @@ func newWired(t *testing.T) *wired {
 		t.Fatal(err)
 	}
 	admins, err := auth.New(auth.Config{
-		Secret: strings.Repeat("b", 32), BaseURL: adminOrigin, CookiePrefix: "admin",
+		Secret: strings.Repeat("b", 32), BaseURL: adminOrigin, CookiePrefix: "admin", DisableSignUp: true,
 		TwoFactor: &auth.TwoFactorConfig{}, Logger: log,
 	}, adminPool, mail)
 	if err != nil {
@@ -275,7 +275,7 @@ func TestAdminIsolation(t *testing.T) {
 	if w.appSignedIn(root) {
 		t.Fatal("admin token accepted by the app")
 	}
-	w.do("POST", "/api/auth/sign-up/email", `{"name":"Eve","email":"eve@example.com","password":"password123"}`, "", 404, nil)
+	w.do("POST", "/api/auth/sign-up/email", `{"name":"Eve","email":"eve@example.com","password":"password123"}`, "", 400, nil)
 
 	var admins struct{ Data []services.Admin }
 	w.do("GET", config.APIRoutes.Admins, "", root, 200, &admins)
