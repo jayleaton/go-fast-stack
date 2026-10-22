@@ -30,6 +30,7 @@ concurrency:
 
 permissions:
   contents: read
+  pull-requests: read # paths-filter lists PR files through the API
 
 jobs:
   draft:
@@ -97,22 +98,32 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      # Depth 2: a PR checkout is the merge commit, and HEAD^1 is the base.
-      - uses: actions/checkout@v7
+      # Docs-only and mobile-only PRs stop here: no checkout, cache or
+      # toolchain. PR events list changed files through the API.
+      - uses: dorny/paths-filter@v4
+        if: github.event_name == 'pull_request'
+        id: filter
         with:
-          fetch-depth: 2
-
-      # Docs-only and mobile-only PRs stop here: no cache, no toolchain.
+          predicate-quantifier: every
+          filters: |
+            go:
+              - '**'
+              - '!docs/**'
+              - '!apps/mobile-app/**'
+              - '!*.md'
+              - '!.gitignore'
+              - '!.dockerignore'
       - name: Scope
         id: scope
         env:
-          EVENT: ${{ github.event_name }}
-        run: |
-          if [ "$EVENT" != pull_request ] || git diff --name-only HEAD^1 HEAD | grep -qvE '^(docs/|apps/mobile-app/|[^/]*\.md$|\.gitignore$|\.dockerignore$|LICENSE)'; then
-            echo go=true >> "$GITHUB_OUTPUT"
-          else
-            echo "no Go-relevant changes"; echo go=false >> "$GITHUB_OUTPUT"
-          fi
+          GO: ${{ github.event_name != 'pull_request' || steps.filter.outputs.go == 'true' }}
+        run: echo "go=$GO" >> "$GITHUB_OUTPUT"
+
+      # Depth 2: a PR checkout is the merge commit, and HEAD^1 is the base.
+      - uses: actions/checkout@v7
+        if: steps.scope.outputs.go == 'true'
+        with:
+          fetch-depth: 2
 
       # Modules (and the go.mod toolchain) are keyed by go.sum; module zips and
       # dependencies' testdata are deleted before saving (builds read only the
@@ -218,22 +229,43 @@ jobs:
     env:
       TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable
     steps:
-      # Depth 2: a PR checkout is the merge commit, and HEAD^1 is the base.
-      - uses: actions/checkout@v7
+      # Docs-only and mobile-only PRs stop here: no checkout, cache or
+      # toolchain. PR events list changed files through the API.
+      - uses: dorny/paths-filter@v4
+        if: github.event_name == 'pull_request'
+        id: filter
         with:
-          fetch-depth: 2
-
-      # Docs-only and mobile-only PRs stop here: no cache, no toolchain.
+          predicate-quantifier: every
+          filters: |
+            go:
+              - '**'
+              - '!docs/**'
+              - '!apps/mobile-app/**'
+              - '!*.md'
+              - '!.gitignore'
+              - '!.dockerignore'
       - name: Scope
         id: scope
         env:
-          EVENT: ${{ github.event_name }}
+          GO: ${{ github.event_name != 'pull_request' || steps.filter.outputs.go == 'true' }}
+        run: echo "go=$GO" >> "$GITHUB_OUTPUT"
+
+      # Started for any Go change, before anything else, so it is up by the
+      # time tests run; only tests that need it wait for it (see Test).
+      # tmpfs and no fsync: test data is throwaway.
+      - name: Start Postgres
+        if: steps.scope.outputs.go == 'true'
         run: |
-          if [ "$EVENT" != pull_request ] || git diff --name-only HEAD^1 HEAD | grep -qvE '^(docs/|apps/mobile-app/|[^/]*\.md$|\.gitignore$|\.dockerignore$|LICENSE)'; then
-            echo go=true >> "$GITHUB_OUTPUT"
-          else
-            echo "no Go-relevant changes"; echo go=false >> "$GITHUB_OUTPUT"
-          fi
+          nohup docker run -d --name pg -p 5432:5432 -e POSTGRES_PASSWORD=postgres \
+            --tmpfs /var/lib/postgresql postgres:18-alpine \
+            -c fsync=off -c synchronous_commit=off -c full_page_writes=off -c max_connections=200 \
+            > "$RUNNER_TEMP/pg.log" 2>&1 &
+
+      # Depth 2: a PR checkout is the merge commit, and HEAD^1 is the base.
+      - uses: actions/checkout@v7
+        if: steps.scope.outputs.go == 'true'
+        with:
+          fetch-depth: 2
 
       # Modules (and the go.mod toolchain) are keyed by go.sum; module zips and
       # dependencies' testdata are deleted before saving (builds read only the
@@ -263,20 +295,6 @@ jobs:
         env:
           AFFECTED_FULL: ${{ github.event_name != 'pull_request' && '1' || '' }}
 
-      # Only when an affected package's tests use it; boots in the background
-      # while the build runs. tmpfs and no fsync: test data is throwaway.
-      # Only when an affected package's tests use it; boots in the background
-      # while caches restore and the build runs. tmpfs and no fsync: test data
-      # is throwaway.
-      - name: Start Postgres
-        if: steps.affected.outputs.db == 'true'
-        run: |
-          nohup docker run -d --name pg -p 5432:5432 -e POSTGRES_PASSWORD=postgres \
-            --tmpfs /var/lib/postgresql postgres:18-alpine \
-            -c fsync=off -c synchronous_commit=off -c full_page_writes=off -c max_connections=200 \
-            > "$RUNNER_TEMP/pg.log" 2>&1 &
-
-      # After Postgres starts, so it boots while this restores and the build runs.
       - uses: actions/cache/restore@v6
         if: steps.scope.outputs.go == 'true'
         with:
