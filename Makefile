@@ -160,31 +160,41 @@ actionlint: ## Lint GitHub workflows
 # Never name a variable here RAILWAY_*: make exports it to the Railway CLI,
 # and RAILWAY_ENV=staging points the CLI at Railway's own staging API.
 PLATFORM_FILE ?= platform.yaml
-DEPLOY_SETUP    := cd deploy && $(GO) run ./cmd/railway-setup
+# Built, not go run: go run turns every failure into exit 1, and scripts and
+# agents read railway-setup's exit codes (AGENTS.md). ARGS passes flags:
+# make railway-setup ARGS="--yes --json --workspace acme".
+DEPLOY_SETUP    := cd deploy && $(GO) build -o ../bin/railway-setup ./cmd/railway-setup && ../bin/railway-setup
+
+.PHONY: railway-doctor
+railway-doctor: ## Check everything Railway setup needs (login, workspace, SSH key, GitHub, Doppler) and print fixes
+	@$(DEPLOY_SETUP) doctor -config $(PLATFORM_FILE) $(ARGS)
+
+.PHONY: railway-setup
+railway-setup: railway-apply ## From nothing to a live Railway project (same as railway-apply)
 
 .PHONY: railway-plan
-railway-plan: ## Show what railway-apply would change on Railway (read-only)
-	$(DEPLOY_SETUP) plan -config $(PLATFORM_FILE)
+railway-plan: ## Show what railway-apply would change on Railway (read-only; exit 2 when changes are pending)
+	@$(DEPLOY_SETUP) plan -config $(PLATFORM_FILE) $(ARGS)
 
 .PHONY: railway-apply
-railway-apply: ## Create/update the Railway project from deploy/platform.yaml (CONFIRM_DESTRUCTIVE=1 allows deletes)
-	$(DEPLOY_SETUP) apply -config $(PLATFORM_FILE) $(if $(filter 1,$(CONFIRM_DESTRUCTIVE)),-confirm-destructive)
+railway-apply: ## Create/update the Railway project from deploy/platform.yaml, deploy, wait until healthy (CONFIRM_DESTRUCTIVE=1 allows deletes)
+	@$(DEPLOY_SETUP) apply -config $(PLATFORM_FILE) $(if $(filter 1,$(CONFIRM_DESTRUCTIVE)),-confirm-destructive) $(ARGS)
 
 .PHONY: railway-secrets
 railway-secrets: ## Add Doppler tokens (or RESEND_API_KEY) to Railway, sealed
-	$(DEPLOY_SETUP) secrets -config $(PLATFORM_FILE)
+	@$(DEPLOY_SETUP) secrets -config $(PLATFORM_FILE) $(ARGS)
 
 .PHONY: railway-up
-railway-up: ## Upload this checkout to Railway and deploy it (repo: "" in platform.yaml; PLATFORM_ENV=staging for one)
-	$(DEPLOY_SETUP) up -config $(PLATFORM_FILE) $(if $(PLATFORM_ENV),-env $(PLATFORM_ENV))
+railway-up: ## Upload this checkout to Railway and deploy it (PLATFORM_ENV=staging for one)
+	@$(DEPLOY_SETUP) up -config $(PLATFORM_FILE) $(if $(PLATFORM_ENV),-env $(PLATFORM_ENV)) $(ARGS)
 
 .PHONY: railway-rotate-db
 railway-rotate-db: ## New Postgres superuser passwords on Railway, then redeploy (PLATFORM_ENV=staging for one)
-	$(DEPLOY_SETUP) rotate-db -config $(PLATFORM_FILE) $(if $(PLATFORM_ENV),-env $(PLATFORM_ENV))
+	@$(DEPLOY_SETUP) rotate-db -config $(PLATFORM_FILE) $(if $(PLATFORM_ENV),-env $(PLATFORM_ENV)) $(ARGS)
 
 .PHONY: railway-verify
 railway-verify: ## GET /healthz on every public Railway service
-	$(DEPLOY_SETUP) verify -config $(PLATFORM_FILE)
+	@$(DEPLOY_SETUP) verify -config $(PLATFORM_FILE) $(ARGS)
 
 .PHONY: deploy-check
 deploy-check: ## vet, lint and test the deploy/ module

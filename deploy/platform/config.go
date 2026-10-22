@@ -52,7 +52,15 @@ type Config struct {
 	// Unmanaged are extra variable names (or service/NAME patterns) Railway
 	// keeps but IaC never sets or deletes: values you add in the dashboard.
 	Unmanaged []string `yaml:"unmanaged_variables"`
+
+	// ForceUpload deploys by `railway up` even though Repo is set: setup
+	// uses it until Railway can read the repo (GitHub app not installed
+	// yet). Not a platform.yaml key; PLATFORM_SOURCE=upload sets it.
+	ForceUpload bool `yaml:"-"`
 }
+
+// Auto, as project or repo, is resolved from the git checkout (Resolve).
+const Auto = "auto"
 
 // Environments accepts a YAML list or a comma-separated string.
 type Environments []string
@@ -107,7 +115,8 @@ var (
 			Admin: Size{CPU: 0.5, MemoryMB: 256, Replicas: 1},
 		},
 	}
-	projectName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9 ._-]{0,62}$`)
+	// Railway allows 1 to 32 characters.
+	projectName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9 ._-]{0,31}$`)
 	repoName    = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
 	varPattern  = regexp.MustCompile(`^([A-Za-z0-9 ._-]+/)?[A-Za-z_*][A-Za-z0-9_*]*$`)
 )
@@ -160,11 +169,11 @@ func (c Config) Validate() error {
 	if c.Version != 1 {
 		add("version must be 1, got %d", c.Version)
 	}
-	if !projectName.MatchString(c.Project) {
-		add("project must be a Railway project name (letters, digits, space . _ -; up to 63), got %q", c.Project)
+	if c.Project != Auto && !projectName.MatchString(c.Project) {
+		add("project must be a Railway project name (letters, digits, space . _ -; up to 32), got %q", c.Project)
 	}
-	if c.Repo != "" && !repoName.MatchString(c.Repo) {
-		add("repo must be the GitHub owner/name Railway builds from (or empty to upload with make railway-up), got %q", c.Repo)
+	if c.Repo != "" && c.Repo != Auto && !repoName.MatchString(c.Repo) {
+		add("repo must be auto, the GitHub owner/name Railway builds from, or empty to always upload, got %q", c.Repo)
 	}
 	if strings.TrimSpace(c.Branch) == "" {
 		add("branch must not be empty")
@@ -215,7 +224,7 @@ func (c Config) Validate() error {
 
 // Upload reports whether services have no GitHub source: code is shipped
 // with `railway up` (make railway-up) instead of Railway building on push.
-func (c Config) Upload() bool { return c.Repo == "" }
+func (c Config) Upload() bool { return c.Repo == "" || c.ForceUpload }
 
 // BranchFor is the git branch env deploys.
 func (c Config) BranchFor(env string) string {

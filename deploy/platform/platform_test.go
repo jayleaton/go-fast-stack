@@ -2,6 +2,7 @@ package platform_test
 
 import (
 	"encoding/json"
+	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -257,5 +258,84 @@ func TestSecretVarsFollowProvider(t *testing.T) {
 	cfg = parse(t, minimal)
 	if !has(cfg, "web", "DOPPLER_TOKEN") || has(cfg, "admin", "ADMIN_AUTH_SECRET") {
 		t.Fatalf("doppler, no admin: %+v", cfg.SecretVars())
+	}
+}
+
+func TestResolveAuto(t *testing.T) {
+	cfg := parse(t, "version: 1\nproject: auto\nrepo: auto\n")
+	for _, tc := range []struct{ origin, dir, project, repo string }{
+		{"https://github.com/acme/shop.git", "/src/x", "shop", "acme/shop"},
+		{"git@github.com:acme/shop.git", "/src/x", "shop", "acme/shop"},
+		{"ssh://git@github.com/acme/shop", "", "shop", "acme/shop"},
+		{"https://token@github.com/acme/shop/", "", "shop", "acme/shop"},
+		{"https://gitlab.com/acme/shop.git", "/src/my-app", "my-app", ""}, // not GitHub: upload mode
+		{"", "/src/my-app", "my-app", ""},
+	} {
+		got, err := cfg.Resolve(tc.origin, tc.dir)
+		if err != nil || got.Project != tc.project || got.Repo != tc.repo {
+			t.Errorf("Resolve(%q, %q) = %q, %q, %v; want %q, %q", tc.origin, tc.dir, got.Project, got.Repo, err, tc.project, tc.repo)
+		}
+	}
+	long, err := cfg.Resolve("https://github.com/acme/a-very-long-repository-name-for-railway.git", "")
+	if err != nil || long.Project != "a-very-long-repository-name-for" {
+		t.Errorf("long repo name: %q %v (Railway allows 32 characters)", long.Project, err)
+	}
+	if _, err := cfg.Resolve("", ""); err == nil {
+		t.Error("project: auto resolved without a checkout")
+	}
+	// Explicit values win over the checkout.
+	got, err := parse(t, minimal).Resolve("https://github.com/other/thing.git", "/x")
+	if err != nil || got.Project != "acme" || got.Repo != "acme/app" {
+		t.Errorf("explicit values changed: %q %q %v", got.Project, got.Repo, err)
+	}
+}
+
+func TestBuildRefusesUnresolvedAuto(t *testing.T) {
+	if _, err := parse(t, "version: 1\nproject: auto\nrepo: auto\n").Build("production"); err == nil {
+		t.Fatal("built a graph with repo: auto")
+	}
+}
+
+func TestForceUploadDropsSource(t *testing.T) {
+	cfg := parse(t, minimal)
+	cfg.ForceUpload = true
+	if _, ok := resource(t, graph(t, cfg, "production"), "service.web")["source"]; ok {
+		t.Fatal("ForceUpload kept the GitHub source")
+	}
+}
+
+func TestEditKeepsCommentsAndValidates(t *testing.T) {
+	src := []byte("# top\nversion: 1\nproject: auto # name\nrepo: auto\nenvironments: [production]\nresources:\n  web: { cpu: 1 }\n")
+	out, changed, err := platform.Edit(src, []platform.Key{{"project", "shop"}, {"environments", "staging,production"}, {"admin", "true"}, {"region", ""}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(changed, []string{"project", "environments", "admin", "region"}) {
+		t.Fatalf("changed: %v", changed)
+	}
+	s := string(out)
+	for _, want := range []string{"# top", "project: shop # name", "environments: staging,production", "admin: true", `region: ""`, "  web: { cpu: 1 }"} {
+		if !strings.Contains(s, want) {
+			t.Errorf("missing %q in:\n%s", want, s)
+		}
+	}
+	cfg := parse(t, s)
+	if cfg.Project != "shop" || !cfg.Admin || !slices.Equal(cfg.Environments, platform.Environments{"staging", "production"}) {
+		t.Fatalf("parsed: %+v", cfg)
+	}
+	if again, changed, err := platform.Edit(out, []platform.Key{{"project", "shop"}}); err != nil || len(changed) != 0 || string(again) != s {
+		t.Fatalf("no-op edit changed the file: %v %v", changed, err)
+	}
+	if _, _, err := platform.Edit(src, []platform.Key{{"environments", "qa"}}); err == nil {
+		t.Fatal("invalid edit accepted")
+	}
+	// Only the edited values change: every other byte stays.
+	full, err := os.ReadFile("../platform.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	edited, _, err := platform.Edit(full, []platform.Key{{"project", "shop"}})
+	if err != nil || strings.Replace(string(full), "project: auto", "project: shop", 1) != string(edited) {
+		t.Fatalf("Edit touched more than the value (err %v)", err)
 	}
 }

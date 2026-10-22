@@ -7,15 +7,19 @@
 version: 1
 
 # Railway project name: created on the first apply if it does not exist,
-# otherwise reused (matched by exact name in the workspace).
-project: ai-patterns-go
+# otherwise reused (matched by exact name in the workspace). auto: the
+# GitHub repo name (or this directory's name).
+project: auto
 # Railway workspace name or id. Empty: your only workspace (required when you
 # belong to more than one).
 workspace: ""
 
-# GitHub repo and branch Railway builds from. Install the Railway GitHub app
-# on the repo first (railway.com/account/github).
-repo: jayleaton/ai-patterns-go
+# GitHub repo and branch Railway builds on push. auto: this checkout's
+# origin remote. Until the Railway GitHub app can read the repo, setup
+# deploys your checkout by upload instead and prints the install link; the
+# next make railway-apply after installing switches to deploy-on-push.
+# "" never connects GitHub: deploy with make railway-up.
+repo: auto
 branch: main
 # Optional per-environment branch, e.g. production deploys a release branch.
 # branches:

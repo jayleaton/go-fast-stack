@@ -23,6 +23,9 @@ Each entry says how this repo works around it today, so you can drop the workaro
 | 12 | cli/go-sdk | Databases accept only a region; always get a public TCP proxy | medium | from source + observed |
 | 13 | cli | Sealed variables and generated service domains cannot be declared | medium | yes |
 | 14 | cli | Noise and papercuts (`RAILWAY_ENV`, watch paths vs `railway up`, cache mounts, empty `--json`, ...) | low–medium | yes |
+| 15 | api/cli | A deleted database's volume comes back: IaC re-attaches it by name to the next database | high (stale data) | yes |
+| 16 | api | GitHub access can't be checked with a CLI login token | medium | yes |
+| 17 | api/cli | 32-character project name limit only surfaces on create | low | yes |
 
 ---
 
@@ -208,3 +211,34 @@ A template that only talks to Postgres over the private network still gets a pub
 - *Cache mounts rejected.* Railway's builder rejects `RUN --mount=type=cache,target=/go/pkg/mod` with `dockerfile invalid: flag '--mount=type=cache,target=/go/pkg/mod' is missing an id argument`. The required id format embeds the service ID, so one Dockerfile cannot build both locally and on Railway for every environment. The template's Dockerfile drops cache mounts.
 - *Empty `--json` output.* `railway config apply --yes --json` on an up-to-date environment exits 0 with **empty stdout** (not `{}` or `{"changes":[]}`), so a JSON consumer cannot tell "nothing to do" from "printed nothing because it crashed". Verified on 5.71.0.
 - *Empty networking.* Every Go service emits `"networking": {"customDomains": null, "tcpProxies": null}`, even with no networking configured, while TypeScript omits the block. Plans are clean today, but explicit nulls in a sparse patch are fragile.
+
+## 15. api + cli: a deleted database's volume comes back
+
+**Summary.** `serviceDelete` on an IaC-managed Postgres leaves its volume (`postgres-volume`) in the project. `volumeDelete(volumeId)` on that volume returns `true`, but the volume is still listed afterwards; in our test it was still there 10 minutes later. The next `railway config apply` that declares `postgres("postgres")` re-attaches that same volume (same id) to the new database service, in the environment it came from.
+
+**Repro** (verified 2026-10-22, CLI 5.71.0):
+1. Apply a `postgres` + `web` graph to production; deploy web.
+2. `serviceDelete` both services, then `volumeDelete` the volume (both return true).
+3. Apply the same graph again: the plan lists `resource.update volume.<old id>`.
+4. The new database starts on the old data directory. A new web service with a freshly generated `AUTH_SECRET` then refuses to boot ("the two-factor-secret key is wrapped by a secret this process doesn't have"), because its keys live in the old data.
+
+**Expected.**
+- Deleting a database service deletes or detaches its volume visibly.
+- `volumeDelete` either deletes the volume or says it is scheduled.
+- IaC never silently adopts an orphaned volume into a new database; at least the plan should say "re-attaching existing volume with data".
+
+**Workaround here.** None in code: a from-zero setup never has an orphaned volume. When re-creating a database, delete its old volume in the dashboard first.
+
+## 16. api: GitHub access can't be checked with a CLI login token
+
+**Summary.** Every GitHub query answers `Not Authorized` for the token `railway login` stores: `gitHubRepoAccessAvailable(fullRepoName)`, `githubRepos`, `githubRepoBranches` and `githubWritableScopes`. That holds even when the account has GitHub linked (`me { githubProviderId }` works), and even when the Railway app can read the repo. So a CLI tool cannot ask "can Railway build this repo?" before trying. The only probe is `serviceConnect(id, {repo, branch})`, which either connects the repo or fails with `User does not have access to the repo`.
+
+**Expected.** Allow `gitHubRepoAccessAvailable` (read-only, own repos) for user CLI tokens, or add a `railway github status <owner/repo>` command.
+
+**Workaround here.** `railway-setup` tries `gitHubRepoAccessAvailable` first. When the API refuses, it creates the services without a source and calls `serviceConnect` on web as the access check. If that fails it deploys by upload and prints the install link.
+
+## 17. api + cli: the 32-character project name limit only surfaces on create
+
+**Summary.** `projectCreate` rejects names over 32 characters (`Project names must be between 1 and 32 characters.`). Nothing documents the limit, and IaC `project("…")` accepts longer names. An automated setup finds out only when it tries to create the project.
+
+**Workaround here.** `platform.yaml` validation enforces 32 characters, and `project: auto` truncates long repo names.

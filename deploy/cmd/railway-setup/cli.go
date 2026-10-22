@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strconv"
@@ -24,6 +25,7 @@ type cli struct {
 	bin       string
 	projectID string
 	extraEnv  []string
+	stdout    io.Writer // where streamed commands write; stderr with --json
 }
 
 func newCLI() *cli {
@@ -31,7 +33,7 @@ func newCLI() *cli {
 	if bin == "" {
 		bin = "railway"
 	}
-	return &cli{bin: bin}
+	return &cli{bin: bin, stdout: os.Stdout}
 }
 
 func (c *cli) cmd(ctx context.Context, args ...string) *exec.Cmd {
@@ -68,7 +70,7 @@ func (c *cli) stream(ctx context.Context, args ...string) (int, error) {
 func (c *cli) streamIn(ctx context.Context, dir string, args ...string) (int, error) {
 	cmd := c.cmd(ctx, args...)
 	cmd.Dir = dir
-	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, c.stdout, os.Stderr
 	err := cmd.Run()
 	var exit *exec.ExitError
 	if errors.As(err, &exit) {

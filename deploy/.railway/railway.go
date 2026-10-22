@@ -27,10 +27,12 @@ func Railway(ctx railway.Context) platform.Project {
 	if path == "" {
 		path = "../platform.yaml"
 	}
-	cfg, err := platform.Load(path)
+	cfg, err := platform.LoadResolved(path)
 	if err != nil {
 		panic(err)
 	}
+	// railway-setup deploys by upload until Railway can read the repo.
+	cfg.ForceUpload = os.Getenv("PLATFORM_SOURCE") == "upload"
 	p, err := cfg.Build(ctx.Environment)
 	if err != nil {
 		panic(err)

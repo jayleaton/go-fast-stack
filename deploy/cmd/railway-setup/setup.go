@@ -11,10 +11,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"os/exec"
-	"slices"
 	"strings"
 	"time"
 
@@ -34,10 +32,13 @@ type setup struct {
 	apply    bool
 	destruct bool
 
+	yes     bool     // --yes: create the project without asking
+	jsonOut bool     // --json: logs go to stderr, the summary to stdout
 	root    string   // repository root: what railway up uploads
 	ws      string   // resolved workspace id
 	project *project // nil until it exists
 	pending int      // changes a plan found
+	sum     summary
 }
 
 type project struct {
@@ -167,6 +168,9 @@ func (s *setup) ensureProject(ctx context.Context) error {
 	if !s.apply {
 		s.change("create project %q", s.cfg.Project)
 		return nil
+	}
+	if err := s.confirm(fmt.Sprintf("Create Railway project %q (billed to that workspace)?", s.cfg.Project)); err != nil {
+		return err
 	}
 	var res struct {
 		ProjectCreate struct{ ID string } `json:"projectCreate"`
@@ -384,20 +388,33 @@ func firstOr(s, d string) string {
 // (upload mode, repo: ""), waiting for each build. Railway builds it with
 // the service's Dockerfile and runs the pre-deploy migration.
 func (s *setup) up(ctx context.Context, env string) error {
+	return s.upload(ctx, env, false)
+}
+
+// upload deploys every app service in env with `railway up`; missingOnly
+// skips services whose latest deployment succeeded (apply's fallback, so a
+// re-run does not redeploy).
+func (s *setup) upload(ctx context.Context, env string, missingOnly bool) error {
 	if s.project == nil || s.project.Environments[env] == "" || !s.servicesExist() {
 		return fmt.Errorf("%s is not set up yet: run make railway-apply first", env)
 	}
+	var errs []error // one failed service does not stop the others
 	for _, svc := range s.services() {
+		if missingOnly {
+			if st, err := s.deploymentStatus(ctx, svc, env); err == nil && (st == "SUCCESS" || !settled(st)) {
+				continue // live, or a deploy is already running
+			}
+		}
 		s.say("== %s/%s: railway up", env, svc)
 		code, err := s.rw.streamIn(ctx, s.root, "up", "--service", svc, "--environment", env, "--ci", "-m", "make railway-up")
-		if err != nil {
+		switch {
+		case err != nil:
 			return err
-		}
-		if code != 0 {
-			return fmt.Errorf("railway up %s/%s failed with exit code %d", env, svc, code)
+		case code != 0:
+			errs = append(errs, fmt.Errorf("railway up %s/%s failed (exit %d): see railway logs --service %s --environment %s", env, svc, code, svc, env))
 		}
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
 // repairDatabases fixes a Railway IaC bug (docs/railway-go-iac-issues.md #0):
@@ -481,7 +498,10 @@ func (s *setup) setDatabasePasswords(ctx context.Context, env string, force bool
 			user = *u
 		}
 		sql := fmt.Sprintf("ALTER USER %q WITH PASSWORD '%s';\n", user, fresh)
-		if _, err := s.rw.output(ctx, []byte(sql), "ssh", "--service", db, "--environment", env, "--", "psql", "-U", user, "-v", "ON_ERROR_STOP=1", "-qtA"); err != nil {
+		if _, err := s.rw.output(ctx, []byte(sql), "ssh", "--service", db, "--environment", env, "--",
+			// The local socket, not PGHOST over TCP: the container's PGPASSWORD
+			// is the value being replaced and may not match the database.
+			"env", "-u", "PGHOST", "-u", "PGPASSWORD", "psql", "-h", "/var/run/postgresql", "-U", user, "-v", "ON_ERROR_STOP=1", "-qtA"); err != nil {
 			return fmt.Errorf("%s/%s: setting a real password over railway ssh (needs an SSH key: railway ssh keys): %w", env, db, err)
 		}
 		if err := s.commit(ctx, env, map[string]map[string]secretWrite{db: {"POSTGRES_PASSWORD": {fresh, false}}}); err != nil {
@@ -619,9 +639,12 @@ func (s *setup) bootstrap(ctx context.Context, env string) error {
 			if v := operatorValue(sec.Name, sec.Service, env); v != "" {
 				writes[sec.Service][sec.Name] = secretWrite{v, true}
 				s.change("%s/%s %s: from your shell (sealed)", env, sec.Service, sec.Name)
-			} else if !s.usesDoppler(current[sec.Service]) {
-				s.say("  ! %s/%s %s is not set: the app refuses to boot without it. Run make railway-secrets (or add a Doppler token), or export %s_%s before make railway-apply.", env, sec.Service, sec.Name, sec.Name, strings.ToUpper(env))
+				continue
 			}
+			// Production refuses to boot without it; a placeholder gets the
+			// first deploy live. Not sealed, so setup can tell it apart.
+			writes[sec.Service][sec.Name] = secretWrite{platform.ResendPlaceholder, false}
+			s.change("%s/%s %s: placeholder (auth emails fail until you set a real key)", env, sec.Service, sec.Name)
 		}
 	}
 	for _, sec := range s.cfg.SecretVars() {
@@ -826,44 +849,4 @@ func randomSecret() (string, error) {
 		return "", err
 	}
 	return base64.RawURLEncoding.EncodeToString(b), nil
-}
-
-// verify checks every public service's /healthz over its public domain.
-func (s *setup) verify(ctx context.Context) error {
-	if s.project == nil {
-		return errors.New("the project does not exist yet")
-	}
-	client := &http.Client{Timeout: 10 * time.Second}
-	var failed []string
-	for _, env := range s.cfg.Environments {
-		for _, svc := range s.cfg.PublicServices() {
-			if s.project.Environments[env] == "" || s.project.Services[svc] == "" {
-				failed = append(failed, env+"/"+svc+": missing")
-				continue
-			}
-			d, err := s.domain(ctx, svc, env)
-			if err != nil || d == "" {
-				failed = append(failed, fmt.Sprintf("%s/%s: no domain (%v)", env, svc, err))
-				continue
-			}
-			url := "https://" + d + "/healthz"
-			req, _ := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-			resp, err := client.Do(req)
-			if err != nil {
-				failed = append(failed, fmt.Sprintf("%s/%s: %v", env, svc, err))
-				continue
-			}
-			body, _ := io.ReadAll(io.LimitReader(resp.Body, 200))
-			_ = resp.Body.Close()
-			s.say("%-11s %-6s %s -> %d %s", env, svc, url, resp.StatusCode, strings.TrimSpace(string(body)))
-			if resp.StatusCode != http.StatusOK {
-				failed = append(failed, fmt.Sprintf("%s/%s: HTTP %d", env, svc, resp.StatusCode))
-			}
-		}
-	}
-	if len(failed) > 0 {
-		slices.Sort(failed)
-		return fmt.Errorf("unhealthy: %s", strings.Join(failed, "; "))
-	}
-	return nil
 }
