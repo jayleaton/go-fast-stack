@@ -1,3 +1,4 @@
+// Scratch: CI minutes (admin-only change).
 // Package services holds the admin app's business rules. Both admin
 // transports (the JSON API and the HTML UI) call services in-process. Services
 // see everything below them through ports declared here, by the consumer:
