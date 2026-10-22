@@ -275,6 +275,7 @@ func TestSecretVarsFollowProvider(t *testing.T) {
 }
 
 func TestResolveAuto(t *testing.T) {
+	t.Parallel()
 	cfg := parse(t, "version: 1\nproject: auto\nrepo: auto\n")
 	for _, tc := range []struct{ origin, dir, project, repo string }{
 		{"https://github.com/acme/shop.git", "/src/x", "shop", "acme/shop"},
@@ -304,12 +305,14 @@ func TestResolveAuto(t *testing.T) {
 }
 
 func TestBuildRefusesUnresolvedAuto(t *testing.T) {
+	t.Parallel()
 	if _, err := parse(t, "version: 1\nproject: auto\nrepo: auto\n").Build("production"); err == nil {
 		t.Fatal("built a graph with repo: auto")
 	}
 }
 
 func TestForceUploadDropsSource(t *testing.T) {
+	t.Parallel()
 	cfg := parse(t, minimal)
 	cfg.ForceUpload = true
 	if _, ok := resource(t, graph(t, cfg, "production"), "service.web")["source"]; ok {
@@ -318,6 +321,7 @@ func TestForceUploadDropsSource(t *testing.T) {
 }
 
 func TestEditKeepsCommentsAndValidates(t *testing.T) {
+	t.Parallel()
 	src := []byte("# top\nversion: 1\nproject: auto # name\nrepo: auto\nenvironments: [production]\nresources:\n  web: { cpu: 1 }\n")
 	out, changed, err := platform.Edit(src, []platform.Key{{"project", "shop"}, {"environments", "staging,production"}, {"admin", "true"}, {"region", ""}})
 	if err != nil {
