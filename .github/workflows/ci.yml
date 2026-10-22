@@ -126,12 +126,7 @@ jobs:
 
       - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v7
-        with:
-          go-version-file: go.mod
-          cache: false
-
-      # setup-go's cache only matches go.sum exactly, so any dependency change
+      # setup-go's cache only matched go.sum exactly, so any dependency change
       # started cold (3+ min). Restore by prefix instead: same go.sum first,
       # else the newest cache from main. Only pushes to main (and manual runs)
       # save, once per go.sum per day, so PRs never evict main's cache.
@@ -148,6 +143,12 @@ jobs:
           restore-keys: |
             go-${{ runner.os }}-${{ hashFiles('go.sum') }}-
             go-${{ runner.os }}-
+
+      # No setup-go: extracting and copying Go into the tool cache took ~12 s.
+      # The runner's preinstalled go switches to the go.mod version itself
+      # (GOTOOLCHAIN=auto); the toolchain lives in the module cache restored above.
+      - name: Go toolchain
+        run: go version && go env GOROOT GOMODCACHE GOCACHE
 
       - name: gofmt
         run: |
