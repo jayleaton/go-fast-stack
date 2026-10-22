@@ -34,7 +34,7 @@ func (q *Queries) DeleteUser(ctx context.Context, id string) (int64, error) {
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, name, email, "emailVerified", image, "createdAt", "updatedAt" FROM "user" WHERE id = $1
+SELECT id, name, email, "emailVerified", image, "createdAt", "updatedAt", role, banned, "banReason", "banExpires", "twoFactorEnabled" FROM "user" WHERE id = $1
 `
 
 func (q *Queries) GetUserByID(ctx context.Context, id string) (User, error) {
@@ -48,6 +48,11 @@ func (q *Queries) GetUserByID(ctx context.Context, id string) (User, error) {
 		&i.Image,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Role,
+		&i.Banned,
+		&i.BanReason,
+		&i.BanExpires,
+		&i.TwoFactorEnabled,
 	)
 	return i, err
 }
@@ -58,7 +63,7 @@ SET name        = coalesce($1, name),
     image       = CASE WHEN $2::boolean THEN $3 ELSE image END,
     "updatedAt" = now()
 WHERE id = $4
-RETURNING id, name, email, "emailVerified", image, "createdAt", "updatedAt"
+RETURNING id, name, email, "emailVerified", image, "createdAt", "updatedAt", role, banned, "banReason", "banExpires", "twoFactorEnabled"
 `
 
 type UpdateUserProfileParams struct {
@@ -84,6 +89,11 @@ func (q *Queries) UpdateUserProfile(ctx context.Context, arg UpdateUserProfilePa
 		&i.Image,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Role,
+		&i.Banned,
+		&i.BanReason,
+		&i.BanExpires,
+		&i.TwoFactorEnabled,
 	)
 	return i, err
 }
