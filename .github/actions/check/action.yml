@@ -38,25 +38,16 @@ runs:
           -c fsync=off -c synchronous_commit=off -c full_page_writes=off -c max_connections=200 \
           > "$RUNNER_TEMP/pg.log" 2>&1 &
 
-    # Build + lint caches per fan-out mode ("db", "other"), keyed by commit,
-    # saved on pushes to main (which always fan out) and restored by prefix in
-    # PRs. The single job ("all") builds what both build, so it restores both.
+    # Build + lint cache, keyed by commit: saved by the single CI job on pushes
+    # to main and restored by prefix everywhere else (incl. opt-in fan-out).
     - uses: actions/cache/restore@v6
-      if: inputs.packages != '' && inputs.mode != 'other'
+      if: inputs.packages != ''
       with:
         path: |
           ~/.cache/go-build
           ~/.cache/golangci-lint
-        key: v6-godb-${{ runner.os }}-${{ github.sha }}
-        restore-keys: v6-godb-${{ runner.os }}-
-    - uses: actions/cache/restore@v6
-      if: inputs.packages != '' && inputs.mode != 'db'
-      with:
-        path: |
-          ~/.cache/go-build
-          ~/.cache/golangci-lint
-        key: v6-goother-${{ runner.os }}-${{ github.sha }}
-        restore-keys: v6-goother-${{ runner.os }}-
+        key: v7-go-${{ runner.os }}-${{ github.sha }}
+        restore-keys: v7-go-${{ runner.os }}-
 
     # ---- lint ("all" and "db") ----
     - name: gofmt
@@ -155,12 +146,12 @@ runs:
         TESTED="$PACKAGES" ./scripts/check-coverage.sh .cache/coverage.out
 
     - uses: actions/cache/save@v6
-      if: inputs.save == 'true' && inputs.packages != '' && inputs.mode != 'all'
+      if: inputs.save == 'true' && inputs.packages != '' && inputs.mode == 'all'
       with:
         path: |
           ~/.cache/go-build
           ~/.cache/golangci-lint
-        key: v6-go${{ inputs.mode }}-${{ runner.os }}-${{ github.sha }}
+        key: v7-go-${{ runner.os }}-${{ github.sha }}
 
     # ---- mobile app: typecheck, lint, Expo SDK check, unit tests ----
     # (The contract test, pnpm test:contract, needs Go + Docker and runs locally.)

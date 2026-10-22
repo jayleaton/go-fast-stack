@@ -1,15 +1,22 @@
 # ci-ok, the single required check, is a commit status, not a job: jobs post
 # it (pending, then success/failure) on the commit they actually tested, so a
 # skipped or cancelled job can never satisfy it and a draft (which starts no
-# jobs) never gets it. Jobs bill rounded up to whole minutes, so CI is shaped
-# around job count: one job does everything for small changes (docs, mobile,
-# a few Go packages); only large or full runs fan out to two jobs.
+# jobs) never gets it. Jobs bill rounded up to whole minutes, so CI is ONE job:
+# it checks the affected packages (all of them on main, merge queue and manual
+# runs) plus the mobile app and deploy/ module when those change. Sharding is
+# an opt-in fallback only: a "ci:fanout" label on the PR or the fanout input
+# of a manual run.
 name: CI
 
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
+    inputs:
+      fanout:
+        description: Split the checks across two parallel jobs (faster wall time, more billed minutes)
+        type: boolean
+        default: false
   push:
     branches: [main]
   merge_group:
@@ -29,7 +36,7 @@ permissions:
   contents: read
   pull-requests: read # paths-filter lists PR files through the API
   statuses: write # the ci-ok commit status
-  actions: read # the fan-out finaliser reads the other job's result
+  actions: read # the opt-in fan-out finaliser reads the other job's result
 
 env:
   TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable
@@ -38,8 +45,8 @@ env:
   SEGMENT_DOWNLOAD_TIMEOUT_MINS: 1
 
 jobs:
-  # Plans and, unless the change is large, does all the work. Drafts start no
-  # jobs: ready for review (or any push to a ready PR) runs CI.
+  # Does all the work (unless fan-out was asked for). Drafts start no jobs:
+  # ready for review (or any push to a ready PR) runs CI.
   ci:
     if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: ubuntu-latest
@@ -61,16 +68,6 @@ jobs:
       mobile: ${{ steps.scope.outputs.mobile }}
       deploy: ${{ steps.scope.outputs.deploy }}
     steps:
-      # Pushes to main, merge queue, manual runs: this job is the "db" half of
-      # a full run; start Postgres first thing.
-      - name: Start Postgres
-        if: github.event_name != 'pull_request'
-        run: |
-          nohup docker run -d --name pg -p 5432:5432 -e POSTGRES_PASSWORD=postgres \
-            --tmpfs /var/lib/postgresql postgres:18-alpine \
-            -c fsync=off -c synchronous_commit=off -c full_page_writes=off -c max_connections=200 \
-            > "$RUNNER_TEMP/pg.log" 2>&1 &
-
       # PR events list changed files through the API (no checkout needed).
       - uses: dorny/paths-filter@v4
         if: github.event_name == 'pull_request'
@@ -188,13 +185,13 @@ jobs:
         env:
           AFFECTED_FULL: ${{ github.event_name != 'pull_request' && '1' || '' }}
 
+      # Opt-in only: one job is cheapest (jobs bill rounded up to minutes).
       - name: Plan
         if: steps.affected.outputs.packages != ''
         id: plan
-        run: ./scripts/ci-plan.sh
         env:
-          FULL: ${{ steps.affected.outputs.full }}
-          PACKAGES: ${{ steps.affected.outputs.packages }}
+          FANOUT: ${{ contains(github.event.pull_request.labels.*.name, 'ci:fanout') || inputs.fanout == true }}
+        run: echo "fanout=$FANOUT" >> "$GITHUB_OUTPUT"
 
       # Timeouts (minutes) for the Check steps, ~2x their measured averages,
       # by whether the build cache is warm (a lookup-only probe, no download):
@@ -208,8 +205,8 @@ jobs:
         with:
           lookup-only: true
           path: ~/.cache/go-build
-          key: v6-godb-${{ runner.os }}-${{ github.sha }}
-          restore-keys: v6-godb-${{ runner.os }}-
+          key: v7-go-${{ runner.os }}-${{ github.sha }}
+          restore-keys: v7-go-${{ runner.os }}-
       - name: Timeouts
         id: timeouts
         env:
@@ -223,21 +220,20 @@ jobs:
           echo "check=$check" >> "$GITHUB_OUTPUT"; echo "fanout=$fanout" >> "$GITHUB_OUTPUT"
           echo "poll=$((fanout + 1))" >> "$GITHUB_OUTPUT"
 
-      # PRs: everything here unless fanned out. Other events: the "db" half.
       - name: Check
-        if: (steps.plan.outputs.fanout != 'true' || github.event_name != 'pull_request') && (steps.scope.outputs.go == 'true' || steps.scope.outputs.mobile == 'true' || steps.scope.outputs.deploy == 'true')
+        if: steps.plan.outputs.fanout != 'true' && (steps.scope.outputs.go == 'true' || steps.scope.outputs.mobile == 'true' || steps.scope.outputs.deploy == 'true')
         timeout-minutes: ${{ fromJSON(steps.timeouts.outputs.check || '3') }}
         uses: ./.github/actions/check
         with:
-          mode: ${{ github.event_name == 'pull_request' && 'all' || 'db' }}
+          mode: all
           packages: ${{ steps.affected.outputs.packages }}
           dirs: ${{ steps.affected.outputs.dirs }}
           full: ${{ steps.affected.outputs.full }}
           sqlc: ${{ steps.affected.outputs.sqlc }}
           templ: ${{ steps.affected.outputs.templ }}
           generate: ${{ steps.affected.outputs.generate }}
-          mobile: ${{ github.event_name == 'pull_request' && steps.scope.outputs.mobile || 'false' }}
-          deploy: ${{ github.event_name == 'pull_request' && steps.scope.outputs.deploy || 'false' }}
+          mobile: ${{ steps.scope.outputs.mobile }}
+          deploy: ${{ steps.scope.outputs.deploy }}
           save: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
 
       # This job (lint) loads every package and its test imports, so it saves
@@ -255,36 +251,23 @@ jobs:
           path: ~/go/pkg/mod
           key: v7-gomod-${{ runner.os }}-${{ hashFiles('go.sum') }}
 
-      # PR, not fanned out: this job's own result (docs-only PRs land here with
-      # nothing to check: success). Other events: wait for "test (other)".
+      # This job's own result (docs-only PRs land here with nothing to check:
+      # success). With fan-out, the db job posts it instead.
       - name: ci-ok result
-        if: always() && !cancelled() && (steps.plan.outputs.fanout != 'true' || github.event_name != 'pull_request') && steps.target.outputs.sha != ''
+        if: always() && !cancelled() && steps.plan.outputs.fanout != 'true' && steps.target.outputs.sha != ''
         env:
           GH_TOKEN: ${{ github.token }}
           SHA: ${{ steps.target.outputs.sha }}
           STATUS: ${{ job.status }}
-          EVENT: ${{ github.event_name }}
-          POLL_MIN: ${{ steps.timeouts.outputs.poll || '9' }}
         run: |
-          other=success
-          if [ "$EVENT" != pull_request ]; then
-            other=""
-            for _ in $(seq 1 $(( (${POLL_MIN:-9}) * 30 ))); do
-              other=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs" \
-                --jq '[.jobs[] | select(.name == "test (other)" and .conclusion != "skipped")] | if length == 1 and .[0].status == "completed" then .[0].conclusion else "" end')
-              [ -n "$other" ] && break
-              sleep 2
-            done
-          fi
-          echo "this=$STATUS other=${other:-unfinished}"
-          state=failure; [ "$STATUS" = success ] && [ "$other" = success ] && state=success
+          state=failure; [ "$STATUS" = success ] && state=success
           gh api "repos/$GITHUB_REPOSITORY/statuses/$SHA" -f state=$state -f context=ci-ok \
             -f description="$state" -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" >/dev/null
 
       # A run cancelled by a newer push can still report job.status success
       # (seen on a superseded PR run), so a cancelled run only ever posts failure.
       - name: ci-ok cancelled
-        if: cancelled() && (steps.plan.outputs.fanout != 'true' || github.event_name != 'pull_request') && steps.target.outputs.sha != ''
+        if: cancelled() && steps.plan.outputs.fanout != 'true' && steps.target.outputs.sha != ''
         env:
           GH_TOKEN: ${{ github.token }}
           SHA: ${{ steps.target.outputs.sha }}
@@ -292,68 +275,13 @@ jobs:
           gh api "repos/$GITHUB_REPOSITORY/statuses/$SHA" -f state=failure -f context=ci-ok \
             -f description="cancelled" -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" >/dev/null
 
-  # Pushes to main, merge queue, manual runs: the "other" half of the full run,
-  # in parallel with the ci job (no planning job in front: these always run
-  # everything). Warm ~55-92 s (incl. mobile), cold ~185 s: 4.
-  other:
-    name: test (other)
-    if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
-    timeout-minutes: 12 # backstop; the Check step has the measured timeout
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 2
-      - uses: dorny/paths-filter@v4
-        if: github.event_name == 'push'
-        id: mobile-push
-        with:
-          filters: *mobile-filter
-      - uses: actions/cache/restore@v6
-        timeout-minutes: 1
-        with:
-          path: ~/go/pkg/mod
-          key: v7-gomod-${{ runner.os }}-${{ hashFiles('go.sum') }}
-          restore-keys: v7-gomod-${{ runner.os }}-
-      - name: Go toolchain
-        timeout-minutes: 1
-        run: go version
-      - name: Affected packages
-        id: affected
-        run: ./scripts/affected.sh HEAD^1
-        env:
-          AFFECTED_FULL: '1'
-      # Warm 63-92 s (incl. mobile) -> 3; cold ~185-229 s -> 8.
-      - uses: actions/cache/restore@v6
-        id: build-cache
-        timeout-minutes: 1
-        with:
-          lookup-only: true
-          path: ~/.cache/go-build
-          key: v6-goother-${{ runner.os }}-${{ github.sha }}
-          restore-keys: v6-goother-${{ runner.os }}-
-      - name: Check
-        timeout-minutes: ${{ steps.build-cache.outputs.cache-matched-key != '' && 3 || 8 }}
-        uses: ./.github/actions/check
-        with:
-          mode: other
-          packages: ${{ steps.affected.outputs.packages }}
-          dirs: ${{ steps.affected.outputs.dirs }}
-          full: ${{ steps.affected.outputs.full }}
-          sqlc: ${{ steps.affected.outputs.sqlc }}
-          templ: ${{ steps.affected.outputs.templ }}
-          generate: ${{ steps.affected.outputs.generate }}
-          mobile: ${{ github.event_name != 'push' || steps.mobile-push.outputs.mobile == 'true' }}
-          deploy: 'true'
-          save: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
-
-  # PRs with a large affected set or shared-input changes: two parallel jobs
-  # (private-repo runners have 2 vCPUs; race-compiling is CPU-bound). "db" =
-  # lint + DB-backed tests, posts ci-ok once "other" (the rest + mobile) is done.
+  # Opt-in fallback ("ci:fanout" label, or the fanout input of a manual run):
+  # two parallel jobs for faster wall time at more billed minutes. "db" = lint
+  # + DB-backed tests, posts ci-ok once "other" (the rest + mobile/deploy) is done.
   fanout:
     name: ${{ matrix.mode == 'db' && 'lint + test (db)' || 'test (other)' }}
     needs: ci
-    if: needs.ci.outputs.fanout == 'true' && github.event_name == 'pull_request'
+    if: needs.ci.outputs.fanout == 'true'
     strategy:
       matrix:
         mode: [db, other]
