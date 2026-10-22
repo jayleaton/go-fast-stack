@@ -99,6 +99,18 @@ ci: ## Run the same checks as CI
 	$(MAKE) lint-tests PROFILE=.cache/coverage.out # the probes reuse make test's profile
 	$(MAKE) deploy-check
 
+.PHONY: check-fast
+check-fast: ## Before every push: gofmt, vet, golangci-lint, plain tests for only what your changes vs origin/main affect (seconds)
+	./scripts/check-fast.sh
+
+.PHONY: hooks
+hooks: ## Install a git pre-push hook that runs make check-fast (all worktrees; make hooks-remove to undo)
+	./scripts/install-hooks.sh
+
+.PHONY: hooks-remove
+hooks-remove: ## Remove the pre-push hook make hooks installed
+	./scripts/install-hooks.sh --uninstall
+
 .PHONY: affected
 affected: ## Show what CI checks for this branch (packages affected vs origin/main)
 	./scripts/affected.sh
