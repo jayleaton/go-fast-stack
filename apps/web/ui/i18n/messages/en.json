@@ -240,6 +240,7 @@
     "emailTaken": "Email already in use",
     "invalidInput": "Please check the form and try again",
     "tooManyRequests": "Too many attempts. Please try again later.",
+    "banned": "Your account has been suspended. Contact support if you think this is a mistake.",
     "passwordTooLong": "Password must be at most 128 characters",
     "forbidden": "You can only manage your own account",
     "notFound": "That no longer exists. Reload the page and try again.",

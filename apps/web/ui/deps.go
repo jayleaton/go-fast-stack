@@ -87,6 +87,7 @@ var AuthErrors = []AuthError{
 	{auth.ErrInvalidToken, "pages.verifyEmail.invalidToken"},
 	{auth.ErrTokenExpired, "pages.verifyEmail.invalidToken"},
 	{auth.ErrTooManyRequests, "errors.tooManyRequests"},
+	{auth.ErrBannedUser, "errors.banned"},
 	{auth.ErrEmailTaken, "errors.emailTaken"},
 	{auth.ErrInvalidUser, "pages.verifyEmail.invalidUser"},
 }
