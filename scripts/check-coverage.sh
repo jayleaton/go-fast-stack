@@ -19,6 +19,7 @@ floors=(
   "$mod/apps/admin/internal/services|90"
   "$mod/apps/admin/internal/api|85"
   "$mod/packages/database/adminrepo|80"
+  "$mod/apps/admin/ui|80" # measured 89.9% when set
 )
 
 profile=${1:?usage: $0 <coverprofile> [<import path>]}
