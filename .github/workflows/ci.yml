@@ -1,21 +1,29 @@
-# Single required check for branch protection and the merge queue: `ci-ok`.
-# Other jobs may be skipped by path filters; ci-ok treats skipped as success.
-# Draft PRs run no checks: mark ready for review to run CI. PRs check only the
-# Go packages their changes can affect (scripts/affected.sh) and run mobile
-# only when the app changed; pushes to main, merge_group and
-# workflow_dispatch check everything. GitHub cannot filter
-# drafts at the trigger, so a draft push still starts a run; its final job
-# reports as "ci (draft, not run)", never as ci-ok, so it cannot stand in for
-# the required check on that SHA.
+# ci-ok, the single required check, is a commit status, not a job: jobs post
+# it (pending, then success/failure) on the commit they actually tested, so a
+# skipped or cancelled job can never satisfy it and a draft (which starts no
+# jobs) never gets it. Jobs bill rounded up to whole minutes, so CI is ONE job:
+# it checks the affected packages (all of them on main, merge queue and manual
+# runs) plus the mobile app and deploy/ module when those change. Sharding is
+# an opt-in fallback only: a "ci:fanout" label on the PR or the fanout input
+# of a manual run.
 name: CI
 
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
+    inputs:
+      fanout:
+        description: Split the checks across two parallel jobs (faster wall time, more billed minutes)
+        type: boolean
+        default: false
   push:
     branches: [main]
   merge_group:
+  # Refreshes the caches PRs restore (pushes to main that reuse a PR's result
+  # do not); skipped when main has not moved since the last saved cache.
+  schedule:
+    - cron: '17 */4 * * *'
 
 # PR runs: draft and real runs use separate groups, so a skipped draft run
 # (e.g. a push landing a second before "ready for review") never cancels the
@@ -31,62 +39,57 @@ concurrency:
 permissions:
   contents: read
   pull-requests: read # paths-filter lists PR files through the API
+  statuses: write # the ci-ok commit status
+  actions: read # the opt-in fan-out finaliser reads the other job's result; scheduled runs list caches
+
+env:
+  TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable
+  # A stalled cache download falls back to a cache miss after this long instead
+  # of hanging (default 10 min); restores take 2-12 s.
+  SEGMENT_DOWNLOAD_TIMEOUT_MINS: 1
 
 jobs:
-  draft:
-    if: github.event_name == 'pull_request' && github.event.pull_request.draft && github.event.action == 'synchronize'
+  # Does all the work (unless fan-out was asked for). Drafts start no jobs:
+  # ready for review (or any push to a ready PR) runs CI.
+  ci:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: ubuntu-latest
-    timeout-minutes: 2
-    permissions:
-      actions: read
-      pull-requests: read
+    # The ~2x-average timeouts sit on the steps that do the work (see
+    # "Timeouts" below): the job cannot know at start whether a run is full or
+    # cold. This is only a backstop just above the worst case (all packages,
+    # cold: ~5.5 min job, Check step capped at 11).
+    timeout-minutes: 13
     outputs:
-      run: ${{ steps.check.outputs.run }}
+      fanout: ${{ steps.plan.outputs.fanout }}
+      timeout: ${{ steps.timeouts.outputs.fanout }}
+      poll: ${{ steps.timeouts.outputs.poll }}
+      target: ${{ steps.target.outputs.sha }}
+      merge: ${{ steps.target.outputs.merge }}
+      tree: ${{ steps.target.outputs.tree }}
+      packages: ${{ steps.affected.outputs.packages }}
+      dirs: ${{ steps.affected.outputs.dirs }}
+      full: ${{ steps.affected.outputs.full }}
+      sqlc: ${{ steps.affected.outputs.sqlc }}
+      templ: ${{ steps.affected.outputs.templ }}
+      generate: ${{ steps.affected.outputs.generate }}
+      mobile: ${{ steps.scope.outputs.mobile }}
+      deploy: ${{ steps.scope.outputs.deploy }}
     steps:
-      - id: check
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          PR: ${{ github.event.pull_request.number }}
-          SHA: ${{ github.event.pull_request.head.sha }}
-          WORKFLOW: ${{ github.workflow }}
-          RUN_ID: ${{ github.run_id }}
-        run: |
-          run=false
-          if [ "$(gh pr view "$PR" --json isDraft --jq .isDraft)" = false ]; then
-            # The ready_for_review run may still be being created; give it time
-            # so both runs don't do the full checks.
-            sleep 15
-            others=$(gh api "repos/$GH_REPO/actions/runs?head_sha=$SHA&event=pull_request" \
-              | jq --arg wf "$WORKFLOW" --argjson id "$RUN_ID" '[.workflow_runs[] | select(.name == $wf and .id != $id)] | length')
-            [ "$others" = 0 ] && run=true
-          fi
-          echo "PR #$PR ready-now run=$run"
-          echo "run=$run" >> "$GITHUB_OUTPUT"
-
-  # PRs and pushes to main run only the jobs whose paths changed; merge_group
-  # and workflow_dispatch run everything.
-  # Two parallel jobs (private-repo runners have 2 vCPUs; race-compiling is
-  # CPU-bound). Each is billed rounded up to a whole minute, so lint shares
-  # the db shard's runner: it runs while Postgres boots, which the DB tests
-  # wait for anyway. "db" = lint + packages whose tests use Postgres;
-  # "other" = the remaining packages.
-  go:
-    name: ${{ matrix.shard == 'db' && 'lint + test (db)' || 'test (other)' }}
-    strategy:
-      matrix:
-        shard: [db, other]
-    needs: draft
-    if: ${{ !cancelled() && (github.event_name != 'pull_request' || !github.event.pull_request.draft || needs.draft.outputs.run == 'true') }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    env:
-      TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable
-    # Whether the mobile job runs (both legs compute the same value; matrix
-    # outputs come from whichever leg finishes last).
-    outputs:
-      mobile: ${{ steps.mobile-pr.outputs.mobile || steps.mobile-push.outputs.mobile }}
-    steps:
+      # PR events list changed files through the API (no checkout needed).
+      - uses: dorny/paths-filter@v4
+        if: github.event_name == 'pull_request'
+        id: go-pr
+        with:
+          predicate-quantifier: every
+          filters: |
+            go:
+              - '**'
+              - '!docs/**'
+              - '!apps/mobile-app/**'
+              - '!deploy/**' # its own module: the deploy checks
+              - '!*.md'
+              - '!.gitignore'
+              - '!.dockerignore'
       - uses: dorny/paths-filter@v4
         if: github.event_name == 'pull_request'
         id: mobile-pr
@@ -97,80 +100,113 @@ jobs:
               # The mobile route test reads the Go route table.
               - 'apps/web/internal/config/routes.go'
               - '.github/workflows/**'
-
-      # Docs-only and mobile-only PRs stop here: no checkout, cache or
-      # toolchain. PR events list changed files through the API.
+              - '.github/actions/**'
       - uses: dorny/paths-filter@v4
         if: github.event_name == 'pull_request'
-        id: filter
+        id: deploy-pr
         with:
-          predicate-quantifier: every
           filters: |
-            go:
-              - '**'
-              - '!docs/**'
-              - '!apps/mobile-app/**'
-              - '!deploy/**' # its own module: the deploy job
-              - '!*.md'
-              - '!.gitignore'
-              - '!.dockerignore'
-      - name: Scope
-        id: scope
-        env:
-          GO: ${{ github.event_name != 'pull_request' || steps.filter.outputs.go == 'true' }}
-        run: echo "go=$GO" >> "$GITHUB_OUTPUT"
+            deploy:
+              - 'deploy/**'
+              - '.golangci.yml'
+              - '.github/workflows/**'
+              - '.github/actions/**'
 
-      # db shard, any Go change: first thing, so it is up before tests run.
-      # tmpfs and no fsync: test data is throwaway.
-      - name: Start Postgres
-        if: steps.scope.outputs.go == 'true' && matrix.shard == 'db'
-        run: |
-          nohup docker run -d --name pg -p 5432:5432 -e POSTGRES_PASSWORD=postgres \
-            --tmpfs /var/lib/postgresql postgres:18-alpine \
-            -c fsync=off -c synchronous_commit=off -c full_page_writes=off -c max_connections=200 \
-            > "$RUNNER_TEMP/pg.log" 2>&1 &
-
-      # Depth 2: a PR checkout is the merge commit, and HEAD^1 is the base.
+      # Depth 2: a PR checkout is the merge commit (HEAD^1 = base, HEAD^2 = head).
       - uses: actions/checkout@v7
-        if: steps.scope.outputs.go == 'true'
         with:
           fetch-depth: 2
+
+      # A push to main whose tree is identical to a PR merge commit that
+      # already passed CI is not tested again: ci-ok is posted from that
+      # result. Safe by construction: the PR's ci-ok must be a success posted by
+      # this workflow (github-actions[bot]) recording exactly this tree (see
+      # "ci-ok result"); if main moved in between (tree differs) or the result
+      # is missing or not success, the run checks everything as usual.
+      # A scheduled run is skipped when the cache for this commit already exists.
+      - name: Reuse or skip
+        id: reuse
+        if: github.event_name == 'push' || github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          MESSAGE: ${{ github.event.head_commit.message }}
+        run: ./scripts/ci-reuse.sh
+
       - uses: dorny/paths-filter@v4
         if: github.event_name == 'push'
         id: mobile-push
         with:
           filters: *mobile-filter
 
-      # Modules (and the go.mod toolchain) are keyed by go.sum; module zips and
-      # dependencies' testdata are deleted before saving (builds read only the
-      # extracted sources and .ziphash files). Build/lint caches are per shard,
-      # keyed by commit and saved on every push to main, so PRs restore the
-      # newest main state by prefix. Bump a prefix when what it caches changes.
+      - name: Scope
+        id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+          GO_PR: ${{ steps.go-pr.outputs.go }}
+          MOBILE: ${{ steps.mobile-pr.outputs.mobile || steps.mobile-push.outputs.mobile }}
+          DEPLOY: ${{ steps.deploy-pr.outputs.deploy }}
+          SKIP: ${{ steps.reuse.outputs.skip }}
+        run: |
+          go=true mobile=$MOBILE deploy=$DEPLOY
+          if [ "$EVENT" = pull_request ]; then go=$GO_PR; else deploy=true; fi
+          if [ "$EVENT" = merge_group ] || [ "$EVENT" = workflow_dispatch ]; then mobile=true; fi
+          if [ "$SKIP" = true ]; then go=false mobile=false deploy=false; fi
+          save=false
+          case $EVENT in workflow_dispatch | schedule) save=true ;; push) [ "$GITHUB_REF" = refs/heads/main ] && save=true ;; esac
+          echo "go=$go" >> "$GITHUB_OUTPUT"; echo "mobile=${mobile:-false}" >> "$GITHUB_OUTPUT"
+          echo "deploy=${deploy:-false}" >> "$GITHUB_OUTPUT"; echo "save=$save" >> "$GITHUB_OUTPUT"
+          echo "skip=${SKIP:-false}" >> "$GITHUB_OUTPUT"
+
+      # The commit ci-ok is posted on: the PR head of the merge commit actually
+      # checked out (the event's head can be stale when a push and "ready for
+      # review" land together), else the PR's current head, else github.sha.
+      - name: Target commit
+        id: target
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          if [ "$EVENT" != pull_request ]; then
+            echo "sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"; echo "merge=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+          else
+            echo "sha=$(git rev-parse HEAD^2)" >> "$GITHUB_OUTPUT"; echo "merge=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          fi
+          # The tree tested (the merge commit's), recorded in ci-ok so a push
+          # to main with exactly this tree can reuse the result.
+          echo "tree=$(git rev-parse HEAD^{tree})" >> "$GITHUB_OUTPUT"
+
+      - name: ci-ok pending
+        if: (steps.scope.outputs.go == 'true' || steps.scope.outputs.mobile == 'true' || steps.scope.outputs.deploy == 'true')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ steps.target.outputs.sha }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/statuses/$SHA" -f state=pending -f context=ci-ok \
+            -f description="running" -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" >/dev/null
+
+      # Modules (and the go.mod toolchain) keyed by go.sum; zips and dependency
+      # testdata are trimmed before saving (see the fan-out job).
       - uses: actions/cache/restore@v6
         if: steps.scope.outputs.go == 'true'
         id: mod-cache
+        timeout-minutes: 1
         with:
-          path: |
-            ~/go/pkg/mod
+          path: ~/go/pkg/mod
           key: v7-gomod-${{ runner.os }}-${{ hashFiles('go.sum') }}
           restore-keys: v7-gomod-${{ runner.os }}-
-      - uses: actions/cache/restore@v6
-        if: steps.scope.outputs.go == 'true'
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/.cache/golangci-lint
-          key: v5-go${{ matrix.shard }}-${{ runner.os }}-${{ github.sha }}
-          restore-keys: v5-go${{ matrix.shard }}-${{ runner.os }}-
 
-      # No setup-go: the runner's preinstalled go switches to the go.mod
-      # version itself (GOTOOLCHAIN=auto); the toolchain lives in the module cache.
+      # No setup-go: the runner's go switches to the go.mod version itself
+      # (GOTOOLCHAIN=auto); the toolchain lives in the module cache.
       - name: Go toolchain
         if: steps.scope.outputs.go == 'true'
+        # 1-5 s; ~10 s when the toolchain has to be downloaded.
+        timeout-minutes: 1
         run: go version
 
-      # PRs check only the packages their changes can affect, and only the
-      # touched generators; shared inputs mean everything. See scripts/affected.sh.
+      # PRs check only what their changes can affect; shared inputs, pushes to
+      # main, the merge queue and manual runs check everything.
       - name: Affected packages
         if: steps.scope.outputs.go == 'true'
         id: affected
@@ -178,212 +214,188 @@ jobs:
         env:
           AFFECTED_FULL: ${{ github.event_name != 'pull_request' && '1' || '' }}
 
-      # ---- lint (db leg) ----
-      - name: gofmt
-        if: steps.scope.outputs.go == 'true' && matrix.shard == 'db'
-        run: |
-          unformatted="$(gofmt -l .)"
-          if [ -n "$unformatted" ]; then
-            echo "$unformatted"
-            echo 'gofmt: run gofmt -w .'
-            exit 1
-          fi
-
-      - uses: sqlc-dev/setup-sqlc@v5
-        if: steps.affected.outputs.sqlc == 'true' && matrix.shard == 'db'
-        with:
-          sqlc-version: '1.31.1'
-
-      - name: Generated code is up to date
-        if: (steps.affected.outputs.sqlc == 'true' || steps.affected.outputs.templ == 'true' || steps.affected.outputs.generate != '') && matrix.shard == 'db'
-        env:
-          SQLC: ${{ steps.affected.outputs.sqlc }}
-          TEMPL: ${{ steps.affected.outputs.templ }}
-          GENERATE: ${{ steps.affected.outputs.generate }}
-        run: |
-          if [ "$SQLC" = true ]; then sqlc generate -f packages/database/sqlc.yaml; fi
-          for p in $GENERATE; do go generate "$p"; done
-          if [ "$TEMPL" = true ]; then
-            for ui in packages/uikit apps/web/ui apps/admin/ui; do if [ -d "$ui" ]; then go tool templ generate -path "$ui"; fi; done
-          fi
-          git diff --exit-code
-          test -z "$(git status --porcelain)" || { git status --short; echo 'untracked generated files: run make generate and commit'; exit 1; }
-
-      # Its own cache key only changes with go.sum or weekly; its directory
-      # rides in the shard cache above instead.
-      - uses: golangci/golangci-lint-action@v9
-        if: steps.affected.outputs.packages != '' && matrix.shard == 'db'
-        with:
-          version: v2.15.0
-          skip-cache: true
-          args: ${{ steps.affected.outputs.dirs }}
-
-      - name: Test boundaries
-        if: steps.scope.outputs.go == 'true' && matrix.shard == 'db'
-        run: ./scripts/check-test-boundaries.sh
-
-      # The probes prove the lint and test rules still bite; their inputs
-      # (scripts/, .golangci.yml) always force a full run.
-      - name: Coverage floors name real packages
-        if: steps.affected.outputs.full == 'true' && matrix.shard == 'db'
-        run: ./scripts/check-coverage.sh --exist
-
-      - name: Layering rules
-        if: steps.affected.outputs.full == 'true' && matrix.shard == 'db'
-        run: ./scripts/check-layering.sh
-        env:
-          GOLANGCI_LINT: golangci-lint
-
-      - name: Test boundary probes
-        if: steps.affected.outputs.full == 'true' && matrix.shard == 'other'
-        run: ./scripts/check-test-probes.sh
-
-      # ---- tests (both legs) ----
-      - name: Shard
+      # Opt-in only: one job is cheapest (jobs bill rounded up to minutes).
+      - name: Plan
         if: steps.affected.outputs.packages != ''
-        id: shard
-        run: ./scripts/ci-shard.sh "${{ matrix.shard }}"
+        id: plan
         env:
-          PACKAGES: ${{ steps.affected.outputs.packages }}
+          FANOUT: ${{ contains(github.event.pull_request.labels.*.name, 'ci:fanout') || inputs.fanout == true }}
+        run: echo "fanout=$FANOUT" >> "$GITHUB_OUTPUT"
 
-      - name: Test
-        if: steps.shard.outputs.packages != ''
-        env:
-          PACKAGES: ${{ steps.shard.outputs.packages }}
-          SHARD: ${{ matrix.shard }}
-        run: |
-          mkdir -p .cache
-          # With -coverprofile, go test also compiles packages without tests,
-          # so there is no separate build step (lint type-checks everything too).
-          # Test binaries wait for Postgres themselves (-exec wrapper), so
-          # compiling them overlaps its boot. Checked inside the container over
-          # TCP: docker's port proxy accepts host connections before Postgres
-          # listens, and the image's first-boot init server answers on the unix
-          # socket only.
-          exec_flag=()
-          if [ "$SHARD" = db ]; then
-            cat > "$RUNNER_TEMP/wait-db" <<'SH'
-          #!/usr/bin/env bash
-          for _ in $(seq 1 480); do
-            docker exec pg pg_isready -q -h 127.0.0.1 -U postgres 2>/dev/null && exec "$@"
-            sleep 0.25
-          done
-          echo "postgres did not start:" >&2; cat "$RUNNER_TEMP/pg.log" >&2; docker logs pg >&2; exit 1
-          SH
-            chmod +x "$RUNNER_TEMP/wait-db"
-            exec_flag=(-exec "$RUNNER_TEMP/wait-db")
-          fi
-          go test -race "${exec_flag[@]}" -coverprofile=.cache/coverage.out $PACKAGES # word splitting intended
-          # Floors of this shard's packages; the shards together cover all.
-          TESTED="$PACKAGES" ./scripts/check-coverage.sh .cache/coverage.out
-
-      - uses: actions/cache/save@v6
-        if: (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main'))
+      # Timeouts (minutes) for the Check step (the work), ~2x its measured
+      # average for the case, by whether the build cache is warm (a lookup-only
+      # probe, no download) and whether all packages are checked:
+      #   affected set:  warm 9-77 s (heaviest: admin ~75 s) -> 3; cold 131-159 s -> 6
+      #   all packages:  warm 138 s -> 5;                          cold 312 s -> 11
+      #   mobile/deploy only (no Go packages): 40-45 s -> 2
+      #   opt-in fan-out jobs: warm 59-97 s -> 3; cold 185-233 s -> 8
+      - uses: actions/cache/restore@v6
+        if: steps.affected.outputs.packages != ''
+        id: build-cache
+        timeout-minutes: 1
         with:
-          path: |
-            ~/.cache/go-build
-            ~/.cache/golangci-lint
-          key: v5-go${{ matrix.shard }}-${{ runner.os }}-${{ github.sha }}
+          lookup-only: true
+          path: ~/.cache/go-build
+          key: v7-go-${{ runner.os }}-${{ github.sha }}
+          restore-keys: v7-go-${{ runner.os }}-
+      - name: Timeouts
+        id: timeouts
+        env:
+          MATCHED: ${{ steps.build-cache.outputs.cache-matched-key }}
+          PACKAGES: ${{ steps.affected.outputs.packages }}
+          FULL: ${{ steps.affected.outputs.full }}
+        run: |
+          if [ -n "$MATCHED" ]; then
+            fanout=3; check=3; [ "$FULL" = true ] && check=5
+          else
+            fanout=8; check=6; [ "$FULL" = true ] && check=11
+          fi
+          [ -z "$PACKAGES" ] && check=2
+          echo "check=$check" >> "$GITHUB_OUTPUT"; echo "fanout=$fanout" >> "$GITHUB_OUTPUT"
+          echo "poll=$((fanout + 1))" >> "$GITHUB_OUTPUT"
 
-      # The db leg (lint) loads every package and its test imports, so it saves
-      # the module cache. "!" exclusions in cache paths did not apply, so trim
-      # explicitly: zips (~125 MB incl. the 71 MB toolchain zip) and dependency
-      # testdata.
+      - name: Check
+        if: steps.plan.outputs.fanout != 'true' && (steps.scope.outputs.go == 'true' || steps.scope.outputs.mobile == 'true' || steps.scope.outputs.deploy == 'true')
+        timeout-minutes: ${{ fromJSON(steps.timeouts.outputs.check || '3') }}
+        uses: ./.github/actions/check
+        with:
+          mode: all
+          packages: ${{ steps.affected.outputs.packages }}
+          dirs: ${{ steps.affected.outputs.dirs }}
+          full: ${{ steps.affected.outputs.full }}
+          sqlc: ${{ steps.affected.outputs.sqlc }}
+          templ: ${{ steps.affected.outputs.templ }}
+          generate: ${{ steps.affected.outputs.generate }}
+          mobile: ${{ steps.scope.outputs.mobile }}
+          deploy: ${{ steps.scope.outputs.deploy }}
+          save: ${{ steps.scope.outputs.save }}
+
+      # This job (lint) loads every package and its test imports, so it saves
+      # the module cache. Cache-path "!" exclusions did not apply, so trim
+      # explicitly: zips (~125 MB incl. the 71 MB toolchain zip) and testdata.
       - name: Trim module cache
-        if: (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && steps.mod-cache.outputs.cache-hit != 'true' && matrix.shard == 'db'
+        if: steps.scope.outputs.save == 'true' && steps.mod-cache.outputs.cache-hit != 'true'
         run: |
           chmod -R u+w ~/go/pkg/mod
           find ~/go/pkg/mod/cache/download -name '*.zip' -delete
           find ~/go/pkg/mod -mindepth 2 -type d -name testdata -prune -exec rm -rf {} +
-          du -sh ~/go/pkg/mod
       - uses: actions/cache/save@v6
-        if: (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && steps.mod-cache.outputs.cache-hit != 'true' && matrix.shard == 'db'
+        if: steps.scope.outputs.save == 'true' && steps.mod-cache.outputs.cache-hit != 'true'
         with:
-          path: |
-            ~/go/pkg/mod
+          path: ~/go/pkg/mod
           key: v7-gomod-${{ runner.os }}-${{ hashFiles('go.sum') }}
 
-  # deploy/ is its own Go module (Railway IaC SDK + yaml), invisible to the
-  # go job above. Runs only when it, the lint config or a workflow changes.
-  deploy:
-    needs: draft
-    if: ${{ !cancelled() && (github.event_name != 'pull_request' || !github.event.pull_request.draft || needs.draft.outputs.run == 'true') }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: dorny/paths-filter@v4
-        if: github.event_name == 'pull_request'
-        id: filter
-        with:
-          filters: |
-            deploy:
-              - 'deploy/**'
-              - '.golangci.yml'
-              - '.github/workflows/**'
-      - name: Scope
-        id: scope
+      # This job's own result (docs-only PRs land here with nothing to check:
+      # success). With fan-out, the db job posts it instead.
+      - name: ci-ok result
+        if: always() && !cancelled() && steps.plan.outputs.fanout != 'true' && steps.target.outputs.sha != '' && steps.scope.outputs.skip != 'true'
         env:
-          RUN: ${{ github.event_name != 'pull_request' || steps.filter.outputs.deploy == 'true' }}
-        run: echo "run=$RUN" >> "$GITHUB_OUTPUT"
-      - uses: actions/checkout@v7
-        if: steps.scope.outputs.run == 'true'
-      - name: vet + test
-        if: steps.scope.outputs.run == 'true'
-        working-directory: deploy
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ steps.target.outputs.sha }}
+          TREE: ${{ steps.target.outputs.tree }}
+          STATUS: ${{ job.status }}
         run: |
-          go version
-          go vet ./...
-          (cd .railway && go vet railway.go)
-          go test ./...
-      - uses: golangci/golangci-lint-action@v9
-        if: steps.scope.outputs.run == 'true'
-        with:
-          version: v2.15.0
-          working-directory: deploy
-          args: -c ../.golangci.yml ./...
+          state=failure; [ "$STATUS" = success ] && state=success
+          gh api "repos/$GITHUB_REPOSITORY/statuses/$SHA" -f state=$state -f context=ci-ok \
+            -f description="$state tree=$TREE" -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" >/dev/null
 
-  # Typecheck, lint, Expo SDK version check and unit tests. The contract test
-  # (pnpm test:contract) needs Go + Docker and runs locally.
-  mobile:
-    needs: go
-    if: ${{ !cancelled() && (github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch' || needs.go.outputs.mobile == 'true') }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    defaults:
-      run:
-        working-directory: apps/mobile-app
-    steps:
-      - uses: actions/checkout@v7
-
-      # Version from packageManager in package.json.
-      - uses: pnpm/action-setup@v6
-        with:
-          package_json_file: apps/mobile-app/package.json
-
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          cache: pnpm
-          cache-dependency-path: apps/mobile-app/pnpm-lock.yaml
-
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm exec tsc --noEmit
-      - run: pnpm exec expo lint
-      - run: pnpm exec expo install --check
-      - run: pnpm test
-
-  # Skipped in runs that stay a draft (no billed minute). A skipped job shows
-  # its raw name expression, never "ci-ok", so it cannot stand in for the
-  # required check; when it runs, the name evaluates to "ci-ok".
-  ci-ok:
-    name: ${{ github.event.pull_request.draft && needs.draft.outputs.run != 'true' && 'ci (draft, not run)' || 'ci-ok' }}
-    if: ${{ always() && (github.event_name != 'pull_request' || !github.event.pull_request.draft || needs.draft.outputs.run == 'true') }}
-    needs: [draft, go, deploy, mobile]
-    runs-on: ubuntu-latest
-    timeout-minutes: 1
-    steps:
-      - name: Fail if any job failed or was cancelled
-        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+      # A run cancelled by a newer push can still report job.status success
+      # (seen on a superseded PR run), so a cancelled run only ever posts failure.
+      - name: ci-ok cancelled
+        if: cancelled() && steps.plan.outputs.fanout != 'true' && steps.target.outputs.sha != '' && steps.scope.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ steps.target.outputs.sha }}
         run: |
-          echo 'draft=${{ needs.draft.result }} go=${{ needs.go.result }} deploy=${{ needs.deploy.result }} mobile=${{ needs.mobile.result }}'
-          exit 1
+          gh api "repos/$GITHUB_REPOSITORY/statuses/$SHA" -f state=failure -f context=ci-ok \
+            -f description="cancelled" -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" >/dev/null
+
+  # Opt-in fallback ("ci:fanout" label, or the fanout input of a manual run):
+  # two parallel jobs for faster wall time at more billed minutes. "db" = lint
+  # + DB-backed tests, posts ci-ok once "other" (the rest + mobile/deploy) is done.
+  fanout:
+    name: ${{ matrix.mode == 'db' && 'lint + test (db)' || 'test (other)' }}
+    needs: ci
+    if: needs.ci.outputs.fanout == 'true'
+    strategy:
+      matrix:
+        mode: [db, other]
+    runs-on: ubuntu-latest
+    timeout-minutes: 12 # backstop; the Check step has the measured timeout
+    steps:
+      # First thing, so it is up before the DB tests run.
+      - name: Start Postgres
+        if: matrix.mode == 'db'
+        run: |
+          nohup docker run -d --name pg -p 5432:5432 -e POSTGRES_PASSWORD=postgres \
+            --tmpfs /var/lib/postgresql postgres:18-alpine \
+            -c fsync=off -c synchronous_commit=off -c full_page_writes=off -c max_connections=200 \
+            > "$RUNNER_TEMP/pg.log" 2>&1 &
+
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.ci.outputs.merge }}
+          fetch-depth: 2
+      - uses: actions/cache/restore@v6
+        timeout-minutes: 1
+        id: mod-cache
+        with:
+          path: ~/go/pkg/mod
+          key: v7-gomod-${{ runner.os }}-${{ hashFiles('go.sum') }}
+          restore-keys: v7-gomod-${{ runner.os }}-
+      - name: Go toolchain
+        # 1-5 s; ~10 s when the toolchain has to be downloaded.
+        timeout-minutes: 1
+        run: go version
+
+      - name: Check
+        timeout-minutes: ${{ fromJSON(needs.ci.outputs.timeout || '8') }}
+        uses: ./.github/actions/check
+        with:
+          mode: ${{ matrix.mode }}
+          packages: ${{ needs.ci.outputs.packages }}
+          dirs: ${{ needs.ci.outputs.dirs }}
+          full: ${{ needs.ci.outputs.full }}
+          sqlc: ${{ needs.ci.outputs.sqlc }}
+          templ: ${{ needs.ci.outputs.templ }}
+          generate: ${{ needs.ci.outputs.generate }}
+          mobile: ${{ matrix.mode == 'other' && needs.ci.outputs.mobile || 'false' }}
+          deploy: ${{ matrix.mode == 'other' && needs.ci.outputs.deploy || 'false' }}
+          save: 'false'
+
+      # Waits for "other", then posts ci-ok for both. Two jobs are named
+      # "test (other)" (this matrix leg; the full-run job): the one that ran is
+      # the one not skipped. Also runs when this job
+      # failed or the run was cancelled (posts failure: never green untested).
+      - name: ci-ok result
+        if: always() && !cancelled() && matrix.mode == 'db'
+        timeout-minutes: ${{ fromJSON(needs.ci.outputs.poll || '9') }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ needs.ci.outputs.target }}
+          TREE: ${{ needs.ci.outputs.tree }}
+          STATUS: ${{ job.status }}
+          POLL_MIN: ${{ needs.ci.outputs.poll || '9' }}
+        run: |
+          other=""
+          for _ in $(seq 1 $(( (${POLL_MIN:-9}) * 30 ))); do
+            other=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs" \
+              --jq '[.jobs[] | select(.name == "test (other)" and .conclusion != "skipped")] | if length == 1 and .[0].status == "completed" then .[0].conclusion else "" end')
+            [ -n "$other" ] && break
+            sleep 2
+          done
+          echo "db=$STATUS other=${other:-unfinished}"
+          state=failure; [ "$STATUS" = success ] && [ "$other" = success ] && state=success
+          gh api "repos/$GITHUB_REPOSITORY/statuses/$SHA" -f state=$state -f context=ci-ok \
+            -f description="$state tree=$TREE" -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" >/dev/null
+
+      # A run cancelled by a newer push can still report job.status success
+      # (seen on a superseded PR run), so a cancelled run only ever posts failure.
+      - name: ci-ok cancelled
+        if: cancelled() && matrix.mode == 'db'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ needs.ci.outputs.target }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/statuses/$SHA" -f state=failure -f context=ci-ok \
+            -f description="cancelled" -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" >/dev/null
