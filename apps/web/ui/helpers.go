@@ -1,3 +1,4 @@
+// Scratch: CI billing shape (web-only change).
 package ui
 
 import (
