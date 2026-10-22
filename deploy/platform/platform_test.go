@@ -385,6 +385,10 @@ func TestDopplerLayout(t *testing.T) {
 		t.Fatal("DATABASE_URL is the IaC reference; it must stay")
 	}
 	cfg, err := parse(t, minimal).Resolve("", "")
+	if err != nil || cfg.Secrets.Project != platform.DefaultDopplerProject {
+		t.Fatalf("doppler project default: %q %v", cfg.Secrets.Project, err)
+	}
+	cfg, err = parse(t, minimal+"secrets: { provider: doppler, project: auto }\n").Resolve("", "")
 	if err != nil || cfg.Secrets.Project != "acme" {
 		t.Fatalf("doppler project auto = Railway project: %q %v", cfg.Secrets.Project, err)
 	}

@@ -49,10 +49,11 @@ region: ""
 # or later: make doppler-setup); until then services run on env.
 secrets:
   provider: doppler
-  # Doppler project (auto: the Railway project's name). Environments map
+  # Doppler project (created if missing; auto: the Railway project's name).
+  # Environments map
   # production->prd, staging->stg, qa->qa, local->dev; admin reads a branch
   # config (prd_admin, ...) the web token cannot read.
-  project: auto
+  project: go-fast-stack
 
 email:
   from: noreply@example.com

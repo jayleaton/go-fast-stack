@@ -143,7 +143,7 @@ IaC never touches these variables (`variables.ignore`), so `railway config plan`
 
 With `secrets.provider: doppler` (the default), each service reads `DATABASE_URL`, `AUTH_SECRET` and `RESEND_API_KEY` from Doppler, and they rotate without a redeploy (see [Secrets](#secrets)). The [Doppler CLI](https://docs.doppler.com/docs/cli) is pinned in `mise.toml` (`mise install`). Run `doppler login` once, and `make railway-setup` moves everything over itself (or later: `make doppler-setup`, same flags, `--json` and exit codes). Not logged in? Services run on the Railway values (`SECRETS_PROVIDER=env`) until you are.
 
-What it sets up in the Doppler project (`secrets.project`; auto: the Railway project's name, created if missing):
+What it sets up in the Doppler project (`secrets.project`, default `go-fast-stack`, created if missing; `auto`: the Railway project's name):
 
 | Railway | Doppler environment | web reads | admin reads |
 |---|---|---|---|
