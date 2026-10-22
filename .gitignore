@@ -5,3 +5,4 @@
 *.test
 coverage.out
 .t3/
+.cache/

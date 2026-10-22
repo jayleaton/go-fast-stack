@@ -40,8 +40,8 @@ func serve(h http.Handler, req *http.Request) *httptest.ResponseRecorder {
 }
 
 func TestHealthz(t *testing.T) {
-	ok := serve(newHandler(pinger{}, nil), httptest.NewRequest("GET", "/healthz", nil))
-	down := serve(newHandler(pinger{errors.New("down")}, nil), httptest.NewRequest("GET", "/healthz", nil))
+	ok := serve(newHandler(pinger{}, nil), httptest.NewRequest(http.MethodGet, "/healthz", nil))
+	down := serve(newHandler(pinger{errors.New("down")}, nil), httptest.NewRequest(http.MethodGet, "/healthz", nil))
 	if ok.Code != 200 || down.Code != 503 {
 		t.Fatalf("healthz ok=%d down=%d", ok.Code, down.Code)
 	}
@@ -62,10 +62,10 @@ func TestMountsAndMiddleware(t *testing.T) {
 		status  int
 		snippet string
 	}{
-		{"ui mounted at /", httptest.NewRequest("GET", "/dashboard", nil), 200, "ui"},
-		{"auth mounted", httptest.NewRequest("POST", "/api/auth/sign-in/email", nil), 501, `"error"`},
-		{"api needs a session", httptest.NewRequest("GET", "/api/core/v1/users", nil), 401, `"Unauthorized"`},
-		{"panics become 500 envelopes", httptest.NewRequest("GET", "/boom", nil), 500, `"Internal server error"`},
+		{"ui mounted at /", httptest.NewRequest(http.MethodGet, "/dashboard", nil), 200, "ui"},
+		{"auth mounted", httptest.NewRequest(http.MethodPost, "/api/auth/sign-in/email", nil), 501, `"error"`},
+		{"api needs a session", httptest.NewRequest(http.MethodGet, "/api/core/v1/users", nil), 401, `"Unauthorized"`},
+		{"panics become 500 envelopes", httptest.NewRequest(http.MethodGet, "/boom", nil), 500, `"Internal server error"`},
 		{"cross-site writes are rejected", crossSite("https://evil.example"), 403, `"Cross-origin request rejected"`},
 		{"trusted origins pass", crossSite("http://dev-box:3000"), 401, `"Unauthorized"`},
 	}
@@ -78,7 +78,7 @@ func TestMountsAndMiddleware(t *testing.T) {
 }
 
 func crossSite(origin string) *http.Request {
-	req := httptest.NewRequest("PATCH", "/api/core/v1/users", strings.NewReader(`{}`))
+	req := httptest.NewRequest(http.MethodPatch, "/api/core/v1/users", strings.NewReader(`{}`))
 	req.Header.Set("Origin", origin)
 	req.Header.Set("Sec-Fetch-Site", "cross-site")
 	return req

@@ -45,7 +45,7 @@ func (u *Users) Routes(mux *http.ServeMux) {
 }
 
 func (u *Users) get(_ *http.Request, c Caller) (CurrentUser, error) {
-	return CurrentUser{User: c.User, Session: c.Session}, nil
+	return CurrentUser(c), nil
 }
 
 func (u *Users) updateSelf(r *http.Request, c Caller) (UserUpdated, error) {
