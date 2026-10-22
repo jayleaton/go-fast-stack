@@ -270,9 +270,10 @@ jobs:
       - name: TEMP module cache sizes
         if: github.event_name == 'workflow_dispatch'
         run: |
-          du -sh ~/go/pkg/mod ~/go/pkg/mod/cache/download ~/.cache/go-build
-          du -s ~/go/pkg/mod/* ~/go/pkg/mod/*/* 2>/dev/null | sort -n | tail -12
-          find ~/go/pkg/mod/cache/download -name '*.zip' | wc -l
+          set +e
+          ls -la ~/go/pkg/mod | head; ls ~/go/pkg/mod/cache 2>&1 | head
+          du -sm ~/go/pkg/mod/*/* ~/go/pkg/mod/cache/* 2>/dev/null | sort -n | tail -15
+          find ~/go/pkg/mod -name '*.zip' -size +1M -printf '%s %p\n' 2>/dev/null | sort -n | tail -5
 
       # Only when an affected package's tests use it; boots in the background
       # while the build runs. tmpfs and no fsync: test data is throwaway.
