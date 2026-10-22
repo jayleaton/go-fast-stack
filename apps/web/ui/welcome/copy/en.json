@@ -1,0 +1,154 @@
+{
+  "hero": {
+    "badge": "A starter for students",
+    "title": "A good first house for your project",
+    "subtitle": "This is not a finished product. It is a simple, working website with pages, sign-in, and a few rules that keep your code — and your AI assistant — from getting messy. You do not need to understand everything today.",
+    "primary": "Create a test account",
+    "secondary": "I already have one",
+    "skip": "Show me how to start"
+  },
+  "what": {
+    "eyebrow": "What you cloned",
+    "title": "Not a finished app. A solid baseline.",
+    "body": "Think of this as a furnished apartment. The kitchen is already in the same place every time. You can paint the walls, add rooms, or throw the furniture out later.",
+    "cards": [
+      {
+        "title": "A real website",
+        "body": "There are pages you can click. You can create an account and see a private dashboard. Nothing here is fake."
+      },
+      {
+        "title": "Repeating recipes",
+        "body": "When we add a feature, we follow the same steps. That is what people mean by “patterns” — a recipe you reuse so you do not invent a new one every time."
+      },
+      {
+        "title": "Easier for you and AI",
+        "body": "If the house is tidy, a coding assistant can find the kitchen. If every room is random, it guesses. Guesses go wrong."
+      }
+    ]
+  },
+  "start": {
+    "eyebrow": "How to start",
+    "title": "Five small steps. Stop whenever you want.",
+    "subtitle": "You do not need a job in software to do this. Read one step, do it, then come back.",
+    "steps": [
+      {
+        "title": "Look around",
+        "body": "You are already looking at the running site. Click around. You will not break the internet."
+      },
+      {
+        "title": "Make a test account",
+        "body": "Use any email you own. While you work on your own computer, extra “verify your email” checks are usually turned off."
+      },
+      {
+        "title": "Tell the AI what you are building",
+        "body": "Ask your AI to run the getting-started skill. It will ask a few questions (web or mobile, accounts, database) and write the answers into AGENTS.md and CLAUDE.md."
+      },
+      {
+        "title": "Ask for one tiny change",
+        "body": "Try: “Add a page at /hello that says hello.” Watch which files change. That is the pattern you will reuse."
+      },
+      {
+        "title": "Add a database when you need one",
+        "body": "Copy .env.example to .env.local. For a free database on your machine, run docker compose up from the project root. You can do this later."
+      }
+    ]
+  },
+  "patterns": {
+    "eyebrow": "The design choices",
+    "title": "Four habits that keep the project calm",
+    "subtitle": "You do not have to memorize these. Just know they exist, so you or your AI can copy them.",
+    "more": "A slower walkthrough",
+    "items": [
+      {
+        "title": "The kitchen and the pantry",
+        "body": "A Service decides what is allowed. A Repository talks to the database. Keep those jobs separate and every change stays smaller.",
+        "path": "apps/web/internal/services"
+      },
+      {
+        "title": "One front door",
+        "body": "API routes go through the route wrapper. That helper checks who you are before the rest of the code runs.",
+        "path": "apps/web/internal/api"
+      },
+      {
+        "title": "Pages ask the server. The server asks a service.",
+        "body": "Code in the browser never talks to the database. Page handlers and the JSON API call the same services on the server, so the rules live in one place.",
+        "path": "apps/web/ui"
+      },
+      {
+        "title": "Check the form before you trust it",
+        "body": "Validators describe what valid data looks like, with plain names like UpdateUserSettings. Every entry point uses the same ones, so fewer surprises.",
+        "path": "apps/web/internal/validate"
+      }
+    ]
+  },
+  "later": {
+    "eyebrow": "Not today",
+    "title": "Things you can ignore until you need them",
+    "items": [
+      {
+        "title": "A database on the internet",
+        "body": "Neon or Supabase will host Postgres for you. For learning, Docker on your machine is enough."
+      },
+      {
+        "title": "Real emails",
+        "body": "Resend can send password-reset and “verify your email” messages. Skip this while you learn."
+      },
+      {
+        "title": "Putting it on the internet",
+        "body": "Railway is a friendly host for this stack: one small binary. Any host that runs a container works too. Wait until the app does something you want to show people."
+      }
+    ]
+  },
+  "remove": {
+    "eyebrow": "When you are ready",
+    "title": "This welcome page is designed to be thrown away",
+    "body": "None of your real app lives in this folder. Login, signup, and the dashboard stay.",
+    "steps": [
+      "Open apps/web/internal/config/features.go and set TemplateWelcome to false.",
+      "Delete the folder apps/web/ui/welcome.",
+      "Remove the welcome routes where apps/web/ui mounts them (the compiler shows you where)."
+    ],
+    "note": "That is the whole cleanup. Read the README inside apps/web/ui/welcome if you want it written down."
+  },
+  "footer": {
+    "brand": "Starter template",
+    "why": "Why these patterns",
+    "login": "Sign in",
+    "signup": "Sign up"
+  },
+  "why": {
+    "eyebrow": "Why the house is built this way",
+    "title": "Same steps, every time",
+    "subtitle": "Beginners and AI assistants both do better when the next file has an obvious place to go. That is all “architecture” means here.",
+    "introTitle": "A messy house is hard for everyone",
+    "introBody": "If login code lives in five different styles, you have to re-learn the project every day. Your AI has to guess. Guessing is how bugs show up. These four recipes are the opposite of guessing.",
+    "items": [
+      {
+        "title": "Service / repository",
+        "analogy": "The kitchen decides the meal. The pantry only stores food. If the pantry starts deciding meals, you can never find anything.",
+        "lookHere": "Look here when you add a rule like “only you can edit your name”.",
+        "path": "apps/web/internal/services"
+      },
+      {
+        "title": "One API wrapper",
+        "analogy": "Every guest uses the same front door. The door checks ID. Nobody climbs through a window.",
+        "lookHere": "Wrap every new /api route with it.",
+        "path": "apps/web/internal/api"
+      },
+      {
+        "title": "Handlers call services",
+        "analogy": "The customer asks a waiter. The waiter walks into the kitchen. Customers do not wander into the fridge.",
+        "lookHere": "Page handlers call services in-process. Browser code never reaches the database.",
+        "path": "apps/web/ui"
+      },
+      {
+        "title": "Validators",
+        "analogy": "A bouncer with a list. If the name is missing, the person does not get in. The list is also the Go type.",
+        "lookHere": "Put new form rules in the validate package, named after what they check.",
+        "path": "apps/web/internal/validate"
+      }
+    ],
+    "back": "Back to the welcome page",
+    "start": "Create a test account"
+  }
+}

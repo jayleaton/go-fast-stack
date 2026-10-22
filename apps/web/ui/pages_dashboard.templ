@@ -1,0 +1,232 @@
+package ui
+
+import (
+	"net/url"
+	"time"
+
+	"github.com/jayleaton/ai-patterns-go/apps/web/ui/i18n"
+	"github.com/jayleaton/ai-patterns-go/apps/web/internal/config"
+	"github.com/jayleaton/ai-patterns-go/apps/web/ui/routes"
+	"github.com/jayleaton/ai-patterns-go/apps/web/ui/view"
+)
+
+const (
+	accountCardID    = "account-card"
+	settingsStatusID = "settings-status"
+	deleteErrorID    = "delete-error"
+	liveBodyID       = "live-body"
+	liveNoticeID     = "live-notice"
+)
+
+const cardClass = "rounded-xl border border-neutral-300 bg-white shadow-sm dark:border-neutral-800 dark:bg-neutral-900/80"
+
+// DashboardData is everything the dashboard renders.
+type DashboardData struct {
+	User User
+	// Tab identifies this page load so the live stream can tell its own
+	// settings saves from saves made in other tabs.
+	Tab      string
+	Settings SettingsState
+}
+
+// SettingsState is the result of the last settings save.
+type SettingsState struct {
+	Name        string
+	Saved       bool
+	Error       string
+	DeleteError string
+}
+
+templ DashboardPage(d DashboardData) {
+	@view.Layout(i18n.T(ctx, "pages.dashboard.title")) {
+		<div class="container-balanced py-8 md:py-20">
+			<div class="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+				<div>
+					<h1 class="text-2xl font-semibold text-neutral-900 dark:text-neutral-50">{ i18n.T(ctx, "pages.dashboard.title") }</h1>
+					<p class="text-sm text-neutral-600 dark:text-neutral-400">{ i18n.T(ctx, "pages.dashboard.subtitle") }</p>
+				</div>
+				<div class="flex items-center gap-2">
+					<a href={ templ.SafeURL(config.AppRoutes.Home) } class="rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800">
+						{ i18n.T(ctx, "common.home") }
+					</a>
+				</div>
+			</div>
+			<section class="grid grid-cols-1 gap-6 md:grid-cols-3">
+				@AccountCard(d.User)
+				<div class={ "col-span-1 p-5", cardClass }>
+					<h2 class="text-sm font-semibold text-neutral-800 dark:text-neutral-200">{ i18n.T(ctx, "pages.dashboard.quickActions.title") }</h2>
+					<div class="mt-4 flex flex-wrap gap-2">
+						<a href="#settings" class="rounded-md border border-blue-300 bg-blue-50 px-3 py-2 text-sm text-blue-800 hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-900/30 dark:text-blue-200 dark:hover:bg-blue-900/50">
+							{ i18n.T(ctx, "pages.dashboard.quickActions.settings") }
+						</a>
+						<button type="button" class="rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-800 hover:bg-neutral-50 dark:border-neutral-800 dark:bg-neutral-800 dark:text-neutral-200">
+							{ i18n.T(ctx, "pages.dashboard.quickActions.profile") }
+						</button>
+						<button type="button" class="rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-800 hover:bg-neutral-50 dark:border-neutral-800 dark:bg-neutral-800 dark:text-neutral-200">
+							{ i18n.T(ctx, "pages.dashboard.quickActions.support") }
+						</button>
+					</div>
+				</div>
+				@LiveCard(d.Tab)
+			</section>
+			<section class="mt-12 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+				<div class={ "p-6", cardClass }>
+					<h3 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{ i18n.T(ctx, "pages.dashboard.sections.analytics.title") }</h3>
+					<p class="mt-2 text-sm text-neutral-600 dark:text-neutral-300">{ i18n.T(ctx, "pages.dashboard.sections.analytics.description") }</p>
+					<div class="mt-4 h-24 rounded-lg bg-neutral-100 dark:bg-neutral-800"></div>
+				</div>
+				<div class={ "p-6", cardClass }>
+					<h3 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{ i18n.T(ctx, "pages.dashboard.sections.activity.title") }</h3>
+					<p class="mt-2 text-sm text-neutral-600 dark:text-neutral-300">{ i18n.T(ctx, "pages.dashboard.sections.activity.description") }</p>
+					<div class="mt-4 space-y-2">
+						<div class="h-4 rounded bg-neutral-100 dark:bg-neutral-800"></div>
+						<div class="h-4 w-3/4 rounded bg-neutral-100 dark:bg-neutral-800"></div>
+						<div class="h-4 w-1/2 rounded bg-neutral-100 dark:bg-neutral-800"></div>
+					</div>
+				</div>
+				<div class={ "p-6", cardClass }>
+					<h3 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{ i18n.T(ctx, "pages.dashboard.sections.settings.title") }</h3>
+					<p class="mt-2 text-sm text-neutral-600 dark:text-neutral-300">{ i18n.T(ctx, "pages.dashboard.sections.settings.description") }</p>
+					<div class="mt-4 flex gap-2">
+						<div class="h-8 w-16 rounded bg-neutral-100 dark:bg-neutral-800"></div>
+						<div class="h-8 w-20 rounded bg-neutral-100 dark:bg-neutral-800"></div>
+					</div>
+				</div>
+			</section>
+			<section id="settings" class="mt-12 grid scroll-mt-24 grid-cols-1 gap-6 md:grid-cols-2">
+				@SettingsCard(d)
+				@DeleteAccountCard(d.Settings.DeleteError)
+			</section>
+		</div>
+	}
+}
+
+// AccountCard is components/dashboard/UserCard.tsx; the settings save and the
+// live stream patch it in place.
+templ AccountCard(u User) {
+	<div id={ accountCardID } class={ "col-span-1 p-5", cardClass }>
+		<h2 class="text-sm font-semibold text-neutral-800 dark:text-neutral-200">{ i18n.T(ctx, "pages.dashboard.account") }</h2>
+		<div class="mt-3 text-sm text-neutral-700 dark:text-neutral-300">
+			<div class="space-y-1">
+				<p><span class="text-neutral-500">{ i18n.T(ctx, "common.name") }:</span> <span data-testid="account-name">{ orDash(u.Name) }</span></p>
+				<p><span class="text-neutral-500">{ i18n.T(ctx, "common.email") }:</span> <span data-testid="account-email">{ orDash(u.Email) }</span></p>
+				<p><span class="text-neutral-500">{ i18n.T(ctx, "pages.dashboard.memberSince") }:</span> { memberSince(ctx, u.CreatedAt) }</p>
+				<div class="mt-3 inline-flex items-center gap-2 rounded-md border border-emerald-300 bg-emerald-50 px-2 py-1 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-900/30 dark:text-emerald-300">
+					<span class="h-2 w-2 rounded-full bg-emerald-500"></span>
+					{ i18n.T(ctx, "pages.dashboard.subscriptionActive") }
+				</div>
+			</div>
+		</div>
+	</div>
+}
+
+// LiveCard opens the dashboard SSE stream on load. It shows a skeleton until
+// the first event patches #live-body.
+templ LiveCard(tab string) {
+	<div class={ "col-span-1 p-5", cardClass } data-init={ view.Get(routes.DashboardLive + "?" + url.Values{"tab": {tab}}.Encode()) }>
+		<h2 class="text-sm font-semibold text-neutral-800 dark:text-neutral-200">{ i18n.T(ctx, "pages.dashboard.live.title") }</h2>
+		<p class="mt-1 text-xs text-neutral-500 dark:text-neutral-400">{ i18n.T(ctx, "pages.dashboard.live.description") }</p>
+		<div id={ liveBodyID } class="mt-3">
+			@view.LineSkeleton()
+		</div>
+		<div id={ liveNoticeID } class="hidden"></div>
+	</div>
+}
+
+// LiveBody is the fragment the stream patches every tick.
+templ LiveBody(now time.Time, s Session) {
+	<div id={ liveBodyID } class="mt-3 space-y-1 text-sm text-neutral-700 dark:text-neutral-300">
+		<p class="inline-flex items-center gap-2 text-xs text-emerald-700 dark:text-emerald-300">
+			<span class="h-2 w-2 animate-pulse rounded-full bg-emerald-500"></span>
+			{ i18n.T(ctx, "pages.dashboard.live.connected") }
+		</p>
+		<p><span class="text-neutral-500">{ i18n.T(ctx, "pages.dashboard.live.serverTime") }:</span> <span data-testid="live-clock" class="font-mono">{ now.UTC().Format("15:04:05") } UTC</span></p>
+		if !s.ExpiresAt.IsZero() {
+			<p><span class="text-neutral-500">{ i18n.T(ctx, "pages.dashboard.live.sessionExpires") }:</span> { i18n.From(ctx).DateTime(s.ExpiresAt.UTC()) }</p>
+		}
+	</div>
+}
+
+// LiveNotice tells this tab that another tab changed the account.
+templ LiveNotice() {
+	<div id={ liveNoticeID } role="status" class="mt-3 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-700 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-300">
+		{ i18n.T(ctx, "pages.dashboard.live.updatedElsewhere") }
+	</div>
+}
+
+templ SettingsCard(d DashboardData) {
+	<div class={ "p-6", cardClass }>
+		<h3 class="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{ i18n.T(ctx, "pages.dashboard.settingsForm.title") }</h3>
+		<p class="mt-2 text-sm text-neutral-600 dark:text-neutral-300">{ i18n.T(ctx, "pages.dashboard.settingsForm.description") }</p>
+		<form id="settings-form" class="mt-4 space-y-4" method="post" action={ templ.SafeURL(routes.UpdateSettings) } data-on:submit={ view.PostForm(routes.UpdateSettings) } data-indicator:_saving>
+			<input type="hidden" name="tab" value={ d.Tab }/>
+			@SettingsStatus(d.Settings)
+			@view.Input(view.Field{ID: "name", Type: "text", Label: i18n.T(ctx, "common.name"), Autocomplete: "name", Value: firstNonEmpty(d.Settings.Name, d.User.Name)})
+			<div>
+				<label for="settings-email" class="block text-sm font-medium text-neutral-700 dark:text-neutral-300">{ i18n.T(ctx, "common.email") }</label>
+				<input id="settings-email" type="email" readonly aria-readonly="true" value={ d.User.Email } class="mt-1 block w-full cursor-default rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2 text-neutral-600 shadow-sm focus:outline-none sm:text-sm dark:border-neutral-800 dark:bg-neutral-900/60 dark:text-neutral-400"/>
+			</div>
+			<div class="flex justify-end">
+				<button type="submit" data-attr:disabled="$_saving" class="inline-flex items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-600/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-blue-500 dark:hover:bg-blue-400">
+					<span data-show="!$_saving">{ i18n.T(ctx, "common.save") }</span>
+					<span style="display: none" data-show="$_saving">{ i18n.T(ctx, "pages.dashboard.settingsForm.saving") }</span>
+				</button>
+			</div>
+		</form>
+	</div>
+}
+
+templ SettingsStatus(s SettingsState) {
+	if s.Error != "" {
+		@view.Alert(settingsStatusID, "alert", view.ErrorAlertClass+" text-sm", s.Error)
+	} else if s.Saved {
+		@view.Alert(settingsStatusID, "status", view.SuccessAlertClass+" text-sm", i18n.T(ctx, "pages.dashboard.settingsForm.saved"))
+	} else {
+		@view.Alert(settingsStatusID, "", "", "")
+	}
+}
+
+// DeleteAccountCard asks for confirmation in a local signal, then posts.
+templ DeleteAccountCard(errMsg string) {
+	<div class="rounded-xl border border-red-300 bg-white p-6 shadow-sm dark:border-red-900/60 dark:bg-neutral-900/80" data-signals="{_confirmDelete: false}">
+		<h3 class="text-lg font-semibold text-red-700 dark:text-red-400">{ i18n.T(ctx, "pages.dashboard.deleteAccount.title") }</h3>
+		<p class="mt-2 text-sm text-neutral-600 dark:text-neutral-300">{ i18n.T(ctx, "pages.dashboard.deleteAccount.description") }</p>
+		<div class="mt-4">
+			@view.ErrorAlert(deleteErrorID, errMsg)
+		</div>
+		<button
+			type="button"
+			data-show="!$_confirmDelete"
+			data-on:click="$_confirmDelete = true"
+			class="mt-4 rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-100 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300 dark:hover:bg-red-950/60"
+		>
+			{ i18n.T(ctx, "pages.dashboard.deleteAccount.button") }
+		</button>
+		<form style="display: none" data-show="$_confirmDelete" class="mt-4 space-y-3" method="post" action={ templ.SafeURL(routes.DeleteAccount) } data-on:submit={ view.PostForm(routes.DeleteAccount) } data-indicator:_deleting>
+			<p class="text-sm font-medium text-red-700 dark:text-red-300">{ i18n.T(ctx, "pages.dashboard.deleteAccount.confirm") }</p>
+			<div class="flex flex-wrap gap-2">
+				<button type="submit" data-attr:disabled="$_deleting" class="rounded-md bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50">
+					<span data-show="!$_deleting">{ i18n.T(ctx, "pages.dashboard.deleteAccount.confirmButton") }</span>
+					<span style="display: none" data-show="$_deleting">{ i18n.T(ctx, "pages.dashboard.deleteAccount.deleting") }</span>
+				</button>
+				<button type="button" data-on:click="$_confirmDelete = false" class="rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-800 hover:bg-neutral-50 dark:border-neutral-800 dark:bg-neutral-800 dark:text-neutral-200">
+					{ i18n.T(ctx, "common.cancel") }
+				</button>
+			</div>
+		</form>
+	</div>
+}
+
+// HomePage is "/" when the template welcome is turned off.
+templ HomePage() {
+	@view.Layout("") {
+		<div class="mx-auto flex min-h-screen max-w-lg flex-col justify-center px-6">
+			<h1 class="text-3xl font-semibold tracking-tight text-neutral-950 dark:text-white">{ i18n.T(ctx, "pages.home.title") }</h1>
+			<p class="mt-3 leading-relaxed text-neutral-600 dark:text-neutral-300">{ i18n.T(ctx, "pages.home.body") }</p>
+			<div class="mt-8 flex gap-3">
+				<a href={ templ.SafeURL(config.AppRoutes.Signup) } class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white">{ i18n.T(ctx, "pages.home.signUp") }</a>
+				<a href={ templ.SafeURL(config.AppRoutes.Login) } class="rounded-lg border border-neutral-300 px-4 py-2 text-sm font-medium dark:border-neutral-700">{ i18n.T(ctx, "pages.home.signIn") }</a>
+			</div>
+		</div>
+	}
+}
