@@ -33,6 +33,7 @@ const (
 	KindForbidden
 	KindNotFound
 	KindConflict
+	KindRateLimited
 )
 
 // Error is a business-rule failure whose Message is safe to show to callers.
@@ -51,6 +52,8 @@ var (
 	ErrForbidden  = &Error{Kind: KindForbidden, Message: "Forbidden"}
 	ErrNotFound   = &Error{Kind: KindNotFound, Message: "Not found"}
 	ErrConflict   = &Error{Kind: KindConflict, Message: "Conflict"}
+	// ErrRateLimited is the one rate-limit error; there is nothing more specific to match.
+	ErrRateLimited = &Error{Kind: KindRateLimited, Message: "Too many requests. Please try again later."}
 )
 
 // Is makes the kind sentinels match every error of their kind. Specific

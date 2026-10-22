@@ -196,6 +196,7 @@ func TestErrorMapping(t *testing.T) {
 		{services.ErrUserNotFound, 404, "User not found"},
 		{fmt.Errorf("auth: %w", services.ErrEmailTaken), 409, "Email is already in use"},
 		{services.ErrInvalidPassword, 400, "Current password is incorrect"},
+		{services.ErrRateLimited, 429, "Too many requests. Please try again later."},
 		{&services.Error{Kind: services.KindUnauthorized, Message: "Nope"}, 401, "Nope"},
 		{&services.Error{Kind: services.KindInternal, Message: "secret detail"}, 500, "Internal server error"},
 		{errors.New("pq: connection refused"), 500, "Internal server error"}, // never leaks

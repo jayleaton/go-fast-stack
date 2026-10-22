@@ -23,57 +23,52 @@ func NewAccountCredentials(a *auth.Auth) AccountCredentials {
 	return AccountCredentials{auth: a}
 }
 
-// errNotWired marks port methods whose packages/auth counterpart has not landed.
-// TODO(feat/account-auth): replace each stub body with the one-line call in
-// its comment, then delete errNotWired.
-var errNotWired = errors.New("account credentials: needs packages/auth from feat/account-auth")
-
-// ChangePassword: return credentialErr(c.auth.ChangePassword(ctx, userID, current, next, revokeOthers, currentSessionID))
-func (c AccountCredentials) ChangePassword(_ context.Context, _, _, _ string, _ bool, _ string) error {
-	return credentialErr(errNotWired)
+func (c AccountCredentials) ChangePassword(ctx context.Context, userID, current, next string, revokeOthers bool, currentSessionID string) error {
+	return credentialErr(c.auth.ChangePassword(ctx, userID, current, next, revokeOthers, currentSessionID))
 }
 
-// ChangeEmail: return credentialErr(c.auth.ChangeEmail(ctx, userID, newEmail, callbackURL))
-func (c AccountCredentials) ChangeEmail(_ context.Context, _, _, _ string) error {
-	return credentialErr(errNotWired)
+func (c AccountCredentials) ChangeEmail(ctx context.Context, userID, newEmail, callbackURL string) error {
+	return credentialErr(c.auth.ChangeEmail(ctx, userID, newEmail, callbackURL))
 }
 
-// ListSessions: s, err := c.auth.ListSessions(ctx, userID); return sessions(s), credentialErr(err)
-func (c AccountCredentials) ListSessions(_ context.Context, _ string) ([]services.Session, error) {
-	return sessions(nil), credentialErr(errNotWired)
-}
-
-// RevokeSession: return credentialErr(c.auth.RevokeSession(ctx, userID, sessionID))
-func (c AccountCredentials) RevokeSession(_ context.Context, _, _ string) error {
-	return credentialErr(errNotWired)
-}
-
-// RevokeOtherSessions: return credentialErr(c.auth.RevokeOtherSessions(ctx, userID, currentSessionID))
-func (c AccountCredentials) RevokeOtherSessions(_ context.Context, _, _ string) error {
-	return credentialErr(errNotWired)
-}
-
-// sessions converts auth sessions to the port type, dropping the token.
-func sessions(in []auth.Session) []services.Session {
+func (c AccountCredentials) ListSessions(ctx context.Context, userID string) ([]services.Session, error) {
+	in, err := c.auth.ListSessions(ctx, userID)
+	if err != nil {
+		return nil, credentialErr(err)
+	}
 	out := make([]services.Session, len(in))
-	for i, s := range in {
+	for i, s := range in { // never the token
 		out[i] = services.Session{ID: s.ID, CreatedAt: s.CreatedAt, ExpiresAt: s.ExpiresAt, IPAddress: s.IPAddress, UserAgent: s.UserAgent}
 	}
-	return out
+	return out, nil
+}
+
+func (c AccountCredentials) RevokeSession(ctx context.Context, userID, sessionID string) error {
+	return credentialErr(c.auth.RevokeSession(ctx, userID, sessionID))
+}
+
+func (c AccountCredentials) RevokeOtherSessions(ctx context.Context, userID, currentSessionID string) error {
+	return credentialErr(c.auth.RevokeOtherSessions(ctx, userID, currentSessionID))
 }
 
 // credentialErrors translates auth errors into the port's.
-// TODO(feat/account-auth): add auth.ErrInvalidPassword -> ErrInvalidPassword,
-// auth.ErrEmailTaken -> ErrEmailTaken, auth.ErrSessionNotFound -> ErrSessionNotFound.
 var credentialErrors = []struct {
 	auth error
 	port *services.Error
 }{
+	{auth.ErrInvalidPassword, services.ErrInvalidPassword},
 	{auth.ErrPasswordTooShort, services.ErrPasswordPolicy},
 	{auth.ErrPasswordTooLong, services.ErrPasswordPolicy},
+	{auth.ErrCredentialAccountNotFound, services.ErrNoPassword},
+	{auth.ErrEmailUnchanged, services.ErrSameEmail},
+	{auth.ErrEmailTaken, services.ErrEmailTaken},
 	{auth.ErrUserAlreadyExists, services.ErrEmailTaken},
+	{auth.ErrInvalidEmail, services.ErrValidation},
 	{auth.ErrInvalidCallbackURL, services.ErrInvalidCallbackURL},
+	{auth.ErrSessionNotFresh, services.ErrSessionNotFresh},
+	{auth.ErrSessionNotFound, services.ErrSessionNotFound},
 	{auth.ErrUserNotFound, services.ErrUserNotFound},
+	{auth.ErrTooManyRequests, services.ErrRateLimited},
 }
 
 // credentialErr wraps a known auth error in its port error (keeping the

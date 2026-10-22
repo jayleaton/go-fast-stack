@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -19,11 +20,11 @@ import (
 
 const origin = "http://app.test"
 
-// TestAuthWiring drives packages/auth through the real server: auth
-// endpoints, the session middleware, the caller and credentials adapters and
-// the users API over the real repository.
-func TestAuthWiring(t *testing.T) {
-	t.Parallel()
+type doFunc func(method, path, body string, headers ...string) *httptest.ResponseRecorder
+
+// newWired returns the real server over packages/auth, the user repository
+// and the credentials adapter on a fresh database.
+func newWired(t *testing.T) doFunc {
 	pool := dbtest.New(t, dbtest.App)
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	a, err := auth.New(auth.Config{Secret: strings.Repeat("s", 32), BaseURL: origin, Logger: log}, pool, auth.NewDevMailer(log))
@@ -37,7 +38,7 @@ func TestAuthWiring(t *testing.T) {
 		Auth:   a,
 		Users:  api.NewUsers(services.NewUserService(database.NewUserRepository(pool), NewAccountCredentials(a)), CallerFrom),
 	})
-	do := func(method, path, body string, headers ...string) *httptest.ResponseRecorder {
+	return func(method, path, body string, headers ...string) *httptest.ResponseRecorder {
 		t.Helper()
 		req := httptest.NewRequest(method, origin+path, strings.NewReader(body))
 		if body != "" {
@@ -48,6 +49,14 @@ func TestAuthWiring(t *testing.T) {
 		}
 		return serve(h, req)
 	}
+}
+
+// TestAuthWiring drives packages/auth through the real server: auth
+// endpoints, the session middleware, the caller adapter and the users API
+// over the real repository.
+func TestAuthWiring(t *testing.T) {
+	t.Parallel()
+	do := newWired(t)
 
 	rec := do("POST", "/api/auth/sign-up/email", `{"name":"Ada","email":"ada@example.com","password":"password123"}`)
 	if rec.Code != http.StatusOK {
@@ -86,4 +95,72 @@ func TestAuthWiring(t *testing.T) {
 			t.Errorf("%s after sign-out: %d %s", name, rec.Code, rec.Body)
 		}
 	}
+}
+
+// TestAccountWiring drives every /users/me route through the credentials
+// adapter over real packages/auth, so each auth error is seen translated.
+func TestAccountWiring(t *testing.T) {
+	t.Parallel()
+	do := newWired(t)
+	token := func(path, body string) []string {
+		t.Helper()
+		rec := do("POST", path, body)
+		var res struct{ Token string }
+		if err := json.Unmarshal(rec.Body.Bytes(), &res); rec.Code != http.StatusOK || err != nil || res.Token == "" {
+			t.Fatalf("%s: %d %s", path, rec.Code, rec.Body)
+		}
+		return []string{"Authorization", "Bearer " + res.Token}
+	}
+	expect := func(as []string, method, path, body string, status int, snippet string) string {
+		t.Helper()
+		rec := do(method, path, body, as...)
+		if rec.Code != status || !strings.Contains(rec.Body.String(), snippet) {
+			t.Fatalf("%s %s %s: %d %s, want %d containing %s", method, path, body, rec.Code, rec.Body, status, snippet)
+		}
+		return rec.Body.String()
+	}
+	signIn := func(password string) []string {
+		return token("/api/auth/sign-in/email", `{"email":"ada@example.com","password":"`+password+`"}`)
+	}
+	r := config.APIRoutes
+
+	ada := token("/api/auth/sign-up/email", `{"name":"Ada","email":"ada@example.com","password":"password123"}`)
+	token("/api/auth/sign-up/email", `{"name":"Eve","email":"eve@example.com","password":"password123"}`)
+	phone := signIn("password123")
+
+	var sessions struct{ Data []services.Session }
+	_ = json.Unmarshal([]byte(expect(ada, "GET", r.MeSessions, "", 200, `"current":true`)), &sessions)
+	if len(sessions.Data) != 2 || strings.Contains(fmt.Sprint(sessions.Data), "Bearer") {
+		t.Fatalf("sessions = %+v", sessions.Data)
+	}
+	var current, other string
+	for _, s := range sessions.Data {
+		if s.Current {
+			current = s.ID
+		} else {
+			other = s.ID
+		}
+	}
+
+	expect(ada, "POST", r.MePassword, `{"currentPassword":"wrong-password","newPassword":"password456"}`, 400, "Current password is incorrect")
+	expect(ada, "POST", r.MePassword, `{"currentPassword":"password123","newPassword":"password456"}`, 200, `"success":true`)
+	signIn("password456")
+
+	expect(ada, "POST", r.MeEmail, `{"newEmail":"ADA@example.com"}`, 400, "New email must be different")
+	expect(ada, "POST", r.MeEmail, `{"newEmail":"eve@example.com"}`, 409, "Email is already in use")
+	expect(ada, "POST", r.MeEmail, `{"newEmail":"ada@new.example"}`, 200, `"success":true`)
+	expect(ada, "POST", r.MeEmail, `{"newEmail":"ada@new.example","callbackURL":"https://evil.example/"}`, 400, "Invalid callback URL")
+	expect(ada, "POST", r.MeEmail, `{"newEmail":"ada@new.example"}`, 429, "Too many requests")
+
+	expect(ada, "DELETE", config.MeSessionPath(current), "", 400, "Use sign out")
+	expect(ada, "DELETE", config.MeSessionPath(other), "", 200, `"success":true`)
+	expect(phone, "GET", r.Me, "", 401, "Unauthorized")
+	expect(ada, "DELETE", config.MeSessionPath(other), "", 404, "Session not found")
+
+	signIn("password456")
+	expect(ada, "DELETE", r.MeOtherSessions, "", 200, `"success":true`)
+	expect(ada, "GET", r.MeData, "", 200, `"sessions":1`)
+
+	expect(ada, "DELETE", r.Me, "", 200, `"success":true`)
+	expect(ada, "GET", r.Me, "", 401, "Unauthorized")
 }

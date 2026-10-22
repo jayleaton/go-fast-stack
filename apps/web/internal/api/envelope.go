@@ -59,6 +59,8 @@ func statusFor(k services.Kind) int {
 		return http.StatusNotFound
 	case services.KindConflict:
 		return http.StatusConflict
+	case services.KindRateLimited:
+		return http.StatusTooManyRequests
 	default:
 		return http.StatusInternalServerError
 	}

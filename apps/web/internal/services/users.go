@@ -43,13 +43,16 @@ type UserRepository interface {
 
 // AccountCredentials is the port to the user's credentials and sessions (an
 // adapter over *auth.Auth in apps/web/internal/server). Implementations
-// report the failures below as the Err* values of this file (wrapping is
-// fine); any other error is an internal error.
+// report the failures listed per method as the Err* values of this file
+// (wrapping is fine), and ErrRateLimited from any method; any other error is
+// an internal error.
 type AccountCredentials interface {
-	// ChangePassword fails with ErrInvalidPassword, ErrPasswordPolicy or ErrUserNotFound.
+	// ChangePassword fails with ErrInvalidPassword, ErrPasswordPolicy or
+	// ErrNoPassword (an account without one, e.g. OAuth only).
 	ChangePassword(ctx context.Context, userID, current, next string, revokeOthers bool, currentSessionID string) error
 	// ChangeEmail sends a verification link to newEmail; the address changes
-	// only when the link is opened. Fails with ErrEmailTaken, ErrInvalidCallbackURL or ErrUserNotFound.
+	// only when the link is opened. Fails with ErrSameEmail, ErrEmailTaken,
+	// ErrInvalidCallbackURL, ErrSessionNotFresh or ErrUserNotFound.
 	ChangeEmail(ctx context.Context, userID, newEmail, callbackURL string) error
 	ListSessions(ctx context.Context, userID string) ([]Session, error)
 	// RevokeSession fails with ErrSessionNotFound unless the session is the user's.
@@ -71,10 +74,13 @@ var (
 	ErrSameEmail          = &Error{KindInvalid, "New email must be different from the current email"}
 	ErrEmailTaken         = &Error{KindConflict, "Email is already in use"}
 	ErrInvalidCallbackURL = &Error{KindInvalid, "Invalid callback URL"}
+	// ErrSessionNotFresh: changing the email needs a recent sign-in.
+	ErrSessionNotFresh = &Error{KindForbidden, "Sign in again to change your email"}
 	// ErrInvalidPassword is Invalid, not Unauthorized: clients treat 401 as "signed out".
 	ErrInvalidPassword = &Error{KindInvalid, "Current password is incorrect"}
 	ErrSamePassword    = &Error{KindInvalid, "New password must be different from the current password"}
 	ErrPasswordPolicy  = &Error{KindInvalid, fmt.Sprintf("Password must be %d-%d characters", MinPasswordLength, MaxPasswordLength)}
+	ErrNoPassword      = &Error{KindInvalid, "This account has no password"}
 	ErrSessionNotFound = &Error{KindNotFound, "Session not found"}
 	ErrCurrentSession  = &Error{KindInvalid, "Use sign out to end the current session"}
 )
