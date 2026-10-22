@@ -14,6 +14,12 @@ import (
 var (
 	invite  = validate.CreateAdminInvite{Email: "bob@example.com", Name: "Bob"}
 	pending = services.Admin{ID: "a2", Name: "Bob", Email: "bob@example.com"}
+	bob     = services.Admin{ID: "a2", Name: "Bob", Email: "bob@example.com", HasPassword: true}
+	disBob  = services.Admin{ID: "a2", Name: "Bob", Email: "bob@example.com", HasPassword: true, Disabled: true}
+	graceAd = services.Admin{ID: "a1", Name: "Grace", Email: "grace@example.com", HasPassword: true, TwoFactorEnabled: true}
+
+	// priorInvite is the audit lookup a resend makes for bob's earlier invite.
+	priorInvite = services.AuditQuery{Action: "admin.invite", TargetID: "a2", Limit: 1}
 )
 
 func newAdminService(t *testing.T) (*services.AdminService, *mocks.MockAdminAccounts, *mocks.MockAuditLog) {
@@ -65,17 +71,36 @@ func TestInviteAdmin(t *testing.T) {
 	gomock.InOrder(
 		accounts.EXPECT().AdminByEmail(ctx, "bob@example.com").Return(pending, nil),
 		accounts.EXPECT().SendSetPasswordLink(ctx, "a2").Return(nil),
+		log.EXPECT().List(ctx, priorInvite).Return(services.AuditPage{Total: 1}, nil),
 		log.EXPECT().Append(ctx, adminAudit(grace, "admin.invite", map[string]string{"resent": "true"})).Return(nil),
 	)
 	if got, err := svc.InviteAdmin(ctx, grace, invite); err != nil || got != pending {
 		t.Fatalf("resend = %+v, %v", got, err)
 	}
 
+	// An admin seeded by bootstrap was never sent a link: the first invite is
+	// not a resend.
+	gomock.InOrder(
+		accounts.EXPECT().AdminByEmail(ctx, "bob@example.com").Return(pending, nil),
+		accounts.EXPECT().SendSetPasswordLink(ctx, "a2").Return(nil),
+		log.EXPECT().List(ctx, priorInvite).Return(services.AuditPage{}, nil),
+		log.EXPECT().Append(ctx, adminAudit(grace, "admin.invite", map[string]string{})).Return(nil),
+	)
+	if got, err := svc.InviteAdmin(ctx, grace, invite); err != nil || got != pending {
+		t.Fatalf("first invite of a seeded admin = %+v, %v", got, err)
+	}
+
+	accounts.EXPECT().AdminByEmail(ctx, "bob@example.com").Return(pending, nil)
+	accounts.EXPECT().SendSetPasswordLink(ctx, "a2").Return(nil)
+	log.EXPECT().List(ctx, priorInvite).Return(services.AuditPage{}, errDB)
+	_, err := svc.InviteAdmin(ctx, grace, invite)
+	wantInternal(t, err, errDB)
+
 	// An admin who has set a password already is not invited.
 	active := pending
 	active.HasPassword = true
 	accounts.EXPECT().AdminByEmail(ctx, "bob@example.com").Return(active, nil)
-	_, err := svc.InviteAdmin(ctx, grace, invite)
+	_, err = svc.InviteAdmin(ctx, grace, invite)
 	wantErr(t, err, services.ErrAdminExists)
 
 	accounts.EXPECT().AdminByEmail(ctx, "bob@example.com").Return(services.Admin{}, errDB)
@@ -96,9 +121,165 @@ func TestInviteAdmin(t *testing.T) {
 
 	accounts.EXPECT().AdminByEmail(ctx, "bob@example.com").Return(pending, nil)
 	accounts.EXPECT().SendSetPasswordLink(ctx, "a2").Return(nil)
+	log.EXPECT().List(ctx, priorInvite).Return(services.AuditPage{Total: 1}, nil)
 	log.EXPECT().Append(ctx, gomock.Any()).Return(errDB)
 	_, err = svc.InviteAdmin(ctx, grace, invite)
 	wantInternal(t, err, errDB)
+}
+
+func TestAdminActive(t *testing.T) {
+	for _, c := range []struct {
+		a    services.Admin
+		want bool
+	}{{bob, true}, {pending, false}, {disBob, false}, {services.Admin{Disabled: true}, false}} {
+		if got := c.a.Active(); got != c.want {
+			t.Errorf("%+v.Active() = %v, want %v", c.a, got, c.want)
+		}
+	}
+}
+
+func TestDisableAdmin(t *testing.T) {
+	svc, accounts, log := newAdminService(t)
+
+	gomock.InOrder(
+		accounts.EXPECT().AdminByID(ctx, "a2").Return(bob, nil),
+		accounts.EXPECT().ListAdmins(ctx).Return([]services.Admin{graceAd, bob}, nil),
+		accounts.EXPECT().DisableAdmin(ctx, "a2").Return(nil),
+		log.EXPECT().Append(ctx, adminAudit(grace, "admin.disable", nil)).Return(nil),
+	)
+	if err := svc.DisableAdmin(ctx, grace, "a2"); err != nil {
+		t.Fatal(err)
+	}
+
+	// A pending invite never counts toward the last active admin.
+	accounts.EXPECT().AdminByID(ctx, "a2").Return(pending, nil)
+	accounts.EXPECT().DisableAdmin(ctx, "a2").Return(nil)
+	log.EXPECT().Append(ctx, adminAudit(grace, "admin.disable", nil)).Return(nil)
+	if err := svc.DisableAdmin(ctx, grace, "a2"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Nobody disables themselves; it is refused before any port call.
+	wantErr(t, svc.DisableAdmin(ctx, grace, "a1"), services.ErrAdminSelf)
+
+	accounts.EXPECT().AdminByID(ctx, "a2").Return(services.Admin{}, fmt.Errorf("get: %w", services.ErrRecordNotFound))
+	wantErr(t, svc.DisableAdmin(ctx, grace, "a2"), services.ErrAdminNotFound)
+
+	accounts.EXPECT().AdminByID(ctx, "a2").Return(services.Admin{}, errDB)
+	wantInternal(t, svc.DisableAdmin(ctx, grace, "a2"), errDB)
+
+	// The operator may act on bob, but never on the last active admin:
+	// pending and disabled admins do not count.
+	accounts.EXPECT().AdminByID(ctx, "a2").Return(bob, nil)
+	accounts.EXPECT().ListAdmins(ctx).Return([]services.Admin{bob, pending, {ID: "a3", HasPassword: true, Disabled: true}}, nil)
+	wantErr(t, svc.DisableAdmin(ctx, cli, "a2"), services.ErrLastAdmin)
+
+	accounts.EXPECT().AdminByID(ctx, "a2").Return(bob, nil)
+	accounts.EXPECT().ListAdmins(ctx).Return(nil, errDB)
+	wantInternal(t, svc.DisableAdmin(ctx, grace, "a2"), errDB)
+
+	// Already disabled: no count, no change.
+	accounts.EXPECT().AdminByID(ctx, "a2").Return(disBob, nil)
+	wantErr(t, svc.DisableAdmin(ctx, grace, "a2"), services.ErrAdminDisabled)
+
+	accounts.EXPECT().AdminByID(ctx, "a2").Return(bob, nil)
+	accounts.EXPECT().ListAdmins(ctx).Return([]services.Admin{graceAd, bob}, nil)
+	accounts.EXPECT().DisableAdmin(ctx, "a2").Return(errDB)
+	wantInternal(t, svc.DisableAdmin(ctx, grace, "a2"), errDB)
+
+	// Disabled but not recorded: the caller sees the failure.
+	accounts.EXPECT().AdminByID(ctx, "a2").Return(bob, nil)
+	accounts.EXPECT().ListAdmins(ctx).Return([]services.Admin{graceAd, bob}, nil)
+	accounts.EXPECT().DisableAdmin(ctx, "a2").Return(nil)
+	log.EXPECT().Append(ctx, gomock.Any()).Return(errDB)
+	wantInternal(t, svc.DisableAdmin(ctx, grace, "a2"), errDB)
+}
+
+func TestEnableAdmin(t *testing.T) {
+	svc, accounts, log := newAdminService(t)
+
+	gomock.InOrder(
+		accounts.EXPECT().AdminByID(ctx, "a2").Return(disBob, nil),
+		accounts.EXPECT().EnableAdmin(ctx, "a2").Return(nil),
+		log.EXPECT().Append(ctx, adminAudit(grace, "admin.enable", nil)).Return(nil),
+	)
+	if err := svc.EnableAdmin(ctx, grace, "a2"); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, a := range []services.Admin{bob, pending} {
+		accounts.EXPECT().AdminByID(ctx, "a2").Return(a, nil)
+		wantErr(t, svc.EnableAdmin(ctx, grace, "a2"), services.ErrAdminNotDisabled)
+	}
+
+	accounts.EXPECT().AdminByID(ctx, "a2").Return(services.Admin{}, services.ErrRecordNotFound)
+	wantErr(t, svc.EnableAdmin(ctx, grace, "a2"), services.ErrAdminNotFound)
+
+	accounts.EXPECT().AdminByID(ctx, "a2").Return(services.Admin{}, errDB)
+	wantInternal(t, svc.EnableAdmin(ctx, grace, "a2"), errDB)
+
+	accounts.EXPECT().AdminByID(ctx, "a2").Return(disBob, nil)
+	accounts.EXPECT().EnableAdmin(ctx, "a2").Return(errDB)
+	wantInternal(t, svc.EnableAdmin(ctx, grace, "a2"), errDB)
+
+	accounts.EXPECT().AdminByID(ctx, "a2").Return(disBob, nil)
+	accounts.EXPECT().EnableAdmin(ctx, "a2").Return(nil)
+	log.EXPECT().Append(ctx, gomock.Any()).Return(errDB)
+	wantInternal(t, svc.EnableAdmin(ctx, grace, "a2"), errDB)
+}
+
+func TestRemoveAdmin(t *testing.T) {
+	svc, accounts, log := newAdminService(t)
+
+	gomock.InOrder(
+		accounts.EXPECT().AdminByID(ctx, "a2").Return(bob, nil),
+		accounts.EXPECT().ListAdmins(ctx).Return([]services.Admin{graceAd, bob}, nil),
+		accounts.EXPECT().RemoveAdmin(ctx, "a2").Return(nil),
+		log.EXPECT().Append(ctx, adminAudit(grace, "admin.remove", nil)).Return(nil),
+	)
+	if err := svc.RemoveAdmin(ctx, grace, "a2"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Cancelling a pending invite or removing a disabled admin needs no count.
+	for _, a := range []services.Admin{pending, disBob} {
+		accounts.EXPECT().AdminByID(ctx, "a2").Return(a, nil)
+		accounts.EXPECT().RemoveAdmin(ctx, "a2").Return(nil)
+		log.EXPECT().Append(ctx, adminAudit(grace, "admin.remove", nil)).Return(nil)
+		if err := svc.RemoveAdmin(ctx, grace, "a2"); err != nil {
+			t.Fatalf("remove %+v: %v", a, err)
+		}
+	}
+
+	wantErr(t, svc.RemoveAdmin(ctx, grace, "a1"), services.ErrAdminSelf)
+
+	accounts.EXPECT().AdminByID(ctx, "a2").Return(services.Admin{}, services.ErrRecordNotFound)
+	wantErr(t, svc.RemoveAdmin(ctx, grace, "a2"), services.ErrAdminNotFound)
+
+	accounts.EXPECT().AdminByID(ctx, "a2").Return(services.Admin{}, errDB)
+	wantInternal(t, svc.RemoveAdmin(ctx, grace, "a2"), errDB)
+
+	// Removed by someone else between the lookup and the delete: still a 404.
+	accounts.EXPECT().AdminByID(ctx, "a2").Return(pending, nil)
+	accounts.EXPECT().RemoveAdmin(ctx, "a2").Return(services.ErrRecordNotFound)
+	wantErr(t, svc.RemoveAdmin(ctx, grace, "a2"), services.ErrAdminNotFound)
+
+	accounts.EXPECT().AdminByID(ctx, "a2").Return(bob, nil)
+	accounts.EXPECT().ListAdmins(ctx).Return([]services.Admin{bob}, nil)
+	wantErr(t, svc.RemoveAdmin(ctx, cli, "a2"), services.ErrLastAdmin)
+
+	accounts.EXPECT().AdminByID(ctx, "a2").Return(bob, nil)
+	accounts.EXPECT().ListAdmins(ctx).Return(nil, errDB)
+	wantInternal(t, svc.RemoveAdmin(ctx, grace, "a2"), errDB)
+
+	accounts.EXPECT().AdminByID(ctx, "a2").Return(pending, nil)
+	accounts.EXPECT().RemoveAdmin(ctx, "a2").Return(errDB)
+	wantInternal(t, svc.RemoveAdmin(ctx, grace, "a2"), errDB)
+
+	accounts.EXPECT().AdminByID(ctx, "a2").Return(pending, nil)
+	accounts.EXPECT().RemoveAdmin(ctx, "a2").Return(nil)
+	log.EXPECT().Append(ctx, gomock.Any()).Return(errDB)
+	wantInternal(t, svc.RemoveAdmin(ctx, grace, "a2"), errDB)
 }
 
 func TestBootstrap(t *testing.T) {

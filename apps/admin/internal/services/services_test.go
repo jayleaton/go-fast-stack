@@ -29,6 +29,7 @@ type ports struct {
 	accounts  *mocks.MockAdminAccounts
 	log       *mocks.MockAuditLog
 	analytics *mocks.MockAnalytics
+	attempts  *mocks.MockTwoFactorAttempts
 }
 
 func newPorts(t *testing.T) ports {
@@ -38,6 +39,7 @@ func newPorts(t *testing.T) ports {
 		accounts:  mocks.NewMockAdminAccounts(ctrl),
 		log:       mocks.NewMockAuditLog(ctrl),
 		analytics: mocks.NewMockAnalytics(ctrl),
+		attempts:  mocks.NewMockTwoFactorAttempts(ctrl),
 	}
 }
 
@@ -83,6 +85,9 @@ func policyCalls(p ports, policy services.Policy) map[string]func(services.Actor
 			_, err := admins.InviteAdmin(ctx, a, invite)
 			return err
 		},
+		"AdminService.DisableAdmin": func(a services.Actor) error { return admins.DisableAdmin(ctx, a, "a2") },
+		"AdminService.EnableAdmin":  func(a services.Actor) error { return admins.EnableAdmin(ctx, a, "a2") },
+		"AdminService.RemoveAdmin":  func(a services.Actor) error { return admins.RemoveAdmin(ctx, a, "a2") },
 		"AdminService.Bootstrap": func(a services.Actor) error {
 			_, _, err := admins.Bootstrap(ctx, a, invite)
 			return err

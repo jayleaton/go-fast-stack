@@ -29,8 +29,9 @@ var APIRoutes = struct {
 	Users, UserByID, UserBan, UserUnban, UserRole string
 	UserSessions, UserSessionByID                 string
 	// Admins (the admin database).
-	Admins, AdminInvites string
-	Audit, Analytics     string
+	Admins, AdminInvites                 string
+	AdminByID, AdminDisable, AdminEnable string
+	Audit, Analytics                     string
 
 	Healthz string
 }{
@@ -44,6 +45,9 @@ var APIRoutes = struct {
 	UserSessionByID: "/api/admin/v1/users/{id}/sessions/{sessionId}",
 	Admins:          "/api/admin/v1/admins",
 	AdminInvites:    "/api/admin/v1/admins/invites",
+	AdminByID:       "/api/admin/v1/admins/{id}",
+	AdminDisable:    "/api/admin/v1/admins/{id}/disable",
+	AdminEnable:     "/api/admin/v1/admins/{id}/enable",
 	Audit:           "/api/admin/v1/audit",
 	Analytics:       "/api/admin/v1/analytics",
 	Healthz:         "/healthz",
@@ -58,6 +62,12 @@ func UserPage(id string) string {
 // ("", "/ban", "/unban", "/role", "/sessions").
 func UserPath(id, suffix string) string {
 	return APIRoutes.Users + "/" + url.PathEscape(id) + suffix
+}
+
+// AdminPath is the concrete path for APIRoutes.AdminByID; suffix is appended
+// ("", "/disable", "/enable").
+func AdminPath(id, suffix string) string {
+	return APIRoutes.Admins + "/" + url.PathEscape(id) + suffix
 }
 
 // UserSessionPath is the concrete path for APIRoutes.UserSessionByID.
