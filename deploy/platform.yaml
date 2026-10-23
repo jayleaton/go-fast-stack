@@ -96,6 +96,12 @@ backups:
   # S3-compatible bucket off Railway (Cloudflare R2, Backblaze B2, AWS S3);
   # set backup/BACKUP_S3_* yourself (docs/backups.md).
   storage: railway
+  # Railway's own snapshots of every Postgres volume (Pro plan only): daily
+  # (kept 6 days), weekly (27 days), monthly (89 days). Setup sets the
+  # schedule through Railway's API, without a redeploy, and re-runs change
+  # nothing. Commented out: left as set in the dashboard. []: none.
+  # per_environment.<env>.volume_snapshots overrides it (e.g. [daily]).
+  # volume_snapshots: [daily, weekly, monthly]
 
 # Per-service caps (per replica). Railway bills actual usage, so caps only
 # bound a runaway process; a Go service idles at a few tens of MB.

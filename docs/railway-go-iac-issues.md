@@ -27,6 +27,7 @@ Each entry says how this repo works around it today, so you can drop the workaro
 | 16 | api | GitHub access can't be checked with a CLI login token | medium | yes |
 | 17 | api/cli | 32-character project name limit only surfaces on create | low | yes |
 | 18 | cli | A `variables.ignore` pattern scoped to an absent service fails the plan | low | yes |
+| 19 | go-sdk/cli | Volume backup schedules cannot be declared | medium | yes |
 
 ---
 
@@ -256,4 +257,16 @@ A template that only talks to Postgres over the private network still gets a pub
 **Repro (verified 2026-10-23, CLI 5.71.0).** Run a project with web + postgres only, `variables.managed: true`, and `variables.ignore: ["backup/X"]`, then `railway config plan`.
 
 **Workaround here.** `platform.Build` drops `unmanaged_variables` entries scoped to a service the environment does not have (`Config.HasService`).
+
+## 19. go-sdk + cli: volume backup schedules cannot be declared
+
+**Summary.** A Postgres resource (`railway.Postgres(name, opts)`) has no option for the volume's backup schedule, and the CLI has no command for it. Only the dashboard (Backups tab) and the public GraphQL API can set it: `volumeInstanceBackupScheduleUpdate(volumeInstanceId: String!, kinds: [VolumeInstanceBackupScheduleKind!]!)`, kinds `DAILY`, `WEEKLY`, `MONTHLY`. `volumeInstanceBackupScheduleList(volumeInstanceId)` reads it back (`kind`, `cron`, `retentionSeconds`: 6, 27 and 89 days).
+
+**Why it matters.** Backups are the one setting a team wants declared next to the database. They also differ per environment (daily on staging, all three on production), which is exactly what an IaC graph is for.
+
+**Expected.** Something like `railway.Postgres("postgres", map[string]any{"backups": []any{"daily", "weekly"}})`, planned and applied like any other volume setting.
+
+**Repro (verified 2026-10-23, CLI 5.71.0, SDK v0.6.0).** `railway config plan` ignores the schedule: a volume with `DAILY` set in the dashboard plans as up to date either way. The mutation above changes it without a redeploy.
+
+**Workaround here.** `backups.volume_snapshots` (and `per_environment.<env>.volume_snapshots`) in `platform.yaml`; `railway-setup` reads each volume's schedule and calls the mutation only when it differs (`deploy/cmd/railway-setup/snapshots.go`).
 
