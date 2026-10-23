@@ -92,20 +92,3 @@ func (ui *UI) socialCallback(writer http.ResponseWriter, request *http.Request, 
 	setCookies(writer, outcome.Cookies)
 	http.Redirect(writer, request, outcome.Redirect, http.StatusFound) //nolint:gosec // G710: the API's redirect is a callback it checked when the flow started, or its own error page
 }
-
-// setCookies sets cookies the API returned as data (the auth session and
-// flow state): Path=/, HttpOnly, SameSite=Lax, Secure as the API says. A
-// negative MaxAge deletes the cookie.
-func setCookies(writer http.ResponseWriter, cookies []apiclient.Cookie) {
-	for _, cookie := range cookies {
-		http.SetCookie(writer, &http.Cookie{ //nolint:gosec // G124: Secure follows the API (PUBLIC_URL's scheme) so http dev servers work
-			Name:     cookie.Name,
-			Value:    cookie.Value,
-			Path:     "/",
-			MaxAge:   cookie.MaxAge,
-			Secure:   cookie.Secure,
-			HttpOnly: true,
-			SameSite: http.SameSiteLaxMode,
-		})
-	}
-}

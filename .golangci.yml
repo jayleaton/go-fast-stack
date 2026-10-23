@@ -272,6 +272,8 @@ linters:
               desc: "inputs are apiclient types and the API validates them; the UI never validates inline"
             - pkg: github.com/jayleaton/go-fast-stack/apps/web/internal/access
               desc: "the UI declares access with apiclient.Public / apiclient.SignedIn; the API's gate enforces it"
+            - pkg: github.com/jayleaton/go-fast-stack/packages/auth
+              desc: "sign-in flows are API endpoints too: call apiclient.Client (SignIn, SignUp, SignOut...) and set the cookies it returns with setCookies"
         # The UI's API client is a contract only: the interface, aliases and
         # errors. It has no HTTP implementation (the in-process one is
         # api.Client) and no base URL, so the UI cannot reach the API over the
@@ -297,6 +299,17 @@ linters:
               desc: api implements apiclient, never the other way round
             - pkg: github.com/jayleaton/go-fast-stack/apps/admin/internal/api/
               desc: api implements apiclient, never the other way round
+        # The servers wire the API to its ports; they never adapt anything
+        # for the UI, so the UI has no way to data or auth but the API.
+        server-not-ui:
+          files:
+            - "**/apps/web/internal/server/**"
+            - "**/apps/admin/internal/server/**"
+          deny:
+            - pkg: github.com/jayleaton/go-fast-stack/apps/web/ui
+              desc: "server adapts packages to the API's ports; the UI takes only apiclient.Client (wired in cmd)"
+            - pkg: github.com/jayleaton/go-fast-stack/apps/admin/ui
+              desc: "server adapts packages to the API's ports; the UI takes only apiclient.Client (wired in cmd)"
         admin-ui-not-api:
           files:
             - "**/apps/admin/ui/**"

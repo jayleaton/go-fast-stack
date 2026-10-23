@@ -12,15 +12,16 @@ import (
 // a network hop. ctx must be the context of the request being served (it
 // carries the session auth.Middleware loaded).
 type Client struct {
-	users  *Users
-	social *Social // nil: no social sign-in endpoints (SocialProviders is empty)
+	users    *Users
+	sessions *Sessions
+	social   *Social // nil: no social sign-in endpoints (SocialProviders is empty)
 }
 
 var _ apiclient.Client = (*Client)(nil)
 
 // NewClient returns the in-process client over the endpoints.
-func NewClient(users *Users) *Client {
-	return &Client{users: users}
+func NewClient(users *Users, sessions *Sessions) *Client {
+	return &Client{users: users, sessions: sessions}
 }
 
 // WithSocial adds the social sign-in endpoints and returns client.
@@ -102,4 +103,53 @@ func (client *Client) DeleteMe(ctx context.Context) error {
 // DataSummary is GET /users/me/data.
 func (client *Client) DataSummary(ctx context.Context) (apiclient.UserDataSummary, error) {
 	return client.users.dataSummary.Call(ctx, client.users.gate, NoInput{})
+}
+
+// SignUp is the sign-up endpoint.
+func (client *Client) SignUp(ctx context.Context, input apiclient.SignUpEmail) (AuthResult, error) {
+	return client.sessions.signUp.Call(ctx, client.sessions.gate, input)
+}
+
+// SignIn is the sign-in endpoint.
+func (client *Client) SignIn(ctx context.Context, input apiclient.SignInEmail) (AuthResult, error) {
+	return client.sessions.signIn.Call(ctx, client.sessions.gate, input)
+}
+
+// SignOut is the sign-out endpoint (for the request's own session).
+func (client *Client) SignOut(ctx context.Context) (AuthResult, error) {
+	return client.sessions.signOut.Call(ctx, client.sessions.gate, NoInput{})
+}
+
+// RequestPasswordReset is the password-reset request endpoint.
+func (client *Client) RequestPasswordReset(ctx context.Context, input apiclient.CreatePasswordReset) error {
+	_, err := client.sessions.requestReset.Call(ctx, client.sessions.gate, input)
+	return err
+}
+
+// ResetPassword is the reset-link endpoint.
+func (client *Client) ResetPassword(ctx context.Context, input apiclient.ResetPassword) error {
+	_, err := client.sessions.resetPassword.Call(ctx, client.sessions.gate, input)
+	return err
+}
+
+// VerifyEmail is the email-verification endpoint.
+func (client *Client) VerifyEmail(ctx context.Context, input apiclient.VerifyEmail) (AuthResult, error) {
+	return client.sessions.verifyEmail.Call(ctx, client.sessions.gate, input)
+}
+
+// SendVerificationEmail is the verification-email endpoint.
+func (client *Client) SendVerificationEmail(ctx context.Context, input apiclient.CreateVerificationEmail) error {
+	_, err := client.sessions.sendVerification.Call(ctx, client.sessions.gate, input)
+	return err
+}
+
+// CheckCallbackURL asks auth whether callbackURL may be redirected to. It
+// is a pure check (no data, no session), so it calls the port directly.
+func (client *Client) CheckCallbackURL(_ context.Context, callbackURL string) error {
+	return client.sessions.auth.CheckCallbackURL(callbackURL)
+}
+
+// AuthErrorForCode translates an emailed link's ?error=<code>.
+func (client *Client) AuthErrorForCode(code string) error {
+	return client.sessions.auth.ErrorForCode(code)
 }

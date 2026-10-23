@@ -32,7 +32,7 @@ func newClient(test *testing.T) (svcs, *api.Client) {
 	audit := mocks.NewMockAuditService(ctrl)
 	analytics := mocks.NewMockAnalyticsService(ctrl)
 	gate := apitest.Gate()
-	client := api.NewClient(api.NewUsers(users, gate), api.NewAdmins(admins, gate), api.NewAudit(audit, gate), api.NewAnalytics(analytics, gate))
+	client := api.NewClient(api.NewUsers(users, gate), api.NewAdmins(admins, gate), api.NewAudit(audit, gate), api.NewAnalytics(analytics, gate), api.NewSessions(mocks.NewMockAuthenticator(ctrl), gate))
 	return svcs{users.EXPECT(), admins.EXPECT(), audit.EXPECT(), analytics.EXPECT()}, client
 }
 

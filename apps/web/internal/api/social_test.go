@@ -130,7 +130,7 @@ func TestClientSocial(test *testing.T) {
 	expect.Start(anyCtx, "apple", validate.StartSocialSignIn{CallbackURL: "/dashboard"}).Return(services.SocialStart{URL: "https://apple.example"}, nil)
 	expect.Finish(anyCtx, "apple", gomock.Any()).Return(services.SocialOutcome{Redirect: "/dashboard"})
 	usersService := mocks.NewMockUserService(gomock.NewController(test))
-	client := api.NewClient(api.NewUsers(usersService, apitest.Gate())).WithSocial(api.NewSocial(service, apitest.Gate()))
+	client := api.NewClient(api.NewUsers(usersService, apitest.Gate()), nil).WithSocial(api.NewSocial(service, apitest.Gate()))
 	ctx := signedIn(test, apitest.Anonymous)
 
 	if providers, err := client.SocialProviders(ctx); err != nil || len(providers) != 2 {
@@ -143,7 +143,7 @@ func TestClientSocial(test *testing.T) {
 		test.Errorf("FinishSocialSignIn = %+v, %v", outcome, err)
 	}
 
-	bare := api.NewClient(api.NewUsers(usersService, apitest.Gate()))
+	bare := api.NewClient(api.NewUsers(usersService, apitest.Gate()), nil)
 	if providers, err := bare.SocialProviders(context.Background()); err != nil || len(providers) != 0 {
 		test.Errorf("no social: providers = %v, %v", providers, err)
 	}

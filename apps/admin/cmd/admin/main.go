@@ -245,7 +245,7 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	gate := access.NewGate(server.NewCallers(admins).Resolve)
 	// The UI reaches data only through the API, in-process: the same
 	// endpoints, policies and validation a /api/admin/v1 request would take.
-	adminAPI := api.NewClient(api.NewUsers(users, gate), api.NewAdmins(adminSvc, gate), api.NewAudit(auditSvc, gate), api.NewAnalytics(analytics, gate))
+	adminAPI := api.NewClient(api.NewUsers(users, gate), api.NewAdmins(adminSvc, gate), api.NewAudit(auditSvc, gate), api.NewAnalytics(analytics, gate), api.NewSessions(server.NewAuthenticator(admins), gate))
 	reconciler := services.NewAuditReconciler(auditLog, server.NewUserDirectory(auth.NewUserAdmin(appPool)), server.NewAdminAccounts(admins, adminrepo.NewAdmins(adminPool)))
 	go reconcileAudit(ctx, reconciler, cfg.AuditReconcileAfter, log)
 
@@ -261,7 +261,7 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		// api.NewUsers(users, gate) etc. groups; the audited auth endpoints
 		// come with it, hidden from browsers.
 		UI: ui.New(ui.Deps{
-			Auth: server.NewUIAuth(admins), API: adminAPI,
+			API:  adminAPI,
 			Gate: gate, RequireTwoFactor: cfg.RequireTwoFactor, AppName: cfg.AppName,
 			SecureCookies: cfg.PublicURL.Scheme == "https", Logger: log,
 		}).Handler(),

@@ -18,7 +18,6 @@ import (
 	"github.com/jayleaton/go-fast-stack/apps/web/internal/api"
 	"github.com/jayleaton/go-fast-stack/apps/web/internal/services"
 	"github.com/jayleaton/go-fast-stack/apps/web/internal/validate"
-	"github.com/jayleaton/go-fast-stack/apps/web/ui"
 	"github.com/jayleaton/go-fast-stack/packages/auth"
 )
 
@@ -36,7 +35,7 @@ type Mail struct {
 }
 
 type account struct {
-	user     ui.User
+	user     auth.User
 	password string
 }
 
@@ -50,7 +49,7 @@ type Store struct {
 
 	mu       sync.Mutex
 	accounts map[string]*account // by user ID
-	sessions map[string]ui.Session
+	sessions map[string]auth.Session
 	verify   map[string]string // token -> user ID
 	reset    map[string]string // token -> user ID
 	// emailChanges are pending change-email links by token.
@@ -62,7 +61,7 @@ func NewStore() *Store {
 	return &Store{
 		Now:          time.Now,
 		accounts:     map[string]*account{},
-		sessions:     map[string]ui.Session{},
+		sessions:     map[string]auth.Session{},
 		verify:       map[string]string{},
 		reset:        map[string]string{},
 		emailChanges: map[string]emailChange{},
@@ -70,16 +69,16 @@ func NewStore() *Store {
 }
 
 // AddUser creates an account directly (seed data).
-func (s *Store) AddUser(name, email, password string, verified bool) ui.User {
+func (s *Store) AddUser(name, email, password string, verified bool) auth.User {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	u := ui.User{ID: token(), Name: name, Email: email, EmailVerified: verified, CreatedAt: s.Now()}
+	u := auth.User{ID: token(), Name: name, Email: email, EmailVerified: verified, CreatedAt: s.Now()}
 	s.accounts[u.ID] = &account{user: u, password: password}
 	return u
 }
 
 // NewSession signs a user in directly (tests).
-func (s *Store) NewSession(userID, userAgent, ip string, age time.Duration) ui.Session {
+func (s *Store) NewSession(userID, userAgent, ip string, age time.Duration) auth.Session {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	ctx := context.WithValue(context.Background(), metaKey{}, requestMeta{userAgent, ip})
@@ -89,9 +88,9 @@ func (s *Store) NewSession(userID, userAgent, ip string, age time.Duration) ui.S
 	return sess
 }
 
-func (s *Store) newSessionLocked(ctx context.Context, userID string) ui.Session {
+func (s *Store) newSessionLocked(ctx context.Context, userID string) auth.Session {
 	now := s.Now()
-	sess := ui.Session{ID: token(), Token: token(), UserID: userID, CreatedAt: now, ExpiresAt: now.Add(SessionTTL)}
+	sess := auth.Session{ID: token(), Token: token(), UserID: userID, CreatedAt: now, ExpiresAt: now.Add(SessionTTL)}
 	if m, ok := ctx.Value(metaKey{}).(requestMeta); ok {
 		sess.UserAgent, sess.IPAddress = &m.userAgent, &m.ip
 	}
@@ -124,46 +123,44 @@ func token() string { return rand.Text() }
 // Auth implements ui.Auth.
 type Auth struct{ S *Store }
 
-var _ ui.Auth = Auth{}
-
-func (a Auth) SignUpEmail(ctx context.Context, in ui.SignUpInput) (ui.User, ui.Session, error) {
+func (a Auth) SignUpEmail(ctx context.Context, in auth.SignUpInput) (auth.User, auth.Session, error) {
 	s := a.S
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if !strings.Contains(in.Email, "@") {
-		return ui.User{}, ui.Session{}, auth.ErrInvalidEmail
+		return auth.User{}, auth.Session{}, auth.ErrInvalidEmail
 	}
 	if err := checkPassword(in.Password); err != nil {
-		return ui.User{}, ui.Session{}, err
+		return auth.User{}, auth.Session{}, err
 	}
 	if existing := s.byEmailLocked(in.Email); existing != nil {
 		// Like auth: with verification on, a taken email looks like success.
 		if s.RequireEmailVerification {
-			return ui.User{Name: in.Name, Email: in.Email}, ui.Session{}, nil
+			return auth.User{Name: in.Name, Email: in.Email}, auth.Session{}, nil
 		}
-		return ui.User{}, ui.Session{}, auth.ErrUserAlreadyExists
+		return auth.User{}, auth.Session{}, auth.ErrUserAlreadyExists
 	}
-	u := ui.User{ID: token(), Name: in.Name, Email: in.Email, CreatedAt: s.Now()}
+	u := auth.User{ID: token(), Name: in.Name, Email: in.Email, CreatedAt: s.Now()}
 	s.accounts[u.ID] = &account{user: u, password: in.Password}
 	if s.RequireEmailVerification {
 		tok := token()
 		s.verify[tok] = u.ID
 		s.mailLocked("verify", u.Email, in.CallbackURL, tok)
-		return u, ui.Session{}, nil
+		return u, auth.Session{}, nil
 	}
 	return u, s.newSessionLocked(ctx, u.ID), nil
 }
 
-func (a Auth) SignInEmail(ctx context.Context, in ui.SignInInput) (ui.User, ui.Session, error) {
+func (a Auth) SignInEmail(ctx context.Context, in auth.SignInInput) (auth.User, auth.Session, error) {
 	s := a.S
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	acc := s.byEmailLocked(in.Email)
 	if acc == nil || acc.password != in.Password {
-		return ui.User{}, ui.Session{}, auth.ErrInvalidEmailOrPassword
+		return auth.User{}, auth.Session{}, auth.ErrInvalidEmailOrPassword
 	}
 	if s.RequireEmailVerification && !acc.user.EmailVerified {
-		return ui.User{}, ui.Session{}, auth.ErrEmailNotVerified
+		return auth.User{}, auth.Session{}, auth.ErrEmailNotVerified
 	}
 	return acc.user, s.newSessionLocked(ctx, acc.user.ID), nil
 }
@@ -204,18 +201,18 @@ func (a Auth) ResetPassword(_ context.Context, tok, newPassword string) error {
 	return nil
 }
 
-func (a Auth) VerifyEmail(ctx context.Context, tok string) (ui.User, ui.Session, error) {
+func (a Auth) VerifyEmail(ctx context.Context, tok string) (auth.User, auth.Session, error) {
 	s := a.S
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	id, ok := s.verify[tok]
 	if !ok || s.accounts[id] == nil {
-		return ui.User{}, ui.Session{}, auth.ErrInvalidToken
+		return auth.User{}, auth.Session{}, auth.ErrInvalidToken
 	}
 	delete(s.verify, tok)
 	acc := s.accounts[id]
 	if acc.user.EmailVerified {
-		return acc.user, ui.Session{}, nil
+		return acc.user, auth.Session{}, nil
 	}
 	acc.user.EmailVerified = true
 	return acc.user, s.newSessionLocked(ctx, id), nil
@@ -241,7 +238,7 @@ func (a Auth) SendVerificationEmail(_ context.Context, email, callbackURL string
 	return nil
 }
 
-func (a Auth) SetSessionCookie(w http.ResponseWriter, sess ui.Session) {
+func (a Auth) SetSessionCookie(w http.ResponseWriter, sess auth.Session) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     CookieName,
 		Value:    sess.Token,
@@ -259,8 +256,8 @@ func (a Auth) ClearSessionCookie(w http.ResponseWriter) {
 type sessionKey struct{}
 
 type current struct {
-	user    ui.User
-	session ui.Session
+	user    auth.User
+	session auth.Session
 }
 
 // Caller reads the preview's session for its access gate

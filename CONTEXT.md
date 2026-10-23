@@ -20,6 +20,7 @@ Use these words when talking about Go Fast Stack (this repo), in code review, co
 | endpoint | `api.Endpoint`: one API operation declared once (method, path, access policy, handler), served over HTTP (`Serve`) and called in-process (`Call`) | `apps/web/internal/api/` |
 | API client | `apiclient.Client`: the API as the UI calls it; `api.Client` implements it in-process (no network hop, no base URL) | `apps/web/internal/apiclient/`, `apps/web/internal/api/client.go` |
 | server action | a UI action route a form or Datastar action posts to (CSRF-protected); it calls the API client and answers with HTML. The browser never calls `/api/` | `apps/web/ui/` (`action(...)`) |
+| sign-in endpoints | `api.Sessions`: sign-up, sign-in, sign-out, verification, password reset (and 2FA in admin) as endpoints over `api.Authenticator`; results carry cookies as data that the UI sets with `setCookies` | `apps/*/internal/api/auth.go`, `apps/*/ui/cookies.go` |
 | envelope | every JSON response: `{"data": T\|null, "error": string\|null}` | `api.WriteData`, `api.WriteError` |
 | route handler | the one handler per transport every route goes through: `api.Route(gate, policy, handler)` (body limit, envelope, error mapping) and the UI's `page`/`action` | `apps/web/internal/api/route.go`, `apps/web/ui/route.go` |
 | route access | the coarse gate: who may reach a route at all, declared per route as an access policy and enforced by the gate (401/redirect signed out, 403 denied) | `apps/web/internal/access/` |

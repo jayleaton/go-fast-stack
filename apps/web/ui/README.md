@@ -41,13 +41,14 @@ Watch mode while editing: `go tool templ generate -path apps/web/ui -watch` and 
 ## Mounting (server wiring)
 
 ```go
+gate := access.NewGate(server.Callers)
 ui := ui.New(ui.Deps{
-    Auth:          authService,        // *auth.Auth satisfies ui.Auth as is
-    Users:         userService,        // *services.UserService satisfies ui.Users as is
+    // Every read, write and sign-in step goes through the in-process API.
+    API:           api.NewClient(api.NewUsers(users, gate), api.NewSessions(server.NewAuthenticator(authn), gate)),
+    Gate:          gate,
     Features:      cfg.Features,
     SecureCookies: cfg.IsProduction,
     Logger:        log,
-    // UserFrom defaults to auth.UserFrom (the session auth.Middleware loaded).
 })
 deps.UI = ui.Handler() // server.Deps.UI, mounted at "/" inside auth.Middleware
 ```
@@ -55,11 +56,13 @@ deps.UI = ui.Handler() // server.Deps.UI, mounted at "/" inside auth.Middleware
 `Routes(mux)` registers `GET /{$}`, the pages in `config.AppRoutes`, the UI actions in `ui/routes`, `GET /static/` and
 `GET /favicon.ico`; `Handler()` serves them behind the security headers (`security.go`: nonce CSP, `no-store`, and the
 rest) with a bare 404 for anything else. POST actions are wrapped in `http.CrossOriginProtection` (stdlib), the UI's
-only CSRF layer. Compile-time assertions in `deps.go` keep both interfaces in step
-with `packages/auth` and the user service.
+only CSRF layer.
 
-`ui.Auth` uses the auth types directly (`ui.User` = `auth.User`, ...) and the handlers map `auth.Err*` values to
-messages (`AuthErrors`); unknown errors show "Something went wrong" and are logged. Sign-up and sign-in pass
+The UI never imports `packages/auth` (depguard): sign-up, sign-in, sign-out, verification and password reset are API
+endpoints (`api.Sessions`) it calls through `apiclient.Client`. A result's `Cookies` (the session cookie auth signed,
+or the one clearing it) are set on the server action's own response with `setCookies` (`cookies.go`, shared with the
+social flows); the browser never sees the API. The handlers map the API's `apiclient.Err*` values to messages
+(`AuthErrors`); unknown errors show "Something went wrong" and are logged. Sign-up and sign-in pass
 `CallbackURL: config.AppRoutes.VerifyEmailSuccess`; password reset passes `config.AppRoutes.ResetPassword` as
 `redirectTo`. Auth joins app paths with its `BaseURL`, so no origin is hardcoded here, and emails links to those pages
 directly (`auth.Config.VerifyEmailPath`): the reset link carries `?token=`, the verify link `?token=&callbackURL=`.

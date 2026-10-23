@@ -42,7 +42,7 @@ var sessionExpiry = time.Date(2030, time.January, 1, 0, 0, 0, 0, time.UTC)
 
 // Caller is the caller a request signed in AsAdmin(admin) carries.
 func Caller(admin access.Admin) access.Caller {
-	return access.Caller{Admin: admin, Session: access.Session{ID: "session-" + admin.ID, ExpiresAt: sessionExpiry}}
+	return access.Caller{Admin: admin, Session: access.Session{ID: "session-" + admin.ID, ExpiresAt: sessionExpiry, Token: "token-" + admin.ID}}
 }
 
 // Actor is the services.Actor handlers pass for a request signed in AsAdmin(admin).

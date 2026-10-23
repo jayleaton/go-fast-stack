@@ -22,7 +22,6 @@ import (
 
 // UI serves the admin pages and their Datastar actions.
 type UI struct {
-	auth             Auth
 	api              apiclient.Client
 	gate             *apiclient.Gate
 	requireTwoFactor bool
@@ -34,11 +33,10 @@ type UI struct {
 
 // New builds the UI. Auth, API and Gate are required.
 func New(deps Deps) *UI {
-	if deps.Auth == nil || deps.API == nil || deps.Gate == nil {
-		panic("ui.New: Auth, API and Gate are required")
+	if deps.API == nil || deps.Gate == nil {
+		panic("ui.New: API and Gate are required")
 	}
 	ui := &UI{
-		auth:             deps.Auth,
 		api:              deps.API,
 		gate:             deps.Gate,
 		requireTwoFactor: deps.RequireTwoFactor,

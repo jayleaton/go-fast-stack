@@ -45,6 +45,29 @@ type Client interface {
 
 	ListAuditLog(ctx context.Context, input ListAuditLog) (AuditPage, error)
 	Overview(ctx context.Context) (Overview, error)
+
+	// Sign-in flows. Results carry the cookies the UI server action sets
+	// (setCookies): the session, the two-factor challenge, the trusted
+	// device. The browser never sees the API.
+	//
+	// SignIn and SetPassword return a *TwoFactorChallenge AS THE ERROR when
+	// a second factor (or enrolment) is needed: set its Cookies and send the
+	// browser to the matching page.
+	SignIn(ctx context.Context, input SignIn) (AuthResult, error)
+	// SignOut ends the request's session (if any) and clears its cookie.
+	SignOut(ctx context.Context) (AuthResult, error)
+	SetPassword(ctx context.Context, input SetPassword) (AuthResult, error)
+	// RequestPasswordReset answers nil whether or not email is an admin.
+	RequestPasswordReset(ctx context.Context, input CreatePasswordReset) error
+	// VerifyTwoFactor finishes sign-in (or SetupRequired enrolment) for the
+	// challenge in the request's cookie.
+	VerifyTwoFactor(ctx context.Context, input VerifyTwoFactor) (AuthResult, error)
+	// StartTwoFactorSetup enrols the SetupRequired challenge in the cookie.
+	StartTwoFactorSetup(ctx context.Context) (TOTPSetup, error)
+	// EnableTwoFactor and ConfirmTwoFactor are optional enrolment for the
+	// signed-in admin.
+	EnableTwoFactor(ctx context.Context, input EnableTwoFactor) (TOTPSetup, error)
+	ConfirmTwoFactor(ctx context.Context, input ConfirmTwoFactor) error
 }
 
 // Data the API returns.
@@ -59,16 +82,83 @@ type (
 	Overview   = services.Overview
 )
 
+// Cookie is a cookie for the browser, as data: the UI sets it with Path=/,
+// HttpOnly and SameSite=Lax. MaxAge is in seconds; negative deletes it.
+type Cookie struct {
+	Name   string `json:"name"`
+	Value  string `json:"value"`
+	MaxAge int    `json:"maxAge"`
+	Secure bool   `json:"secure"`
+}
+
+// AuthResult is the outcome of a sign-in flow step: whether a session was
+// created, and the cookies for the UI's response (never serialized: they
+// carry credentials).
+type AuthResult struct {
+	SignedIn bool     `json:"signedIn"`
+	Cookies  []Cookie `json:"-"`
+}
+
+// TwoFactorChallenge is returned AS THE ERROR when a second factor (or,
+// with SetupRequired, TOTP enrolment) is needed; no session exists yet.
+// Cookies carry the challenge for the next step.
+type TwoFactorChallenge struct {
+	Methods       []string
+	SetupRequired bool
+	Cookies       []Cookie
+}
+
+func (challenge *TwoFactorChallenge) Error() string {
+	if challenge.SetupRequired {
+		return "two-factor setup required"
+	}
+	return "two-factor verification required"
+}
+
+// TOTPSetup is a fresh TOTP secret, its otpauth:// URI and the one-time
+// backup codes. Shown once.
+type TOTPSetup struct {
+	Secret, URI string
+	BackupCodes []string
+}
+
+// Two-factor methods of VerifyTwoFactor.Method.
+const (
+	MethodTOTP       = validate.MethodTOTP
+	MethodBackupCode = validate.MethodBackupCode
+)
+
+// Auth failures of the sign-in flows (the server adapter translates
+// packages/auth's errors into these, keeping the original in the chain).
+var (
+	ErrInvalidCredentials = &services.Error{Kind: services.KindUnauthorized, Message: "Invalid email or password"}
+	ErrInvalidCode        = &services.Error{Kind: services.KindInvalid, Message: "Invalid two-factor code"}
+	// ErrInvalidToken: a bad or expired set-password link.
+	ErrInvalidToken   = &services.Error{Kind: services.KindInvalid, Message: "Invalid or expired link"}
+	ErrPasswordPolicy = &services.Error{Kind: services.KindInvalid, Message: "Password does not meet the policy"}
+	// ErrInvalidPassword: wrong current password when enabling 2FA.
+	ErrInvalidPassword = &services.Error{Kind: services.KindInvalid, Message: "Invalid password"}
+	// ErrChallengeExpired: the two-factor cookie is missing or expired.
+	ErrChallengeExpired = &services.Error{Kind: services.KindUnauthorized, Message: "Two-factor challenge expired"}
+	ErrTooManyRequests  = &services.Error{Kind: services.KindRateLimited, Message: "Too many requests. Please try again later."}
+)
+
 // Inputs, validated by the API (Validate runs there, not in the UI). The
 // list inputs fill themselves from a query string (DecodeQuery).
 type (
-	ListUsers         = validate.ListUsers
-	BanUser           = validate.BanUser
-	SetUserRole       = validate.SetUserRole
-	CreateAdminInvite = validate.CreateAdminInvite
-	ListAuditLog      = validate.ListAuditLog
-	ValidationError   = validate.Error
-	ValidationFields  = validate.Fields
+	ListUsers           = validate.ListUsers
+	BanUser             = validate.BanUser
+	SetUserRole         = validate.SetUserRole
+	CreateAdminInvite   = validate.CreateAdminInvite
+	ListAuditLog        = validate.ListAuditLog
+	ValidationError     = validate.Error
+	ValidationFields    = validate.Fields
+	SignIn              = validate.SignIn
+	SetPassword         = validate.SetPassword
+	CreatePasswordReset = validate.CreatePasswordReset
+	VerifyTwoFactor     = validate.VerifyTwoFactor
+	EnableTwoFactor     = validate.EnableTwoFactor
+	ConfirmTwoFactor    = validate.ConfirmTwoFactor
 )
 
 // Roles a user may be given (SetUserRole).

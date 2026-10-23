@@ -36,6 +36,10 @@ var APIRoutes = struct {
 	AdminByID, AdminDisable, AdminEnable    string
 	AdminPasswordReset, AdminTwoFactorReset string
 	Audit, Analytics                        string
+	// The admin UI's sign-in flows (api.Sessions), called in-process; never
+	// mounted on the network.
+	SignIn, SignOut, SetPassword, PasswordReset                  string
+	TwoFactor, TwoFactorSetup, TwoFactorEnable, TwoFactorConfirm string
 
 	Healthz string
 }{
@@ -56,6 +60,14 @@ var APIRoutes = struct {
 	AdminTwoFactorReset: "/api/admin/v1/admins/{id}/two-factor/reset",
 	Audit:               "/api/admin/v1/audit",
 	Analytics:           "/api/admin/v1/analytics",
+	SignIn:              "/api/admin/v1/auth/sign-in",
+	SignOut:             "/api/admin/v1/auth/sign-out",
+	SetPassword:         "/api/admin/v1/auth/password",
+	PasswordReset:       "/api/admin/v1/auth/password-reset",
+	TwoFactor:           "/api/admin/v1/auth/two-factor",
+	TwoFactorSetup:      "/api/admin/v1/auth/two-factor/setup",
+	TwoFactorEnable:     "/api/admin/v1/auth/two-factor/enable",
+	TwoFactorConfirm:    "/api/admin/v1/auth/two-factor/confirm",
 	Healthz:             "/healthz",
 }
 

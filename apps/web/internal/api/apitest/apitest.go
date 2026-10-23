@@ -42,7 +42,7 @@ var sessionExpiry = time.Date(2030, time.January, 1, 0, 0, 0, 0, time.UTC)
 
 // Caller is the caller a request signed in AsUser(user) carries.
 func Caller(user services.User) access.Caller {
-	return access.Caller{User: user, Session: access.Session{ID: "session-" + user.ID, UserID: user.ID, ExpiresAt: sessionExpiry}}
+	return access.Caller{User: user, Session: access.Session{ID: "session-" + user.ID, UserID: user.ID, ExpiresAt: sessionExpiry, Token: "token-" + user.ID}}
 }
 
 // Actor is the services.Actor handlers pass for a request signed in AsUser(user).

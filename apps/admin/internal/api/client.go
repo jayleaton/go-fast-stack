@@ -16,13 +16,14 @@ type Client struct {
 	admins    *Admins
 	audit     *Audit
 	analytics *Analytics
+	sessions  *Sessions
 }
 
 var _ apiclient.Client = (*Client)(nil)
 
 // NewClient returns the in-process client over the endpoint groups.
-func NewClient(users *Users, admins *Admins, audit *Audit, analytics *Analytics) *Client {
-	return &Client{users: users, admins: admins, audit: audit, analytics: analytics}
+func NewClient(users *Users, admins *Admins, audit *Audit, analytics *Analytics, sessions *Sessions) *Client {
+	return &Client{users: users, admins: admins, audit: audit, analytics: analytics, sessions: sessions}
 }
 
 func id(value string) PathValue { return PathValue{Name: "id", Value: value} }
@@ -115,4 +116,47 @@ func (client *Client) ListAuditLog(ctx context.Context, input apiclient.ListAudi
 // Overview is GET /analytics.
 func (client *Client) Overview(ctx context.Context) (apiclient.Overview, error) {
 	return client.analytics.overview.Call(ctx, client.analytics.gate, NoInput{})
+}
+
+// SignIn is the sign-in endpoint (a *TwoFactorChallenge error when a second
+// factor is needed).
+func (client *Client) SignIn(ctx context.Context, input apiclient.SignIn) (AuthResult, error) {
+	return client.sessions.signIn.Call(ctx, client.sessions.gate, input)
+}
+
+// SignOut is the sign-out endpoint, for the request's own session.
+func (client *Client) SignOut(ctx context.Context) (AuthResult, error) {
+	return client.sessions.signOut.Call(ctx, client.sessions.gate, NoInput{})
+}
+
+// SetPassword spends an invite or reset link.
+func (client *Client) SetPassword(ctx context.Context, input apiclient.SetPassword) (AuthResult, error) {
+	return client.sessions.setPassword.Call(ctx, client.sessions.gate, input)
+}
+
+// RequestPasswordReset emails a reset link to an admin's address.
+func (client *Client) RequestPasswordReset(ctx context.Context, input apiclient.CreatePasswordReset) error {
+	_, err := client.sessions.requestReset.Call(ctx, client.sessions.gate, input)
+	return err
+}
+
+// VerifyTwoFactor finishes a two-factor sign-in.
+func (client *Client) VerifyTwoFactor(ctx context.Context, input apiclient.VerifyTwoFactor) (AuthResult, error) {
+	return client.sessions.verifyTwoFact.Call(ctx, client.sessions.gate, input)
+}
+
+// StartTwoFactorSetup enrols the SetupRequired challenge.
+func (client *Client) StartTwoFactorSetup(ctx context.Context) (TOTPSetup, error) {
+	return client.sessions.startSetup.Call(ctx, client.sessions.gate, NoInput{})
+}
+
+// EnableTwoFactor starts optional enrolment for the signed-in admin.
+func (client *Client) EnableTwoFactor(ctx context.Context, input apiclient.EnableTwoFactor) (TOTPSetup, error) {
+	return client.sessions.enableTwoFact.Call(ctx, client.sessions.gate, input)
+}
+
+// ConfirmTwoFactor confirms optional enrolment with the first code.
+func (client *Client) ConfirmTwoFactor(ctx context.Context, input apiclient.ConfirmTwoFactor) error {
+	_, err := client.sessions.confirmTwoFact.Call(ctx, client.sessions.gate, input)
+	return err
 }
