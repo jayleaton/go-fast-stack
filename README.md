@@ -26,7 +26,7 @@ mobile app ─ JSON ──▶ JSON API ─┘    (business     (sqlc queries,
 
 ## Performance
 
-Pages are rendered on the server in Go, and [Datastar](https://data-star.dev) adds interactivity by swapping in HTML from the server. There is no front-end build and no client framework.
+Pages are rendered on the server in Go, and [Datastar](https://data-star.dev) adds interactivity by swapping in HTML from the server. There is no JavaScript bundler and no client framework; CSS comes from the Tailwind standalone CLI.
 
 | | Measured |
 |---|---|
