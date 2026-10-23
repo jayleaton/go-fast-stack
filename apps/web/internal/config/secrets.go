@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/jayleaton/go-fast-stack/packages/secrets"
 )
@@ -24,7 +25,7 @@ const (
 	secretAuth         = "AUTH_SECRET" // a keyring: also AUTH_SECRET_PREVIOUS and AUTH_SECRET_REVOKED
 )
 
-var liveSecrets = append(append([]string{secretResendAPIKey, secretDatabaseURL}, secrets.KeyringNames(secretAuth)...), socialSecretNames...)
+var liveSecrets = slices.Concat([]string{secretResendAPIKey, secretDatabaseURL}, secrets.KeyringNames(secretAuth), socialSecretNames, storageSecrets)
 
 // Secrets hands live secrets to the server through typed accessors; nothing
 // else reads them. Load builds it (no I/O); serve and migrate call Start,
@@ -77,6 +78,7 @@ func validateLive(env Env, social Social) func(get func(name string) string) []e
 			errs = append(errs, errors.New("DATABASE_URL is required"))
 		}
 		errs = append(errs, validateKeyring(get, secretAuth)...)
+		errs = append(errs, validateStorage(get)...)
 		if env == Production && get(secretResendAPIKey) == "" {
 			errs = append(errs, errors.New("RESEND_API_KEY is required in production"))
 		}

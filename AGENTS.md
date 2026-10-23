@@ -222,6 +222,7 @@ Exit codes:
 - `apps/web/internal/services`: business rules and the ports they need; `services/mocks` (generated) for service tests. `apps/web/internal/validate`: input types.
 - `apps/web/ui`: templ pages, Datastar handlers (server actions that call `apiclient.Client`), i18n, static assets, and the browser security headers (`security.go`).
 - `packages/uikit`: the templ components and design tokens both UIs share (`theme.css` is the one file to re-theme). It renders translated strings and values only; depguard keeps it from importing `apps/` or the data, auth and secrets packages.
+- `packages/storage`: the optional S3 client, `safefetch` (SSRF-safe fetch of user URLs, rules injected from `services.PublicAddr`/`FetchURLAllowed`) and `imaging` (pure-Go decode/normalise to WebP; build with `-tags nodynamic`). Services reach it only through ports (`ObjectStore`, `ImageFetcher`, `ImageCodec`; depguard). [docs/storage.md](docs/storage.md).
 - `apps/backup`, `packages/backup`: the nightly encrypted Postgres backup and restore ([docs/backups.md](docs/backups.md)).
 - `packages/database`: pool (`Pool`: swaps itself when `DATABASE_URL` rotates), `migrations/` (goose, embedded), `queries/` (sqlc input), `sqlc/` (generated, never edit), repositories, `model/`.
 - `packages/secrets`: live secrets: `Manager` (polling, validation, last-good cache, staleness, change hooks) and providers (`Env`, `Doppler`; Infisical/1Password stubs behind build tags), `Secret`, and the redacting log handler. Self-contained; never reads the env.

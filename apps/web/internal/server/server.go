@@ -40,6 +40,7 @@ type Deps struct {
 	Auth    Auth
 	Users   *api.Users
 	Social  *api.Social  // Google and Apple sign-in; nil when unused
+	Images  *api.Images  // nil: object storage is off and its routes are not mounted
 	UI      http.Handler // apps/web/ui routes, mounted at "/"; nil until the UI lands
 }
 
@@ -54,6 +55,9 @@ func New(d Deps) http.Handler {
 	d.Users.Routes(apiMux)
 	if d.Social != nil {
 		d.Social.Routes(apiMux)
+	}
+	if d.Images != nil {
+		d.Images.Routes(apiMux)
 	}
 
 	var public string

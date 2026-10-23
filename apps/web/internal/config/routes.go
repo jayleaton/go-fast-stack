@@ -51,6 +51,9 @@ var APIRoutes = struct {
 	PasswordReset, Password        string
 	VerifyEmail, VerificationEmail string
 
+	// The signed-in user's images (only when object storage is configured).
+	Images, ImageImport, ImageByID string
+
 	Healthz string
 }{
 	Auth:              "/api/auth/",
@@ -72,12 +75,20 @@ var APIRoutes = struct {
 	Password:          "/api/core/v1/auth/password",
 	VerifyEmail:       "/api/core/v1/auth/verify-email",
 	VerificationEmail: "/api/core/v1/auth/verification-email",
+	Images:            "/api/core/v1/images",
+	ImageImport:       "/api/core/v1/images/import",
+	ImageByID:         "/api/core/v1/images/{id}",
 	Healthz:           "/healthz",
 }
 
 // UserPath is the concrete path for APIRoutes.UserByID.
 func UserPath(id string) string {
 	return "/api/core/v1/users/" + url.PathEscape(id)
+}
+
+// ImagePath is the concrete path for APIRoutes.ImageByID.
+func ImagePath(id string) string {
+	return APIRoutes.Images + "/" + url.PathEscape(id)
 }
 
 // MeSessionPath is the concrete path for APIRoutes.MeSessionByID.
