@@ -30,10 +30,18 @@ func Edit(raw []byte, keys []Key) ([]byte, []string, error) {
 	var changed []string
 	for _, entry := range keys {
 		text := render(entry)
+		// A dotted name ("email.from") is a key of a top-level mapping.
+		mapping, name := root, entry.Name
+		if parent, child, nested := strings.Cut(entry.Name, "."); nested {
+			if mapping = childMapping(root, parent); mapping == nil {
+				return nil, nil, fmt.Errorf("platform.yaml: add %s:\n  %s: %s to set it automatically", parent, child, text)
+			}
+			name = child
+		}
 		found := false
-		for index := 0; index+1 < len(root.Content); index += 2 {
-			key, val := root.Content[index], root.Content[index+1]
-			if key.Value != entry.Name {
+		for index := 0; index+1 < len(mapping.Content); index += 2 {
+			key, val := mapping.Content[index], mapping.Content[index+1]
+			if key.Value != name {
 				continue
 			}
 			found = true
@@ -41,7 +49,7 @@ func Edit(raw []byte, keys []Key) ([]byte, []string, error) {
 				break
 			}
 			if val.Line != key.Line || val.Line > len(lines) {
-				return nil, nil, fmt.Errorf("platform.yaml: put %s on one line (e.g. %s: %s) to set it automatically", entry.Name, entry.Name, text)
+				return nil, nil, fmt.Errorf("platform.yaml: put %s on one line (e.g. %s: %s) to set it automatically", entry.Name, name, text)
 			}
 			line := lines[val.Line-1]
 			start := val.Column - 1
@@ -55,6 +63,9 @@ func Edit(raw []byte, keys []Key) ([]byte, []string, error) {
 			break
 		}
 		if !found {
+			if mapping != root {
+				return nil, nil, fmt.Errorf("platform.yaml: add %s: %s under %s to set it automatically", name, text, strings.TrimSuffix(entry.Name, "."+name))
+			}
 			if count := len(lines); count > 0 && !strings.HasSuffix(lines[count-1], "\n") {
 				lines[count-1] += "\n"
 			}
@@ -70,6 +81,16 @@ func Edit(raw []byte, keys []Key) ([]byte, []string, error) {
 		return nil, nil, err
 	}
 	return out, changed, nil
+}
+
+// childMapping is the mapping under a top-level key, or nil.
+func childMapping(root *yaml.Node, name string) *yaml.Node {
+	for index := 0; index+1 < len(root.Content); index += 2 {
+		if root.Content[index].Value == name && root.Content[index+1].Kind == yaml.MappingNode {
+			return root.Content[index+1]
+		}
+	}
+	return nil
 }
 
 // render is a value as YAML text: booleans bare, strings plain when that

@@ -40,6 +40,11 @@ func (setup *setup) doctor(ctx context.Context) error {
 		return withCode(exitPreflight, "preflight failed")
 	}
 	setup.report(check{Name: "railway cli", Status: "ok", Detail: strings.TrimSpace(firstLine(string(who)))})
+	if problems := setup.cfg.SenderProblems(); len(problems) > 0 {
+		fail(check{Name: "email.from", Detail: strings.Join(problems, "; ") + ": production refuses to boot without a real sender", Fix: senderFix})
+	} else {
+		setup.report(check{Name: "email.from", Status: "ok", Detail: setup.cfg.Email.From})
+	}
 
 	if ws, err := setup.workspaceID(ctx); err != nil {
 		fail(check{Name: "workspace", Detail: err.Error(), Fix: "set workspace in deploy/platform.yaml or pass --workspace / PLATFORM_WORKSPACE"})

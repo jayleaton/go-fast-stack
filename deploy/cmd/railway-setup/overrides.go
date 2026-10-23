@@ -25,6 +25,7 @@ func overrides() []*override {
 		{key: "admin", flagName: "admin", env: "PLATFORM_ADMIN", usage: "true|false: the admin dashboard and its own Postgres"},
 		{key: "region", flagName: "region", env: "PLATFORM_REGION", usage: "Railway region for every service (\"\": Railway's default)"},
 		{key: "repo", flagName: "repo", env: "PLATFORM_REPO", usage: "GitHub owner/name, auto (origin remote) or \"\" (upload only)"},
+		{key: "email.from", flagName: "email-from", env: "PLATFORM_EMAIL_FROM", usage: "sender of auth emails, on your verified email domain (required: production refuses an example one)"},
 	}
 }
 
