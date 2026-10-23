@@ -113,3 +113,31 @@ func (mr *MockAdminServiceMockRecorder) RemoveAdmin(ctx, actor, adminID any) *go
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RemoveAdmin", reflect.TypeOf((*MockAdminService)(nil).RemoveAdmin), ctx, actor, adminID)
 }
+
+// ResetTwoFactor mocks base method.
+func (m *MockAdminService) ResetTwoFactor(ctx context.Context, actor services.Actor, adminID string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ResetTwoFactor", ctx, actor, adminID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// ResetTwoFactor indicates an expected call of ResetTwoFactor.
+func (mr *MockAdminServiceMockRecorder) ResetTwoFactor(ctx, actor, adminID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ResetTwoFactor", reflect.TypeOf((*MockAdminService)(nil).ResetTwoFactor), ctx, actor, adminID)
+}
+
+// SendPasswordReset mocks base method.
+func (m *MockAdminService) SendPasswordReset(ctx context.Context, actor services.Actor, adminID string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SendPasswordReset", ctx, actor, adminID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// SendPasswordReset indicates an expected call of SendPasswordReset.
+func (mr *MockAdminServiceMockRecorder) SendPasswordReset(ctx, actor, adminID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SendPasswordReset", reflect.TypeOf((*MockAdminService)(nil).SendPasswordReset), ctx, actor, adminID)
+}

@@ -76,44 +76,61 @@ func wantInternal(t *testing.T, err, cause error) {
 }
 
 // policyCalls calls every method of every service with actor, over ports p.
-func policyCalls(p ports, policy services.Policy) map[string]func(services.Actor) error {
-	users := services.NewUserService(p.dir, p.log, policy)
-	admins := services.NewAdminService(p.accounts, p.log, policy)
-	auditSvc := services.NewAuditService(p.log, policy)
-	analytics := services.NewAnalyticsService(p.analytics, policy)
+func policyCalls(fakes ports, policy services.Policy) map[string]func(services.Actor) error {
+	users := services.NewUserService(fakes.dir, fakes.log, policy)
+	admins := services.NewAdminService(fakes.accounts, fakes.log, policy)
+	auditSvc := services.NewAuditService(fakes.log, policy)
+	analytics := services.NewAnalyticsService(fakes.analytics, policy)
 	return map[string]func(services.Actor) error{
-		"UserService.ListUsers": func(a services.Actor) error {
-			_, err := users.ListUsers(ctx, a, validate.ListUsers{Limit: 25})
+		"UserService.ListUsers": func(actor services.Actor) error {
+			_, err := users.ListUsers(ctx, actor, validate.ListUsers{Limit: 25})
 			return err
 		},
-		"UserService.GetUser": func(a services.Actor) error { _, err := users.GetUser(ctx, a, "u1"); return err },
-		"UserService.BanUser": func(a services.Actor) error {
-			return users.BanUser(ctx, a, "u1", validate.BanUser{BanReason: "spam"})
+		"UserService.GetUser": func(actor services.Actor) error { _, err := users.GetUser(ctx, actor, "u1"); return err },
+		"UserService.BanUser": func(actor services.Actor) error {
+			return users.BanUser(ctx, actor, "u1", validate.BanUser{BanReason: "spam"})
 		},
-		"UserService.UnbanUser": func(a services.Actor) error { return users.UnbanUser(ctx, a, "u1") },
-		"UserService.SetRole": func(a services.Actor) error {
-			return users.SetRole(ctx, a, "u1", validate.SetUserRole{Role: "admin"})
+		"UserService.UnbanUser": func(actor services.Actor) error { return users.UnbanUser(ctx, actor, "u1") },
+		"UserService.SetRole": func(actor services.Actor) error {
+			return users.SetRole(ctx, actor, "u1", validate.SetUserRole{Role: "admin"})
 		},
-		"UserService.RevokeSession":  func(a services.Actor) error { return users.RevokeSession(ctx, a, "u1", "s9") },
-		"UserService.RevokeSessions": func(a services.Actor) error { return users.RevokeSessions(ctx, a, "u1") },
-		"AdminService.ListAdmins":    func(a services.Actor) error { _, err := admins.ListAdmins(ctx, a); return err },
-		"AdminService.InviteAdmin": func(a services.Actor) error {
-			_, err := admins.InviteAdmin(ctx, a, invite)
+		"UserService.RevokeSession":  func(actor services.Actor) error { return users.RevokeSession(ctx, actor, "u1", "s9") },
+		"UserService.RevokeSessions": func(actor services.Actor) error { return users.RevokeSessions(ctx, actor, "u1") },
+		"AdminService.ListAdmins":    func(actor services.Actor) error { _, err := admins.ListAdmins(ctx, actor); return err },
+		"AdminService.InviteAdmin": func(actor services.Actor) error {
+			_, err := admins.InviteAdmin(ctx, actor, invite)
 			return err
 		},
-		"AdminService.DisableAdmin": func(a services.Actor) error { return admins.DisableAdmin(ctx, a, "a2") },
-		"AdminService.EnableAdmin":  func(a services.Actor) error { return admins.EnableAdmin(ctx, a, "a2") },
-		"AdminService.RemoveAdmin":  func(a services.Actor) error { return admins.RemoveAdmin(ctx, a, "a2") },
-		"AdminService.Bootstrap": func(a services.Actor) error {
-			_, _, err := admins.Bootstrap(ctx, a, invite)
+		"AdminService.DisableAdmin": func(actor services.Actor) error { return admins.DisableAdmin(ctx, actor, "a2") },
+		"AdminService.EnableAdmin":  func(actor services.Actor) error { return admins.EnableAdmin(ctx, actor, "a2") },
+		"AdminService.RemoveAdmin":  func(actor services.Actor) error { return admins.RemoveAdmin(ctx, actor, "a2") },
+		"AdminService.Bootstrap": func(actor services.Actor) error {
+			_, _, err := admins.Bootstrap(ctx, actor, invite)
 			return err
 		},
-		"AuditService.List": func(a services.Actor) error {
-			_, err := auditSvc.List(ctx, a, validate.ListAuditLog{Limit: 25})
+		"AdminService.SendPasswordReset": func(actor services.Actor) error { return admins.SendPasswordReset(ctx, actor, "a2") },
+		"AdminService.ResetTwoFactor":    func(actor services.Actor) error { return admins.ResetTwoFactor(ctx, actor, "a2") },
+		"AdminService.ResetTwoFactorByEmail": func(actor services.Actor) error {
+			_, err := admins.ResetTwoFactorByEmail(ctx, actor, validate.ResetAdminTwoFactor{Email: "bob@example.com"})
 			return err
 		},
-		"AnalyticsService.Overview": func(a services.Actor) error { _, err := analytics.Overview(ctx, a); return err },
+		"AdminService.InviteBootstrapAdmin": func(actor services.Actor) error {
+			_, err := admins.InviteBootstrapAdmin(ctx, actor, pending)
+			return err
+		},
+		"AuditService.List": func(actor services.Actor) error {
+			_, err := auditSvc.List(ctx, actor, validate.ListAuditLog{Limit: 25})
+			return err
+		},
+		"AnalyticsService.Overview": func(actor services.Actor) error { _, err := analytics.Overview(ctx, actor); return err },
 	}
+}
+
+// operatorOnly are the methods only services.SystemActor (the CLI) may call.
+var operatorOnly = map[string]bool{
+	"AdminService.Bootstrap":             true,
+	"AdminService.InviteBootstrapAdmin":  true,
+	"AdminService.ResetTwoFactorByEmail": true,
 }
 
 // Every method refuses before touching a port: the mocks have no
@@ -129,8 +146,8 @@ func TestServicesRefuseUnauthorizedActors(t *testing.T) {
 			noTwoFactor := grace
 			noTwoFactor.TwoFactorEnabled = false
 			err := call(noTwoFactor)
-			if name == "AdminService.Bootstrap" {
-				wantErr(t, err, services.ErrForbidden) // only the operator bootstraps
+			if operatorOnly[name] {
+				wantErr(t, err, services.ErrForbidden) // only the operator calls these
 				wantErr(t, call(grace), services.ErrForbidden)
 				return
 			}
@@ -212,18 +229,20 @@ type mutation struct {
 
 func mutations() []mutation {
 	policy := services.Policy{RequireTwoFactor: true}
-	users := func(p ports) *services.UserService { return services.NewUserService(p.dir, p.log, policy) }
-	admins := func(p ports) *services.AdminService { return services.NewAdminService(p.accounts, p.log, policy) }
-	userDetail := func(u services.User) func(p ports) []any {
-		return func(p ports) []any {
-			return []any{p.dir.EXPECT().GetUserDetail(ctx, "u1").Return(services.UserDetail{User: u}, nil)}
+	users := func(fakes ports) *services.UserService { return services.NewUserService(fakes.dir, fakes.log, policy) }
+	admins := func(fakes ports) *services.AdminService {
+		return services.NewAdminService(fakes.accounts, fakes.log, policy)
+	}
+	userDetail := func(account services.User) func(fakes ports) []any {
+		return func(fakes ports) []any {
+			return []any{fakes.dir.EXPECT().GetUserDetail(ctx, "u1").Return(services.UserDetail{User: account}, nil)}
 		}
 	}
 	bannedAda := adaUser
 	bannedAda.Banned = true
 	userRefusal := fmt.Errorf("auth: %w", services.ErrUserNotFound)
-	newBob := func(p ports) []any {
-		return []any{p.accounts.EXPECT().AdminByEmail(ctx, "bob@example.com").Return(services.Admin{}, services.ErrRecordNotFound)}
+	newBob := func(fakes ports) []any {
+		return []any{fakes.accounts.EXPECT().AdminByEmail(ctx, "bob@example.com").Return(services.Admin{}, services.ErrRecordNotFound)}
 	}
 	emailIntent := func(actor services.Actor, action string, details map[string]string) services.NewAuditEntry {
 		return services.NewAuditEntry{
@@ -237,50 +256,54 @@ func mutations() []mutation {
 			name:   "BanUser",
 			intent: userAudit("user.ban", map[string]string{"reason": "spam", "expiresIn": "permanent"}),
 			reads:  userDetail(adaUser),
-			change: func(p ports, err error) []any {
-				return []any{p.dir.EXPECT().BanUser(ctx, "u1", "spam", time.Duration(0)).Return(err)}
+			change: func(fakes ports, err error) []any {
+				return []any{fakes.dir.EXPECT().BanUser(ctx, "u1", "spam", time.Duration(0)).Return(err)}
 			},
-			call:    func(p ports) error { return users(p).BanUser(ctx, grace, "u1", validate.BanUser{BanReason: "spam"}) },
+			call: func(fakes ports) error {
+				return users(fakes).BanUser(ctx, grace, "u1", validate.BanUser{BanReason: "spam"})
+			},
 			refusal: userRefusal, want: services.ErrUserNotFound,
 		},
 		{
 			name:   "UnbanUser",
 			intent: userAudit("user.unban", nil),
 			reads:  userDetail(bannedAda),
-			change: func(p ports, err error) []any {
-				return []any{p.dir.EXPECT().UnbanUser(ctx, "u1").Return(err)}
+			change: func(fakes ports, err error) []any {
+				return []any{fakes.dir.EXPECT().UnbanUser(ctx, "u1").Return(err)}
 			},
-			call:    func(p ports) error { return users(p).UnbanUser(ctx, grace, "u1") },
+			call:    func(fakes ports) error { return users(fakes).UnbanUser(ctx, grace, "u1") },
 			refusal: userRefusal, want: services.ErrUserNotFound,
 		},
 		{
 			name:   "SetRole",
 			intent: userAudit("user.set_role", map[string]string{"from": "user", "to": "admin"}),
 			reads:  userDetail(adaUser),
-			change: func(p ports, err error) []any {
-				return []any{p.dir.EXPECT().SetRole(ctx, "u1", "admin").Return(err)}
+			change: func(fakes ports, err error) []any {
+				return []any{fakes.dir.EXPECT().SetRole(ctx, "u1", "admin").Return(err)}
 			},
-			call:    func(p ports) error { return users(p).SetRole(ctx, grace, "u1", validate.SetUserRole{Role: "admin"}) },
+			call: func(fakes ports) error {
+				return users(fakes).SetRole(ctx, grace, "u1", validate.SetUserRole{Role: "admin"})
+			},
 			refusal: fmt.Errorf("auth: %w", services.ErrInvalidRole), want: services.ErrInvalidRole,
 		},
 		{
 			name:   "RevokeSession",
 			intent: userAudit("user.revoke_session", map[string]string{"sessionId": "s9"}),
 			reads:  userDetail(adaUser),
-			change: func(p ports, err error) []any {
-				return []any{p.dir.EXPECT().RevokeSession(ctx, "u1", "s9").Return(err)}
+			change: func(fakes ports, err error) []any {
+				return []any{fakes.dir.EXPECT().RevokeSession(ctx, "u1", "s9").Return(err)}
 			},
-			call:    func(p ports) error { return users(p).RevokeSession(ctx, grace, "u1", "s9") },
+			call:    func(fakes ports) error { return users(fakes).RevokeSession(ctx, grace, "u1", "s9") },
 			refusal: fmt.Errorf("auth: %w", services.ErrSessionNotFound), want: services.ErrSessionNotFound,
 		},
 		{
 			name:   "RevokeSessions",
 			intent: userAudit("user.revoke_sessions", nil),
 			reads:  userDetail(adaUser),
-			change: func(p ports, err error) []any {
-				return []any{p.dir.EXPECT().RevokeUserSessions(ctx, "u1").Return(err)}
+			change: func(fakes ports, err error) []any {
+				return []any{fakes.dir.EXPECT().RevokeUserSessions(ctx, "u1").Return(err)}
 			},
-			call:    func(p ports) error { return users(p).RevokeSessions(ctx, grace, "u1") },
+			call:    func(fakes ports) error { return users(fakes).RevokeSessions(ctx, grace, "u1") },
 			refusal: userRefusal, want: services.ErrUserNotFound,
 		},
 		{
@@ -288,17 +311,17 @@ func mutations() []mutation {
 			name:   "InviteAdmin/new",
 			intent: emailIntent(grace, "admin.invite", map[string]string{}),
 			reads:  newBob,
-			change: func(p ports, err error) []any {
+			change: func(fakes ports, err error) []any {
 				if err != nil {
-					return []any{p.accounts.EXPECT().CreateAdmin(ctx, "bob@example.com", "Bob").Return(services.Admin{}, err)}
+					return []any{fakes.accounts.EXPECT().CreateAdmin(ctx, "bob@example.com", "Bob").Return(services.Admin{}, err)}
 				}
 				return []any{
-					p.accounts.EXPECT().CreateAdmin(ctx, "bob@example.com", "Bob").Return(pending, nil),
-					p.accounts.EXPECT().SendSetPasswordLink(ctx, "a2").Return(nil),
+					fakes.accounts.EXPECT().CreateAdmin(ctx, "bob@example.com", "Bob").Return(pending, nil),
+					fakes.accounts.EXPECT().SendSetPasswordLink(ctx, "a2").Return(nil),
 				}
 			},
-			call: func(p ports) error {
-				got, err := admins(p).InviteAdmin(ctx, grace, invite)
+			call: func(fakes ports) error {
+				got, err := admins(fakes).InviteAdmin(ctx, grace, invite)
 				if err == nil && got != pending {
 					return fmt.Errorf("InviteAdmin = %+v", got)
 				}
@@ -309,17 +332,17 @@ func mutations() []mutation {
 		{
 			name:   "InviteAdmin/resend",
 			intent: adminAudit(grace, "admin.invite", map[string]string{"resent": "true"}),
-			reads: func(p ports) []any {
+			reads: func(fakes ports) []any {
 				return []any{
-					p.accounts.EXPECT().AdminByEmail(ctx, "bob@example.com").Return(pending, nil),
-					p.log.EXPECT().List(ctx, priorInvite).Return(services.AuditPage{Total: 1}, nil),
+					fakes.accounts.EXPECT().AdminByEmail(ctx, "bob@example.com").Return(pending, nil),
+					fakes.log.EXPECT().List(ctx, priorInvite).Return(services.AuditPage{Total: 1}, nil),
 				}
 			},
-			change: func(p ports, err error) []any {
-				return []any{p.accounts.EXPECT().SendSetPasswordLink(ctx, "a2").Return(err)}
+			change: func(fakes ports, err error) []any {
+				return []any{fakes.accounts.EXPECT().SendSetPasswordLink(ctx, "a2").Return(err)}
 			},
-			call: func(p ports) error {
-				got, err := admins(p).InviteAdmin(ctx, grace, invite)
+			call: func(fakes ports) error {
+				got, err := admins(fakes).InviteAdmin(ctx, grace, invite)
 				if err == nil && got != pending {
 					return fmt.Errorf("InviteAdmin = %+v", got)
 				}
@@ -330,55 +353,118 @@ func mutations() []mutation {
 		{
 			name:   "DisableAdmin",
 			intent: adminAudit(grace, "admin.disable", nil),
-			reads: func(p ports) []any {
+			reads: func(fakes ports) []any {
 				return []any{
-					p.accounts.EXPECT().AdminByID(ctx, "a2").Return(bob, nil),
-					p.accounts.EXPECT().ListAdmins(ctx).Return([]services.Admin{graceAd, bob}, nil),
+					fakes.accounts.EXPECT().AdminByID(ctx, "a2").Return(bob, nil),
+					fakes.accounts.EXPECT().ListAdmins(ctx).Return([]services.Admin{graceAd, bob}, nil),
 				}
 			},
-			change: func(p ports, err error) []any {
-				return []any{p.accounts.EXPECT().DisableAdmin(ctx, "a2").Return(err)}
+			change: func(fakes ports, err error) []any {
+				return []any{fakes.accounts.EXPECT().DisableAdmin(ctx, "a2").Return(err)}
 			},
-			call:    func(p ports) error { return admins(p).DisableAdmin(ctx, grace, "a2") },
+			call:    func(fakes ports) error { return admins(fakes).DisableAdmin(ctx, grace, "a2") },
 			refusal: services.ErrRecordNotFound, want: services.ErrAdminNotFound, // removed meanwhile
 		},
 		{
 			name:   "EnableAdmin",
 			intent: adminAudit(grace, "admin.enable", nil),
-			reads: func(p ports) []any {
-				return []any{p.accounts.EXPECT().AdminByID(ctx, "a2").Return(disBob, nil)}
+			reads: func(fakes ports) []any {
+				return []any{fakes.accounts.EXPECT().AdminByID(ctx, "a2").Return(disBob, nil)}
 			},
-			change: func(p ports, err error) []any {
-				return []any{p.accounts.EXPECT().EnableAdmin(ctx, "a2").Return(err)}
+			change: func(fakes ports, err error) []any {
+				return []any{fakes.accounts.EXPECT().EnableAdmin(ctx, "a2").Return(err)}
 			},
-			call:    func(p ports) error { return admins(p).EnableAdmin(ctx, grace, "a2") },
+			call:    func(fakes ports) error { return admins(fakes).EnableAdmin(ctx, grace, "a2") },
 			refusal: services.ErrRecordNotFound, want: services.ErrAdminNotFound,
 		},
 		{
 			name:   "RemoveAdmin",
 			intent: adminAudit(grace, "admin.remove", nil),
-			reads: func(p ports) []any {
-				return []any{p.accounts.EXPECT().AdminByID(ctx, "a2").Return(pending, nil)}
+			reads: func(fakes ports) []any {
+				return []any{fakes.accounts.EXPECT().AdminByID(ctx, "a2").Return(pending, nil)}
 			},
-			change: func(p ports, err error) []any {
-				return []any{p.accounts.EXPECT().RemoveAdmin(ctx, "a2").Return(err)}
+			change: func(fakes ports, err error) []any {
+				return []any{fakes.accounts.EXPECT().RemoveAdmin(ctx, "a2").Return(err)}
 			},
-			call:    func(p ports) error { return admins(p).RemoveAdmin(ctx, grace, "a2") },
+			call:    func(fakes ports) error { return admins(fakes).RemoveAdmin(ctx, grace, "a2") },
 			refusal: fmt.Errorf("delete: %w", services.ErrRecordNotFound), want: services.ErrAdminNotFound,
+		},
+		{
+			name:   "SendPasswordReset",
+			intent: adminAudit(grace, "admin.password_reset", nil),
+			reads: func(fakes ports) []any {
+				return []any{fakes.accounts.EXPECT().AdminByID(ctx, "a2").Return(bob, nil)}
+			},
+			change: func(fakes ports, err error) []any {
+				return []any{fakes.accounts.EXPECT().SendSetPasswordLink(ctx, "a2").Return(err)}
+			},
+			call:    func(fakes ports) error { return admins(fakes).SendPasswordReset(ctx, grace, "a2") },
+			refusal: services.ErrRecordNotFound, want: services.ErrAdminNotFound, // removed meanwhile
+		},
+		{
+			name:   "ResetTwoFactor",
+			intent: adminAudit(grace, "admin.reset_two_factor", nil),
+			reads: func(fakes ports) []any {
+				return []any{fakes.accounts.EXPECT().AdminByID(ctx, "a2").Return(bob2fa, nil)}
+			},
+			change: func(fakes ports, err error) []any {
+				return []any{fakes.accounts.EXPECT().ResetTwoFactor(ctx, "a2").Return(err)}
+			},
+			call:    func(fakes ports) error { return admins(fakes).ResetTwoFactor(ctx, grace, "a2") },
+			refusal: fmt.Errorf("reset: %w", services.ErrRecordNotFound), want: services.ErrAdminNotFound,
+		},
+		{
+			name:   "ResetTwoFactorByEmail",
+			intent: adminAudit(cli, "admin.reset_two_factor", nil),
+			reads: func(fakes ports) []any {
+				return []any{
+					fakes.accounts.EXPECT().AdminByEmail(ctx, "bob@example.com").Return(bob2fa, nil),
+					fakes.accounts.EXPECT().AdminByID(ctx, "a2").Return(bob2fa, nil),
+				}
+			},
+			change: func(fakes ports, err error) []any {
+				return []any{fakes.accounts.EXPECT().ResetTwoFactor(ctx, "a2").Return(err)}
+			},
+			call: func(fakes ports) error {
+				_, err := admins(fakes).ResetTwoFactorByEmail(ctx, cli, validate.ResetAdminTwoFactor{Email: "bob@example.com"})
+				return err
+			},
+			refusal: services.ErrRecordNotFound, want: services.ErrAdminNotFound,
+		},
+		{
+			name:   "InviteBootstrapAdmin",
+			intent: adminAudit(cli, "admin.invite", map[string]string{}),
+			reads: func(fakes ports) []any {
+				return []any{
+					fakes.log.EXPECT().List(ctx, priorInvite).Return(services.AuditPage{}, nil),
+					fakes.log.EXPECT().List(ctx, priorEmailInvite).Return(services.AuditPage{}, nil),
+				}
+			},
+			change: func(fakes ports, err error) []any {
+				return []any{fakes.accounts.EXPECT().SendSetPasswordLink(ctx, "a2").Return(err)}
+			},
+			call: func(fakes ports) error {
+				sent, err := admins(fakes).InviteBootstrapAdmin(ctx, cli, pending)
+				if sent != (err == nil) {
+					return fmt.Errorf("sent = %v with err %w", sent, err)
+				}
+				return err
+			},
+			refusal: services.ErrRecordNotFound, want: services.ErrAdminNotFound,
 		},
 		{
 			// Bootstrap targets the email, acting as the operator.
 			name:   "Bootstrap",
 			intent: emailIntent(cli, "admin.bootstrap", nil),
 			reads:  newBob,
-			change: func(p ports, err error) []any {
+			change: func(fakes ports, err error) []any {
 				if err != nil {
-					return []any{p.accounts.EXPECT().CreateAdmin(ctx, "bob@example.com", "Bob").Return(services.Admin{}, err)}
+					return []any{fakes.accounts.EXPECT().CreateAdmin(ctx, "bob@example.com", "Bob").Return(services.Admin{}, err)}
 				}
-				return []any{p.accounts.EXPECT().CreateAdmin(ctx, "bob@example.com", "Bob").Return(pending, nil)}
+				return []any{fakes.accounts.EXPECT().CreateAdmin(ctx, "bob@example.com", "Bob").Return(pending, nil)}
 			},
-			call: func(p ports) error {
-				got, created, err := admins(p).Bootstrap(ctx, cli, invite)
+			call: func(fakes ports) error {
+				got, created, err := admins(fakes).Bootstrap(ctx, cli, invite)
 				if err == nil && (got != pending || !created) {
 					return fmt.Errorf("Bootstrap = %+v, %v", got, created)
 				}

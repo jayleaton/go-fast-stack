@@ -143,6 +143,20 @@ func (mr *MockAdminAccountsMockRecorder) RemoveAdmin(ctx, id any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RemoveAdmin", reflect.TypeOf((*MockAdminAccounts)(nil).RemoveAdmin), ctx, id)
 }
 
+// ResetTwoFactor mocks base method.
+func (m *MockAdminAccounts) ResetTwoFactor(ctx context.Context, adminID string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ResetTwoFactor", ctx, adminID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// ResetTwoFactor indicates an expected call of ResetTwoFactor.
+func (mr *MockAdminAccountsMockRecorder) ResetTwoFactor(ctx, adminID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ResetTwoFactor", reflect.TypeOf((*MockAdminAccounts)(nil).ResetTwoFactor), ctx, adminID)
+}
+
 // SendSetPasswordLink mocks base method.
 func (m *MockAdminAccounts) SendSetPasswordLink(ctx context.Context, adminID string) error {
 	m.ctrl.T.Helper()

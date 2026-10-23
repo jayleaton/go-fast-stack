@@ -28,6 +28,20 @@ func (c *CreateAdminInvite) Validate() error {
 	return f.Err()
 }
 
+// ResetAdminTwoFactor names the admin whose 2FA `admin reset-2fa <email>`
+// removes. The exact address is required: there is no "all" or wildcard.
+type ResetAdminTwoFactor struct {
+	Email string
+}
+
+// Validate normalises the address.
+func (reset *ResetAdminTwoFactor) Validate() error {
+	reset.Email = strings.ToLower(strings.TrimSpace(reset.Email))
+	fields := Fields{}
+	fields.Add(!isEmail(reset.Email), "email", "must be a valid email address")
+	return fields.Err()
+}
+
 // ListAuditLog is the query of GET /audit, newest first.
 type ListAuditLog struct {
 	Action   string // filter, e.g. "user.ban"; optional

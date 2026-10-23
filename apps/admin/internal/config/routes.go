@@ -7,12 +7,15 @@ import "net/url"
 // helper funcs.
 var AppRoutes = struct {
 	Home, Login, SetPassword, TwoFactor, TwoFactorSetup string
+	ForgotPassword, ResetPassword                       string
 	Users, UserByID, Admins, Audit, Analytics           string
 }{
 	Home:           "/",
 	Login:          "/login",
 	SetPassword:    "/set-password", // where invite links land (?token=)
-	TwoFactor:      "/two-factor",   // second step of sign-in
+	ForgotPassword: "/forgot-password",
+	ResetPassword:  "/reset-password", // where password reset links land (?token=)
+	TwoFactor:      "/two-factor",     // second step of sign-in
 	TwoFactorSetup: "/two-factor/setup",
 	Users:          "/users",
 	UserByID:       "/users/{id}",
@@ -29,28 +32,31 @@ var APIRoutes = struct {
 	Users, UserByID, UserBan, UserUnban, UserRole string
 	UserSessions, UserSessionByID                 string
 	// Admins (the admin database).
-	Admins, AdminInvites                 string
-	AdminByID, AdminDisable, AdminEnable string
-	Audit, Analytics                     string
+	Admins, AdminInvites                    string
+	AdminByID, AdminDisable, AdminEnable    string
+	AdminPasswordReset, AdminTwoFactorReset string
+	Audit, Analytics                        string
 
 	Healthz string
 }{
-	Auth:            "/api/auth/",
-	Users:           "/api/admin/v1/users",
-	UserByID:        "/api/admin/v1/users/{id}",
-	UserBan:         "/api/admin/v1/users/{id}/ban",
-	UserUnban:       "/api/admin/v1/users/{id}/unban",
-	UserRole:        "/api/admin/v1/users/{id}/role",
-	UserSessions:    "/api/admin/v1/users/{id}/sessions",
-	UserSessionByID: "/api/admin/v1/users/{id}/sessions/{sessionId}",
-	Admins:          "/api/admin/v1/admins",
-	AdminInvites:    "/api/admin/v1/admins/invites",
-	AdminByID:       "/api/admin/v1/admins/{id}",
-	AdminDisable:    "/api/admin/v1/admins/{id}/disable",
-	AdminEnable:     "/api/admin/v1/admins/{id}/enable",
-	Audit:           "/api/admin/v1/audit",
-	Analytics:       "/api/admin/v1/analytics",
-	Healthz:         "/healthz",
+	Auth:                "/api/auth/",
+	Users:               "/api/admin/v1/users",
+	UserByID:            "/api/admin/v1/users/{id}",
+	UserBan:             "/api/admin/v1/users/{id}/ban",
+	UserUnban:           "/api/admin/v1/users/{id}/unban",
+	UserRole:            "/api/admin/v1/users/{id}/role",
+	UserSessions:        "/api/admin/v1/users/{id}/sessions",
+	UserSessionByID:     "/api/admin/v1/users/{id}/sessions/{sessionId}",
+	Admins:              "/api/admin/v1/admins",
+	AdminInvites:        "/api/admin/v1/admins/invites",
+	AdminByID:           "/api/admin/v1/admins/{id}",
+	AdminDisable:        "/api/admin/v1/admins/{id}/disable",
+	AdminEnable:         "/api/admin/v1/admins/{id}/enable",
+	AdminPasswordReset:  "/api/admin/v1/admins/{id}/password-reset",
+	AdminTwoFactorReset: "/api/admin/v1/admins/{id}/two-factor/reset",
+	Audit:               "/api/admin/v1/audit",
+	Analytics:           "/api/admin/v1/analytics",
+	Healthz:             "/healthz",
 }
 
 // UserPage is the concrete path for AppRoutes.UserByID.
@@ -65,7 +71,7 @@ func UserPath(id, suffix string) string {
 }
 
 // AdminPath is the concrete path for APIRoutes.AdminByID; suffix is appended
-// ("", "/disable", "/enable").
+// ("", "/disable", "/enable", "/password-reset", "/two-factor/reset").
 func AdminPath(id, suffix string) string {
 	return APIRoutes.Admins + "/" + url.PathEscape(id) + suffix
 }

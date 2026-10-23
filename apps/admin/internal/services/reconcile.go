@@ -45,32 +45,32 @@ func NewAuditReconciler(log AuditLog, dir UserDirectory, accounts AdminAccounts)
 // Reconcile resolves every entry still pending olderThan after it was
 // written (younger ones may still be in flight). Entries whose state cannot
 // be read stay pending and their errors are returned joined.
-func (r *AuditReconciler) Reconcile(ctx context.Context, olderThan time.Duration) (ReconcileResult, error) {
+func (reconciler *AuditReconciler) Reconcile(ctx context.Context, olderThan time.Duration) (ReconcileResult, error) {
 	var res ReconcileResult
 	var errs []error
-	before := r.now().Add(-olderThan)
+	before := reconciler.now().Add(-olderThan)
 	skipped := map[int64]bool{}
 	for {
 		// Skipped entries stay pending and come back first; read past them.
 		limit := reconcileBatch + len(skipped)
-		pending, err := r.log.Pending(ctx, before, limit)
+		pending, err := reconciler.log.Pending(ctx, before, limit)
 		if err != nil {
 			return res, err
 		}
 		progressed := false
-		for _, e := range pending {
-			if skipped[e.ID] {
+		for _, entry := range pending {
+			if skipped[entry.ID] {
 				continue
 			}
-			outcome, err := r.verdict(ctx, e)
+			outcome, err := reconciler.verdict(ctx, entry)
 			if err != nil {
-				skipped[e.ID] = true
+				skipped[entry.ID] = true
 				res.Skipped++
-				errs = append(errs, fmt.Errorf("reconcile audit entry %d (%s): %w", e.ID, e.Action, err))
+				errs = append(errs, fmt.Errorf("reconcile audit entry %d (%s): %w", entry.ID, entry.Action, err))
 				continue
 			}
 			outcome.Reconciled = true
-			if err := r.log.Resolve(ctx, e.ID, outcome); err != nil {
+			if err := reconciler.log.Resolve(ctx, entry.ID, outcome); err != nil {
 				return res, errors.Join(append(errs, err)...)
 			}
 			progressed = true
@@ -92,7 +92,7 @@ func (r *AuditReconciler) Reconcile(ctx context.Context, olderThan time.Duration
 // verdict reads the current state the entry's change should have produced.
 // A read error leaves the entry pending (error); a target that no longer
 // exists, or an action whose effect cannot be read, is unknown.
-func (r *AuditReconciler) verdict(ctx context.Context, e AuditEntry) (AuditOutcome, error) {
+func (reconciler *AuditReconciler) verdict(ctx context.Context, entry AuditEntry) (AuditOutcome, error) {
 	holds := func(ok bool) (AuditOutcome, error) {
 		if ok {
 			return AuditOutcome{Status: StatusSucceeded, Reason: reasonStateMatches}, nil
@@ -101,53 +101,55 @@ func (r *AuditReconciler) verdict(ctx context.Context, e AuditEntry) (AuditOutco
 	}
 	unknown := AuditOutcome{Status: StatusUnknown, Reason: reasonUndecidable}
 
-	switch e.Action {
+	switch entry.Action {
 	case ActionUserBan, ActionUserUnban, ActionUserSetRole, ActionUserRevokeSession, ActionUserRevokeSessions:
-		d, err := r.dir.GetUserDetail(ctx, e.TargetID)
+		detail, err := reconciler.dir.GetUserDetail(ctx, entry.TargetID)
 		if errors.Is(err, ErrUserNotFound) {
 			return unknown, nil
 		}
 		if err != nil {
 			return AuditOutcome{}, err
 		}
-		switch e.Action {
+		switch entry.Action {
 		case ActionUserBan:
-			return holds(d.User.Banned)
+			return holds(detail.User.Banned)
 		case ActionUserUnban:
-			return holds(!d.User.Banned)
+			return holds(!detail.User.Banned)
 		case ActionUserSetRole:
-			return holds(d.User.Role == e.Details["to"])
+			return holds(detail.User.Role == entry.Details["to"])
 		case ActionUserRevokeSession:
-			return holds(!hasSession(d.Sessions, func(s Session) bool { return s.ID == e.Details["sessionId"] }))
+			return holds(!hasSession(detail.Sessions, func(session Session) bool { return session.ID == entry.Details["sessionId"] }))
 		default: // revoke all: no session from before the attempt survives
-			return holds(!hasSession(d.Sessions, func(s Session) bool { return s.CreatedAt.Before(e.CreatedAt) }))
+			return holds(!hasSession(detail.Sessions, func(session Session) bool { return session.CreatedAt.Before(entry.CreatedAt) }))
 		}
 
-	case ActionAdminDisable, ActionAdminEnable, ActionAdminRemove:
-		a, err := r.accounts.AdminByID(ctx, e.TargetID)
+	case ActionAdminDisable, ActionAdminEnable, ActionAdminRemove, ActionAdminResetTwoFactor:
+		admin, err := reconciler.accounts.AdminByID(ctx, entry.TargetID)
 		gone := errors.Is(err, ErrRecordNotFound)
 		if err != nil && !gone {
 			return AuditOutcome{}, err
 		}
 		switch {
-		case e.Action == ActionAdminRemove:
+		case entry.Action == ActionAdminRemove:
 			return holds(gone)
 		case gone:
 			return unknown, nil
-		case e.Action == ActionAdminDisable:
-			return holds(a.Disabled)
+		case entry.Action == ActionAdminDisable:
+			return holds(admin.Disabled)
+		case entry.Action == ActionAdminResetTwoFactor:
+			return holds(!admin.TwoFactorEnabled)
 		default:
-			return holds(!a.Disabled)
+			return holds(!admin.Disabled)
 		}
 
 	case ActionAdminBootstrap, ActionAdminInvite:
 		// The intent targets the email (first invite, bootstrap) or the id.
-		_, err := r.accounts.AdminByEmail(ctx, e.TargetLabel)
+		_, err := reconciler.accounts.AdminByEmail(ctx, entry.TargetLabel)
 		exists := err == nil
 		if err != nil && !errors.Is(err, ErrRecordNotFound) {
 			return AuditOutcome{}, err
 		}
-		if e.Action == ActionAdminBootstrap || !exists {
+		if entry.Action == ActionAdminBootstrap || !exists {
 			return holds(exists) // no admin: the invite (or seeding) did not happen
 		}
 		return unknown, nil // the admin exists, but whether the email went out cannot be read back
@@ -156,8 +158,8 @@ func (r *AuditReconciler) verdict(ctx context.Context, e AuditEntry) (AuditOutco
 }
 
 func hasSession(sessions []Session, match func(Session) bool) bool {
-	for _, s := range sessions {
-		if match(s) {
+	for _, session := range sessions {
+		if match(session) {
 			return true
 		}
 	}

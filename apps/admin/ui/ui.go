@@ -72,41 +72,47 @@ type Mux interface {
 // middleware must wrap mux so Deps.UserFrom sees the session. Mount Handler
 // rather than Routes in production: it adds the security headers.
 func (u *UI) Routes(mux Mux) {
-	page := func(pattern string, h http.HandlerFunc) { mux.Handle(pattern, u.wrap(h)) }
+	page := func(pattern string, handler http.HandlerFunc) { mux.Handle(pattern, u.wrap(handler)) }
 	// Actions also pass Go's cross-origin protection (Sec-Fetch-Site / Origin).
-	action := func(pattern string, h http.HandlerFunc) { mux.Handle(pattern, u.csrf.Handler(u.wrap(h))) }
-	p := config.AppRoutes
+	action := func(pattern string, handler http.HandlerFunc) { mux.Handle(pattern, u.csrf.Handler(u.wrap(handler))) }
+	pages := config.AppRoutes
 
 	mux.Handle("GET "+routes.Static, static.Handler())
-	mux.Handle("GET /favicon.ico", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, static.URL(static.FaviconFile), http.StatusMovedPermanently)
+	mux.Handle("GET /favicon.ico", http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		http.Redirect(writer, request, static.URL(static.FaviconFile), http.StatusMovedPermanently)
 	}))
 
 	page("GET /{$}", u.home)
-	page("GET "+p.Login, u.loginPage)
-	action("POST "+p.Login, u.login)
-	page("GET "+p.SetPassword, u.setPasswordPage)
-	action("POST "+p.SetPassword, u.setPassword)
-	page("GET "+p.TwoFactor, u.twoFactorPage)
-	action("POST "+p.TwoFactor, u.twoFactor)
-	page("GET "+p.TwoFactorSetup, u.twoFactorSetupPage)
-	action("POST "+p.TwoFactorSetup, u.twoFactorSetup)
+	page("GET "+pages.Login, u.loginPage)
+	action("POST "+pages.Login, u.login)
+	page("GET "+pages.SetPassword, u.setPasswordPage)
+	action("POST "+pages.SetPassword, u.setPassword)
+	page("GET "+pages.ForgotPassword, u.forgotPasswordPage)
+	action("POST "+pages.ForgotPassword, u.forgotPassword)
+	page("GET "+pages.ResetPassword, u.resetPasswordPage)
+	action("POST "+pages.ResetPassword, u.resetPassword)
+	page("GET "+pages.TwoFactor, u.twoFactorPage)
+	action("POST "+pages.TwoFactor, u.twoFactor)
+	page("GET "+pages.TwoFactorSetup, u.twoFactorSetupPage)
+	action("POST "+pages.TwoFactorSetup, u.twoFactorSetup)
 	action("POST "+routes.EnableTwoFactor, u.enableTwoFactor)
 
-	page("GET "+p.Users, u.usersPage)
-	page("GET "+p.UserByID, u.userPage)
+	page("GET "+pages.Users, u.usersPage)
+	page("GET "+pages.UserByID, u.userPage)
 	action("POST "+routes.UserBan, u.banUser)
 	action("POST "+routes.UserUnban, u.unbanUser)
 	action("POST "+routes.UserRole, u.setRole)
 	action("POST "+routes.UserSessions, u.revokeSessions)
 	action("POST "+routes.UserSession, u.revokeSession)
-	page("GET "+p.Admins, u.adminsPage)
+	page("GET "+pages.Admins, u.adminsPage)
 	action("POST "+routes.AdminInvite, u.inviteAdmin)
 	action("POST "+routes.AdminDisable, u.disableAdmin)
 	action("POST "+routes.AdminEnable, u.enableAdmin)
 	action("POST "+routes.AdminRemove, u.removeAdmin)
-	page("GET "+p.Audit, u.auditPage)
-	page("GET "+p.Analytics, u.analyticsPage)
+	action("POST "+routes.AdminPasswordReset, u.sendAdminPasswordReset)
+	action("POST "+routes.AdminResetTwoFactor, u.resetAdminTwoFactor)
+	page("GET "+pages.Audit, u.auditPage)
+	page("GET "+pages.Analytics, u.analyticsPage)
 
 	action("POST "+routes.Logout, u.logout)
 	action("POST "+routes.Locale, u.setLocale)
@@ -261,6 +267,9 @@ var errorKeys = []struct {
 	{services.ErrLastAdmin, "errors.lastAdmin"},
 	{services.ErrAdminDisabled, "errors.adminDisabled"},
 	{services.ErrAdminNotDisabled, "errors.adminNotDisabled"},
+	{services.ErrAdminPending, "errors.adminPending"},
+	{services.ErrAdminNoTwoFactor, "errors.adminNoTwoFactor"},
+	{services.ErrAdminSelfReset, "errors.adminSelfReset"},
 	{services.ErrTwoFactorRequired, "errors.twoFactorRequired"},
 	{services.ErrAuditUnavailable, "errors.auditUnavailable"},
 	{services.ErrForbidden, "errors.forbidden"},

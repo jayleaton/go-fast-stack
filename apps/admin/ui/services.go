@@ -25,6 +25,8 @@ type Admins interface {
 	DisableAdmin(ctx context.Context, actor services.Actor, adminID string) error
 	EnableAdmin(ctx context.Context, actor services.Actor, adminID string) error
 	RemoveAdmin(ctx context.Context, actor services.Actor, adminID string) error
+	SendPasswordReset(ctx context.Context, actor services.Actor, adminID string) error
+	ResetTwoFactor(ctx context.Context, actor services.Actor, adminID string) error
 }
 
 // Audit is the audit log service (*services.AuditService).

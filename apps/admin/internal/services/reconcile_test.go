@@ -47,27 +47,27 @@ func pendingEntry(id int64, action, targetID, targetLabel string, details map[st
 func TestReconcileVerdicts(t *testing.T) {
 	t.Parallel()
 	entryAt := time.Date(2026, 10, 22, 9, 0, 0, 0, time.UTC)
-	user := func(u services.User, sessions ...services.Session) func(p ports) {
-		return func(p ports) {
-			p.dir.EXPECT().GetUserDetail(ctx, "u1").Return(services.UserDetail{User: u, Sessions: sessions}, nil)
+	user := func(account services.User, sessions ...services.Session) func(fakes ports) {
+		return func(fakes ports) {
+			fakes.dir.EXPECT().GetUserDetail(ctx, "u1").Return(services.UserDetail{User: account, Sessions: sessions}, nil)
 		}
 	}
-	userGone := func(p ports) {
-		p.dir.EXPECT().GetUserDetail(ctx, "u1").Return(services.UserDetail{}, fmt.Errorf("auth: %w", services.ErrUserNotFound))
+	userGone := func(fakes ports) {
+		fakes.dir.EXPECT().GetUserDetail(ctx, "u1").Return(services.UserDetail{}, fmt.Errorf("auth: %w", services.ErrUserNotFound))
 	}
-	adminByID := func(a services.Admin) func(p ports) {
-		return func(p ports) { p.accounts.EXPECT().AdminByID(ctx, "a2").Return(a, nil) }
+	adminByID := func(admin services.Admin) func(fakes ports) {
+		return func(fakes ports) { fakes.accounts.EXPECT().AdminByID(ctx, "a2").Return(admin, nil) }
 	}
-	adminGone := func(p ports) {
-		p.accounts.EXPECT().AdminByID(ctx, "a2").Return(services.Admin{}, fmt.Errorf("get: %w", services.ErrRecordNotFound))
+	adminGone := func(fakes ports) {
+		fakes.accounts.EXPECT().AdminByID(ctx, "a2").Return(services.Admin{}, fmt.Errorf("get: %w", services.ErrRecordNotFound))
 	}
-	adminByEmail := func(found bool) func(p ports) {
-		return func(p ports) {
+	adminByEmail := func(found bool) func(fakes ports) {
+		return func(fakes ports) {
 			if found {
-				p.accounts.EXPECT().AdminByEmail(ctx, "bob@example.com").Return(pending, nil)
+				fakes.accounts.EXPECT().AdminByEmail(ctx, "bob@example.com").Return(pending, nil)
 				return
 			}
-			p.accounts.EXPECT().AdminByEmail(ctx, "bob@example.com").Return(services.Admin{}, services.ErrRecordNotFound)
+			fakes.accounts.EXPECT().AdminByEmail(ctx, "bob@example.com").Return(services.Admin{}, services.ErrRecordNotFound)
 		}
 	}
 	banned := adaUser
@@ -82,7 +82,7 @@ func TestReconcileVerdicts(t *testing.T) {
 		action string
 		target string // the entry's target id; its label follows
 		detail map[string]string
-		state  func(p ports) // nil: nothing is read
+		state  func(fakes ports) // nil: nothing is read
 		want   services.AuditOutcome
 	}{
 		{"ban applied", "user.ban", "u1", nil, user(banned), stateMatches},
@@ -98,6 +98,10 @@ func TestReconcileVerdicts(t *testing.T) {
 		{"user gone", "user.ban", "u1", nil, userGone, undecidable},
 		{"disable applied", "admin.disable", "a2", nil, adminByID(disBob), stateMatches},
 		{"disable not applied", "admin.disable", "a2", nil, adminByID(bob), stateDiffers},
+		{"reset 2fa applied", "admin.reset_two_factor", "a2", nil, adminByID(bob), stateMatches},
+		{"reset 2fa not applied", "admin.reset_two_factor", "a2", nil, adminByID(bob2fa), stateDiffers},
+		{"reset 2fa admin gone", "admin.reset_two_factor", "a2", nil, adminGone, undecidable},
+		{"password reset", "admin.password_reset", "a2", nil, nil, undecidable}, // an email cannot be read back
 		{"enable applied", "admin.enable", "a2", nil, adminByID(bob), stateMatches},
 		{"enable not applied", "admin.enable", "a2", nil, adminByID(disBob), stateDiffers},
 		{"disabled admin gone", "admin.disable", "a2", nil, adminGone, undecidable},
@@ -112,20 +116,20 @@ func TestReconcileVerdicts(t *testing.T) {
 	}
 	labels := map[string]string{"u1": "ada@example.com", "a2": "bob@example.com", "bob@example.com": "bob@example.com"}
 
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
-			r, p := newReconciler(t)
-			e := pendingEntry(entryID, c.action, c.target, labels[c.target], c.detail)
-			p.log.EXPECT().Pending(ctx, staleCutoff(), 100).Return([]services.AuditEntry{e}, nil)
-			if c.state != nil {
-				c.state(p)
+			reconciler, fakes := newReconciler(t)
+			entry := pendingEntry(entryID, testCase.action, testCase.target, labels[testCase.target], testCase.detail)
+			fakes.log.EXPECT().Pending(ctx, staleCutoff(), 100).Return([]services.AuditEntry{entry}, nil)
+			if testCase.state != nil {
+				testCase.state(fakes)
 			}
-			p.log.EXPECT().Resolve(ctx, entryID, c.want).Return(nil)
+			fakes.log.EXPECT().Resolve(ctx, entryID, testCase.want).Return(nil)
 
-			got, err := r.Reconcile(ctx, olderThan)
+			got, err := reconciler.Reconcile(ctx, olderThan)
 			var want services.ReconcileResult
-			switch c.want.Status {
+			switch testCase.want.Status {
 			case services.StatusSucceeded:
 				want.Succeeded = 1
 			case services.StatusFailed:

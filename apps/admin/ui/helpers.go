@@ -257,9 +257,12 @@ var actionKeys = []struct{ action, key string }{
 	{services.ActionAdminDisable, "pages.audit.actions.adminDisable"},
 	{services.ActionAdminEnable, "pages.audit.actions.adminEnable"},
 	{services.ActionAdminRemove, "pages.audit.actions.adminRemove"},
+	{services.ActionAdminPasswordReset, "pages.audit.actions.adminPasswordReset"},
+	{services.ActionAdminResetTwoFactor, "pages.audit.actions.adminResetTwoFactor"},
 	{services.ActionAdminSignIn, "pages.audit.actions.adminSignIn"},
 	{services.ActionAdminSignOut, "pages.audit.actions.adminSignOut"},
 	{services.ActionAdminTwoFactorFailed, "pages.audit.actions.adminTwoFactorFailed"},
+	{services.ActionAdminBackupCodeUsed, "pages.audit.actions.adminBackupCodeUsed"},
 }
 
 // signInMethodKeys label the "method" detail of ActionAdminSignIn; unknown
