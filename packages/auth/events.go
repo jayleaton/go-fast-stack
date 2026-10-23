@@ -75,7 +75,7 @@ type Event struct {
 // Shutdown is draining or when the handler itself calls back into Auth.
 // Delivery is best-effort: events still queued when the process exits are
 // lost, so call Auth.Shutdown on graceful shutdown.
-type EventHandler func(ctx context.Context, e Event)
+type EventHandler func(ctx context.Context, event Event)
 
 // eventSink delivers events to a handler in order on one worker goroutine.
 type eventSink struct {
@@ -96,82 +96,82 @@ type eventSink struct {
 // flooding the log.
 const dropLogEvery = 100
 
-func newEventSink(h EventHandler, log *slog.Logger, email func(context.Context, string) string) *eventSink {
-	if h == nil {
+func newEventSink(handler EventHandler, log *slog.Logger, email func(context.Context, string) string) *eventSink {
+	if handler == nil {
 		return nil
 	}
 	idle := make(chan struct{})
 	close(idle)
-	s := &eventSink{handler: h, log: log, queue: make(chan Event, eventQueueSize), email: email, idle: idle}
-	go s.run()
-	return s
+	sink := &eventSink{handler: handler, log: log, queue: make(chan Event, eventQueueSize), email: email, idle: idle}
+	go sink.run()
+	return sink
 }
 
 // emit queues ev and never waits: a full queue drops it.
-func (s *eventSink) emit(ctx context.Context, ev Event) {
-	if s == nil {
+func (sink *eventSink) emit(ctx context.Context, ev Event) {
+	if sink == nil {
 		return
 	}
-	s.mu.Lock()
+	sink.mu.Lock()
 	select {
-	case s.queue <- ev:
-		if s.pending == 0 {
-			s.idle = make(chan struct{})
+	case sink.queue <- ev:
+		if sink.pending == 0 {
+			sink.idle = make(chan struct{})
 		}
-		s.pending++
-		s.mu.Unlock()
+		sink.pending++
+		sink.mu.Unlock()
 	default:
-		s.mu.Unlock()
-		if n := s.dropped.Add(1); n == 1 || n%dropLogEvery == 0 {
-			s.log.WarnContext(ctx, "auth: event queue full, event dropped", "kind", ev.Kind, "userId", ev.UserID, "dropped_total", n)
+		sink.mu.Unlock()
+		if count := sink.dropped.Add(1); count == 1 || count%dropLogEvery == 0 {
+			sink.log.WarnContext(ctx, "auth: event queue full, event dropped", "kind", ev.Kind, "userId", ev.UserID, "dropped_total", count)
 		}
 	}
 }
 
-func (s *eventSink) run() {
-	for ev := range s.queue {
-		s.deliver(ev)
-		s.mu.Lock()
-		if s.pending--; s.pending == 0 {
-			close(s.idle)
+func (sink *eventSink) run() {
+	for ev := range sink.queue {
+		sink.deliver(ev)
+		sink.mu.Lock()
+		if sink.pending--; sink.pending == 0 {
+			close(sink.idle)
 		}
-		s.mu.Unlock()
+		sink.mu.Unlock()
 	}
 }
 
-func (s *eventSink) deliver(ev Event) {
+func (sink *eventSink) deliver(ev Event) {
 	defer func() {
-		if r := recover(); r != nil {
-			s.log.Error("auth: event handler panicked", "kind", ev.Kind, "panic", r, "stack", string(debug.Stack()))
+		if value := recover(); value != nil {
+			sink.log.Error("auth: event handler panicked", "kind", ev.Kind, "panic", value, "stack", string(debug.Stack()))
 		}
 	}()
-	if ev.Email == "" && ev.UserID != "" && s.email != nil {
+	if ev.Email == "" && ev.UserID != "" && sink.email != nil {
 		lookup, cancel := context.WithTimeout(context.Background(), eventDeliveryTimeout)
-		ev.Email = s.email(lookup, ev.UserID)
+		ev.Email = sink.email(lookup, ev.UserID)
 		cancel()
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), eventDeliveryTimeout)
 	defer cancel()
-	s.handler(ctx, ev)
+	sink.handler(ctx, ev)
 }
 
 // droppedCount is the number of events dropped so far (0 without a sink).
-func (s *eventSink) droppedCount() int64 {
-	if s == nil {
+func (sink *eventSink) droppedCount() int64 {
+	if sink == nil {
 		return 0
 	}
-	return s.dropped.Load()
+	return sink.dropped.Load()
 }
 
 // drain waits until the queue is empty and the worker idle (or ctx ends). It
 // never stops new events from being emitted meanwhile.
-func (s *eventSink) drain(ctx context.Context) error {
-	if s == nil {
+func (sink *eventSink) drain(ctx context.Context) error {
+	if sink == nil {
 		return nil
 	}
-	s.mu.Lock()
-	idle := s.idle
-	s.mu.Unlock()
+	sink.mu.Lock()
+	idle := sink.idle
+	sink.mu.Unlock()
 	select {
 	case <-idle:
 		return nil
@@ -189,34 +189,34 @@ func (st *store) userEmail(ctx context.Context, userID string) string {
 
 // emit stamps an event with the time and this instance's request metadata
 // and queues it for Config.Events.
-func (a *Auth) emit(ctx context.Context, ev Event) {
-	if a.events == nil {
+func (auth *Auth) emit(ctx context.Context, ev Event) {
+	if auth.events == nil {
 		return
 	}
-	ev.At = a.now()
-	if m := a.meta(ctx); m != nil {
-		ev.IP, ev.UserAgent = m.ip, m.userAgent
+	ev.At = auth.now()
+	if meta := auth.meta(ctx); meta != nil {
+		ev.IP, ev.UserAgent = meta.ip, meta.userAgent
 	}
-	a.events.emit(ctx, ev)
+	auth.events.emit(ctx, ev)
 }
 
 // DroppedEvents is how many events this instance has dropped because its queue
 // (1024) was full: a slow or stuck Config.Events handler. It only grows; export
 // it as a counter metric, or alert when it moves. Each drop is also logged
 // (the first and every 100th, with the running total).
-func (a *Auth) DroppedEvents() int64 { return a.events.droppedCount() }
+func (auth *Auth) DroppedEvents() int64 { return auth.events.droppedCount() }
 
 // emitFailure reports a refused sign-in or second factor with the error code.
 // Rate-limited attempts are not reported: they never reached a credential
 // check, cost an attacker nothing, and would crowd real events out of the
 // queue.
-func (a *Auth) emitFailure(ctx context.Context, kind EventKind, userID, method string, err error) {
+func (auth *Auth) emitFailure(ctx context.Context, kind EventKind, userID, method string, err error) {
 	if errors.Is(err, ErrTooManyRequests) {
 		return
 	}
 	code := "INTERNAL_ERROR"
-	if e := asError(err); e != nil {
-		code = e.Code
+	if authErr := asError(err); authErr != nil {
+		code = authErr.Code
 	}
-	a.emit(ctx, Event{Kind: kind, UserID: userID, Method: method, Reason: code})
+	auth.emit(ctx, Event{Kind: kind, UserID: userID, Method: method, Reason: code})
 }

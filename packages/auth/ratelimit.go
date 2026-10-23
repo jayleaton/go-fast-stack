@@ -53,42 +53,42 @@ func NewMemoryRateLimiter() *MemoryRateLimiter {
 }
 
 // Allow implements RateLimiter.
-func (m *MemoryRateLimiter) Allow(_ context.Context, key string, rule RateRule) (time.Duration, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	now := m.now()
-	if now.Sub(m.lastSweep) > time.Minute {
-		for k, w := range m.windows {
-			if now.Sub(w.start) >= w.ttl {
-				delete(m.windows, k)
+func (limiter *MemoryRateLimiter) Allow(_ context.Context, key string, rule RateRule) (time.Duration, error) {
+	limiter.mu.Lock()
+	defer limiter.mu.Unlock()
+	now := limiter.now()
+	if now.Sub(limiter.lastSweep) > time.Minute {
+		for key, window := range limiter.windows {
+			if now.Sub(window.start) >= window.ttl {
+				delete(limiter.windows, key)
 			}
 		}
-		m.lastSweep = now
+		limiter.lastSweep = now
 	}
-	w, ok := m.windows[key]
-	if !ok || now.Sub(w.start) >= rule.Window {
-		m.windows[key] = rateWindow{start: now, count: 1, ttl: rule.Window}
+	window, ok := limiter.windows[key]
+	if !ok || now.Sub(window.start) >= rule.Window {
+		limiter.windows[key] = rateWindow{start: now, count: 1, ttl: rule.Window}
 		return 0, nil
 	}
-	if w.count >= rule.Max {
-		return w.start.Add(rule.Window).Sub(now), nil
+	if window.count >= rule.Max {
+		return window.start.Add(rule.Window).Sub(now), nil
 	}
-	w.count++
-	m.windows[key] = w
+	window.count++
+	limiter.windows[key] = window
 	return 0, nil
 }
 
 // rateLimit applies rule to the client IP of the current request. Requests
 // without request metadata (Middleware not applied) are not limited.
-func (a *Auth) rateLimit(ctx context.Context, endpoint string, rule RateRule) error {
-	meta := a.meta(ctx)
+func (auth *Auth) rateLimit(ctx context.Context, endpoint string, rule RateRule) error {
+	meta := auth.meta(ctx)
 	if meta == nil || meta.ip == "" {
 		return nil
 	}
-	retry, err := a.limiter.Allow(ctx, meta.ip+"|"+endpoint, rule)
+	retry, err := auth.limiter.Allow(ctx, meta.ip+"|"+endpoint, rule)
 	if err != nil {
 		// A broken limiter backend must not lock everyone out.
-		a.log.ErrorContext(ctx, "auth: rate limiter failed", "err", err)
+		auth.log.ErrorContext(ctx, "auth: rate limiter failed", "err", err)
 		return nil
 	}
 	if retry > 0 {

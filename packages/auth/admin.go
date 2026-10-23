@@ -19,8 +19,8 @@ import (
 type UserAdmin struct {
 	store *store
 	now   func() time.Time
-	emit  func(ctx context.Context, e Event) // nil: no events
-	sink  *eventSink                         // where emit queues (drained by Shutdown)
+	emit  func(ctx context.Context, event Event) // nil: no events
+	sink  *eventSink                             // where emit queues (drained by Shutdown)
 }
 
 // NewUserAdmin returns a UserAdmin over pool (a database migrated by Migrate).
@@ -29,8 +29,8 @@ func NewUserAdmin(pool DB) *UserAdmin {
 }
 
 // Users returns a UserAdmin over this instance's database.
-func (a *Auth) Users() *UserAdmin {
-	return &UserAdmin{store: a.store, now: a.now, emit: a.emit, sink: a.events}
+func (auth *Auth) Users() *UserAdmin {
+	return &UserAdmin{store: auth.store, now: auth.now, emit: auth.emit, sink: auth.events}
 }
 
 // WithEvents returns a copy of u that reports bans, unbans, session
@@ -39,36 +39,36 @@ func (a *Auth) Users() *UserAdmin {
 // starts its own delivery worker. A UserAdmin from Auth.Users already reports
 // to that instance's Config.Events. Events carry no request metadata here (a
 // standalone UserAdmin has no request context of its own).
-func (u *UserAdmin) WithEvents(h EventHandler) *UserAdmin {
-	sink := newEventSink(h, slog.Default(), u.store.userEmail)
-	c := *u
-	c.sink = sink
-	c.emit = func(ctx context.Context, e Event) {
-		e.At = c.now()
-		sink.emit(ctx, e)
+func (admin *UserAdmin) WithEvents(handler EventHandler) *UserAdmin {
+	sink := newEventSink(handler, slog.Default(), admin.store.userEmail)
+	userAdmin := *admin
+	userAdmin.sink = sink
+	userAdmin.emit = func(ctx context.Context, event Event) {
+		event.At = userAdmin.now()
+		sink.emit(ctx, event)
 	}
-	return &c
+	return &userAdmin
 }
 
 // DroppedEvents is how many of this UserAdmin's events were dropped because
 // the queue was full (see Auth.DroppedEvents).
-func (u *UserAdmin) DroppedEvents() int64 { return u.sink.droppedCount() }
+func (admin *UserAdmin) DroppedEvents() int64 { return admin.sink.droppedCount() }
 
 // Shutdown waits for this UserAdmin's queued events to be delivered (or ctx).
 // Call it on graceful shutdown after the last admin action.
-func (u *UserAdmin) Shutdown(ctx context.Context) error {
-	return u.sink.drain(ctx)
+func (admin *UserAdmin) Shutdown(ctx context.Context) error {
+	return admin.sink.drain(ctx)
 }
 
-func (u *UserAdmin) event(ctx context.Context, e Event) {
-	if u.emit != nil {
-		u.emit(ctx, e)
+func (admin *UserAdmin) event(ctx context.Context, event Event) {
+	if admin.emit != nil {
+		admin.emit(ctx, event)
 	}
 }
 
-func (u *UserAdmin) revoked(ctx context.Context, userID, sessionID string, count int64, by string) {
+func (admin *UserAdmin) revoked(ctx context.Context, userID, sessionID string, count int64, by string) {
 	if count > 0 {
-		u.event(ctx, Event{Kind: EventSessionRevoked, UserID: userID, SessionID: sessionID,
+		admin.event(ctx, Event{Kind: EventSessionRevoked, UserID: userID, SessionID: sessionID,
 			Details: map[string]string{"count": strconv.FormatInt(count, 10), "by": by}})
 	}
 }
@@ -120,11 +120,11 @@ const adminUserColumns = userColumns + `, u."role", u."banned", u."banReason", u
 	EXISTS (SELECT 1 FROM "account" a WHERE a."userId" = u."id" AND a."providerId" = 'credential' AND a."password" IS NOT NULL)`
 
 func scanAdminUser(row pgx.Row, extra ...any) (AdminUser, error) {
-	var x AdminUser
-	dest := append([]any{&x.Role, &x.Banned, &x.BanReason, &x.BanExpires, &x.TwoFactorEnabled, &x.HasPassword}, extra...)
-	u, err := scanUser(row, dest...)
-	x.User = u
-	return x, err
+	var user AdminUser
+	dest := append([]any{&user.Role, &user.Banned, &user.BanReason, &user.BanExpires, &user.TwoFactorEnabled, &user.HasPassword}, extra...)
+	scanned, err := scanUser(row, dest...)
+	user.User = scanned
+	return user, err
 }
 
 var sortColumns = map[string]string{"": `u."createdAt"`, "createdAt": `u."createdAt"`, "email": `u."email"`, "name": `u."name"`}
@@ -133,48 +133,48 @@ var sortColumns = map[string]string{"": `u."createdAt"`, "createdAt": `u."create
 var likeEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
 
 // ListUsers returns one page of users matching q, with the total match count.
-func (u *UserAdmin) ListUsers(ctx context.Context, q ListUsersQuery) (UserPage, error) {
-	order, ok := sortColumns[q.SortBy]
+func (admin *UserAdmin) ListUsers(ctx context.Context, query ListUsersQuery) (UserPage, error) {
+	order, ok := sortColumns[query.SortBy]
 	if !ok {
 		order = sortColumns[""]
 	}
 	dir := "ASC"
-	if q.SortDesc {
+	if query.SortDesc {
 		dir = "DESC"
 	}
 	field := `u."email"`
-	if q.SearchField == "name" {
+	if query.SearchField == "name" {
 		field = `u."name"`
 	}
-	if q.Limit <= 0 {
-		q.Limit = defaultUserListLimit
+	if query.Limit <= 0 {
+		query.Limit = defaultUserListLimit
 	}
-	q.Limit = min(q.Limit, maxUserListLimit)
-	q.Offset = max(q.Offset, 0)
+	query.Limit = min(query.Limit, maxUserListLimit)
+	query.Offset = max(query.Offset, 0)
 
 	where := []string{"TRUE"}
 	args := []any{}
-	arg := func(v any) string {
-		args = append(args, v)
+	arg := func(value any) string {
+		args = append(args, value)
 		return "$" + strconv.Itoa(len(args))
 	}
-	if q.Search != "" {
-		where = append(where, field+` ILIKE `+arg("%"+likeEscaper.Replace(q.Search)+"%"))
+	if query.Search != "" {
+		where = append(where, field+` ILIKE `+arg("%"+likeEscaper.Replace(query.Search)+"%"))
 	}
-	if q.Role != "" {
-		where = append(where, `u."role" = `+arg(q.Role))
+	if query.Role != "" {
+		where = append(where, `u."role" = `+arg(query.Role))
 	}
-	if q.Banned != nil {
-		where = append(where, `u."banned" = `+arg(*q.Banned))
+	if query.Banned != nil {
+		where = append(where, `u."banned" = `+arg(*query.Banned))
 	}
 	sql := `SELECT ` + adminUserColumns + `, count(*) OVER () FROM "user" u WHERE ` + strings.Join(where, " AND ") +
-		` ORDER BY ` + order + ` ` + dir + `, u."id" ` + dir + ` LIMIT ` + arg(q.Limit) + ` OFFSET ` + arg(q.Offset)
+		` ORDER BY ` + order + ` ` + dir + `, u."id" ` + dir + ` LIMIT ` + arg(query.Limit) + ` OFFSET ` + arg(query.Offset)
 
-	rows, err := u.store.pool.Query(ctx, sql, args...)
+	rows, err := admin.store.pool.Query(ctx, sql, args...)
 	if err != nil {
 		return UserPage{}, err
 	}
-	page := UserPage{Users: []AdminUser{}, Limit: q.Limit, Offset: q.Offset}
+	page := UserPage{Users: []AdminUser{}, Limit: query.Limit, Offset: query.Offset}
 	var total int
 	users, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (AdminUser, error) {
 		return scanAdminUser(row, &total)
@@ -184,55 +184,55 @@ func (u *UserAdmin) ListUsers(ctx context.Context, q ListUsersQuery) (UserPage, 
 	}
 	if len(users) > 0 {
 		page.Users, page.Total = users, total
-	} else if q.Offset > 0 {
+	} else if query.Offset > 0 {
 		// Past the end: count separately so the caller can still page back.
-		if err := u.store.pool.QueryRow(ctx, `SELECT count(*) FROM "user" u WHERE `+strings.Join(where, " AND "), args[:len(args)-2]...).Scan(&page.Total); err != nil {
+		if err := admin.store.pool.QueryRow(ctx, `SELECT count(*) FROM "user" u WHERE `+strings.Join(where, " AND "), args[:len(args)-2]...).Scan(&page.Total); err != nil {
 			return UserPage{}, err
 		}
 	}
 	return page, nil
 }
 
-func (u *UserAdmin) adminUser(ctx context.Context, userID string) (AdminUser, error) {
-	x, err := scanAdminUser(u.store.pool.QueryRow(ctx, `SELECT `+adminUserColumns+` FROM "user" u WHERE u."id" = $1`, userID))
+func (admin *UserAdmin) adminUser(ctx context.Context, userID string) (AdminUser, error) {
+	user, err := scanAdminUser(admin.store.pool.QueryRow(ctx, `SELECT `+adminUserColumns+` FROM "user" u WHERE u."id" = $1`, userID))
 	if errors.Is(err, errNotFound) {
 		return AdminUser{}, ErrUserNotFound
 	}
-	return x, err
+	return user, err
 }
 
 // GetUserDetail returns a user with their active sessions.
-func (u *UserAdmin) GetUserDetail(ctx context.Context, userID string) (UserDetail, error) {
-	x, err := u.adminUser(ctx, userID)
+func (admin *UserAdmin) GetUserDetail(ctx context.Context, userID string) (UserDetail, error) {
+	user, err := admin.adminUser(ctx, userID)
 	if err != nil {
 		return UserDetail{}, err
 	}
-	sessions, err := u.store.listSessions(ctx, userID, u.now())
+	sessions, err := admin.store.listSessions(ctx, userID, admin.now())
 	if err != nil {
 		return UserDetail{}, err
 	}
-	return UserDetail{User: x, Sessions: sessions}, nil
+	return UserDetail{User: user, Sessions: sessions}, nil
 }
 
 // BanUser bans a user for duration (0: until UnbanUser) and revokes all their
 // sessions. Banned users cannot sign in and their sessions stop working.
-func (u *UserAdmin) BanUser(ctx context.Context, userID, reason string, duration time.Duration) error {
+func (admin *UserAdmin) BanUser(ctx context.Context, userID, reason string, duration time.Duration) error {
 	if duration < 0 {
 		return errors.New("auth: negative ban duration")
 	}
-	now := u.now()
+	now := admin.now()
 	var expires *time.Time
 	if duration > 0 {
-		e := now.Add(duration)
-		expires = &e
+		moment := now.Add(duration)
+		expires = &moment
 	}
 	var why *string
 	if reason = strings.TrimSpace(reason); reason != "" {
 		why = &reason
 	}
 	var revoked int64
-	err := u.store.tx(ctx, func(q querier) error {
-		tag, err := q.Exec(ctx, `
+	err := admin.store.tx(ctx, func(querier querier) error {
+		tag, err := querier.Exec(ctx, `
 			UPDATE "user" SET "banned" = true, "banReason" = $2, "banExpires" = $3, "updatedAt" = $4 WHERE "id" = $1`,
 			userID, why, expires, now)
 		if err != nil {
@@ -241,7 +241,7 @@ func (u *UserAdmin) BanUser(ctx context.Context, userID, reason string, duration
 		if tag.RowsAffected() == 0 {
 			return ErrUserNotFound
 		}
-		revoked, err = u.store.deleteUserSessionsCount(ctx, q, userID)
+		revoked, err = admin.store.deleteUserSessionsCount(ctx, querier, userID)
 		return err
 	})
 	if err != nil {
@@ -254,23 +254,23 @@ func (u *UserAdmin) BanUser(ctx context.Context, userID, reason string, duration
 	if expires != nil {
 		details["expiresAt"] = expires.UTC().Format(time.RFC3339)
 	}
-	u.event(ctx, Event{Kind: EventUserBanned, UserID: userID, Details: details})
-	u.revoked(ctx, userID, "", revoked, "ban")
+	admin.event(ctx, Event{Kind: EventUserBanned, UserID: userID, Details: details})
+	admin.revoked(ctx, userID, "", revoked, "ban")
 	return nil
 }
 
 // UnbanUser lifts a ban; the user can sign in again.
-func (u *UserAdmin) UnbanUser(ctx context.Context, userID string) error {
-	tag, err := u.store.pool.Exec(ctx, `
+func (admin *UserAdmin) UnbanUser(ctx context.Context, userID string) error {
+	tag, err := admin.store.pool.Exec(ctx, `
 		UPDATE "user" SET "banned" = false, "banReason" = NULL, "banExpires" = NULL, "updatedAt" = $2 WHERE "id" = $1`,
-		userID, u.now())
+		userID, admin.now())
 	if err != nil {
 		return err
 	}
 	if tag.RowsAffected() == 0 {
 		return ErrUserNotFound
 	}
-	u.event(ctx, Event{Kind: EventUserUnbanned, UserID: userID})
+	admin.event(ctx, Event{Kind: EventUserUnbanned, UserID: userID})
 	return nil
 }
 
@@ -278,11 +278,11 @@ func (u *UserAdmin) UnbanUser(ctx context.Context, userID string) error {
 var validRole = regexp.MustCompile(`^[A-Za-z0-9_-]{1,32}(,[A-Za-z0-9_-]{1,32}){0,7}$`)
 
 // SetRole sets a user's role (e.g. "user", "admin"; comma-separated for several).
-func (u *UserAdmin) SetRole(ctx context.Context, userID, role string) error {
+func (admin *UserAdmin) SetRole(ctx context.Context, userID, role string) error {
 	if !validRole.MatchString(role) {
 		return ErrInvalidRole
 	}
-	tag, err := u.store.pool.Exec(ctx, `UPDATE "user" SET "role" = $2, "updatedAt" = $3 WHERE "id" = $1`, userID, role, u.now())
+	tag, err := admin.store.pool.Exec(ctx, `UPDATE "user" SET "role" = $2, "updatedAt" = $3 WHERE "id" = $1`, userID, role, admin.now())
 	if err != nil {
 		return err
 	}
@@ -293,18 +293,18 @@ func (u *UserAdmin) SetRole(ctx context.Context, userID, role string) error {
 }
 
 // RevokeSession signs out one session of userID (ErrSessionNotFound otherwise).
-func (u *UserAdmin) RevokeSession(ctx context.Context, userID, sessionID string) error {
+func (admin *UserAdmin) RevokeSession(ctx context.Context, userID, sessionID string) error {
 	if sessionID == "" {
 		return ErrSessionNotFound
 	}
-	id, err := u.store.deleteUserSession(ctx, userID, sessionID, "")
+	id, err := admin.store.deleteUserSession(ctx, userID, sessionID, "")
 	if errors.Is(err, errNotFound) {
 		return ErrSessionNotFound
 	}
 	if err != nil {
 		return err
 	}
-	u.revoked(ctx, userID, id, 1, "admin")
+	admin.revoked(ctx, userID, id, 1, "admin")
 	return nil
 }
 
@@ -312,33 +312,33 @@ func (u *UserAdmin) RevokeSession(ctx context.Context, userID, sessionID string)
 // 2FA sign-ins, for account recovery (lost authenticator and backup codes, or
 // a rotated auth secret). With TwoFactorConfig.Required the user enrols again
 // at their next sign-in.
-func (u *UserAdmin) ResetTwoFactor(ctx context.Context, userID string) error {
-	if _, err := u.adminUser(ctx, userID); err != nil {
+func (admin *UserAdmin) ResetTwoFactor(ctx context.Context, userID string) error {
+	if _, err := admin.adminUser(ctx, userID); err != nil {
 		return err
 	}
-	err := u.store.tx(ctx, func(q querier) error {
-		if err := u.store.deleteChallenges(ctx, q, userID); err != nil {
+	err := admin.store.tx(ctx, func(querier querier) error {
+		if err := admin.store.deleteChallenges(ctx, querier, userID); err != nil {
 			return err
 		}
-		if _, err := q.Exec(ctx, `DELETE FROM "twoFactor" WHERE "userId" = $1`, userID); err != nil {
+		if _, err := querier.Exec(ctx, `DELETE FROM "twoFactor" WHERE "userId" = $1`, userID); err != nil {
 			return err
 		}
-		if _, err := q.Exec(ctx, `UPDATE "user" SET "twoFactorEnabled" = false, "updatedAt" = $2 WHERE "id" = $1`, userID, u.now()); err != nil {
+		if _, err := querier.Exec(ctx, `UPDATE "user" SET "twoFactorEnabled" = false, "updatedAt" = $2 WHERE "id" = $1`, userID, admin.now()); err != nil {
 			return err
 		}
-		return u.store.deleteTrustedDevices(ctx, q, userID)
+		return admin.store.deleteTrustedDevices(ctx, querier, userID)
 	})
 	if err == nil {
-		u.event(ctx, Event{Kind: EventTwoFactorDisabled, UserID: userID, Details: map[string]string{"by": "admin"}})
+		admin.event(ctx, Event{Kind: EventTwoFactorDisabled, UserID: userID, Details: map[string]string{"by": "admin"}})
 	}
 	return err
 }
 
 // RevokeUserSessions signs out every session of userID.
-func (u *UserAdmin) RevokeUserSessions(ctx context.Context, userID string) error {
-	n, err := u.store.deleteUserSessionsCount(ctx, u.store.pool, userID)
+func (admin *UserAdmin) RevokeUserSessions(ctx context.Context, userID string) error {
+	count, err := admin.store.deleteUserSessionsCount(ctx, admin.store.pool, userID)
 	if err == nil {
-		u.revoked(ctx, userID, "", n, "admin")
+		admin.revoked(ctx, userID, "", count, "admin")
 	}
 	return err
 }

@@ -223,14 +223,14 @@ func (cache *jwksCache) fetch(ctx context.Context) (map[string]crypto.PublicKey,
 	}
 	var set struct {
 		Keys []struct {
-			Kty string `json:"kty"`
-			Kid string `json:"kid"`
-			Use string `json:"use"`
-			N   string `json:"n"`
-			E   string `json:"e"`
-			Crv string `json:"crv"`
-			X   string `json:"x"`
-			Y   string `json:"y"`
+			Kty      string `json:"kty"`
+			Kid      string `json:"kid"`
+			Use      string `json:"use"`
+			Modulus  string `json:"n"`
+			Exponent string `json:"e"`
+			Crv      string `json:"crv"`
+			CurveX   string `json:"x"`
+			CurveY   string `json:"y"`
 		} `json:"keys"`
 	}
 	if err := json.NewDecoder(io.LimitReader(res.Body, jwksMaxBody)).Decode(&set); err != nil {
@@ -244,8 +244,8 @@ func (cache *jwksCache) fetch(ctx context.Context) (map[string]crypto.PublicKey,
 		}
 		switch jwk.Kty {
 		case "RSA":
-			modulus, err1 := b64.DecodeString(jwk.N)
-			exponent, err2 := b64.DecodeString(jwk.E)
+			modulus, err1 := b64.DecodeString(jwk.Modulus)
+			exponent, err2 := b64.DecodeString(jwk.Exponent)
 			if err1 != nil || err2 != nil || len(exponent) > maxRSAExponentBytes {
 				continue
 			}
@@ -255,8 +255,8 @@ func (cache *jwksCache) fetch(ctx context.Context) (map[string]crypto.PublicKey,
 			}
 			keys[jwk.Kid] = pub
 		case "EC":
-			coordX, err1 := b64.DecodeString(jwk.X)
-			coordY, err2 := b64.DecodeString(jwk.Y)
+			coordX, err1 := b64.DecodeString(jwk.CurveX)
+			coordY, err2 := b64.DecodeString(jwk.CurveY)
 			if err1 != nil || err2 != nil || jwk.Crv != "P-256" {
 				continue
 			}

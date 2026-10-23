@@ -14,64 +14,64 @@ import (
 
 // unitAuth is an Auth without a database, for pure functions.
 func unitAuth() *Auth {
-	a := &Auth{
+	auth := &Auth{
 		cfg:        Config{Secret: testSecret, MinPasswordLength: 8, MaxPasswordLength: 128, SecretGrace: DefaultSessionTTL},
 		log:        slog.New(slog.NewTextHandler(io.Discard, nil)),
 		now:        time.Now,
 		baseOrigin: testBase,
 		trusted:    append([]string{testBase}, MobileTrustedOrigins(false)...),
 	}
-	a.ring.Store(&keyring{current: signingKey{secret: []byte(testSecret), kid: kidOf([]byte(testSecret))}})
-	a.data.Store(&dataKeys{totp: legacyDataKey([]byte(testSecret), purposeTOTP), backup: legacyDataKey([]byte(testSecret), purposeBackup)})
-	return a
+	auth.ring.Store(&keyring{current: signingKey{secret: []byte(testSecret), kid: kidOf([]byte(testSecret))}})
+	auth.data.Store(&dataKeys{totp: legacyDataKey([]byte(testSecret), purposeTOTP), backup: legacyDataKey([]byte(testSecret), purposeBackup)})
+	return auth
 }
 
 // unitAuthWith is unitAuth signing with secret.
 func unitAuthWith(secret string) *Auth {
-	a := unitAuth()
-	a.ring.Store(&keyring{current: signingKey{secret: []byte(secret), kid: kidOf([]byte(secret))}})
-	a.data.Store(&dataKeys{totp: legacyDataKey([]byte(secret), purposeTOTP), backup: legacyDataKey([]byte(secret), purposeBackup)})
-	return a
+	auth := unitAuth()
+	auth.ring.Store(&keyring{current: signingKey{secret: []byte(secret), kid: kidOf([]byte(secret))}})
+	auth.data.Store(&dataKeys{totp: legacyDataKey([]byte(secret), purposeTOTP), backup: legacyDataKey([]byte(secret), purposeBackup)})
+	return auth
 }
 
-func TestGenerateID(t *testing.T) {
-	t.Parallel()
+func TestGenerateID(test *testing.T) {
+	test.Parallel()
 	seen := map[string]bool{}
 	for range 1000 {
 		id := generateID(32)
 		if len(id) != 32 || !isTokenString(id) || seen[id] {
-			t.Fatalf("bad or repeated id %q", id)
+			test.Fatalf("bad or repeated id %q", id)
 		}
 		seen[id] = true
 	}
 	if got := generateID(24); len(got) != 24 {
-		t.Fatalf("len = %d", len(got))
+		test.Fatalf("len = %d", len(got))
 	}
 }
 
-func TestSignedValueFormat(t *testing.T) {
-	t.Parallel()
-	a := unitAuth()
-	signed := a.signValue("abc")
+func TestSignedValueFormat(test *testing.T) {
+	test.Parallel()
+	auth := unitAuth()
+	signed := auth.signValue("abc")
 	value, sig, _ := strings.Cut(signed, ".")
 	if value != "abc" || len(sig) != 44 || !strings.HasSuffix(sig, "=") {
-		t.Fatalf("signed = %q", signed)
+		test.Fatalf("signed = %q", signed)
 	}
 	// Known answer from Node: encodeURIComponent(v + "." + HMAC-SHA256 base64),
 	// which is what better-call puts in the cookie.
 	cookie := encodeCookieValue(signed)
 	if want := "abc.QCXFSY%2FZZJ78xtzA78HXwLV3XtDD3%2BreXEtIvoOEcvA%3D"; cookie != want {
-		t.Fatalf("cookie = %q, want %q", cookie, want)
+		test.Fatalf("cookie = %q, want %q", cookie, want)
 	}
-	if got, ok := a.verifySigned(cookie); !ok || got != "abc" {
-		t.Fatalf("verify(encoded) = %q %v", got, ok)
+	if got, ok := auth.verifySigned(cookie); !ok || got != "abc" {
+		test.Fatalf("verify(encoded) = %q %v", got, ok)
 	}
 }
 
-func TestVerifySigned(t *testing.T) {
-	t.Parallel()
-	a := unitAuth()
-	good := a.signValue("tok123")
+func TestVerifySigned(test *testing.T) {
+	test.Parallel()
+	auth := unitAuth()
+	good := auth.signValue("tok123")
 	other := unitAuthWith(strings.Repeat("o", 40)).signValue("tok123")
 	cases := []struct {
 		in   string
@@ -91,17 +91,17 @@ func TestVerifySigned(t *testing.T) {
 		{"tok123." + strings.Repeat("A", 43) + "=", "", false},
 		{"tok123." + strings.Repeat("!", 43) + "=", "", false},
 	}
-	for _, c := range cases {
-		got, ok := a.verifySigned(c.in)
-		if got != c.want || ok != c.ok {
-			t.Errorf("verifySigned(%q) = %q %v, want %q %v", c.in, got, ok, c.want, c.ok)
+	for _, testCase := range cases {
+		got, ok := auth.verifySigned(testCase.in)
+		if got != testCase.want || ok != testCase.ok {
+			test.Errorf("verifySigned(%q) = %q %v, want %q %v", testCase.in, got, ok, testCase.want, testCase.ok)
 		}
 	}
 }
 
-func TestParseBearer(t *testing.T) {
-	t.Parallel()
-	a := unitAuth()
+func TestParseBearer(test *testing.T) {
+	test.Parallel()
+	auth := unitAuth()
 	tok := generateID(32)
 	cases := []struct {
 		header string
@@ -110,8 +110,8 @@ func TestParseBearer(t *testing.T) {
 	}{
 		{"Bearer " + tok, tok, true},
 		{"BEARER " + tok, tok, true},
-		{"Bearer " + a.signValue(tok), tok, true},
-		{"Bearer " + url.QueryEscape(a.signValue(tok)), tok, true},
+		{"Bearer " + auth.signValue(tok), tok, true},
+		{"Bearer " + url.QueryEscape(auth.signValue(tok)), tok, true},
 		{"Bearer  " + tok + "  ", tok, true},
 		{"Bearer", "", false},
 		{"Bearer ", "", false},
@@ -122,32 +122,32 @@ func TestParseBearer(t *testing.T) {
 		{"Bearer " + strings.Repeat("a", 300), "", false},
 		{"Bearer tok' OR 1=1 --", "", false},
 	}
-	for _, c := range cases {
-		got, ok, _ := a.parseBearer(c.header)
-		if got != c.want || ok != c.ok {
-			t.Errorf("parseBearer(%q) = %q %v, want %q %v", c.header, got, ok, c.want, c.ok)
+	for _, testCase := range cases {
+		got, ok, _ := auth.parseBearer(testCase.header)
+		if got != testCase.want || ok != testCase.ok {
+			test.Errorf("parseBearer(%q) = %q %v, want %q %v", testCase.header, got, ok, testCase.want, testCase.ok)
 		}
 	}
 }
 
-func TestVerificationToken(t *testing.T) {
-	t.Parallel()
-	a := unitAuth()
+func TestVerificationToken(test *testing.T) {
+	test.Parallel()
+	auth := unitAuth()
 	now := time.Unix(1_800_000_000, 0)
-	a.now = func() time.Time { return now }
-	tok := a.signVerificationToken("User@Example.com", "fp", 24*time.Hour)
-	if c, err := a.parseVerificationToken(tok); err != nil || c.Email != "user@example.com" || c.Cred != "fp" || c.UpdateTo != "" {
-		t.Fatalf("parse = %+v %v", c, err)
+	auth.now = func() time.Time { return now }
+	tok := auth.signVerificationToken("User@Example.com", "fp", 24*time.Hour)
+	if claims, err := auth.parseVerificationToken(tok); err != nil || claims.Email != "user@example.com" || claims.Cred != "fp" || claims.UpdateTo != "" {
+		test.Fatalf("parse = %+v %v", claims, err)
 	}
-	change := a.signChangeEmailToken("uid1", "Old@Example.com", "New@Example.com", "nonce1", time.Hour)
-	if c, err := a.parseVerificationToken(change); err != nil || c.Email != "old@example.com" || c.UpdateTo != "new@example.com" || c.RequestType != changeEmailRequest || c.UserID != "uid1" || c.Nonce != "nonce1" {
-		t.Fatalf("parse change-email = %+v %v", c, err)
+	change := auth.signChangeEmailToken("uid1", "Old@Example.com", "New@Example.com", "nonce1", time.Hour)
+	if claims, err := auth.parseVerificationToken(change); err != nil || claims.Email != "old@example.com" || claims.UpdateTo != "new@example.com" || claims.RequestType != changeEmailRequest || claims.UserID != "uid1" || claims.Nonce != "nonce1" {
+		test.Fatalf("parse change-email = %+v %v", claims, err)
 	}
 
 	enc := base64.RawURLEncoding.EncodeToString
 	sign := func(header, claims string) string {
 		unsigned := enc([]byte(header)) + "." + enc([]byte(claims))
-		return unsigned + "." + enc(a.mac(unsigned))
+		return unsigned + "." + enc(auth.mac(unsigned))
 	}
 	parts := strings.Split(tok, ".")
 	cases := map[string]string{
@@ -169,75 +169,75 @@ func TestVerificationToken(t *testing.T) {
 		"empty":           "",
 	}
 	for name, in := range cases {
-		if _, err := a.parseVerificationToken(in); !errors.Is(err, ErrInvalidToken) {
-			t.Errorf("%s: err = %v, want ErrInvalidToken", name, err)
+		if _, err := auth.parseVerificationToken(in); !errors.Is(err, ErrInvalidToken) {
+			test.Errorf("%s: err = %v, want ErrInvalidToken", name, err)
 		}
 	}
 
 	now = now.Add(24 * time.Hour)
-	if _, err := a.parseVerificationToken(tok); !errors.Is(err, errTokenExpired) {
-		t.Fatalf("expired err = %v", err)
+	if _, err := auth.parseVerificationToken(tok); !errors.Is(err, errTokenExpired) {
+		test.Fatalf("expired err = %v", err)
 	}
 }
 
-func FuzzVerifySigned(f *testing.F) {
-	a := unitAuth()
-	f.Add(a.signValue("abc"))
-	f.Add(url.QueryEscape(a.signValue(generateID(32))))
-	f.Add("x.y")
-	f.Add("%")
-	f.Fuzz(func(t *testing.T, in string) {
-		value, ok := a.verifySigned(in)
-		if ok && a.signValue(value) != mustUnescape(in) {
-			t.Fatalf("accepted %q as %q without a matching signature", in, value)
+func FuzzVerifySigned(fuzz *testing.F) {
+	auth := unitAuth()
+	fuzz.Add(auth.signValue("abc"))
+	fuzz.Add(url.QueryEscape(auth.signValue(generateID(32))))
+	fuzz.Add("x.y")
+	fuzz.Add("%")
+	fuzz.Fuzz(func(test *testing.T, in string) {
+		value, ok := auth.verifySigned(in)
+		if ok && auth.signValue(value) != mustUnescape(in) {
+			test.Fatalf("accepted %q as %q without a matching signature", in, value)
 		}
 		// Round trip: whatever we sign verifies.
 		if strings.Contains(in, "%") || in == "" {
 			return // verifySigned URL-decodes, so only plain values round-trip
 		}
-		if got, ok := a.verifySigned(a.signValue(in)); !ok || got != in {
-			t.Fatalf("round trip of %q = %q %v", in, got, ok)
+		if got, ok := auth.verifySigned(auth.signValue(in)); !ok || got != in {
+			test.Fatalf("round trip of %q = %q %v", in, got, ok)
 		}
 	})
 }
 
-func mustUnescape(s string) string {
-	if strings.Contains(s, "%") {
-		if u, err := url.PathUnescape(s); err == nil {
-			return u
+func mustUnescape(text string) string {
+	if strings.Contains(text, "%") {
+		if unescaped, err := url.PathUnescape(text); err == nil {
+			return unescaped
 		}
 	}
-	return s
+	return text
 }
 
-func FuzzParseBearer(f *testing.F) {
-	a := unitAuth()
-	f.Add("Bearer " + generateID(32))
-	f.Add("Bearer " + a.signValue(generateID(32)))
-	f.Add("bearer %41.%")
-	f.Fuzz(func(t *testing.T, header string) {
-		token, ok, _ := a.parseBearer(header)
+func FuzzParseBearer(fuzz *testing.F) {
+	auth := unitAuth()
+	fuzz.Add("Bearer " + generateID(32))
+	fuzz.Add("Bearer " + auth.signValue(generateID(32)))
+	fuzz.Add("bearer %41.%")
+	fuzz.Fuzz(func(test *testing.T, header string) {
+		token, ok, _ := auth.parseBearer(header)
 		if ok && !isTokenString(token) && !strings.Contains(header, ".") {
-			t.Fatalf("parseBearer(%q) returned non-token %q", header, token)
+			test.Fatalf("parseBearer(%q) returned non-token %q", header, token)
 		}
 	})
 }
 
-func FuzzParseVerificationToken(f *testing.F) {
-	a := unitAuth()
-	f.Add(a.signVerificationToken("a@example.com", "", time.Hour))
-	f.Add("a.b.c")
-	f.Add("")
-	f.Fuzz(func(t *testing.T, in string) {
-		c, err := a.parseVerificationToken(in)
-		if err == nil && (c.Email == "" || c.Email != strings.ToLower(c.Email) || (c.UpdateTo != "") != (c.RequestType == changeEmailRequest)) {
-			t.Fatalf("parse(%q) = %+v", in, c)
+func FuzzParseVerificationToken(fuzz *testing.F) {
+	auth := unitAuth()
+	fuzz.Add(auth.signVerificationToken("a@example.com", "", time.Hour))
+	fuzz.Add("a.b.c")
+	fuzz.Add("")
+	fuzz.Fuzz(func(test *testing.T, in string) {
+		claims, err := auth.parseVerificationToken(in)
+		if err == nil && (claims.Email == "" || claims.Email != strings.ToLower(claims.Email) || (claims.UpdateTo != "") != (claims.RequestType == changeEmailRequest)) {
+			test.Fatalf("parse(%q) = %+v", in, claims)
 		}
 	})
 }
 
-func TestMatchesOrigin(t *testing.T) {
-	t.Parallel()
+func TestMatchesOrigin(test *testing.T) {
+	test.Parallel()
 	cases := []struct {
 		url, pattern string
 		relative     bool
@@ -279,15 +279,15 @@ func TestMatchesOrigin(t *testing.T) {
 		{"javascript:alert(1)", "http://app.test", true, false},
 		{"", "http://app.test", true, false},
 	}
-	for _, c := range cases {
-		if got := matchesOrigin(c.url, c.pattern, c.relative); got != c.want {
-			t.Errorf("matchesOrigin(%q, %q, %v) = %v, want %v", c.url, c.pattern, c.relative, got, c.want)
+	for _, testCase := range cases {
+		if got := matchesOrigin(testCase.url, testCase.pattern, testCase.relative); got != testCase.want {
+			test.Errorf("matchesOrigin(%q, %q, %v) = %v, want %v", testCase.url, testCase.pattern, testCase.relative, got, testCase.want)
 		}
 	}
 }
 
-func TestNormalizeIP(t *testing.T) {
-	t.Parallel()
+func TestNormalizeIP(test *testing.T) {
+	test.Parallel()
 	cases := map[string]string{
 		"203.0.113.9":               "203.0.113.9",
 		"::ffff:203.0.113.9":        "203.0.113.9",
@@ -300,37 +300,37 @@ func TestNormalizeIP(t *testing.T) {
 	}
 	for in, want := range cases {
 		if got := normalizeIP(in); got != want {
-			t.Errorf("normalizeIP(%q) = %q, want %q", in, got, want)
+			test.Errorf("normalizeIP(%q) = %q, want %q", in, got, want)
 		}
 	}
 }
 
-func TestMobileTrustedOrigins(t *testing.T) {
-	t.Parallel()
+func TestMobileTrustedOrigins(test *testing.T) {
+	test.Parallel()
 	if got := MobileTrustedOrigins(true); len(got) != 1 || got[0] != "betterstack://" {
-		t.Fatalf("production = %v", got)
+		test.Fatalf("production = %v", got)
 	}
 	if got := MobileTrustedOrigins(false); len(got) != 3 {
-		t.Fatalf("development = %v", got)
+		test.Fatalf("development = %v", got)
 	}
 }
 
-func TestPasswordHashing(t *testing.T) {
-	t.Parallel()
-	p := argonParams{Memory: 64, Time: 1, Threads: 1, SaltLen: 16, KeyLen: 32}
-	h1, err := hashPassword("hunter2hunter2", p)
+func TestPasswordHashing(test *testing.T) {
+	test.Parallel()
+	params := argonParams{Memory: 64, Time: 1, Threads: 1, SaltLen: 16, KeyLen: 32}
+	h1, err := hashPassword("hunter2hunter2", params)
 	if err != nil {
-		t.Fatal(err)
+		test.Fatal(err)
 	}
-	h2, _ := hashPassword("hunter2hunter2", p)
+	h2, _ := hashPassword("hunter2hunter2", params)
 	if h1 == h2 || !strings.HasPrefix(h1, "$argon2id$v=19$m=64,t=1,p=1$") {
-		t.Fatalf("hashes %q %q", h1, h2)
+		test.Fatalf("hashes %q %q", h1, h2)
 	}
 	if ok, err := verifyPassword("hunter2hunter2", h1); !ok || err != nil {
-		t.Fatalf("verify = %v %v", ok, err)
+		test.Fatalf("verify = %v %v", ok, err)
 	}
 	if ok, _ := verifyPassword("hunter2hunter3", h1); ok {
-		t.Fatal("wrong password verified")
+		test.Fatal("wrong password verified")
 	}
 	parts := strings.Split(h1, "$")
 	for name, bad := range map[string]string{
@@ -346,83 +346,83 @@ func TestPasswordHashing(t *testing.T) {
 		"missing part": strings.Join(parts[:5], "$"),
 	} {
 		if ok, err := verifyPassword("hunter2hunter2", bad); ok || err == nil {
-			t.Errorf("%s: verify = %v %v, want malformed", name, ok, err)
+			test.Errorf("%s: verify = %v %v, want malformed", name, ok, err)
 		}
 	}
 }
 
-func TestBetterAuthScryptHash(t *testing.T) {
-	t.Parallel()
+func TestBetterAuthScryptHash(test *testing.T) {
+	test.Parallel()
 	if ok, err := verifyPassword("hunter2hunter2", betterAuthHash); !ok || err != nil {
-		t.Fatalf("verify = %v %v", ok, err)
+		test.Fatalf("verify = %v %v", ok, err)
 	}
 	if ok, _ := verifyPassword("hunter2hunter3", betterAuthHash); ok {
-		t.Fatal("wrong password verified")
+		test.Fatal("wrong password verified")
 	}
 	for _, bad := range []string{":abcd", "salt:zz", "salt:abcd", "a:b:c"} {
 		if ok, _ := verifyPassword("x", bad); ok {
-			t.Errorf("%q verified", bad)
+			test.Errorf("%q verified", bad)
 		}
 	}
 }
 
-func TestPasswordHashDefaults(t *testing.T) {
-	t.Parallel()
+func TestPasswordHashDefaults(test *testing.T) {
+	test.Parallel()
 	if testing.Short() {
-		t.Skip("slow with -race")
+		test.Skip("slow with -race")
 	}
 	// New hashes with these outside test binaries (argonParamsFor).
 	if got := argonParamsFor(false); got != defaultArgonParams {
-		t.Fatalf("production params = %+v", got)
+		test.Fatalf("production params = %+v", got)
 	}
-	h, err := hashPassword("pw", defaultArgonParams)
-	if err != nil || !strings.HasPrefix(h, "$argon2id$v=19$m=65536,t=3,p=4$") {
-		t.Fatalf("hash = %q %v", h, err)
+	password, err := hashPassword("pw", defaultArgonParams)
+	if err != nil || !strings.HasPrefix(password, "$argon2id$v=19$m=65536,t=3,p=4$") {
+		test.Fatalf("hash = %q %v", password, err)
 	}
-	if ok, _ := verifyPassword("pw", h); !ok {
-		t.Fatal("verify failed")
-	}
-}
-
-func TestPasswordLengthCountsCharacters(t *testing.T) {
-	t.Parallel()
-	a := unitAuth()
-	if err := a.checkPasswordLength("ééééééé"); !errors.Is(err, ErrPasswordTooShort) { // 7 chars, 14 bytes
-		t.Fatalf("err = %v", err)
-	}
-	if err := a.checkPasswordLength("éééééééé"); err != nil {
-		t.Fatalf("err = %v", err)
+	if ok, _ := verifyPassword("pw", password); !ok {
+		test.Fatal("verify failed")
 	}
 }
 
-func TestMemoryRateLimiter(t *testing.T) {
-	t.Parallel()
-	m := NewMemoryRateLimiter()
+func TestPasswordLengthCountsCharacters(test *testing.T) {
+	test.Parallel()
+	auth := unitAuth()
+	if err := auth.checkPasswordLength("ééééééé"); !errors.Is(err, ErrPasswordTooShort) { // 7 chars, 14 bytes
+		test.Fatalf("err = %v", err)
+	}
+	if err := auth.checkPasswordLength("éééééééé"); err != nil {
+		test.Fatalf("err = %v", err)
+	}
+}
+
+func TestMemoryRateLimiter(test *testing.T) {
+	test.Parallel()
+	limiter := NewMemoryRateLimiter()
 	now := time.Unix(0, 0)
-	m.now = func() time.Time { return now }
+	limiter.now = func() time.Time { return now }
 	rule := RateRule{Window: 10 * time.Second, Max: 3}
 	ctx := context.Background()
-	for i := range 3 {
-		if retry, _ := m.Allow(ctx, "k", rule); retry != 0 {
-			t.Fatalf("request %d limited", i)
+	for index := range 3 {
+		if retry, _ := limiter.Allow(ctx, "k", rule); retry != 0 {
+			test.Fatalf("request %d limited", index)
 		}
 	}
 	now = now.Add(4 * time.Second)
-	if retry, _ := m.Allow(ctx, "k", rule); retry != 6*time.Second {
-		t.Fatalf("retry = %v, want 6s", retry)
+	if retry, _ := limiter.Allow(ctx, "k", rule); retry != 6*time.Second {
+		test.Fatalf("retry = %v, want 6s", retry)
 	}
-	if retry, _ := m.Allow(ctx, "other", rule); retry != 0 {
-		t.Fatal("keys share a budget")
+	if retry, _ := limiter.Allow(ctx, "other", rule); retry != 0 {
+		test.Fatal("keys share a budget")
 	}
 	now = now.Add(6 * time.Second)
-	if retry, _ := m.Allow(ctx, "k", rule); retry != 0 {
-		t.Fatal("window did not reset")
+	if retry, _ := limiter.Allow(ctx, "k", rule); retry != 0 {
+		test.Fatal("window did not reset")
 	}
 	// Stale windows are swept.
 	now = now.Add(2 * time.Minute)
-	_, _ = m.Allow(ctx, "fresh", rule)
-	if _, ok := m.windows["other"]; ok {
-		t.Fatal("stale window kept")
+	_, _ = limiter.Allow(ctx, "fresh", rule)
+	if _, ok := limiter.windows["other"]; ok {
+		test.Fatal("stale window kept")
 	}
 }
 
@@ -432,25 +432,25 @@ func (failingLimiter) Allow(context.Context, string, RateRule) (time.Duration, e
 	return 0, io.ErrUnexpectedEOF
 }
 
-func TestRateLimiterFailureFailsOpen(t *testing.T) {
-	t.Parallel()
-	a := unitAuth()
-	a.limiter = failingLimiter{}
+func TestRateLimiterFailureFailsOpen(test *testing.T) {
+	test.Parallel()
+	auth := unitAuth()
+	auth.limiter = failingLimiter{}
 	ctx := context.WithValue(context.Background(), ctxKey{}, &requestMeta{ip: "1.2.3.4"})
-	if err := a.rateLimit(ctx, "sign-in", RuleSignIn); err != nil {
-		t.Fatalf("err = %v", err)
+	if err := auth.rateLimit(ctx, "sign-in", RuleSignIn); err != nil {
+		test.Fatalf("err = %v", err)
 	}
 }
 
-func TestErrorMapping(t *testing.T) {
-	t.Parallel()
+func TestErrorMapping(test *testing.T) {
+	test.Parallel()
 	if asError(&RateLimitError{RetryAfter: time.Second}) != ErrTooManyRequests {
-		t.Fatal("rate limit error not mapped")
+		test.Fatal("rate limit error not mapped")
 	}
 	if asError(io.EOF) != nil {
-		t.Fatal("foreign error mapped")
+		test.Fatal("foreign error mapped")
 	}
 	if ErrInvalidToken.Error() != "Invalid token" {
-		t.Fatal("message")
+		test.Fatal("message")
 	}
 }

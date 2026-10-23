@@ -34,9 +34,9 @@ const MigrationTable = "goose_auth"
 // tracked in table run: distinct from goose's default so app migrations never
 // contend with it, and per table so separate auth instances do not either.
 func migrationLockID(table string) int64 {
-	h := fnv.New64a()
-	_, _ = h.Write([]byte("auth_mig:" + table))
-	return int64(h.Sum64() >> 1) //nolint:gosec // shifted into int64 range
+	hasher := fnv.New64a()
+	_, _ = hasher.Write([]byte("auth_mig:" + table))
+	return int64(hasher.Sum64() >> 1) //nolint:gosec // shifted into int64 range
 }
 
 // Migrate applies the embedded auth migrations (tables user, session, account,

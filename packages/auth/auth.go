@@ -243,8 +243,8 @@ func New(cfg Config, pool DB, mailer Mailer) (*Auth, error) {
 	if path := cfg.SocialCallbackPath; path != "" && (!isSafeRelativeURL(path) || !strings.HasSuffix(path, "/") || strings.ContainsAny(path, "?#")) {
 		return nil, fmt.Errorf("auth: SocialCallbackPath must be a root-relative path ending in /, got %q", path)
 	}
-	if p := cfg.VerifyEmailPath; p != "" && (!isSafeRelativeURL(p) || strings.ContainsAny(p, "?#")) {
-		return nil, fmt.Errorf("auth: VerifyEmailPath must be a root-relative path without query, got %q", p)
+	if path := cfg.VerifyEmailPath; path != "" && (!isSafeRelativeURL(path) || strings.ContainsAny(path, "?#")) {
+		return nil, fmt.Errorf("auth: VerifyEmailPath must be a root-relative path without query, got %q", path)
 	}
 	if tf := cfg.TwoFactor; tf != nil {
 		copied := *tf
@@ -260,7 +260,7 @@ func New(cfg Config, pool DB, mailer Mailer) (*Auth, error) {
 		cfg.SecretGrace = DefaultSecretGrace(cfg)
 	}
 
-	a := &Auth{
+	auth := &Auth{
 		cfg:        cfg,
 		store:      &store{pool: pool},
 		mailer:     mailer,
@@ -271,20 +271,20 @@ func New(cfg Config, pool DB, mailer Mailer) (*Auth, error) {
 		argon:      argonParamsFor(testing.Testing()),
 		now:        time.Now,
 	}
-	a.trusted = append([]string{a.baseOrigin}, cfg.TrustedOrigins...)
-	if a.social, err = newSocialProviders(cfg.Google, cfg.Apple, cfg.HTTPClient, func() time.Time { return a.now() }); err != nil {
+	auth.trusted = append([]string{auth.baseOrigin}, cfg.TrustedOrigins...)
+	if auth.social, err = newSocialProviders(cfg.Google, cfg.Apple, cfg.HTTPClient, func() time.Time { return auth.now() }); err != nil {
 		return nil, err
 	}
-	a.events = newEventSink(cfg.Events, cfg.Logger, a.store.userEmail)
-	if a.dummyHash, err = hashPassword("dummy-password-for-timing", a.argon); err != nil {
+	auth.events = newEventSink(cfg.Events, cfg.Logger, auth.store.userEmail)
+	if auth.dummyHash, err = hashPassword("dummy-password-for-timing", auth.argon); err != nil {
 		return nil, err
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), keySyncTimeout)
 	defer cancel()
-	if err := a.syncKeys(ctx, secrets); err != nil {
+	if err := auth.syncKeys(ctx, secrets); err != nil {
 		return nil, err
 	}
-	return a, nil
+	return auth, nil
 }
 
 // DefaultSecretGrace is the grace period New uses when Config.SecretGrace is
@@ -296,26 +296,26 @@ func DefaultSecretGrace(cfg Config) time.Duration {
 	if session <= 0 {
 		session = DefaultSessionTTL
 	}
-	g := max(session, VerificationTokenTTL)
+	duration := max(session, VerificationTokenTTL)
 	if tf := cfg.TwoFactor; tf != nil {
 		ttl := tf.TrustDeviceTTL
 		if ttl == 0 {
 			ttl = DefaultTrustDeviceTTL
 		}
-		g = max(g, ttl)
+		duration = max(duration, ttl)
 	}
-	return g
+	return duration
 }
 
 // Shutdown waits for emails still being sent and events still queued for
 // Config.Events, or for ctx.
 // Requests arriving meanwhile block before queueing mail until it returns.
-func (a *Auth) Shutdown(ctx context.Context) error {
+func (auth *Auth) Shutdown(ctx context.Context) error {
 	done := make(chan struct{})
 	go func() {
-		a.mailMu.Lock()
-		a.mail.Wait()
-		a.mailMu.Unlock()
+		auth.mailMu.Lock()
+		auth.mail.Wait()
+		auth.mailMu.Unlock()
 		close(done)
 	}()
 	select {
@@ -323,26 +323,26 @@ func (a *Auth) Shutdown(ctx context.Context) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	}
-	return a.events.drain(ctx)
+	return auth.events.drain(ctx)
 }
 
 // sendMail sends in the background so responses take the same time whether
 // or not an email went out (no account enumeration by timing).
-func (a *Auth) sendMail(ctx context.Context, kind, to string, send func(ctx context.Context) error) {
-	a.mailMu.RLock()
-	defer a.mailMu.RUnlock()
-	a.mail.Go(func() {
-		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), a.cfg.MailTimeout)
+func (auth *Auth) sendMail(ctx context.Context, kind, to string, send func(ctx context.Context) error) {
+	auth.mailMu.RLock()
+	defer auth.mailMu.RUnlock()
+	auth.mail.Go(func() {
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), auth.cfg.MailTimeout)
 		defer cancel()
 		if err := send(ctx); err != nil {
-			a.log.ErrorContext(ctx, "auth: sending email failed", "kind", kind, "to", to, "err", err)
+			auth.log.ErrorContext(ctx, "auth: sending email failed", "kind", kind, "to", to, "err", err)
 		}
 	})
 }
 
 // authURL returns an absolute URL under BasePath, e.g. authURL("/verify-email").
-func (a *Auth) authURL(path string) string {
-	return a.baseOrigin + BasePath + path
+func (auth *Auth) authURL(path string) string {
+	return auth.baseOrigin + BasePath + path
 }
 
 // passwordLink is the emailed reset or set-password link for token. A
@@ -351,11 +351,11 @@ func (a *Auth) authURL(path string) string {
 // never touches the JSON API. Absolute and deep-link targets (mobile, other
 // trusted origins) go through GET /reset-password/{token}, which checks the
 // token and redirects to them with ?token=.
-func (a *Auth) passwordLink(token, redirectTo string) string {
+func (auth *Auth) passwordLink(token, redirectTo string) string {
 	if isSafeRelativeURL(redirectTo) {
-		return a.baseOrigin + a.withQuery(redirectTo, "token", token)
+		return auth.baseOrigin + auth.withQuery(redirectTo, "token", token)
 	}
-	return a.authURL("/reset-password/"+token) + "?callbackURL=" + url.QueryEscape(redirectTo)
+	return auth.authURL("/reset-password/"+token) + "?callbackURL=" + url.QueryEscape(redirectTo)
 }
 
 // verificationLink is the emailed verification or change-email link for
@@ -364,13 +364,13 @@ func (a *Auth) passwordLink(token, redirectTo string) string {
 // does: mail scanners and link previews fetch links) and then continues to
 // callbackURL (default "/"), deep links included; otherwise it is Better
 // Auth's GET /verify-email, which spends the token itself.
-func (a *Auth) verificationLink(token, callbackURL string) string {
+func (auth *Auth) verificationLink(token, callbackURL string) string {
 	if callbackURL == "" {
 		callbackURL = "/"
 	}
-	base := a.authURL("/verify-email")
-	if a.cfg.VerifyEmailPath != "" {
-		base = a.baseOrigin + a.cfg.VerifyEmailPath
+	base := auth.authURL("/verify-email")
+	if auth.cfg.VerifyEmailPath != "" {
+		base = auth.baseOrigin + auth.cfg.VerifyEmailPath
 	}
 	return base + "?token=" + url.QueryEscape(token) + "&callbackURL=" + url.QueryEscape(callbackURL)
 }

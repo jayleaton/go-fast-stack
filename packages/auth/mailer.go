@@ -29,35 +29,35 @@ func NewDevMailer(logger *slog.Logger) *DevMailer {
 }
 
 // SendVerificationEmail logs the email verification link for to. It never fails.
-func (m *DevMailer) SendVerificationEmail(ctx context.Context, to, url string) error {
-	m.logger().InfoContext(ctx, "auth: verification email (dev mode, not sent)", "to", to, "url", url)
+func (mailer *DevMailer) SendVerificationEmail(ctx context.Context, to, url string) error {
+	mailer.logger().InfoContext(ctx, "auth: verification email (dev mode, not sent)", "to", to, "url", url)
 	return nil
 }
 
 // SendPasswordResetEmail logs the password reset link for to. It never fails.
-func (m *DevMailer) SendPasswordResetEmail(ctx context.Context, to, url string) error {
-	m.logger().InfoContext(ctx, "auth: password reset email (dev mode, not sent)", "to", to, "url", url)
+func (mailer *DevMailer) SendPasswordResetEmail(ctx context.Context, to, url string) error {
+	mailer.logger().InfoContext(ctx, "auth: password reset email (dev mode, not sent)", "to", to, "url", url)
 	return nil
 }
 
 // SendSetPasswordEmail logs the set-password (invite) link for to. It never fails.
-func (m *DevMailer) SendSetPasswordEmail(ctx context.Context, to, url string) error {
-	m.logger().InfoContext(ctx, "auth: set-password email (dev mode, not sent)", "to", to, "url", url)
+func (mailer *DevMailer) SendSetPasswordEmail(ctx context.Context, to, url string) error {
+	mailer.logger().InfoContext(ctx, "auth: set-password email (dev mode, not sent)", "to", to, "url", url)
 	return nil
 }
 
 // SendEmailChangeNotice logs the email change notice for to. It never fails.
-func (m *DevMailer) SendEmailChangeNotice(ctx context.Context, to, newEmail string) error {
-	m.logger().InfoContext(ctx, "auth: email change notice (dev mode, not sent)", "to", to, "newEmail", newEmail)
+func (mailer *DevMailer) SendEmailChangeNotice(ctx context.Context, to, newEmail string) error {
+	mailer.logger().InfoContext(ctx, "auth: email change notice (dev mode, not sent)", "to", to, "newEmail", newEmail)
 	return nil
 }
 
 // logger lets a zero-value DevMailer work without NewDevMailer.
-func (m *DevMailer) logger() *slog.Logger {
-	if m.Logger == nil {
+func (mailer *DevMailer) logger() *slog.Logger {
+	if mailer.Logger == nil {
 		return slog.Default()
 	}
-	return m.Logger
+	return mailer.Logger
 }
 
 // SwapMailer is a Mailer whose implementation can be replaced while the
@@ -72,30 +72,30 @@ type mailerBox struct{ Mailer }
 
 // NewSwapMailer returns a SwapMailer that starts with initial.
 func NewSwapMailer(initial Mailer) *SwapMailer {
-	m := &SwapMailer{}
-	m.Swap(initial)
-	return m
+	mailer := &SwapMailer{}
+	mailer.Swap(initial)
+	return mailer
 }
 
 // Swap makes next handle every email sent from now on.
-func (m *SwapMailer) Swap(next Mailer) { m.cur.Store(&mailerBox{next}) }
+func (mailer *SwapMailer) Swap(next Mailer) { mailer.cur.Store(&mailerBox{next}) }
 
 // SendVerificationEmail delegates to the current Mailer.
-func (m *SwapMailer) SendVerificationEmail(ctx context.Context, to, url string) error {
-	return m.cur.Load().SendVerificationEmail(ctx, to, url)
+func (mailer *SwapMailer) SendVerificationEmail(ctx context.Context, to, url string) error {
+	return mailer.cur.Load().SendVerificationEmail(ctx, to, url)
 }
 
 // SendPasswordResetEmail delegates to the current Mailer.
-func (m *SwapMailer) SendPasswordResetEmail(ctx context.Context, to, url string) error {
-	return m.cur.Load().SendPasswordResetEmail(ctx, to, url)
+func (mailer *SwapMailer) SendPasswordResetEmail(ctx context.Context, to, url string) error {
+	return mailer.cur.Load().SendPasswordResetEmail(ctx, to, url)
 }
 
 // SendEmailChangeNotice delegates to the current Mailer.
-func (m *SwapMailer) SendEmailChangeNotice(ctx context.Context, to, newEmail string) error {
-	return m.cur.Load().SendEmailChangeNotice(ctx, to, newEmail)
+func (mailer *SwapMailer) SendEmailChangeNotice(ctx context.Context, to, newEmail string) error {
+	return mailer.cur.Load().SendEmailChangeNotice(ctx, to, newEmail)
 }
 
 // SendSetPasswordEmail delegates to the current Mailer.
-func (m *SwapMailer) SendSetPasswordEmail(ctx context.Context, to, url string) error {
-	return m.cur.Load().SendSetPasswordEmail(ctx, to, url)
+func (mailer *SwapMailer) SendSetPasswordEmail(ctx context.Context, to, url string) error {
+	return mailer.cur.Load().SendSetPasswordEmail(ctx, to, url)
 }
