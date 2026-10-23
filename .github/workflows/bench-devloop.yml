@@ -4,15 +4,16 @@
 # the same machine (separate runs land on different machines; their noise
 # hides changes of tens of percent). The report is the run's summary page.
 # Run it by hand (Actions > Bench dev loop), or push a branch to bench/<name>
-# to compare it with main.
+# to compare it with the branch work lands on (dev, or main without one:
+# scripts/branches.sh).
 name: Bench dev loop
 
 on:
   workflow_dispatch:
     inputs:
       base:
-        description: Ref to compare against (A/B of the test run on the same machine)
-        default: origin/main
+        description: Ref to compare against (A/B of the test run on the same machine; empty = origin/dev, else origin/main)
+        default: ''
       rounds:
         description: Alternating A/B rounds (the median is compared)
         default: '3'
@@ -32,7 +33,7 @@ jobs:
     timeout-minutes: 60
     env:
       TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable
-      BENCH_BASE: ${{ inputs.base || 'origin/main' }}
+      BENCH_BASE: ${{ inputs.base }}
       BENCH_ROUNDS: ${{ inputs.rounds || '3' }}
     steps:
       # Same Postgres as CI's db shard.
@@ -61,4 +62,6 @@ jobs:
           for _ in $(seq 1 120); do docker exec pg pg_isready -q -h 127.0.0.1 -U postgres && exit 0; sleep 0.5; done
           docker logs pg; exit 1
       - name: Bench
-        run: make bench-devloop BENCH_COLD=1
+        run: |
+          . scripts/branches.sh
+          BENCH_BASE=${BENCH_BASE:-$(landing_ref)} make bench-devloop BENCH_COLD=1

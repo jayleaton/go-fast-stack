@@ -65,7 +65,7 @@ lint: ## gofmt + golangci-lint (incl. layering rules) + test file locations
 	./scripts/check-test-boundaries.sh
 
 .PHONY: check-migrations
-check-migrations: ## Fail if a new migration is numbered at or below the highest on origin/main (check-fast and CI run it too)
+check-migrations: ## Fail if a new migration is numbered at or below the highest on origin/dev or origin/main (check-fast and CI run it too)
 	./scripts/check-migration-order.sh
 
 .PHONY: lint-layering
@@ -104,7 +104,7 @@ ci: ## Run the same checks as CI
 	$(MAKE) deploy-check
 
 .PHONY: check-fast
-check-fast: ## Before every push: gofmt, vet, golangci-lint, plain tests for only what your changes vs origin/main affect (seconds)
+check-fast: ## Before every push: gofmt, vet, golangci-lint, plain tests for only what your changes vs origin/dev (else origin/main) affect (seconds)
 	./scripts/check-fast.sh
 
 .PHONY: hooks
@@ -116,7 +116,7 @@ hooks-remove: ## Remove the pre-push hook make hooks installed
 	./scripts/install-hooks.sh --uninstall
 
 .PHONY: affected
-affected: ## Show what CI checks for this branch (packages affected vs origin/main)
+affected: ## Show what CI checks for this branch (packages affected vs origin/dev, else origin/main)
 	./scripts/affected.sh
 
 .PHONY: bench-devloop

@@ -6,9 +6,11 @@
 #   missing (out-of-order) migration lower than database version (7): version 5
 # The error names the fix: the number to renumber the file to.
 #
-# Usage: scripts/check-migration-order.sh [BASE...]   (default: origin/main)
+# Usage: scripts/check-migration-order.sh [BASE...]
 #   Each BASE is a ref whose migrations count as deployed (its tip, not the
-#   merge base, so a branch that BASE has moved past fails too). "Added" means
+#   merge base, so a branch that BASE has moved past fails too). Default: the
+#   deployed branches that exist (origin/dev and origin/main, scripts/
+#   branches.sh), so a migration must sit above both. "Added" means
 #   a migration in the working tree (committed, staged or untracked) that no
 #   BASE has. A set is a directory named migrations holding NNNNN_*.sql files
 #   (one goose version table each), so adding or deleting a set needs no change
@@ -17,12 +19,17 @@ set -euo pipefail
 # shellcheck disable=SC2046
 unset $(git rev-parse --local-env-vars)
 cd "$(dirname "$0")/.."
+. scripts/branches.sh
 
 readonly exit_misnumbered=1 # a migration needs a new number
 readonly exit_usage=2        # a BASE git does not know
 
 bases=("$@")
-[ "${#bases[@]}" -gt 0 ] || bases=(origin/main)
+[ "${#bases[@]}" -gt 0 ] || mapfile -t bases < <(deployed_refs)
+if [ "${#bases[@]}" -eq 0 ]; then
+  echo "check-migration-order: none of $(deployed_names) fetched to compare with (git fetch origin, or pass a ref)" >&2
+  exit "$exit_usage"
+fi
 for base in "${bases[@]}"; do
   if ! git rev-parse --verify --quiet "$base^{commit}" >/dev/null; then
     echo "check-migration-order: unknown base $base (git fetch origin, or pass a ref)" >&2
