@@ -83,12 +83,12 @@ func (u *UI) removeAdmin(w http.ResponseWriter, r *http.Request) {
 	u.adminAction(w, r, "pages.admins.status.removed", u.admins.RemoveAdmin)
 }
 
-func (u *UI) sendAdminPasswordReset(w http.ResponseWriter, r *http.Request) {
-	u.adminAction(w, r, "pages.admins.status.passwordReset", u.admins.SendPasswordReset)
+func (u *UI) sendAdminPasswordReset(writer http.ResponseWriter, request *http.Request) {
+	u.adminAction(writer, request, "pages.admins.status.passwordReset", u.admins.SendPasswordReset)
 }
 
-func (u *UI) resetAdminTwoFactor(w http.ResponseWriter, r *http.Request) {
-	u.adminAction(w, r, "pages.admins.status.twoFactorReset", u.admins.ResetTwoFactor)
+func (u *UI) resetAdminTwoFactor(writer http.ResponseWriter, request *http.Request) {
+	u.adminAction(writer, request, "pages.admins.status.twoFactorReset", u.admins.ResetTwoFactor)
 }
 
 // adminAction runs one mutation on the admin in the path. A Datastar request

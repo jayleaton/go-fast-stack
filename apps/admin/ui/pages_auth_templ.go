@@ -23,6 +23,11 @@ const (
 	twoFactorSetupID = "two-factor-setup"
 )
 
+// minPasswordLength is the browser-side hint on new-password fields. It
+// mirrors packages/auth's default minimum (auth.DefaultMinPasswordLength);
+// auth enforces the real rule and its error is shown either way.
+const minPasswordLength = 8
+
 // AuthForm is the state a server-rendered auth form comes back with.
 type AuthForm struct {
 	Email string
@@ -52,7 +57,7 @@ type SetupState struct {
 	Error   string
 }
 
-func LoginPage(f AuthForm) templ.Component {
+func LoginPage(form AuthForm) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -104,7 +109,7 @@ func LoginPage(f AuthForm) templ.Component {
 				var templ_7745c5c3_Var4 templ.SafeURL
 				templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(config.AppRoutes.Login))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 50, Col: 103}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 55, Col: 103}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 				if templ_7745c5c3_Err != nil {
@@ -117,7 +122,7 @@ func LoginPage(f AuthForm) templ.Component {
 				var templ_7745c5c3_Var5 string
 				templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.ResolveAttributeValue(uikit.PostForm(config.AppRoutes.Login))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 50, Col: 161}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 55, Col: 161}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var5)
 				if templ_7745c5c3_Err != nil {
@@ -127,11 +132,11 @@ func LoginPage(f AuthForm) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = uikit.Alert(formErrorID, uikit.Error, f.Error).Render(ctx, templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = uikit.Alert(formErrorID, uikit.Error, form.Error).Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = uikit.Input(uikit.Field{ID: "email", Type: "email", Label: i18n.T(ctx, "common.email"), Placeholder: i18n.T(ctx, "pages.login.emailPlaceholder"), Autocomplete: "email", Value: f.Email}).Render(ctx, templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = uikit.Input(uikit.Field{ID: "email", Type: "email", Label: i18n.T(ctx, "common.email"), Placeholder: i18n.T(ctx, "pages.login.emailPlaceholder"), Autocomplete: "email", Value: form.Email}).Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -159,7 +164,7 @@ func LoginPage(f AuthForm) templ.Component {
 				var templ_7745c5c3_Var7 templ.SafeURL
 				templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(config.AppRoutes.ForgotPassword))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 57, Col: 60}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 62, Col: 60}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 				if templ_7745c5c3_Err != nil {
@@ -185,7 +190,7 @@ func LoginPage(f AuthForm) templ.Component {
 				var templ_7745c5c3_Var9 string
 				templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "pages.login.forgotPassword"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 57, Col: 132}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 62, Col: 132}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 				if templ_7745c5c3_Err != nil {
@@ -198,7 +203,7 @@ func LoginPage(f AuthForm) templ.Component {
 				var templ_7745c5c3_Var10 string
 				templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "pages.login.inviteOnly"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 59, Col: 140}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 64, Col: 140}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 				if templ_7745c5c3_Err != nil {
@@ -233,8 +238,8 @@ const (
 )
 
 // key is the translation key of name for the mode's page.
-func (m passwordMode) key(name string) string {
-	if m == resetMode {
+func (mode passwordMode) key(name string) string {
+	if mode == resetMode {
 		switch name {
 		case "title", "description", "invalidLink", "submit":
 			return "pages.resetPassword." + name
@@ -244,8 +249,8 @@ func (m passwordMode) key(name string) string {
 }
 
 // action is where the mode's form posts.
-func (m passwordMode) action() string {
-	if m == resetMode {
+func (mode passwordMode) action() string {
+	if mode == resetMode {
 		return config.AppRoutes.ResetPassword
 	}
 	return config.AppRoutes.SetPassword
@@ -253,7 +258,7 @@ func (m passwordMode) action() string {
 
 // SetPasswordPage is where invite links (and, in resetMode, password reset
 // links) land (?token=).
-func SetPasswordPage(m passwordMode, token string, f AuthForm) templ.Component {
+func SetPasswordPage(mode passwordMode, token string, form AuthForm) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -303,7 +308,7 @@ func SetPasswordPage(m passwordMode, token string, f AuthForm) templ.Component {
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = uikit.Callout(uikit.Error, "", i18n.T(ctx, m.key("invalidLink"))).Render(ctx, templ_7745c5c3_Buffer)
+					templ_7745c5c3_Err = uikit.Callout(uikit.Error, "", i18n.T(ctx, mode.key("invalidLink"))).Render(ctx, templ_7745c5c3_Buffer)
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -311,7 +316,7 @@ func SetPasswordPage(m passwordMode, token string, f AuthForm) templ.Component {
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					if m == resetMode {
+					if mode == resetMode {
 						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<p class=\"mt-6 text-center text-sm\">")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
@@ -328,7 +333,7 @@ func SetPasswordPage(m passwordMode, token string, f AuthForm) templ.Component {
 						var templ_7745c5c3_Var15 templ.SafeURL
 						templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(config.AppRoutes.ForgotPassword))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 102, Col: 62}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 107, Col: 62}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
 						if templ_7745c5c3_Err != nil {
@@ -354,7 +359,7 @@ func SetPasswordPage(m passwordMode, token string, f AuthForm) templ.Component {
 						var templ_7745c5c3_Var17 string
 						templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "pages.login.forgotPassword"))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 102, Col: 134}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 107, Col: 134}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 						if templ_7745c5c3_Err != nil {
@@ -379,9 +384,9 @@ func SetPasswordPage(m passwordMode, token string, f AuthForm) templ.Component {
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var18 templ.SafeURL
-					templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(m.action()))
+					templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(mode.action()))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 107, Col: 76}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 112, Col: 79}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
 					if templ_7745c5c3_Err != nil {
@@ -392,9 +397,9 @@ func SetPasswordPage(m passwordMode, token string, f AuthForm) templ.Component {
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var19 string
-					templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.ResolveAttributeValue(uikit.PostForm(m.action()))
+					templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.ResolveAttributeValue(uikit.PostForm(mode.action()))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 107, Col: 122}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 112, Col: 128}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var19)
 					if templ_7745c5c3_Err != nil {
@@ -407,7 +412,7 @@ func SetPasswordPage(m passwordMode, token string, f AuthForm) templ.Component {
 					var templ_7745c5c3_Var20 string
 					templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.ResolveAttributeValue(token)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 108, Col: 52}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 113, Col: 52}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var20)
 					if templ_7745c5c3_Err != nil {
@@ -417,19 +422,19 @@ func SetPasswordPage(m passwordMode, token string, f AuthForm) templ.Component {
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = uikit.Alert(formErrorID, uikit.Error, f.Error).Render(ctx, templ_7745c5c3_Buffer)
+					templ_7745c5c3_Err = uikit.Alert(formErrorID, uikit.Error, form.Error).Render(ctx, templ_7745c5c3_Buffer)
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = uikit.Input(uikit.Field{ID: "password", Type: "password", Label: i18n.T(ctx, "pages.setPassword.newPassword"), Placeholder: i18n.T(ctx, "pages.setPassword.newPasswordPlaceholder"), Autocomplete: "new-password", MinLength: 8, Hint: i18n.T(ctx, "pages.setPassword.passwordRequirement")}).Render(ctx, templ_7745c5c3_Buffer)
+					templ_7745c5c3_Err = uikit.Input(uikit.Field{ID: "password", Type: "password", Label: i18n.T(ctx, "pages.setPassword.newPassword"), Placeholder: i18n.T(ctx, "pages.setPassword.newPasswordPlaceholder"), Autocomplete: "new-password", MinLength: minPasswordLength, Hint: i18n.T(ctx, "pages.setPassword.passwordRequirement")}).Render(ctx, templ_7745c5c3_Buffer)
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = uikit.Input(uikit.Field{ID: "confirmPassword", Type: "password", Label: i18n.T(ctx, "pages.setPassword.confirmPassword"), Placeholder: i18n.T(ctx, "pages.setPassword.confirmPasswordPlaceholder"), Autocomplete: "new-password", MinLength: 8}).Render(ctx, templ_7745c5c3_Buffer)
+					templ_7745c5c3_Err = uikit.Input(uikit.Field{ID: "confirmPassword", Type: "password", Label: i18n.T(ctx, "pages.setPassword.confirmPassword"), Placeholder: i18n.T(ctx, "pages.setPassword.confirmPasswordPlaceholder"), Autocomplete: "new-password", MinLength: minPasswordLength}).Render(ctx, templ_7745c5c3_Buffer)
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = uikit.SubmitButton(uikit.Submit{Label: i18n.T(ctx, m.key("submit")), Loading: i18n.T(ctx, "pages.setPassword.saving"), Signal: "_loading", ButtonProps: uikit.ButtonProps{Full: true}}).Render(ctx, templ_7745c5c3_Buffer)
+					templ_7745c5c3_Err = uikit.SubmitButton(uikit.Submit{Label: i18n.T(ctx, mode.key("submit")), Loading: i18n.T(ctx, "pages.setPassword.saving"), Signal: "_loading", ButtonProps: uikit.ButtonProps{Full: true}}).Render(ctx, templ_7745c5c3_Buffer)
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -440,13 +445,13 @@ func SetPasswordPage(m passwordMode, token string, f AuthForm) templ.Component {
 				}
 				return nil
 			})
-			templ_7745c5c3_Err = uikit.AuthLayout(view.AppName(ctx), i18n.T(ctx, m.key("title")), i18n.T(ctx, m.key("description"))).Render(templ.WithChildren(ctx, templ_7745c5c3_Var13), templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = uikit.AuthLayout(view.AppName(ctx), i18n.T(ctx, mode.key("title")), i18n.T(ctx, mode.key("description"))).Render(templ.WithChildren(ctx, templ_7745c5c3_Var13), templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = view.Layout(i18n.T(ctx, m.key("title"))).Render(templ.WithChildren(ctx, templ_7745c5c3_Var12), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = view.Layout(i18n.T(ctx, mode.key("title"))).Render(templ.WithChildren(ctx, templ_7745c5c3_Var12), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -456,7 +461,7 @@ func SetPasswordPage(m passwordMode, token string, f AuthForm) templ.Component {
 
 // ForgotPasswordPage asks for the email to send a reset link to; sent is the
 // (translated) confirmation once asked.
-func ForgotPasswordPage(f AuthForm, sent string) templ.Component {
+func ForgotPasswordPage(form AuthForm, sent string) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -501,7 +506,7 @@ func ForgotPasswordPage(f AuthForm, sent string) templ.Component {
 					}()
 				}
 				ctx = templ.InitializeContext(ctx)
-				templ_7745c5c3_Err = ForgotPasswordBody(f, sent).Render(ctx, templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = ForgotPasswordBody(form, sent).Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -526,7 +531,7 @@ func ForgotPasswordPage(f AuthForm, sent string) templ.Component {
 }
 
 // ForgotPasswordBody is the form, or the confirmation that replaces it.
-func ForgotPasswordBody(f AuthForm, sent string) templ.Component {
+func ForgotPasswordBody(form AuthForm, sent string) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -554,7 +559,7 @@ func ForgotPasswordBody(f AuthForm, sent string) templ.Component {
 		var templ_7745c5c3_Var25 string
 		templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.ResolveAttributeValue(forgotPasswordID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 132, Col: 27}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 137, Col: 27}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var25)
 		if templ_7745c5c3_Err != nil {
@@ -585,7 +590,7 @@ func ForgotPasswordBody(f AuthForm, sent string) templ.Component {
 			var templ_7745c5c3_Var26 templ.SafeURL
 			templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(config.AppRoutes.ForgotPassword))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 138, Col: 96}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 143, Col: 96}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var26))
 			if templ_7745c5c3_Err != nil {
@@ -598,7 +603,7 @@ func ForgotPasswordBody(f AuthForm, sent string) templ.Component {
 			var templ_7745c5c3_Var27 string
 			templ_7745c5c3_Var27, templ_7745c5c3_Err = templ.ResolveAttributeValue(uikit.PostForm(config.AppRoutes.ForgotPassword))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 138, Col: 163}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 143, Col: 163}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var27)
 			if templ_7745c5c3_Err != nil {
@@ -608,11 +613,11 @@ func ForgotPasswordBody(f AuthForm, sent string) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = uikit.Alert(formErrorID, uikit.Error, f.Error).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = uikit.Alert(formErrorID, uikit.Error, form.Error).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = uikit.Input(uikit.Field{ID: "email", Type: "email", Label: i18n.T(ctx, "common.email"), Placeholder: i18n.T(ctx, "pages.login.emailPlaceholder"), Autocomplete: "email", Value: f.Email}).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = uikit.Input(uikit.Field{ID: "email", Type: "email", Label: i18n.T(ctx, "common.email"), Placeholder: i18n.T(ctx, "pages.login.emailPlaceholder"), Autocomplete: "email", Value: form.Email}).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -671,7 +676,7 @@ func backToLogin() templ.Component {
 		var templ_7745c5c3_Var30 templ.SafeURL
 		templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(config.AppRoutes.Login))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 150, Col: 49}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 155, Col: 49}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var30))
 		if templ_7745c5c3_Err != nil {
@@ -697,7 +702,7 @@ func backToLogin() templ.Component {
 		var templ_7745c5c3_Var32 string
 		templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "common.backToLogin"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 150, Col: 113}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 155, Col: 113}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var32))
 		if templ_7745c5c3_Err != nil {
@@ -766,7 +771,7 @@ func TwoFactorPage(f TwoFactorForm) templ.Component {
 				var templ_7745c5c3_Var36 templ.SafeURL
 				templ_7745c5c3_Var36, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(config.AppRoutes.TwoFactor))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 160, Col: 91}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 165, Col: 91}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var36))
 				if templ_7745c5c3_Err != nil {
@@ -779,7 +784,7 @@ func TwoFactorPage(f TwoFactorForm) templ.Component {
 				var templ_7745c5c3_Var37 string
 				templ_7745c5c3_Var37, templ_7745c5c3_Err = templ.ResolveAttributeValue(uikit.PostForm(config.AppRoutes.TwoFactor))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 160, Col: 153}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 165, Col: 153}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var37)
 				if templ_7745c5c3_Err != nil {
@@ -792,7 +797,7 @@ func TwoFactorPage(f TwoFactorForm) templ.Component {
 				var templ_7745c5c3_Var38 string
 				templ_7745c5c3_Var38, templ_7745c5c3_Err = templ.ResolveAttributeValue(backupSignals(f.Backup))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 160, Col: 218}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 165, Col: 218}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var38)
 				if templ_7745c5c3_Err != nil {
@@ -857,7 +862,7 @@ func TwoFactorPage(f TwoFactorForm) templ.Component {
 				var templ_7745c5c3_Var43 string
 				templ_7745c5c3_Var43, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "pages.twoFactor.codeLabel"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 164, Col: 122}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 169, Col: 122}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var43))
 				if templ_7745c5c3_Err != nil {
@@ -892,7 +897,7 @@ func TwoFactorPage(f TwoFactorForm) templ.Component {
 				var templ_7745c5c3_Var46 string
 				templ_7745c5c3_Var46, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "pages.twoFactor.backupCodeLabel"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 165, Col: 130}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 170, Col: 130}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var46))
 				if templ_7745c5c3_Err != nil {
@@ -914,7 +919,7 @@ func TwoFactorPage(f TwoFactorForm) templ.Component {
 				var templ_7745c5c3_Var48 string
 				templ_7745c5c3_Var48, templ_7745c5c3_Err = templ.ResolveAttributeValue(codeInputmode(f.Backup))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 167, Col: 119}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 172, Col: 119}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var48)
 				if templ_7745c5c3_Err != nil {
@@ -1008,7 +1013,7 @@ func TwoFactorError(f TwoFactorForm) templ.Component {
 			var templ_7745c5c3_Var51 string
 			templ_7745c5c3_Var51, templ_7745c5c3_Err = templ.ResolveAttributeValue(formErrorID)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 184, Col: 23}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 189, Col: 23}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var51)
 			if templ_7745c5c3_Err != nil {
@@ -1037,7 +1042,7 @@ func TwoFactorError(f TwoFactorForm) templ.Component {
 				var templ_7745c5c3_Var53 templ.SafeURL
 				templ_7745c5c3_Var53, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(config.AppRoutes.Login))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 186, Col: 54}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 191, Col: 54}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var53))
 				if templ_7745c5c3_Err != nil {
@@ -1050,7 +1055,7 @@ func TwoFactorError(f TwoFactorForm) templ.Component {
 				var templ_7745c5c3_Var54 string
 				templ_7745c5c3_Var54, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "common.backToLogin"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 186, Col: 141}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 191, Col: 141}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var54))
 				if templ_7745c5c3_Err != nil {
@@ -1174,7 +1179,7 @@ func SetupBody(s SetupState) templ.Component {
 		var templ_7745c5c3_Var59 string
 		templ_7745c5c3_Var59, templ_7745c5c3_Err = templ.ResolveAttributeValue(twoFactorSetupID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 204, Col: 27}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 209, Col: 27}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var59)
 		if templ_7745c5c3_Err != nil {
@@ -1201,7 +1206,7 @@ func SetupBody(s SetupState) templ.Component {
 				var templ_7745c5c3_Var60 string
 				templ_7745c5c3_Var60, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "pages.twoFactorSetup.done"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 210, Col: 48}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 215, Col: 48}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var60))
 				if templ_7745c5c3_Err != nil {
@@ -1211,7 +1216,7 @@ func SetupBody(s SetupState) templ.Component {
 				var templ_7745c5c3_Var61 string
 				templ_7745c5c3_Var61, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "pages.twoFactorSetup.alreadyOn"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 212, Col: 53}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 217, Col: 53}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var61))
 				if templ_7745c5c3_Err != nil {
@@ -1237,7 +1242,7 @@ func SetupBody(s SetupState) templ.Component {
 				var templ_7745c5c3_Var63 string
 				templ_7745c5c3_Var63, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "common.continue"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 217, Col: 38}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 222, Col: 38}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var63))
 				if templ_7745c5c3_Err != nil {
@@ -1292,7 +1297,7 @@ func SetupBody(s SetupState) templ.Component {
 			var templ_7745c5c3_Var64 templ.SafeURL
 			templ_7745c5c3_Var64, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(config.AppRoutes.TwoFactorSetup))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 231, Col: 124}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 236, Col: 124}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var64))
 			if templ_7745c5c3_Err != nil {
@@ -1305,7 +1310,7 @@ func SetupBody(s SetupState) templ.Component {
 			var templ_7745c5c3_Var65 string
 			templ_7745c5c3_Var65, templ_7745c5c3_Err = templ.ResolveAttributeValue(uikit.PostForm(config.AppRoutes.TwoFactorSetup))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 231, Col: 191}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 236, Col: 191}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var65)
 			if templ_7745c5c3_Err != nil {
@@ -1318,7 +1323,7 @@ func SetupBody(s SetupState) templ.Component {
 			var templ_7745c5c3_Var66 string
 			templ_7745c5c3_Var66, templ_7745c5c3_Err = templ.ResolveAttributeValue(s.Setup.Secret)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 232, Col: 61}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 237, Col: 61}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var66)
 			if templ_7745c5c3_Err != nil {
@@ -1331,7 +1336,7 @@ func SetupBody(s SetupState) templ.Component {
 			var templ_7745c5c3_Var67 string
 			templ_7745c5c3_Var67, templ_7745c5c3_Err = templ.ResolveAttributeValue(s.Setup.URI)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 233, Col: 55}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 238, Col: 55}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var67)
 			if templ_7745c5c3_Err != nil {
@@ -1371,7 +1376,7 @@ func SetupBody(s SetupState) templ.Component {
 			var templ_7745c5c3_Var68 string
 			templ_7745c5c3_Var68, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "pages.twoFactorSetup.description"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 242, Col: 105}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 247, Col: 105}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var68))
 			if templ_7745c5c3_Err != nil {
@@ -1384,7 +1389,7 @@ func SetupBody(s SetupState) templ.Component {
 			var templ_7745c5c3_Var69 templ.SafeURL
 			templ_7745c5c3_Var69, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(routes.EnableTwoFactor))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 243, Col: 87}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 248, Col: 87}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var69))
 			if templ_7745c5c3_Err != nil {
@@ -1397,7 +1402,7 @@ func SetupBody(s SetupState) templ.Component {
 			var templ_7745c5c3_Var70 string
 			templ_7745c5c3_Var70, templ_7745c5c3_Err = templ.ResolveAttributeValue(uikit.PostForm(routes.EnableTwoFactor))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 243, Col: 145}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 248, Col: 145}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var70)
 			if templ_7745c5c3_Err != nil {
@@ -1462,7 +1467,7 @@ func setupSecret(t TOTPSetup) templ.Component {
 		var templ_7745c5c3_Var72 string
 		templ_7745c5c3_Var72, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "pages.twoFactorSetup.scan"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 256, Col: 89}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 261, Col: 89}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var72))
 		if templ_7745c5c3_Err != nil {
@@ -1498,7 +1503,7 @@ func setupSecret(t TOTPSetup) templ.Component {
 				var templ_7745c5c3_Var74 string
 				templ_7745c5c3_Var74, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "pages.twoFactorSetup.openApp"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 263, Col: 50}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 268, Col: 50}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var74))
 				if templ_7745c5c3_Err != nil {
@@ -1522,7 +1527,7 @@ func setupSecret(t TOTPSetup) templ.Component {
 		var templ_7745c5c3_Var75 string
 		templ_7745c5c3_Var75, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "pages.twoFactorSetup.manualEntry"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 268, Col: 105}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 273, Col: 105}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var75))
 		if templ_7745c5c3_Err != nil {
@@ -1535,7 +1540,7 @@ func setupSecret(t TOTPSetup) templ.Component {
 		var templ_7745c5c3_Var76 string
 		templ_7745c5c3_Var76, templ_7745c5c3_Err = templ.JoinStringErrs(groupSecret(t.Secret))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 269, Col: 212}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 274, Col: 212}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var76))
 		if templ_7745c5c3_Err != nil {
@@ -1570,7 +1575,7 @@ func setupSecret(t TOTPSetup) templ.Component {
 					var templ_7745c5c3_Var78 string
 					templ_7745c5c3_Var78, templ_7745c5c3_Err = templ.JoinStringErrs(c)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 275, Col: 13}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 280, Col: 13}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var78))
 					if templ_7745c5c3_Err != nil {
@@ -1630,7 +1635,7 @@ func qrCode(q QRCode) templ.Component {
 		var templ_7745c5c3_Var80 string
 		templ_7745c5c3_Var80, templ_7745c5c3_Err = templ.ResolveAttributeValue(q.ViewBox())
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 287, Col: 85}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 292, Col: 85}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var80)
 		if templ_7745c5c3_Err != nil {
@@ -1643,7 +1648,7 @@ func qrCode(q QRCode) templ.Component {
 		var templ_7745c5c3_Var81 string
 		templ_7745c5c3_Var81, templ_7745c5c3_Err = templ.ResolveAttributeValue(i18n.T(ctx, "pages.twoFactorSetup.qrLabel"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 287, Col: 231}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 292, Col: 231}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var81)
 		if templ_7745c5c3_Err != nil {
@@ -1656,7 +1661,7 @@ func qrCode(q QRCode) templ.Component {
 		var templ_7745c5c3_Var82 string
 		templ_7745c5c3_Var82, templ_7745c5c3_Err = templ.ResolveAttributeValue(q.Path)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 289, Col: 19}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 294, Col: 19}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var82)
 		if templ_7745c5c3_Err != nil {

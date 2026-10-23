@@ -22,70 +22,72 @@ type UIAuth struct {
 var _ ui.Auth = UIAuth{}
 
 // NewUIAuth returns the adapter over the admin auth instance.
-func NewUIAuth(a *auth.Auth) UIAuth {
-	return UIAuth{auth: a}
+func NewUIAuth(instance *auth.Auth) UIAuth {
+	return UIAuth{auth: instance}
 }
 
-func (a UIAuth) SignIn(ctx context.Context, email, password string) (ui.Session, error) {
-	_, s, err := a.auth.SignInEmail(ctx, auth.SignInInput{Email: email, Password: password})
-	return uiSession(s), uiAuthErr(err)
+func (adapter UIAuth) SignIn(ctx context.Context, email, password string) (ui.Session, error) {
+	_, session, err := adapter.auth.SignInEmail(ctx, auth.SignInInput{Email: email, Password: password})
+	return uiSession(session), uiAuthErr(err)
 }
 
-func (a UIAuth) SignOut(ctx context.Context, sessionToken string) error {
-	return uiAuthErr(a.auth.SignOut(ctx, sessionToken))
+func (adapter UIAuth) SignOut(ctx context.Context, sessionToken string) error {
+	return uiAuthErr(adapter.auth.SignOut(ctx, sessionToken))
 }
 
-func (a UIAuth) CompleteSetPassword(ctx context.Context, token, newPassword string) (ui.Session, error) {
-	_, s, err := a.auth.CompleteSetPassword(ctx, token, newPassword)
-	return uiSession(s), uiAuthErr(err)
+func (adapter UIAuth) CompleteSetPassword(ctx context.Context, token, newPassword string) (ui.Session, error) {
+	_, session, err := adapter.auth.CompleteSetPassword(ctx, token, newPassword)
+	return uiSession(session), uiAuthErr(err)
 }
 
-func (a UIAuth) RequestPasswordReset(ctx context.Context, email string) error {
-	err := a.auth.RequestPasswordReset(ctx, email, config.AppRoutes.ResetPassword)
+func (adapter UIAuth) RequestPasswordReset(ctx context.Context, email string) error {
+	err := adapter.auth.RequestPasswordReset(ctx, email, config.AppRoutes.ResetPassword)
 	if errors.Is(err, auth.ErrInvalidEmail) {
 		return nil // same answer as an unknown address
 	}
 	return uiAuthErr(err)
 }
 
-func (a UIAuth) VerifyTwoFactor(ctx context.Context, in ui.VerifyTwoFactorInput) (ui.Session, string, error) {
-	res, err := a.auth.VerifyTwoFactor(ctx, auth.VerifyTwoFactorInput{Code: in.Code, Method: in.Method, TrustDevice: in.TrustDevice})
+func (adapter UIAuth) VerifyTwoFactor(ctx context.Context, in ui.VerifyTwoFactorInput) (ui.Session, string, error) {
+	res, err := adapter.auth.VerifyTwoFactor(ctx, auth.VerifyTwoFactorInput{Code: in.Code, Method: in.Method, TrustDevice: in.TrustDevice})
 	if err != nil {
 		return ui.Session{}, "", uiAuthErr(err)
 	}
 	return uiSession(res.Session), res.TrustToken, nil
 }
 
-func (a UIAuth) StartTwoFactorSetup(ctx context.Context) (ui.TOTPSetup, error) {
-	s, err := a.auth.StartTwoFactorSetup(ctx, "") // "": the challenge from the request's cookie
-	return ui.TOTPSetup(s), uiAuthErr(err)
+func (adapter UIAuth) StartTwoFactorSetup(ctx context.Context) (ui.TOTPSetup, error) {
+	setup, err := adapter.auth.StartTwoFactorSetup(ctx, "") // "": the challenge from the request's cookie
+	return ui.TOTPSetup(setup), uiAuthErr(err)
 }
 
-func (a UIAuth) EnableTwoFactor(ctx context.Context, adminID, password string) (ui.TOTPSetup, error) {
-	s, err := a.auth.EnableTwoFactor(ctx, adminID, password)
-	return ui.TOTPSetup(s), uiAuthErr(err)
+func (adapter UIAuth) EnableTwoFactor(ctx context.Context, adminID, password string) (ui.TOTPSetup, error) {
+	setup, err := adapter.auth.EnableTwoFactor(ctx, adminID, password)
+	return ui.TOTPSetup(setup), uiAuthErr(err)
 }
 
-func (a UIAuth) ConfirmTwoFactor(ctx context.Context, adminID, code string) error {
-	return uiAuthErr(a.auth.ConfirmTwoFactor(ctx, adminID, code))
+func (adapter UIAuth) ConfirmTwoFactor(ctx context.Context, adminID, code string) error {
+	return uiAuthErr(adapter.auth.ConfirmTwoFactor(ctx, adminID, code))
 }
 
-func (a UIAuth) SetSessionCookie(w http.ResponseWriter, s ui.Session) {
-	a.auth.SetSessionCookie(w, auth.Session{ID: s.ID, Token: s.Token, ExpiresAt: s.ExpiresAt})
+func (adapter UIAuth) SetSessionCookie(writer http.ResponseWriter, session ui.Session) {
+	adapter.auth.SetSessionCookie(writer, auth.Session{ID: session.ID, Token: session.Token, ExpiresAt: session.ExpiresAt})
 }
 
-func (a UIAuth) ClearSessionCookie(w http.ResponseWriter) { a.auth.ClearSessionCookie(w) }
-
-func (a UIAuth) SetTwoFactorCookie(w http.ResponseWriter, c *ui.TwoFactorChallenge) {
-	a.auth.SetTwoFactorCookie(w, &auth.TwoFactorChallenge{Token: c.Token, Methods: c.Methods, SetupRequired: c.SetupRequired, ExpiresAt: c.ExpiresAt})
+func (adapter UIAuth) ClearSessionCookie(writer http.ResponseWriter) {
+	adapter.auth.ClearSessionCookie(writer)
 }
 
-func (a UIAuth) SetTrustDeviceCookie(w http.ResponseWriter, token string) {
-	a.auth.SetTrustDeviceCookie(w, token)
+func (adapter UIAuth) SetTwoFactorCookie(writer http.ResponseWriter, challenge *ui.TwoFactorChallenge) {
+	adapter.auth.SetTwoFactorCookie(writer, &auth.TwoFactorChallenge{Token: challenge.Token, Methods: challenge.Methods, SetupRequired: challenge.SetupRequired, ExpiresAt: challenge.ExpiresAt})
 }
 
-func uiSession(s auth.Session) ui.Session {
-	return ui.Session{ID: s.ID, Token: s.Token, ExpiresAt: s.ExpiresAt}
+func (adapter UIAuth) SetTrustDeviceCookie(writer http.ResponseWriter, token string) {
+	adapter.auth.SetTrustDeviceCookie(writer, token)
+}
+
+func uiSession(session auth.Session) ui.Session {
+	return ui.Session{ID: session.ID, Token: session.Token, ExpiresAt: session.ExpiresAt}
 }
 
 // uiAuthErrors translates auth errors into the ui port's.
@@ -115,13 +117,13 @@ func uiAuthErr(err error) error {
 	if err == nil {
 		return nil
 	}
-	var c *auth.TwoFactorChallenge
-	if errors.As(err, &c) {
-		return &ui.TwoFactorChallenge{Token: c.Token, Methods: c.Methods, SetupRequired: c.SetupRequired, ExpiresAt: c.ExpiresAt}
+	var challenge *auth.TwoFactorChallenge
+	if errors.As(err, &challenge) {
+		return &ui.TwoFactorChallenge{Token: challenge.Token, Methods: challenge.Methods, SetupRequired: challenge.SetupRequired, ExpiresAt: challenge.ExpiresAt}
 	}
-	for _, e := range uiAuthErrors {
-		if errors.Is(err, e.auth) {
-			return fmt.Errorf("%w: %w", e.port, err)
+	for _, mapping := range uiAuthErrors {
+		if errors.Is(err, mapping.auth) {
+			return fmt.Errorf("%w: %w", mapping.port, err)
 		}
 	}
 	return err

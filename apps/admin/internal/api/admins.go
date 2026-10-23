@@ -37,50 +37,50 @@ func NewAdmins(svc AdminService, caller CallerFrom) *Admins {
 }
 
 // Routes registers the endpoints on mux.
-func (a *Admins) Routes(mux *http.ServeMux) {
-	r := config.APIRoutes
-	mux.Handle("GET "+r.Admins, Authenticated(a.caller, a.list))
-	mux.Handle("POST "+r.AdminInvites, Authenticated(a.caller, a.invite))
-	mux.Handle("POST "+r.AdminDisable, Authenticated(a.caller, a.disable))
-	mux.Handle("POST "+r.AdminEnable, Authenticated(a.caller, a.enable))
-	mux.Handle("DELETE "+r.AdminByID, Authenticated(a.caller, a.remove))
-	mux.Handle("POST "+r.AdminPasswordReset, Authenticated(a.caller, a.passwordReset))
-	mux.Handle("POST "+r.AdminTwoFactorReset, Authenticated(a.caller, a.resetTwoFactor))
+func (endpoints *Admins) Routes(mux *http.ServeMux) {
+	paths := config.APIRoutes
+	mux.Handle("GET "+paths.Admins, Authenticated(endpoints.caller, endpoints.list))
+	mux.Handle("POST "+paths.AdminInvites, Authenticated(endpoints.caller, endpoints.invite))
+	mux.Handle("POST "+paths.AdminDisable, Authenticated(endpoints.caller, endpoints.disable))
+	mux.Handle("POST "+paths.AdminEnable, Authenticated(endpoints.caller, endpoints.enable))
+	mux.Handle("DELETE "+paths.AdminByID, Authenticated(endpoints.caller, endpoints.remove))
+	mux.Handle("POST "+paths.AdminPasswordReset, Authenticated(endpoints.caller, endpoints.passwordReset))
+	mux.Handle("POST "+paths.AdminTwoFactorReset, Authenticated(endpoints.caller, endpoints.resetTwoFactor))
 }
 
-func (a *Admins) list(r *http.Request, c Caller) ([]services.Admin, error) {
-	return a.svc.ListAdmins(r.Context(), c.Actor())
+func (endpoints *Admins) list(request *http.Request, caller Caller) ([]services.Admin, error) {
+	return endpoints.svc.ListAdmins(request.Context(), caller.Actor())
 }
 
-func (a *Admins) invite(r *http.Request, c Caller) (services.Admin, error) {
-	in, err := validate.Decode[validate.CreateAdminInvite](r.Body)
+func (endpoints *Admins) invite(request *http.Request, caller Caller) (services.Admin, error) {
+	in, err := validate.Decode[validate.CreateAdminInvite](request.Body)
 	if err != nil {
 		return services.Admin{}, err
 	}
-	return a.svc.InviteAdmin(r.Context(), c.Actor(), in)
+	return endpoints.svc.InviteAdmin(request.Context(), caller.Actor(), in)
 }
 
-func (a *Admins) disable(r *http.Request, c Caller) (Success, error) {
-	err := a.svc.DisableAdmin(r.Context(), c.Actor(), r.PathValue("id"))
+func (endpoints *Admins) disable(request *http.Request, caller Caller) (Success, error) {
+	err := endpoints.svc.DisableAdmin(request.Context(), caller.Actor(), request.PathValue("id"))
 	return Success{err == nil}, err
 }
 
-func (a *Admins) enable(r *http.Request, c Caller) (Success, error) {
-	err := a.svc.EnableAdmin(r.Context(), c.Actor(), r.PathValue("id"))
+func (endpoints *Admins) enable(request *http.Request, caller Caller) (Success, error) {
+	err := endpoints.svc.EnableAdmin(request.Context(), caller.Actor(), request.PathValue("id"))
 	return Success{err == nil}, err
 }
 
-func (a *Admins) remove(r *http.Request, c Caller) (Success, error) {
-	err := a.svc.RemoveAdmin(r.Context(), c.Actor(), r.PathValue("id"))
+func (endpoints *Admins) remove(request *http.Request, caller Caller) (Success, error) {
+	err := endpoints.svc.RemoveAdmin(request.Context(), caller.Actor(), request.PathValue("id"))
 	return Success{err == nil}, err
 }
 
-func (a *Admins) passwordReset(r *http.Request, c Caller) (Success, error) {
-	err := a.svc.SendPasswordReset(r.Context(), c.Actor(), r.PathValue("id"))
+func (endpoints *Admins) passwordReset(request *http.Request, caller Caller) (Success, error) {
+	err := endpoints.svc.SendPasswordReset(request.Context(), caller.Actor(), request.PathValue("id"))
 	return Success{err == nil}, err
 }
 
-func (a *Admins) resetTwoFactor(r *http.Request, c Caller) (Success, error) {
-	err := a.svc.ResetTwoFactor(r.Context(), c.Actor(), r.PathValue("id"))
+func (endpoints *Admins) resetTwoFactor(request *http.Request, caller Caller) (Success, error) {
+	err := endpoints.svc.ResetTwoFactor(request.Context(), caller.Actor(), request.PathValue("id"))
 	return Success{err == nil}, err
 }

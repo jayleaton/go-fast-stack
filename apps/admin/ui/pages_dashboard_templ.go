@@ -736,7 +736,7 @@ func AdminsTable(admins []services.Admin, selfID string) templ.Component {
 // reset (accepted invites), reset 2FA (enrolled admins), and remove. Resetting
 // 2FA and removing are asked first in a dialog with JS; a plain post acts
 // directly.
-func adminActions(a services.Admin) templ.Component {
+func adminActions(admin services.Admin) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -761,15 +761,15 @@ func adminActions(a services.Admin) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		if a.Disabled {
+		if admin.Disabled {
 			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 50, "<form method=\"post\" action=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var47 templ.SafeURL
-			templ_7745c5c3_Var47, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(routes.Admin(routes.AdminEnable, a.ID)))
+			templ_7745c5c3_Var47, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(routes.Admin(routes.AdminEnable, admin.ID)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_dashboard.templ`, Line: 136, Col: 85}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_dashboard.templ`, Line: 136, Col: 89}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var47))
 			if templ_7745c5c3_Err != nil {
@@ -780,9 +780,9 @@ func adminActions(a services.Admin) templ.Component {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var48 string
-			templ_7745c5c3_Var48, templ_7745c5c3_Err = templ.ResolveAttributeValue(uikit.PostForm(routes.Admin(routes.AdminEnable, a.ID)))
+			templ_7745c5c3_Var48, templ_7745c5c3_Err = templ.ResolveAttributeValue(uikit.PostForm(routes.Admin(routes.AdminEnable, admin.ID)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_dashboard.templ`, Line: 136, Col: 159}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_dashboard.templ`, Line: 136, Col: 167}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var48)
 			if templ_7745c5c3_Err != nil {
@@ -806,9 +806,9 @@ func adminActions(a services.Admin) templ.Component {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var49 templ.SafeURL
-			templ_7745c5c3_Var49, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(routes.Admin(routes.AdminDisable, a.ID)))
+			templ_7745c5c3_Var49, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(routes.Admin(routes.AdminDisable, admin.ID)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_dashboard.templ`, Line: 140, Col: 86}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_dashboard.templ`, Line: 140, Col: 90}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var49))
 			if templ_7745c5c3_Err != nil {
@@ -819,9 +819,9 @@ func adminActions(a services.Admin) templ.Component {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var50 string
-			templ_7745c5c3_Var50, templ_7745c5c3_Err = templ.ResolveAttributeValue(uikit.PostForm(routes.Admin(routes.AdminDisable, a.ID)))
+			templ_7745c5c3_Var50, templ_7745c5c3_Err = templ.ResolveAttributeValue(uikit.PostForm(routes.Admin(routes.AdminDisable, admin.ID)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_dashboard.templ`, Line: 140, Col: 161}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_dashboard.templ`, Line: 140, Col: 169}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var50)
 			if templ_7745c5c3_Err != nil {
@@ -840,15 +840,15 @@ func adminActions(a services.Admin) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		if a.HasPassword {
+		if admin.HasPassword {
 			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 58, "<form method=\"post\" action=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var51 templ.SafeURL
-			templ_7745c5c3_Var51, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(routes.Admin(routes.AdminPasswordReset, a.ID)))
+			templ_7745c5c3_Var51, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(routes.Admin(routes.AdminPasswordReset, admin.ID)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_dashboard.templ`, Line: 145, Col: 92}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_dashboard.templ`, Line: 145, Col: 96}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var51))
 			if templ_7745c5c3_Err != nil {
@@ -859,9 +859,9 @@ func adminActions(a services.Admin) templ.Component {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var52 string
-			templ_7745c5c3_Var52, templ_7745c5c3_Err = templ.ResolveAttributeValue(uikit.PostForm(routes.Admin(routes.AdminPasswordReset, a.ID)))
+			templ_7745c5c3_Var52, templ_7745c5c3_Err = templ.ResolveAttributeValue(uikit.PostForm(routes.Admin(routes.AdminPasswordReset, admin.ID)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_dashboard.templ`, Line: 145, Col: 173}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_dashboard.templ`, Line: 145, Col: 181}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var52)
 			if templ_7745c5c3_Err != nil {
@@ -880,13 +880,13 @@ func adminActions(a services.Admin) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		if a.TwoFactorEnabled {
+		if admin.TwoFactorEnabled {
 			templ_7745c5c3_Err = uikit.ConfirmForm(uikit.Confirm{
-				ID:           "reset-2fa-" + a.ID,
-				Action:       routes.Admin(routes.AdminResetTwoFactor, a.ID),
+				ID:           "reset-2fa-" + admin.ID,
+				Action:       routes.Admin(routes.AdminResetTwoFactor, admin.ID),
 				Signal:       "_resetting2fa",
 				Title:        i18n.T(ctx, "pages.admins.confirmResetTwoFactorTitle"),
-				Message:      i18n.Tf(ctx, "pages.admins.confirmResetTwoFactor", a.Email),
+				Message:      i18n.Tf(ctx, "pages.admins.confirmResetTwoFactor", admin.Email),
 				ConfirmLabel: i18n.T(ctx, "pages.admins.resetTwoFactor"),
 				CancelLabel:  i18n.T(ctx, "components.confirm.cancel"),
 				Trigger:      uikit.ButtonProps{Variant: uikit.DangerOutline, Size: uikit.Small},
@@ -897,11 +897,11 @@ func adminActions(a services.Admin) templ.Component {
 			}
 		}
 		templ_7745c5c3_Err = uikit.ConfirmForm(uikit.Confirm{
-			ID:           "remove-" + a.ID,
-			Action:       routes.Admin(routes.AdminRemove, a.ID),
+			ID:           "remove-" + admin.ID,
+			Action:       routes.Admin(routes.AdminRemove, admin.ID),
 			Signal:       "_removing",
 			Title:        i18n.T(ctx, "pages.admins.confirmRemoveTitle"),
-			Message:      i18n.Tf(ctx, "pages.admins.confirmRemove", a.Email),
+			Message:      i18n.Tf(ctx, "pages.admins.confirmRemove", admin.Email),
 			ConfirmLabel: i18n.T(ctx, "pages.admins.remove"),
 			CancelLabel:  i18n.T(ctx, "components.confirm.cancel"),
 			Trigger:      uikit.ButtonProps{Variant: uikit.DangerOutline, Size: uikit.Small},

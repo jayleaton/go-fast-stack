@@ -17,28 +17,28 @@ import (
 // It runs after the fact on auth's event worker: a failed audit write is
 // logged at error level and never undoes or delays the authentication.
 func NewAuditEvents(svc *services.AuthEventService, log *slog.Logger) auth.EventHandler {
-	return func(ctx context.Context, e auth.Event) {
+	return func(ctx context.Context, event auth.Event) {
 		var err error
-		switch e.Kind {
+		switch event.Kind {
 		case auth.EventSignIn:
-			err = svc.SignedIn(ctx, e.At, e.UserID, e.Email, signInMethod(e.Method))
+			err = svc.SignedIn(ctx, event.At, event.UserID, event.Email, signInMethod(event.Method))
 		case auth.EventSignOut:
-			err = svc.SignedOut(ctx, e.At, e.UserID, e.Email)
+			err = svc.SignedOut(ctx, event.At, event.UserID, event.Email)
 		case auth.EventTwoFactorFailed:
-			if e.UserID == "" {
+			if event.UserID == "" {
 				return // no valid pending sign-in: there is no admin to attribute it to
 			}
-			err = svc.TwoFactorFailed(ctx, e.At, e.UserID, e.Email, e.Reason)
+			err = svc.TwoFactorFailed(ctx, event.At, event.UserID, event.Email, event.Reason)
 		case auth.EventTwoFactorSucceeded:
-			if e.Method != auth.TwoFactorMethodBackup {
+			if event.Method != auth.TwoFactorMethodBackup {
 				return // TOTP codes are covered by the sign-in they complete
 			}
-			err = svc.BackupCodeUsed(ctx, e.At, e.UserID, e.Email)
+			err = svc.BackupCodeUsed(ctx, event.At, event.UserID, event.Email)
 		default:
 			return
 		}
 		if err != nil {
-			log.ErrorContext(ctx, "admin: audit of "+string(e.Kind)+" not recorded", "adminId", e.UserID, "err", err)
+			log.ErrorContext(ctx, "admin: audit of "+string(event.Kind)+" not recorded", "adminId", event.UserID, "err", err)
 		}
 	}
 }

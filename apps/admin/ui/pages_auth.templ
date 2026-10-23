@@ -15,6 +15,11 @@ const (
 	twoFactorSetupID = "two-factor-setup"
 )
 
+// minPasswordLength is the browser-side hint on new-password fields. It
+// mirrors packages/auth's default minimum (auth.DefaultMinPasswordLength);
+// auth enforces the real rule and its error is shown either way.
+const minPasswordLength = 8
+
 // AuthForm is the state a server-rendered auth form comes back with.
 type AuthForm struct {
 	Email string
@@ -44,12 +49,12 @@ type SetupState struct {
 	Error   string
 }
 
-templ LoginPage(f AuthForm) {
+templ LoginPage(form AuthForm) {
 	@view.Layout(i18n.T(ctx, "pages.login.title")) {
 		@uikit.AuthLayout(view.AppName(ctx), i18n.T(ctx, "pages.login.title"), i18n.T(ctx, "pages.login.description")) {
 			<form id="login-form" class="space-y-5" method="post" action={ templ.SafeURL(config.AppRoutes.Login) } data-on:submit={ uikit.PostForm(config.AppRoutes.Login) } data-indicator:_loading>
-				@uikit.Alert(formErrorID, uikit.Error, f.Error)
-				@uikit.Input(uikit.Field{ID: "email", Type: "email", Label: i18n.T(ctx, "common.email"), Placeholder: i18n.T(ctx, "pages.login.emailPlaceholder"), Autocomplete: "email", Value: f.Email})
+				@uikit.Alert(formErrorID, uikit.Error, form.Error)
+				@uikit.Input(uikit.Field{ID: "email", Type: "email", Label: i18n.T(ctx, "common.email"), Placeholder: i18n.T(ctx, "pages.login.emailPlaceholder"), Autocomplete: "email", Value: form.Email})
 				@uikit.Input(uikit.Field{ID: "password", Type: "password", Label: i18n.T(ctx, "common.password"), Placeholder: i18n.T(ctx, "pages.login.passwordPlaceholder"), Autocomplete: "current-password"})
 				@uikit.SubmitButton(uikit.Submit{Label: i18n.T(ctx, "pages.login.loginButton"), Loading: i18n.T(ctx, "common.loading"), Signal: "_loading", ButtonProps: uikit.ButtonProps{Full: true}})
 			</form>
@@ -70,8 +75,8 @@ const (
 )
 
 // key is the translation key of name for the mode's page.
-func (m passwordMode) key(name string) string {
-	if m == resetMode {
+func (mode passwordMode) key(name string) string {
+	if mode == resetMode {
 		switch name {
 		case "title", "description", "invalidLink", "submit":
 			return "pages.resetPassword." + name
@@ -81,8 +86,8 @@ func (m passwordMode) key(name string) string {
 }
 
 // action is where the mode's form posts.
-func (m passwordMode) action() string {
-	if m == resetMode {
+func (mode passwordMode) action() string {
+	if mode == resetMode {
 		return config.AppRoutes.ResetPassword
 	}
 	return config.AppRoutes.SetPassword
@@ -90,26 +95,26 @@ func (m passwordMode) action() string {
 
 // SetPasswordPage is where invite links (and, in resetMode, password reset
 // links) land (?token=).
-templ SetPasswordPage(m passwordMode, token string, f AuthForm) {
-	@view.Layout(i18n.T(ctx, m.key("title"))) {
-		@uikit.AuthLayout(view.AppName(ctx), i18n.T(ctx, m.key("title")), i18n.T(ctx, m.key("description"))) {
+templ SetPasswordPage(mode passwordMode, token string, form AuthForm) {
+	@view.Layout(i18n.T(ctx, mode.key("title"))) {
+		@uikit.AuthLayout(view.AppName(ctx), i18n.T(ctx, mode.key("title")), i18n.T(ctx, mode.key("description"))) {
 			if token == "" {
 				<div role="alert">
-					@uikit.Callout(uikit.Error, "", i18n.T(ctx, m.key("invalidLink")))
+					@uikit.Callout(uikit.Error, "", i18n.T(ctx, mode.key("invalidLink")))
 				</div>
-				if m == resetMode {
+				if mode == resetMode {
 					<p class="mt-6 text-center text-sm">
 						<a href={ templ.SafeURL(config.AppRoutes.ForgotPassword) } class={ uikit.LinkClass }>{ i18n.T(ctx, "pages.login.forgotPassword") }</a>
 					</p>
 				}
 				@backToLogin()
 			} else {
-				<form class="space-y-5" method="post" action={ templ.SafeURL(m.action()) } data-on:submit={ uikit.PostForm(m.action()) } data-indicator:_loading>
+				<form class="space-y-5" method="post" action={ templ.SafeURL(mode.action()) } data-on:submit={ uikit.PostForm(mode.action()) } data-indicator:_loading>
 					<input type="hidden" name="token" value={ token }/>
-					@uikit.Alert(formErrorID, uikit.Error, f.Error)
-					@uikit.Input(uikit.Field{ID: "password", Type: "password", Label: i18n.T(ctx, "pages.setPassword.newPassword"), Placeholder: i18n.T(ctx, "pages.setPassword.newPasswordPlaceholder"), Autocomplete: "new-password", MinLength: 8, Hint: i18n.T(ctx, "pages.setPassword.passwordRequirement")})
-					@uikit.Input(uikit.Field{ID: "confirmPassword", Type: "password", Label: i18n.T(ctx, "pages.setPassword.confirmPassword"), Placeholder: i18n.T(ctx, "pages.setPassword.confirmPasswordPlaceholder"), Autocomplete: "new-password", MinLength: 8})
-					@uikit.SubmitButton(uikit.Submit{Label: i18n.T(ctx, m.key("submit")), Loading: i18n.T(ctx, "pages.setPassword.saving"), Signal: "_loading", ButtonProps: uikit.ButtonProps{Full: true}})
+					@uikit.Alert(formErrorID, uikit.Error, form.Error)
+					@uikit.Input(uikit.Field{ID: "password", Type: "password", Label: i18n.T(ctx, "pages.setPassword.newPassword"), Placeholder: i18n.T(ctx, "pages.setPassword.newPasswordPlaceholder"), Autocomplete: "new-password", MinLength: minPasswordLength, Hint: i18n.T(ctx, "pages.setPassword.passwordRequirement")})
+					@uikit.Input(uikit.Field{ID: "confirmPassword", Type: "password", Label: i18n.T(ctx, "pages.setPassword.confirmPassword"), Placeholder: i18n.T(ctx, "pages.setPassword.confirmPasswordPlaceholder"), Autocomplete: "new-password", MinLength: minPasswordLength})
+					@uikit.SubmitButton(uikit.Submit{Label: i18n.T(ctx, mode.key("submit")), Loading: i18n.T(ctx, "pages.setPassword.saving"), Signal: "_loading", ButtonProps: uikit.ButtonProps{Full: true}})
 				</form>
 			}
 		}
@@ -118,17 +123,17 @@ templ SetPasswordPage(m passwordMode, token string, f AuthForm) {
 
 // ForgotPasswordPage asks for the email to send a reset link to; sent is the
 // (translated) confirmation once asked.
-templ ForgotPasswordPage(f AuthForm, sent string) {
+templ ForgotPasswordPage(form AuthForm, sent string) {
 	@view.Layout(i18n.T(ctx, "pages.forgotPassword.title")) {
 		@uikit.AuthLayout(view.AppName(ctx), i18n.T(ctx, "pages.forgotPassword.title"), i18n.T(ctx, "pages.forgotPassword.description")) {
-			@ForgotPasswordBody(f, sent)
+			@ForgotPasswordBody(form, sent)
 			@backToLogin()
 		}
 	}
 }
 
 // ForgotPasswordBody is the form, or the confirmation that replaces it.
-templ ForgotPasswordBody(f AuthForm, sent string) {
+templ ForgotPasswordBody(form AuthForm, sent string) {
 	<div id={ forgotPasswordID }>
 		if sent != "" {
 			<div role="status">
@@ -136,8 +141,8 @@ templ ForgotPasswordBody(f AuthForm, sent string) {
 			</div>
 		} else {
 			<form class="space-y-5" method="post" action={ templ.SafeURL(config.AppRoutes.ForgotPassword) } data-on:submit={ uikit.PostForm(config.AppRoutes.ForgotPassword) } data-indicator:_sending>
-				@uikit.Alert(formErrorID, uikit.Error, f.Error)
-				@uikit.Input(uikit.Field{ID: "email", Type: "email", Label: i18n.T(ctx, "common.email"), Placeholder: i18n.T(ctx, "pages.login.emailPlaceholder"), Autocomplete: "email", Value: f.Email})
+				@uikit.Alert(formErrorID, uikit.Error, form.Error)
+				@uikit.Input(uikit.Field{ID: "email", Type: "email", Label: i18n.T(ctx, "common.email"), Placeholder: i18n.T(ctx, "pages.login.emailPlaceholder"), Autocomplete: "email", Value: form.Email})
 				@uikit.SubmitButton(uikit.Submit{Label: i18n.T(ctx, "pages.forgotPassword.submit"), Loading: i18n.T(ctx, "pages.forgotPassword.sending"), Signal: "_sending", ButtonProps: uikit.ButtonProps{Full: true}})
 			</form>
 		}

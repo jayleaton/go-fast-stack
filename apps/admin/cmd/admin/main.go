@@ -37,6 +37,10 @@ import (
 
 const shutdownTimeout = 15 * time.Second
 
+// emailCommandArgs is the argument count of the subcommands that take one
+// email (`invite <email>`, `reset-2fa <email>`): the command and the address.
+const emailCommandArgs = 2
+
 const usage = "usage: admin [serve | migrate | invite <email> | reset-2fa <email>]"
 
 func main() {
@@ -47,7 +51,7 @@ func main() {
 	}
 	switch {
 	case cmd == "serve" || cmd == "migrate":
-	case (cmd == "invite" || cmd == "reset-2fa") && len(args) == 2:
+	case (cmd == "invite" || cmd == "reset-2fa") && len(args) == emailCommandArgs:
 	default:
 		fmt.Fprintln(os.Stderr, usage)
 		os.Exit(2)
@@ -124,10 +128,10 @@ func migrate(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	}
 	svc := services.NewAdminService(server.NewAdminAccounts(admins, adminrepo.NewAdmins(adminPool)), adminrepo.NewAuditLog(adminPool), policy(cfg))
 	actor := services.SystemActor("bootstrap")
-	a, created, err := svc.Bootstrap(ctx, actor, in)
+	admin, created, err := svc.Bootstrap(ctx, actor, in)
 	sent := false
 	if err == nil {
-		sent, err = svc.InviteBootstrapAdmin(ctx, actor, a)
+		sent, err = svc.InviteBootstrapAdmin(ctx, actor, admin)
 	}
 	// Let a queued invite email go out before the pre-deploy command exits.
 	if serr := admins.Shutdown(ctx); err == nil {
@@ -137,7 +141,7 @@ func migrate(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		return err
 	}
 	if created || sent {
-		log.Info("bootstrap admin", "email", a.Email, "created", created, "invite_sent", sent,
+		log.Info("bootstrap admin", "email", admin.Email, "created", created, "invite_sent", sent,
 			"set_password_page", config.Absolute(cfg.PublicURL, config.AppRoutes.SetPassword))
 	}
 	return nil
@@ -200,11 +204,11 @@ func resetTwoFactor(ctx context.Context, cfg config.Config, log *slog.Logger, em
 	}
 	accounts := server.NewAdminAccounts(admins, adminrepo.NewAdmins(adminPool))
 	svc := services.NewAdminService(accounts, adminrepo.NewAuditLog(adminPool), policy(cfg))
-	a, err := svc.ResetTwoFactorByEmail(ctx, services.SystemActor("cli"), in)
+	admin, err := svc.ResetTwoFactorByEmail(ctx, services.SystemActor("cli"), in)
 	if err != nil {
 		return fmt.Errorf("reset-2fa %s: %w", in.Email, err)
 	}
-	log.Info("two-factor authentication removed; the admin enrols again at the next sign-in", "email", a.Email)
+	log.Info("two-factor authentication removed; the admin enrols again at the next sign-in", "email", admin.Email)
 	return admins.Shutdown(ctx)
 }
 

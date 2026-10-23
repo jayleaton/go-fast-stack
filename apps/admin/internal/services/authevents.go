@@ -39,28 +39,28 @@ func NewAuthEventService(log AuditLog) *AuthEventService {
 // SignedIn records a new admin session; method is one of the SignIn* values.
 // at is when it happened: events arrive after the fact, and the log is
 // ordered by it.
-func (s *AuthEventService) SignedIn(ctx context.Context, at time.Time, adminID, email, method string) error {
-	return s.record(ctx, at, ActionAdminSignIn, adminID, email, map[string]string{"method": method})
+func (service *AuthEventService) SignedIn(ctx context.Context, at time.Time, adminID, email, method string) error {
+	return service.record(ctx, at, ActionAdminSignIn, adminID, email, map[string]string{"method": method})
 }
 
 // SignedOut records an admin ending their session.
-func (s *AuthEventService) SignedOut(ctx context.Context, at time.Time, adminID, email string) error {
-	return s.record(ctx, at, ActionAdminSignOut, adminID, email, nil)
+func (service *AuthEventService) SignedOut(ctx context.Context, at time.Time, adminID, email string) error {
+	return service.record(ctx, at, ActionAdminSignOut, adminID, email, nil)
 }
 
 // TwoFactorFailed records a refused second-factor code for the admin whose
 // pending sign-in (or enrolment) it was; reason is auth's error code.
-func (s *AuthEventService) TwoFactorFailed(ctx context.Context, at time.Time, adminID, email, reason string) error {
-	return s.record(ctx, at, ActionAdminTwoFactorFailed, adminID, email, map[string]string{"reason": reason})
+func (service *AuthEventService) TwoFactorFailed(ctx context.Context, at time.Time, adminID, email, reason string) error {
+	return service.record(ctx, at, ActionAdminTwoFactorFailed, adminID, email, map[string]string{"reason": reason})
 }
 
 // BackupCodeUsed records an accepted backup code for the admin whose pending
 // sign-in it completed. The code is single-use: it is gone once recorded.
-func (s *AuthEventService) BackupCodeUsed(ctx context.Context, at time.Time, adminID, email string) error {
-	return s.record(ctx, at, ActionAdminBackupCodeUsed, adminID, email, nil)
+func (service *AuthEventService) BackupCodeUsed(ctx context.Context, at time.Time, adminID, email string) error {
+	return service.record(ctx, at, ActionAdminBackupCodeUsed, adminID, email, nil)
 }
 
-func (s *AuthEventService) record(ctx context.Context, at time.Time, action, adminID, email string, details map[string]string) error {
+func (service *AuthEventService) record(ctx context.Context, at time.Time, action, adminID, email string, details map[string]string) error {
 	self := Actor{AdminID: adminID, Email: email}
-	return audit(ctx, s.log, self, NewAuditEntry{Action: action, TargetType: TargetAdmin, TargetID: adminID, TargetLabel: email, Details: details, At: at})
+	return audit(ctx, service.log, self, NewAuditEntry{Action: action, TargetType: TargetAdmin, TargetID: adminID, TargetLabel: email, Details: details, At: at})
 }

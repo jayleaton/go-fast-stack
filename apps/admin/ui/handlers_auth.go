@@ -59,80 +59,80 @@ func (u *UI) challenge(w http.ResponseWriter, r *http.Request, err error) bool {
 	return true
 }
 
-func (u *UI) setPasswordPage(w http.ResponseWriter, r *http.Request) {
-	u.tokenPage(w)
-	u.render(w, r, http.StatusOK, SetPasswordPage(inviteMode, r.URL.Query().Get("token"), AuthForm{}))
+func (u *UI) setPasswordPage(writer http.ResponseWriter, request *http.Request) {
+	u.tokenPage(writer)
+	u.render(writer, request, http.StatusOK, SetPasswordPage(inviteMode, request.URL.Query().Get("token"), AuthForm{}))
 }
 
-func (u *UI) resetPasswordPage(w http.ResponseWriter, r *http.Request) {
-	u.tokenPage(w)
-	u.render(w, r, http.StatusOK, SetPasswordPage(resetMode, r.URL.Query().Get("token"), AuthForm{}))
+func (u *UI) resetPasswordPage(writer http.ResponseWriter, request *http.Request) {
+	u.tokenPage(writer)
+	u.render(writer, request, http.StatusOK, SetPasswordPage(resetMode, request.URL.Query().Get("token"), AuthForm{}))
 }
 
 // setPassword finishes an invite: the admin picks a password and is signed
 // in, or continues into 2FA.
-func (u *UI) setPassword(w http.ResponseWriter, r *http.Request) {
-	u.choosePassword(w, r, inviteMode)
+func (u *UI) setPassword(writer http.ResponseWriter, request *http.Request) {
+	u.choosePassword(writer, request, inviteMode)
 }
 
 // resetPassword spends a reset link the same way (invite and reset links are
 // the same kind of token): every other session ends, and sign-in still goes
 // through 2FA.
-func (u *UI) resetPassword(w http.ResponseWriter, r *http.Request) {
-	u.choosePassword(w, r, resetMode)
+func (u *UI) resetPassword(writer http.ResponseWriter, request *http.Request) {
+	u.choosePassword(writer, request, resetMode)
 }
 
-func (u *UI) choosePassword(w http.ResponseWriter, r *http.Request, m passwordMode) {
-	ctx := r.Context()
-	token := r.PostFormValue("token")
-	password := r.PostFormValue("password")
+func (u *UI) choosePassword(writer http.ResponseWriter, request *http.Request, mode passwordMode) {
+	ctx := request.Context()
+	token := request.PostFormValue("token")
+	password := request.PostFormValue("password")
 	fail := func(msg string) {
-		u.patch(w, r, http.StatusUnprocessableEntity, SetPasswordPage(m, token, AuthForm{Error: msg}), uikit.Alert(formErrorID, uikit.Error, msg))
+		u.patch(writer, request, http.StatusUnprocessableEntity, SetPasswordPage(mode, token, AuthForm{Error: msg}), uikit.Alert(formErrorID, uikit.Error, msg))
 	}
 	if token == "" {
-		fail(i18n.T(ctx, m.key("invalidLink")))
+		fail(i18n.T(ctx, mode.key("invalidLink")))
 		return
 	}
-	if password != r.PostFormValue("confirmPassword") {
+	if password != request.PostFormValue("confirmPassword") {
 		fail(i18n.T(ctx, "pages.setPassword.passwordMismatch"))
 		return
 	}
-	s, err := u.auth.CompleteSetPassword(ctx, token, password)
+	session, err := u.auth.CompleteSetPassword(ctx, token, password)
 	if err != nil {
-		if u.challenge(w, r, err) {
+		if u.challenge(writer, request, err) {
 			return
 		}
 		if errors.Is(err, ErrInvalidToken) {
-			fail(i18n.T(ctx, m.key("invalidLink"))) // the mode says where a new link comes from
+			fail(i18n.T(ctx, mode.key("invalidLink"))) // the mode says where a new link comes from
 			return
 		}
 		fail(u.errorMessage(ctx, err))
 		return
 	}
-	u.auth.SetSessionCookie(w, s)
-	u.redirect(w, r, config.AppRoutes.Users)
+	u.auth.SetSessionCookie(writer, session)
+	u.redirect(writer, request, config.AppRoutes.Users)
 }
 
-func (u *UI) forgotPasswordPage(w http.ResponseWriter, r *http.Request) {
-	if _, _, ok := u.userFrom(r.Context()); ok {
-		http.Redirect(w, r, config.AppRoutes.Users, http.StatusSeeOther)
+func (u *UI) forgotPasswordPage(writer http.ResponseWriter, request *http.Request) {
+	if _, _, ok := u.userFrom(request.Context()); ok {
+		http.Redirect(writer, request, config.AppRoutes.Users, http.StatusSeeOther)
 		return
 	}
-	u.render(w, r, http.StatusOK, ForgotPasswordPage(AuthForm{}, ""))
+	u.render(writer, request, http.StatusOK, ForgotPasswordPage(AuthForm{}, ""))
 }
 
 // forgotPassword asks for a reset link. The answer is the same whether or
 // not the email belongs to an admin; only rate limiting is reported.
-func (u *UI) forgotPassword(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	email := strings.TrimSpace(r.PostFormValue("email"))
+func (u *UI) forgotPassword(writer http.ResponseWriter, request *http.Request) {
+	ctx := request.Context()
+	email := strings.TrimSpace(request.PostFormValue("email"))
 	if err := u.auth.RequestPasswordReset(ctx, email); err != nil {
 		msg := u.errorMessage(ctx, err)
-		u.patch(w, r, http.StatusUnprocessableEntity, ForgotPasswordPage(AuthForm{Email: email, Error: msg}, ""), uikit.Alert(formErrorID, uikit.Error, msg))
+		u.patch(writer, request, http.StatusUnprocessableEntity, ForgotPasswordPage(AuthForm{Email: email, Error: msg}, ""), uikit.Alert(formErrorID, uikit.Error, msg))
 		return
 	}
 	sent := i18n.T(ctx, "pages.forgotPassword.sent")
-	u.patch(w, r, http.StatusOK, ForgotPasswordPage(AuthForm{}, sent), ForgotPasswordBody(AuthForm{}, sent))
+	u.patch(writer, request, http.StatusOK, ForgotPasswordPage(AuthForm{}, sent), ForgotPasswordBody(AuthForm{}, sent))
 }
 
 func (u *UI) twoFactorPage(w http.ResponseWriter, r *http.Request) {

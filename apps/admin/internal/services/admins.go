@@ -25,7 +25,7 @@ type Admin struct {
 }
 
 // Active reports whether the admin can sign in: invite accepted, not disabled.
-func (a Admin) Active() bool { return a.HasPassword && !a.Disabled }
+func (admin Admin) Active() bool { return admin.HasPassword && !admin.Disabled }
 
 // AdminAccounts is the port to the admin auth instance (an adapter over the
 // admin *auth.Auth in apps/admin/internal/server). Implementations report a
@@ -93,11 +93,11 @@ func NewAdminService(accounts AdminAccounts, log AuditLog, policy Policy) *Admin
 }
 
 // ListAdmins returns every admin, including pending invites.
-func (s *AdminService) ListAdmins(ctx context.Context, actor Actor) ([]Admin, error) {
-	if err := s.policy.authorize(actor); err != nil {
+func (service *AdminService) ListAdmins(ctx context.Context, actor Actor) ([]Admin, error) {
+	if err := service.policy.authorize(actor); err != nil {
 		return nil, err
 	}
-	admins, err := s.accounts.ListAdmins(ctx)
+	admins, err := service.accounts.ListAdmins(ctx)
 	if admins == nil {
 		admins = []Admin{}
 	}
@@ -108,51 +108,51 @@ func (s *AdminService) ListAdmins(ctx context.Context, actor Actor) ([]Admin, er
 // sent again) and emails the set-password link, as one audited mutation. The
 // intent of a first invite targets the email: the admin has no id until the
 // change runs.
-func (s *AdminService) InviteAdmin(ctx context.Context, actor Actor, in validate.CreateAdminInvite) (Admin, error) {
-	if err := s.policy.authorize(actor); err != nil {
+func (service *AdminService) InviteAdmin(ctx context.Context, actor Actor, in validate.CreateAdminInvite) (Admin, error) {
+	if err := service.policy.authorize(actor); err != nil {
 		return Admin{}, err
 	}
-	a, existed, err := s.find(ctx, in.Email)
+	admin, existed, err := service.find(ctx, in.Email)
 	if err != nil {
 		return Admin{}, err
 	}
-	if existed && a.HasPassword {
+	if existed && admin.HasPassword {
 		return Admin{}, ErrAdminExists
 	}
 	entry := NewAuditEntry{Action: ActionAdminInvite, TargetType: TargetAdmin, TargetID: in.Email, TargetLabel: in.Email, Details: map[string]string{}}
 	if existed {
 		// An existing admin (e.g. seeded by bootstrap) may never have been sent
 		// a link: it is a resend only if an earlier invite is on record.
-		resend, err := s.invitedBefore(ctx, a)
+		resend, err := service.invitedBefore(ctx, admin)
 		if err != nil {
 			return Admin{}, err
 		}
-		entry = adminEntry(ActionAdminInvite, a, map[string]string{})
+		entry = adminEntry(ActionAdminInvite, admin, map[string]string{})
 		if resend {
 			entry.Details["resent"] = "true"
 		}
 	}
-	err = mutate(ctx, s.log, actor, entry, func() error {
+	err = mutate(ctx, service.log, actor, entry, func() error {
 		if !existed {
-			created, err := s.accounts.CreateAdmin(ctx, in.Email, in.Name)
+			created, err := service.accounts.CreateAdmin(ctx, in.Email, in.Name)
 			if err != nil {
 				return err
 			}
-			a = created
+			admin = created
 		}
-		return adminMissing(s.accounts.SendSetPasswordLink(ctx, a.ID))
+		return adminMissing(service.accounts.SendSetPasswordLink(ctx, admin.ID))
 	})
 	if err != nil {
 		return Admin{}, err
 	}
-	return a, nil
+	return admin, nil
 }
 
 // invitedBefore reports whether an invite for a is on record (under its id,
 // or its email for the first invite).
-func (s *AdminService) invitedBefore(ctx context.Context, a Admin) (bool, error) {
-	for _, target := range []string{a.ID, a.Email} {
-		prior, err := s.log.List(ctx, AuditQuery{Action: ActionAdminInvite, TargetID: target, Limit: 1})
+func (service *AdminService) invitedBefore(ctx context.Context, admin Admin) (bool, error) {
+	for _, target := range []string{admin.ID, admin.Email} {
+		prior, err := service.log.List(ctx, AuditQuery{Action: ActionAdminInvite, TargetID: target, Limit: 1})
 		if err != nil || prior.Total > 0 {
 			return err == nil, err
 		}
@@ -162,45 +162,45 @@ func (s *AdminService) invitedBefore(ctx context.Context, a Admin) (bool, error)
 
 // DisableAdmin blocks the admin's sign-in and signs them out everywhere.
 // Nobody disables themselves or the last active admin.
-func (s *AdminService) DisableAdmin(ctx context.Context, actor Actor, adminID string) error {
-	a, err := s.removable(ctx, actor, adminID)
+func (service *AdminService) DisableAdmin(ctx context.Context, actor Actor, adminID string) error {
+	admin, err := service.removable(ctx, actor, adminID)
 	if err != nil {
 		return err
 	}
-	if a.Disabled {
+	if admin.Disabled {
 		return ErrAdminDisabled
 	}
-	return mutate(ctx, s.log, actor, adminEntry(ActionAdminDisable, a, nil), func() error {
-		return adminMissing(s.accounts.DisableAdmin(ctx, a.ID))
+	return mutate(ctx, service.log, actor, adminEntry(ActionAdminDisable, admin, nil), func() error {
+		return adminMissing(service.accounts.DisableAdmin(ctx, admin.ID))
 	})
 }
 
 // EnableAdmin lets a disabled admin sign in again.
-func (s *AdminService) EnableAdmin(ctx context.Context, actor Actor, adminID string) error {
-	if err := s.policy.authorize(actor); err != nil {
+func (service *AdminService) EnableAdmin(ctx context.Context, actor Actor, adminID string) error {
+	if err := service.policy.authorize(actor); err != nil {
 		return err
 	}
-	a, err := s.byID(ctx, adminID)
+	admin, err := service.byID(ctx, adminID)
 	if err != nil {
 		return err
 	}
-	if !a.Disabled {
+	if !admin.Disabled {
 		return ErrAdminNotDisabled
 	}
-	return mutate(ctx, s.log, actor, adminEntry(ActionAdminEnable, a, nil), func() error {
-		return adminMissing(s.accounts.EnableAdmin(ctx, a.ID))
+	return mutate(ctx, service.log, actor, adminEntry(ActionAdminEnable, admin, nil), func() error {
+		return adminMissing(service.accounts.EnableAdmin(ctx, admin.ID))
 	})
 }
 
 // RemoveAdmin deletes the admin (or cancels a pending invite). Nobody removes
 // themselves or the last active admin.
-func (s *AdminService) RemoveAdmin(ctx context.Context, actor Actor, adminID string) error {
-	a, err := s.removable(ctx, actor, adminID)
+func (service *AdminService) RemoveAdmin(ctx context.Context, actor Actor, adminID string) error {
+	admin, err := service.removable(ctx, actor, adminID)
 	if err != nil {
 		return err
 	}
-	return mutate(ctx, s.log, actor, adminEntry(ActionAdminRemove, a, nil), func() error {
-		return adminMissing(s.accounts.RemoveAdmin(ctx, a.ID))
+	return mutate(ctx, service.log, actor, adminEntry(ActionAdminRemove, admin, nil), func() error {
+		return adminMissing(service.accounts.RemoveAdmin(ctx, admin.ID))
 	})
 }
 
@@ -208,13 +208,13 @@ func (s *AdminService) RemoveAdmin(ctx context.Context, actor Actor, adminID str
 // password (they can also ask for it themselves on the sign-in page). Using
 // it ends their other sessions; sign-in still asks for the second factor. A
 // pending admin gets the invite again instead (InviteAdmin).
-func (s *AdminService) SendPasswordReset(ctx context.Context, actor Actor, adminID string) error {
-	a, err := s.recoverable(ctx, actor, adminID)
+func (service *AdminService) SendPasswordReset(ctx context.Context, actor Actor, adminID string) error {
+	admin, err := service.recoverable(ctx, actor, adminID)
 	if err != nil {
 		return err
 	}
-	return mutate(ctx, s.log, actor, adminEntry(ActionAdminPasswordReset, a, nil), func() error {
-		return adminMissing(s.accounts.SendSetPasswordLink(ctx, a.ID))
+	return mutate(ctx, service.log, actor, adminEntry(ActionAdminPasswordReset, admin, nil), func() error {
+		return adminMissing(service.accounts.SendSetPasswordLink(ctx, admin.ID))
 	})
 }
 
@@ -222,16 +222,16 @@ func (s *AdminService) SendPasswordReset(ctx context.Context, actor Actor, admin
 // authenticator and the backup codes. They enrol again at their next sign-in
 // (ADMIN_REQUIRE_2FA) and Policy refuses them until they do. The operator
 // (SystemActor, `admin reset-2fa`) uses it when no admin is left to do it.
-func (s *AdminService) ResetTwoFactor(ctx context.Context, actor Actor, adminID string) error {
-	a, err := s.recoverable(ctx, actor, adminID)
+func (service *AdminService) ResetTwoFactor(ctx context.Context, actor Actor, adminID string) error {
+	admin, err := service.recoverable(ctx, actor, adminID)
 	if err != nil {
 		return err
 	}
-	if !a.TwoFactorEnabled {
+	if !admin.TwoFactorEnabled {
 		return ErrAdminNoTwoFactor
 	}
-	return mutate(ctx, s.log, actor, adminEntry(ActionAdminResetTwoFactor, a, nil), func() error {
-		return adminMissing(s.accounts.ResetTwoFactor(ctx, a.ID))
+	return mutate(ctx, service.log, actor, adminEntry(ActionAdminResetTwoFactor, admin, nil), func() error {
+		return adminMissing(service.accounts.ResetTwoFactor(ctx, admin.ID))
 	})
 }
 
@@ -239,59 +239,59 @@ func (s *AdminService) ResetTwoFactor(ctx context.Context, actor Actor, adminID 
 // reset-2fa <email>`), who knows the admin by email: the recovery when the
 // last admin lost the authenticator and the backup codes. Only SystemActor
 // may call it.
-func (s *AdminService) ResetTwoFactorByEmail(ctx context.Context, actor Actor, in validate.ResetAdminTwoFactor) (Admin, error) {
+func (service *AdminService) ResetTwoFactorByEmail(ctx context.Context, actor Actor, in validate.ResetAdminTwoFactor) (Admin, error) {
 	if !actor.System {
 		return Admin{}, ErrForbidden
 	}
-	a, existed, err := s.find(ctx, in.Email)
+	admin, existed, err := service.find(ctx, in.Email)
 	if err != nil {
 		return Admin{}, err
 	}
 	if !existed {
 		return Admin{}, ErrAdminNotFound
 	}
-	if err := s.ResetTwoFactor(ctx, actor, a.ID); err != nil {
+	if err := service.ResetTwoFactor(ctx, actor, admin.ID); err != nil {
 		return Admin{}, err
 	}
-	a.TwoFactorEnabled = false
-	return a, nil
+	admin.TwoFactorEnabled = false
+	return admin, nil
 }
 
 // recoverable authorizes the actor and loads another admin whose account
 // they may recover: not themselves (an admin who can act does not need it),
 // and one who has accepted the invite.
-func (s *AdminService) recoverable(ctx context.Context, actor Actor, adminID string) (Admin, error) {
-	if err := s.policy.authorize(actor); err != nil {
+func (service *AdminService) recoverable(ctx context.Context, actor Actor, adminID string) (Admin, error) {
+	if err := service.policy.authorize(actor); err != nil {
 		return Admin{}, err
 	}
 	if adminID == actor.AdminID {
 		return Admin{}, ErrAdminSelfReset
 	}
-	a, err := s.byID(ctx, adminID)
+	admin, err := service.byID(ctx, adminID)
 	if err != nil {
 		return Admin{}, err
 	}
-	if !a.HasPassword {
+	if !admin.HasPassword {
 		return Admin{}, ErrAdminPending
 	}
-	return a, nil
+	return admin, nil
 }
 
 // removable authorizes the actor and loads an admin they may disable or
 // remove: not themselves, and never the last active admin, so the dashboard
 // cannot lock everyone out.
-func (s *AdminService) removable(ctx context.Context, actor Actor, adminID string) (Admin, error) {
-	if err := s.policy.authorize(actor); err != nil {
+func (service *AdminService) removable(ctx context.Context, actor Actor, adminID string) (Admin, error) {
+	if err := service.policy.authorize(actor); err != nil {
 		return Admin{}, err
 	}
 	if adminID == actor.AdminID {
 		return Admin{}, ErrAdminSelf
 	}
-	a, err := s.byID(ctx, adminID)
-	if err != nil || !a.Active() {
-		return a, err
+	admin, err := service.byID(ctx, adminID)
+	if err != nil || !admin.Active() {
+		return admin, err
 	}
-	all, err := s.accounts.ListAdmins(ctx)
+	all, err := service.accounts.ListAdmins(ctx)
 	if err != nil {
 		return Admin{}, err
 	}
@@ -304,15 +304,15 @@ func (s *AdminService) removable(ctx context.Context, actor Actor, adminID strin
 	if active <= 1 {
 		return Admin{}, ErrLastAdmin
 	}
-	return a, nil
+	return admin, nil
 }
 
-func (s *AdminService) byID(ctx context.Context, id string) (Admin, error) {
-	a, err := s.accounts.AdminByID(ctx, id)
+func (service *AdminService) byID(ctx context.Context, id string) (Admin, error) {
+	admin, err := service.accounts.AdminByID(ctx, id)
 	if err != nil {
 		return Admin{}, adminMissing(err)
 	}
-	return a, nil
+	return admin, nil
 }
 
 // adminMissing maps a port miss (also one between the lookup and the change,
@@ -329,23 +329,23 @@ func adminMissing(err error) error {
 // Idempotent: an existing
 // admin is returned with created false. Only the operator (SystemActor) may
 // call it. Creating it is an audited mutation targeting the email.
-func (s *AdminService) Bootstrap(ctx context.Context, actor Actor, in validate.CreateAdminInvite) (a Admin, created bool, err error) {
+func (service *AdminService) Bootstrap(ctx context.Context, actor Actor, in validate.CreateAdminInvite) (admin Admin, created bool, err error) {
 	if !actor.System {
 		return Admin{}, false, ErrForbidden
 	}
-	a, existed, err := s.find(ctx, in.Email)
+	admin, existed, err := service.find(ctx, in.Email)
 	if err != nil || existed {
-		return a, false, err
+		return admin, false, err
 	}
 	entry := NewAuditEntry{Action: ActionAdminBootstrap, TargetType: TargetAdmin, TargetID: in.Email, TargetLabel: in.Email}
-	err = mutate(ctx, s.log, actor, entry, func() error {
-		a, err = s.accounts.CreateAdmin(ctx, in.Email, in.Name)
+	err = mutate(ctx, service.log, actor, entry, func() error {
+		admin, err = service.accounts.CreateAdmin(ctx, in.Email, in.Name)
 		return err
 	})
 	if err != nil {
 		return Admin{}, false, err
 	}
-	return a, true, nil
+	return admin, true, nil
 }
 
 // InviteBootstrapAdmin emails the bootstrap admin's invite from `admin
@@ -354,34 +354,34 @@ func (s *AdminService) Bootstrap(ctx context.Context, actor Actor, in validate.C
 // first admin. It sends only while a is pending with no invite on record, so
 // later deploys send nothing (a fresh link: "Forgot password?" on the sign-in
 // page, or another admin). Only the operator may call it.
-func (s *AdminService) InviteBootstrapAdmin(ctx context.Context, actor Actor, a Admin) (sent bool, err error) {
+func (service *AdminService) InviteBootstrapAdmin(ctx context.Context, actor Actor, admin Admin) (sent bool, err error) {
 	if !actor.System {
 		return false, ErrForbidden
 	}
-	if a.HasPassword {
+	if admin.HasPassword {
 		return false, nil
 	}
-	if invited, err := s.invitedBefore(ctx, a); err != nil || invited {
+	if invited, err := service.invitedBefore(ctx, admin); err != nil || invited {
 		return false, err
 	}
-	err = mutate(ctx, s.log, actor, adminEntry(ActionAdminInvite, a, map[string]string{}), func() error {
-		return adminMissing(s.accounts.SendSetPasswordLink(ctx, a.ID))
+	err = mutate(ctx, service.log, actor, adminEntry(ActionAdminInvite, admin, map[string]string{}), func() error {
+		return adminMissing(service.accounts.SendSetPasswordLink(ctx, admin.ID))
 	})
 	return err == nil, err
 }
 
 // find returns the admin with email; existed is false when there is none.
-func (s *AdminService) find(ctx context.Context, email string) (a Admin, existed bool, err error) {
-	a, err = s.accounts.AdminByEmail(ctx, email)
+func (service *AdminService) find(ctx context.Context, email string) (admin Admin, existed bool, err error) {
+	admin, err = service.accounts.AdminByEmail(ctx, email)
 	switch {
 	case err == nil:
-		return a, true, nil
+		return admin, true, nil
 	case errors.Is(err, ErrRecordNotFound):
 		return Admin{}, false, nil
 	}
 	return Admin{}, false, err
 }
 
-func adminEntry(action string, a Admin, details map[string]string) NewAuditEntry {
-	return NewAuditEntry{Action: action, TargetType: TargetAdmin, TargetID: a.ID, TargetLabel: a.Email, Details: details}
+func adminEntry(action string, admin Admin, details map[string]string) NewAuditEntry {
+	return NewAuditEntry{Action: action, TargetType: TargetAdmin, TargetID: admin.ID, TargetLabel: admin.Email, Details: details}
 }

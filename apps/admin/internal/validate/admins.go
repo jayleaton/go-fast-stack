@@ -35,11 +35,11 @@ type ResetAdminTwoFactor struct {
 }
 
 // Validate normalises the address.
-func (r *ResetAdminTwoFactor) Validate() error {
-	r.Email = strings.ToLower(strings.TrimSpace(r.Email))
-	f := Fields{}
-	f.Add(!isEmail(r.Email), "email", "must be a valid email address")
-	return f.Err()
+func (reset *ResetAdminTwoFactor) Validate() error {
+	reset.Email = strings.ToLower(strings.TrimSpace(reset.Email))
+	fields := Fields{}
+	fields.Add(!isEmail(reset.Email), "email", "must be a valid email address")
+	return fields.Err()
 }
 
 // ListAuditLog is the query of GET /audit, newest first.

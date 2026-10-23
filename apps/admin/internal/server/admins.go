@@ -31,83 +31,83 @@ const disabledReason = "Disabled by an admin"
 
 // NewAdminAccounts returns the adapter over the admin auth instance and the
 // admin database's repository.
-func NewAdminAccounts(a *auth.Auth, store *adminrepo.Admins) AdminAccounts {
-	return AdminAccounts{auth: a, store: store}
+func NewAdminAccounts(adminAuth *auth.Auth, store *adminrepo.Admins) AdminAccounts {
+	return AdminAccounts{auth: adminAuth, store: store}
 }
 
-func (a AdminAccounts) AdminByID(ctx context.Context, id string) (services.Admin, error) {
-	d, err := a.auth.Users().GetUserDetail(ctx, id)
+func (accounts AdminAccounts) AdminByID(ctx context.Context, id string) (services.Admin, error) {
+	detail, err := accounts.auth.Users().GetUserDetail(ctx, id)
 	if errors.Is(err, auth.ErrUserNotFound) {
 		return services.Admin{}, fmt.Errorf("%w: %w", services.ErrRecordNotFound, err)
 	}
 	if err != nil {
 		return services.Admin{}, err
 	}
-	return adminFromAuth(d.User), nil
+	return adminFromAuth(detail.User), nil
 }
 
 // DisableAdmin bans the admin permanently: auth refuses their sign-in and
 // revokes every session.
-func (a AdminAccounts) DisableAdmin(ctx context.Context, id string) error {
-	return a.auth.Users().BanUser(ctx, id, disabledReason, 0)
+func (accounts AdminAccounts) DisableAdmin(ctx context.Context, id string) error {
+	return accounts.auth.Users().BanUser(ctx, id, disabledReason, 0)
 }
 
-func (a AdminAccounts) EnableAdmin(ctx context.Context, id string) error {
-	return a.auth.Users().UnbanUser(ctx, id)
+func (accounts AdminAccounts) EnableAdmin(ctx context.Context, id string) error {
+	return accounts.auth.Users().UnbanUser(ctx, id)
 }
 
-func (a AdminAccounts) RemoveAdmin(ctx context.Context, id string) error {
-	return a.store.Remove(ctx, id)
+func (accounts AdminAccounts) RemoveAdmin(ctx context.Context, id string) error {
+	return accounts.store.Remove(ctx, id)
 }
 
-func (a AdminAccounts) ListAdmins(ctx context.Context) ([]services.Admin, error) {
-	page, err := a.auth.Users().ListUsers(ctx, auth.ListUsersQuery{SortBy: "createdAt", Limit: maxAdmins})
+func (accounts AdminAccounts) ListAdmins(ctx context.Context) ([]services.Admin, error) {
+	page, err := accounts.auth.Users().ListUsers(ctx, auth.ListUsersQuery{SortBy: "createdAt", Limit: maxAdmins})
 	if err != nil {
 		return nil, err
 	}
 	out := make([]services.Admin, len(page.Users))
-	for i, u := range page.Users {
-		out[i] = adminFromAuth(u)
+	for index, user := range page.Users {
+		out[index] = adminFromAuth(user)
 	}
 	return out, nil
 }
 
-func (a AdminAccounts) AdminByEmail(ctx context.Context, email string) (services.Admin, error) {
-	page, err := a.auth.Users().ListUsers(ctx, auth.ListUsersQuery{Search: email, SearchField: "email", Limit: maxAdmins})
+func (accounts AdminAccounts) AdminByEmail(ctx context.Context, email string) (services.Admin, error) {
+	page, err := accounts.auth.Users().ListUsers(ctx, auth.ListUsersQuery{Search: email, SearchField: "email", Limit: maxAdmins})
 	if err != nil {
 		return services.Admin{}, err
 	}
-	for _, u := range page.Users { // Search is "contains"; keep the exact match
-		if strings.EqualFold(u.Email, email) {
-			return adminFromAuth(u), nil
+	for _, user := range page.Users { // Search is "contains"; keep the exact match
+		if strings.EqualFold(user.Email, email) {
+			return adminFromAuth(user), nil
 		}
 	}
 	return services.Admin{}, services.ErrRecordNotFound
 }
 
-func (a AdminAccounts) CreateAdmin(ctx context.Context, email, name string) (services.Admin, error) {
-	u, err := a.auth.CreateUserWithoutPassword(ctx, auth.CreateUserInput{Name: name, Email: email, Role: "admin"})
+func (accounts AdminAccounts) CreateAdmin(ctx context.Context, email, name string) (services.Admin, error) {
+	user, err := accounts.auth.CreateUserWithoutPassword(ctx, auth.CreateUserInput{Name: name, Email: email, Role: "admin"})
 	if errors.Is(err, auth.ErrUserAlreadyExists) {
 		return services.Admin{}, fmt.Errorf("%w: %w", services.ErrAdminExists, err)
 	}
 	if err != nil {
 		return services.Admin{}, err
 	}
-	return services.Admin{ID: u.ID, Name: u.Name, Email: u.Email, CreatedAt: u.CreatedAt}, nil
+	return services.Admin{ID: user.ID, Name: user.Name, Email: user.Email, CreatedAt: user.CreatedAt}, nil
 }
 
-func (a AdminAccounts) SendSetPasswordLink(ctx context.Context, adminID string) error {
-	return a.auth.IssueSetPasswordLink(ctx, adminID, config.AppRoutes.SetPassword)
+func (accounts AdminAccounts) SendSetPasswordLink(ctx context.Context, adminID string) error {
+	return accounts.auth.IssueSetPasswordLink(ctx, adminID, config.AppRoutes.SetPassword)
 }
 
-func (a AdminAccounts) ResetTwoFactor(ctx context.Context, adminID string) error {
-	err := a.auth.Users().ResetTwoFactor(ctx, adminID)
+func (accounts AdminAccounts) ResetTwoFactor(ctx context.Context, adminID string) error {
+	err := accounts.auth.Users().ResetTwoFactor(ctx, adminID)
 	if errors.Is(err, auth.ErrUserNotFound) {
 		return fmt.Errorf("%w: %w", services.ErrRecordNotFound, err)
 	}
 	return err
 }
 
-func adminFromAuth(u auth.AdminUser) services.Admin {
-	return services.Admin{ID: u.ID, Name: u.Name, Email: u.Email, CreatedAt: u.CreatedAt, TwoFactorEnabled: u.TwoFactorEnabled, HasPassword: u.HasPassword, Disabled: u.Banned}
+func adminFromAuth(user auth.AdminUser) services.Admin {
+	return services.Admin{ID: user.ID, Name: user.Name, Email: user.Email, CreatedAt: user.CreatedAt, TwoFactorEnabled: user.TwoFactorEnabled, HasPassword: user.HasPassword, Disabled: user.Banned}
 }

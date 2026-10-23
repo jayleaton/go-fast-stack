@@ -333,15 +333,15 @@ func TestSendPasswordReset(t *testing.T) {
 	svc, accounts, log := newAdminService(t)
 
 	// A disabled admin may get one too: they still cannot sign in.
-	for _, a := range []services.Admin{bob, disBob} {
+	for _, admin := range []services.Admin{bob, disBob} {
 		gomock.InOrder(
-			accounts.EXPECT().AdminByID(ctx, "a2").Return(a, nil),
+			accounts.EXPECT().AdminByID(ctx, "a2").Return(admin, nil),
 			log.EXPECT().Begin(ctx, adminAudit(grace, "admin.password_reset", nil)).Return(entryID, nil),
 			accounts.EXPECT().SendSetPasswordLink(ctx, "a2").Return(nil),
 			log.EXPECT().Resolve(ctx, entryID, succeeded).Return(nil),
 		)
 		if err := svc.SendPasswordReset(ctx, grace, "a2"); err != nil {
-			t.Fatalf("%+v: %v", a, err)
+			t.Fatalf("%+v: %v", admin, err)
 		}
 	}
 
