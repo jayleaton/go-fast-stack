@@ -78,6 +78,8 @@ linters:
               desc: transports call services (use services.User etc.), never repositories or sqlc
             - pkg: github.com/jayleaton/go-fast-stack/packages/secrets
               desc: secrets reach consumers through config.Secrets accessors wired in cmd/server, never the store itself
+            - pkg: github.com/jayleaton/go-fast-stack/packages/storage
+              desc: transports call services; object storage sits behind the services' ports
         services:
           files:
             - "**/apps/web/internal/services/**"
@@ -102,6 +104,8 @@ linters:
               desc: route access is the transports' coarse gate; services get a services.Actor and decide record-level authorization themselves
             - pkg: github.com/jayleaton/go-fast-stack/packages/secrets
               desc: services declare a port for what a secret enables (a client); cmd/server wires it from config.Secrets
+            - pkg: github.com/jayleaton/go-fast-stack/packages/storage
+              desc: services declare ports (ObjectStore, ImageFetcher, ImageCodec); adapters in apps/web/internal/server wrap packages/storage
         database:
           files:
             - "**/packages/database/**"
@@ -128,6 +132,21 @@ linters:
               desc: packages/secrets is self-contained
             - pkg: go.uber.org/mock
               desc: secrets tests use fake providers over httptest, never mocks
+        # Object storage (packages/storage: S3 client, safefetch, imaging) is
+        # optional and deletable: it imports no app and none of the data,
+        # auth or secrets packages; cmd reveals credentials and passes strings.
+        storage:
+          files:
+            - "**/packages/storage/**"
+          deny:
+            - pkg: github.com/jayleaton/go-fast-stack/apps
+              desc: packages/storage is self-contained; apps/web/internal/server adapts it to the services' ports
+            - pkg: github.com/jayleaton/go-fast-stack/packages/database
+              desc: packages/storage is self-contained
+            - pkg: github.com/jayleaton/go-fast-stack/packages/auth
+              desc: packages/storage is self-contained
+            - pkg: github.com/jayleaton/go-fast-stack/packages/secrets
+              desc: packages/storage takes plain strings revealed in apps/*/cmd
         # Credentials travel as secrets.Secret (prints "[redacted]"), which has
         # no method returning the value; reveal.Value is the only way to read
         # it (package secrets/internal/access keeps it that way). Only the cmd

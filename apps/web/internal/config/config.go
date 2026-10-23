@@ -35,11 +35,12 @@ type Config struct {
 	PublicURL       *url.URL      // origin people reach the app on (emails, auth callbacks)
 	InternalURL     *url.URL      // origin the server uses to reach itself
 	TrustedOrigins  []string      // PublicURL plus TRUSTED_ORIGINS
-	Secrets         Secrets       // live secrets (DATABASE_URL, AUTH_SECRET[_PREVIOUS], RESEND_API_KEY) from SECRETS_PROVIDER
+	Secrets         Secrets       // live secrets (DATABASE_URL, AUTH_SECRET[_PREVIOUS], RESEND_API_KEY, STORAGE_S3_*) from SECRETS_PROVIDER
 	AuthSecretGrace time.Duration // AUTH_SECRET_GRACE: how long a retired AUTH_SECRET is accepted (0: packages/auth default)
 	FromEmail       string
-	ClientIPHeader  string // header the trusted proxy sets to the client IP (auth rate limits); empty uses the TCP peer
-	Social          Social // Google / Apple sign-in, each off until its client id is set
+	ClientIPHeader  string         // header the trusted proxy sets to the client IP (auth rate limits); empty uses the TCP peer
+	Social          Social         // Google / Apple sign-in, each off until its client id is set
+	Storage         StorageOptions // object storage region and addressing; the bucket and keys are live secrets (Secrets.Storage)
 	Features        Features
 }
 
@@ -92,6 +93,7 @@ func Load(getenv func(string) string) (Config, error) {
 		errs = append(errs, err)
 	}
 	cfg.Social = loadSocial(get, &errs)
+	cfg.Storage = loadStorageOptions(get, &errs)
 	cfg.Secrets = loadSecrets(cfg.Env, cfg.Social, get, &errs)
 
 	cfg.Features = FeaturesFor(cfg.Env)

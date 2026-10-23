@@ -32,13 +32,13 @@ Pages are rendered on the server in Go, and [Datastar](https://data-star.dev) ad
 
 | | Measured |
 |---|---|
-| Web server | one static binary, **16.5 MB** (no runtime, no `node_modules`) |
+| Web server | one static binary, **24.5 MB** (no runtime, no `node_modules`) |
 | Client JavaScript | one file, Datastar: **34 KB** (13 KB gzipped) |
 | Memory | **83 MB** right after start, 93 MB after 200 page loads, on a dev machine. On Railway the idle server uses about 75 MB. |
 | Home page | 17 KB of HTML, rendered in about 0.4 ms |
-| Production image | distroless, about 5 MB |
+| Production image | distroless, about 11 MB compressed (0.9 MB base + the binary) |
 
-The binary size, memory and page numbers come from a production build (`-trimpath -ldflags='-s -w'`, Go 1.26.8) at this PR's base. The Railway figure is from the [deploy cost notes](docs/deploy.md#cost).
+7.9 MB of the binary is the pure-Go image codecs used by the optional image uploads ([docs/storage.md](docs/storage.md#pure-go-static-binary)). The binary and image sizes come from a production build (`make build`: `-tags nodynamic -trimpath -ldflags='-s -w'`, Go 1.26.8, linux/amd64); the memory and page numbers come from the same kind of build before the codecs were added. The Railway figure is from the [deploy cost notes](docs/deploy.md#cost).
 
 **Fast CI and fast tests.** CI checks only the packages a change can affect, in one job.
 
@@ -113,6 +113,7 @@ To deploy, run `make railway-setup`. It creates the whole Railway project from [
 - [Security](docs/security.md): what the browser can and can't reach, headers, cookies
 - [Google and Apple sign-in (optional)](docs/sign-in.md): provider credentials, turning it on, deleting it
 - [Admin dashboard (optional)](docs/admin.md): user management and the audit log
+- [Object storage (optional)](docs/storage.md): S3/R2/Railway buckets, safe image uploads and imports by URL
 - [Mobile app](apps/mobile-app/README.md) · [Auth](packages/auth/README.md) · [UI kit](packages/uikit/README.md)
 - [AGENTS.md](AGENTS.md) (rules for contributors and agents) · [CONTEXT.md](CONTEXT.md) (vocabulary)
 

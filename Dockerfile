@@ -8,7 +8,11 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /out/server ./apps/web/cmd/server
+# -tags nodynamic keeps the image codecs from linking purego (a dynamic
+# binary, which distroless/static cannot run); the check fails the build if
+# the tag is ever dropped.
+RUN CGO_ENABLED=0 go build -tags nodynamic -trimpath -ldflags='-s -w' -o /out/server ./apps/web/cmd/server \
+ && go version -m /out/server | grep -q -- '-tags=nodynamic'
 
 FROM gcr.io/distroless/static-debian13:nonroot
 COPY --from=build /out/server /server
