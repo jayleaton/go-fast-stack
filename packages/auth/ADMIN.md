@@ -179,7 +179,7 @@ Turning `TwoFactor` off on an instance skips 2FA even for users who enrolled.
 
 | Kind | When | Notable fields |
 |---|---|---|
-| `sign_in` | a session was created | `Method`: `password`, `two_factor` (`Details["factor"]` totp / backup_code), `set_password`, `sign_up`, `email_verification`, `email_change`; `SessionID` |
+| `sign_in` | a session was created | `Method`: `password`, `two_factor` (`Details["factor"]` totp / backup_code), `set_password`, `sign_up`, `email_verification`, `email_change`, `social` (`Details["provider"]` google / apple); `SessionID` |
 | `sign_in_failed` | sign-in refused, or a correct second factor that still got no session (spent challenge, ban) | `Reason` (error code); `UserID`/`Email` only when the email matched an account |
 | `two_factor_succeeded` / `two_factor_failed` | a second-factor or enrolment code accepted / refused | `UserID` from the pending-2FA state; `Method` totp / backup_code; `Reason`. Attempts without a valid pending sign-in are not reported (no user to name) |
 | `two_factor_enabled` / `two_factor_disabled` | enrolment confirmed / removed (`Details["by"]="admin"` for `ResetTwoFactor`) | |
@@ -187,6 +187,7 @@ Turning `TwoFactor` off on an instance skips 2FA even for users who enrolled.
 | `session_revoked` | sessions ended other than by signing out | `Details["count"]`, `Details["by"]`: `user`, `password_change`, `password_reset` (reset and invite links), `email_verification`, `sign_up` (an unverified account reclaimed), `admin`, `ban`; `SessionID` for a single one |
 | `password_changed` / `password_reset` | `ChangePassword` / a reset or invite link (`Method` reset / set_password) | |
 | `email_change_requested` / `email_changed` | `ChangeEmail` (`Details["newEmail"]`, `outcome=address_taken` when silently ignored) / the link was opened (`oldEmail`, `newEmail`) | |
+| `account_linked` | a Google or Apple account was linked to an existing user by verified email | `Details["provider"]` |
 | `user_banned` / `user_unbanned` | `UserAdmin.BanUser` (`reason`, `expiresAt`) / `UnbanUser` | |
 
 - **Never secrets:** events carry ids, never a password, token, TOTP secret or code. `Email` is the account's address when the event happened; where the emitter didn't have it, it is looked up before delivery. A refused sign-in for an unknown address carries no email, because people type passwords into email fields.

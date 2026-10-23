@@ -46,10 +46,25 @@ Ports of Better Auth's `twoFactor` and `admin` plugins and an invite flow; the f
 
 Security notes for this part: TOTP secrets are AES-256-GCM encrypted (user id as associated data) and backup codes are stored as keyed hashes bound to the user, under data keys stored wrapped by `AUTH_SECRET`, so a database dump alone yields neither, and rotating `AUTH_SECRET` rewraps the data keys instead of invalidating enrolments. Trusted-device cookies are not rotated on use (Better Auth rotates them); disable 2FA, reset the password or revoke other sessions to forget them. The per-challenge attempt limit uses the configured `RateLimiter` (in-memory by default); the per-user lockout is in the database.
 
+## Social sign-in (Google, Apple)
+
+Better Auth's `google` and `apple` providers, off until configured (`Config.Google`, `Config.Apple`). Callback paths are Better Auth's, always on `BaseURL`: register `<BaseURL>/api/auth/callback/google` and `<BaseURL>/api/auth/callback/apple` with the provider. The credentials that rotate (`GoogleConfig.ClientSecret`, Apple's `PrivateKey` with its `KeyID`) are swapped live with `SetSocialSecrets`; Apple's client secret JWT is signed from the `.p8` key and renewed by itself.
+
+| Area | Behaviour |
+|---|---|
+| Browser | A UI handler calls `StartSocialSignIn(ctx, w, provider, callbackURL)` and redirects to the URL it returns. It stores the flow in a `verification` row (`oauth-state:<state>`, 10 min) with the PKCE verifier and an OIDC nonce, and binds it to this browser with a signed `<prefix>.oauth_state` cookie (5 min). The callback checks state and cookie, spends the row once, exchanges the code with the verifier, verifies the ID token (JWKS, RS256/ES256 only, issuer, audience, expiry, nonce), links or creates the user, sets the session cookie and redirects to `callbackURL` (relative or a trusted web origin). Failures land on `<BaseURL><SocialErrorPath>?error=<code>` (default `LoginPath`). |
+| App handoff | `POST /api/auth/sign-in/social {provider, callbackURL}` (a deep link on a trusted scheme) → `{url, redirect:false, handoffSecret}`. The app opens `url` in an in-app browser and keeps the secret in memory. The callback sends that browser to `callbackURL?code=<one-time code>` (or `?error=<code>`); `POST /api/auth/sign-in/handoff {code, handoffSecret}` → `{redirect:false, token, user}` plus the session cookie and `set-auth-token`, like email sign-in. The code lives 60 s, only its hash is stored, and the first attempt spends it, right or wrong: an app that intercepts the deep link has no secret, and a replay gets `400 INVALID_TOKEN`. No session token ever appears in a URL. |
+| Providers | `GET /api/auth/social-providers` → `{providers: ["google","apple"]}` (only the configured ones), for clients that show buttons. Apple's `form_post` to the callback is bounced to a GET (the SameSite=Lax state cookie is not sent on a cross-site POST) without its front-channel `id_token`. |
+| Linking | Same as Better Auth: a known provider account signs in its user; otherwise a user with the same email is linked only when the provider **and** the user have verified it (`EventAccountLinked`), else `account_not_linked`; otherwise a new user (`signup_disabled` with `DisableSignUp`). |
+| Stricter than Better Auth | The code-flow ID token is verified, not just decoded. With `RequireEmailVerification`, an address the provider has not verified gets no account and no session (`email_not_verified`), so it cannot squat the inbox owner's account. Social sign-in never skips 2FA (`two_factor_required`); banned users get `banned`. |
+| Error codes | `state_not_found`, `state_mismatch`, `please_restart_the_process`, the provider's own (`access_denied`; anything that is not lower-case words becomes `oauth_error`), `no_code`, `invalid_code`, `unable_to_get_user_info`, `email_not_found`, `account_not_linked`, `signup_disabled`, `unable_to_create_user`, `unable_to_link_account`, `email_not_verified`, `two_factor_required`, `banned`, `internal_server_error`. |
+
+Not ported: Better Auth's Expo authorization proxy and its `?cookie=` deep-link handoff (it puts the session in a URL), native ID-token sign-in, extra scopes and refresh-token use. Add a provider by giving `newSocialProviders` its endpoints and claims mapping; `social_test.go` runs every flow against a fake OIDC provider.
+
 ## Events
 
 `Config.Events` receives typed events after the fact:
-- sign-ins and refused sign-ins, 2FA results;
+- sign-ins (`Method: "social"`, `Details["provider"]`) and refused sign-ins, 2FA results, social accounts linked by email;
 - sign-outs and session revocations;
 - password and email changes, bans.
 
@@ -101,8 +116,9 @@ token. Don't wrap static file routes with it.
    required" after the password check in `SignInEmail`), add a small
    exported extension point to this package instead of copying flows.
 4. OAuth providers fit the existing `account` table (`providerId`,
-   `accountId`, tokens). `ResetPassword` already creates a credential account
-   for users who don't have one.
+   `accountId`, tokens); Google and Apple are in `social.go` (see "Social
+   sign-in"). `ResetPassword` already creates a credential account for users
+   who don't have one.
 5. Test against real Postgres like `flows_test.go`, including the reverse
    states (disable, revoke, expired, reused).
 

@@ -37,6 +37,11 @@ func (a *Auth) Handler() http.Handler {
 	mux.HandleFunc("POST "+BasePath+"/two-factor/verify-backup-code", a.handleTwoFactorVerify(TwoFactorMethodBackup))
 	mux.HandleFunc("POST "+BasePath+"/two-factor/generate-backup-codes", a.handleTwoFactorBackupCodes)
 	mux.HandleFunc("POST "+BasePath+"/two-factor/disable", a.handleTwoFactorDisable)
+	mux.HandleFunc("GET "+BasePath+"/social-providers", a.handleSocialProviders)
+	mux.HandleFunc("POST "+BasePath+"/sign-in/social", a.handleSignInSocial)
+	mux.HandleFunc("POST "+BasePath+"/sign-in/handoff", a.handleSignInHandoff)
+	mux.HandleFunc("GET "+BasePath+"/callback/{provider}", a.handleCallback)
+	mux.HandleFunc("POST "+BasePath+"/callback/{provider}", a.handleCallbackPost)
 	mux.HandleFunc("GET "+BasePath+"/ok", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	})
