@@ -354,8 +354,8 @@ const DefaultPreviewBranch = "dev"
 // production (and for every environment of a production-only project), else
 // DefaultPreviewBranch.
 func (c Config) BranchFor(env string) string {
-	if b := c.Branches[env]; b != "" {
-		return b
+	if branch := c.Branches[env]; branch != "" {
+		return branch
 	}
 	if env == "production" || len(c.Environments) == 1 {
 		return c.Branch

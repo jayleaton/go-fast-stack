@@ -85,41 +85,49 @@ func (s *setup) checkBranches(ctx context.Context) {
 	if s.cfg.Repo == "" {
 		return
 	}
-	var parts, branches []string
+	var mapping, branches []string
 	deploys := map[string][]string{} // branch -> the environments that deploy it
 	for _, env := range s.cfg.Environments {
-		b := s.cfg.BranchFor(env)
-		parts = append(parts, env+" <- "+b)
-		if deploys[b] == nil {
-			branches = append(branches, b)
+		branch := s.cfg.BranchFor(env)
+		mapping = append(mapping, env+" <- "+branch)
+		if deploys[branch] == nil {
+			branches = append(branches, branch)
 		}
-		deploys[b] = append(deploys[b], env)
+		deploys[branch] = append(deploys[branch], env)
 	}
-	s.say("branches: %s (deploy on push to github.com/%s)", strings.Join(parts, ", "), s.cfg.Repo)
-	for _, b := range branches {
-		if !errors.Is(branchExists(ctx, s.cfg.Repo, b), errNoBranch) {
+	s.say("branches: %s (deploy on push to github.com/%s)", strings.Join(mapping, ", "), s.cfg.Repo)
+	for _, branch := range branches {
+		if !errors.Is(branchExists(ctx, s.cfg.Repo, branch), errNoBranch) {
 			continue
 		}
-		envs := deploys[b]
-		s.say("  ! %s deploys branch %s, which github.com/%s does not have yet: nothing deploys there until it is pushed", strings.Join(envs, ", "), b, s.cfg.Repo)
+		envs := deploys[branch]
+		s.say("  ! %s deploys branch %s, which github.com/%s does not have yet: nothing deploys there until it is pushed", strings.Join(envs, ", "), branch, s.cfg.Repo)
 		s.next("Create branch %s, which %s deploys: git push origin %s:%s (or set branches.%s in platform.yaml)",
-			b, strings.Join(envs, ", "), s.cfg.Branch, b, envs[0])
+			branch, strings.Join(envs, ", "), s.cfg.Branch, branch, envs[0])
 	}
 }
 
 var errNoBranch = errors.New("no such branch")
 
+const (
+	// branchLookupTimeout bounds one git ls-remote against GitHub.
+	branchLookupTimeout = 15 * time.Second
+	// lsRemoteNoMatch is git ls-remote --exit-code's status when the repo
+	// answered but has no matching ref.
+	lsRemoteNoMatch = 2
+)
+
 // branchExists asks GitHub for refs/heads/<branch>: nil when it exists,
 // errNoBranch when the repo answers without it, another error when git
 // cannot reach the repo (no network, a private repo without credentials).
 func branchExists(ctx context.Context, repo, branch string) error {
-	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, branchLookupTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", "ls-remote", "--exit-code", "--heads", "https://github.com/"+repo+".git", "refs/heads/"+branch)
 	cmd.Env = append(cmd.Environ(), "GIT_TERMINAL_PROMPT=0")
 	err := cmd.Run()
-	var exit *exec.ExitError
-	if errors.As(err, &exit) && exit.ExitCode() == 2 { // --exit-code: the repo answered, no matching ref
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) && exitErr.ExitCode() == lsRemoteNoMatch {
 		return errNoBranch
 	}
 	return err
