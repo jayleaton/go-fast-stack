@@ -89,6 +89,8 @@ func (PgTools) Tables(ctx context.Context, dbURL string) (int, error) {
 	return n, err
 }
 
+const maxToolStderr = 8 << 10 // 8 KiB of a tool's stderr kept for its error
+
 // run executes tool against dbURL (password moved to PGPASSWORD); stderr is
 // returned in the error, minus anything that looks like the connection string.
 func run(ctx context.Context, tool, dbURL string, stdin io.Reader, stdout io.Writer, args ...string) error {
@@ -100,7 +102,7 @@ func run(ctx context.Context, tool, dbURL string, stdin io.Reader, stdout io.Wri
 	cmd.Env = append(os.Environ(), "PGPASSWORD="+password, "PGCONNECT_TIMEOUT=15")
 	cmd.Stdin, cmd.Stdout = stdin, stdout
 	var stderr bytes.Buffer
-	cmd.Stderr = &limitWriter{w: &stderr, n: 8 << 10}
+	cmd.Stderr = &limitWriter{w: &stderr, n: maxToolStderr}
 	if err := cmd.Run(); err != nil {
 		msg := strings.TrimSpace(stderr.String())
 		if password != "" {
@@ -116,7 +118,7 @@ func runLocal(ctx context.Context, tool string, stdin io.Reader, stdout io.Write
 	cmd := exec.CommandContext(ctx, tool, args...)
 	cmd.Stdin, cmd.Stdout = stdin, stdout
 	var stderr bytes.Buffer
-	cmd.Stderr = &limitWriter{w: &stderr, n: 8 << 10}
+	cmd.Stderr = &limitWriter{w: &stderr, n: maxToolStderr}
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("%s: %w: %s", tool, err, strings.TrimSpace(stderr.String()))
 	}

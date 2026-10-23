@@ -37,6 +37,12 @@ var _ Store = (*S3)(nil)
 
 const emptySHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 
+const (
+	s3TLSHandshakeTimeout = 15 * time.Second // the default HTTPClient's TLS handshake timeout
+	maxS3ListPage         = 16 << 20         // 16 MiB cap on one ListObjectsV2 response
+	maxS3ErrorBody        = 64 << 10         // 64 KiB of an error response read for its code
+)
+
 // Put uploads size bytes from body. sha256hex is the body's SHA-256: S3
 // verifies it, so a truncated upload fails instead of landing.
 func (s *S3) Put(ctx context.Context, key string, body io.Reader, size int64, sha256hex string) error {
@@ -116,7 +122,7 @@ func (s *S3) client() *http.Client {
 	}
 	t := http.DefaultTransport.(*http.Transport).Clone()
 	t.ResponseHeaderTimeout = time.Minute
-	t.TLSHandshakeTimeout = 15 * time.Second
+	t.TLSHandshakeTimeout = s3TLSHandshakeTimeout
 	return &http.Client{Transport: t}
 }
 
@@ -126,14 +132,14 @@ func (s *S3) do(req *http.Request, into any) error {
 		return fmt.Errorf("backup: s3 %s: %w", strings.ToLower(req.Method), redactURL(err))
 	}
 	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode/100 != 2 {
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		return s3Error(resp)
 	}
 	if into == nil {
 		_, _ = io.Copy(io.Discard, resp.Body)
 		return nil
 	}
-	if err := xml.NewDecoder(io.LimitReader(resp.Body, 16<<20)).Decode(into); err != nil {
+	if err := xml.NewDecoder(io.LimitReader(resp.Body, maxS3ListPage)).Decode(into); err != nil {
 		return fmt.Errorf("backup: s3 list: malformed response: %w", err)
 	}
 	return nil
@@ -145,7 +151,7 @@ func s3Error(resp *http.Response) error {
 	var e struct {
 		Code string `xml:"Code"`
 	}
-	_ = xml.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&e)
+	_ = xml.NewDecoder(io.LimitReader(resp.Body, maxS3ErrorBody)).Decode(&e)
 	err := fmt.Errorf("backup: s3 %s %s", strings.ToLower(resp.Request.Method), resp.Status)
 	if e.Code != "" {
 		err = fmt.Errorf("%w (%s)", err, e.Code)

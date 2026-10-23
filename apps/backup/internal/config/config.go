@@ -47,6 +47,12 @@ type Config struct {
 	RestoreURL secrets.Secret
 }
 
+// Upper bounds on BACKUP_KEEP_DAILY / BACKUP_KEEP_WEEKLY.
+const (
+	maxKeepDaily  = 366 // a year of dailies
+	maxKeepWeekly = 520 // ten years of weeklies
+)
+
 // Load reads and validates config; every problem is reported at once.
 func Load(getenv func(string) string) (Config, error) {
 	get := func(k string) string { return strings.TrimSpace(getenv(k)) }
@@ -70,12 +76,12 @@ func Load(getenv func(string) string) (Config, error) {
 	if cfg.Store.Dir == "" && (cfg.Store.Endpoint == "" || cfg.Store.Bucket == "") {
 		errs = append(errs, errors.New("set BACKUP_S3_ENDPOINT and BACKUP_S3_BUCKET (an S3-compatible bucket), or BACKUP_DIR (a local directory)"))
 	}
-	if cfg.Retention.Daily, err = parseCount("BACKUP_KEEP_DAILY", get("BACKUP_KEEP_DAILY"), cfg.Retention.Daily, 366); err != nil {
+	if cfg.Retention.Daily, err = parseCount("BACKUP_KEEP_DAILY", get("BACKUP_KEEP_DAILY"), cfg.Retention.Daily, maxKeepDaily); err != nil {
 		errs = append(errs, err)
 	} else if cfg.Retention.Daily < 1 {
 		errs = append(errs, errors.New("BACKUP_KEEP_DAILY must be at least 1"))
 	}
-	if cfg.Retention.Weekly, err = parseCount("BACKUP_KEEP_WEEKLY", get("BACKUP_KEEP_WEEKLY"), cfg.Retention.Weekly, 520); err != nil {
+	if cfg.Retention.Weekly, err = parseCount("BACKUP_KEEP_WEEKLY", get("BACKUP_KEEP_WEEKLY"), cfg.Retention.Weekly, maxKeepWeekly); err != nil {
 		errs = append(errs, err)
 	}
 	opts := secrets.BootstrapOptions{Keys: liveSecrets, Validate: validateLive(cfg.Store.Dir != ""), Production: cfg.Production}
@@ -97,11 +103,11 @@ func validateLive(localDir bool) func(get func(string) string) []error {
 			errs = append(errs, errors.New("DATABASE_URL (the app database) is required"))
 		}
 		k := secrets.ParseKeyring(get, secretEncryption)
-		if k.Current.Len() < 32 {
+		if k.Current.Len() < backup.MinKeyLength {
 			errs = append(errs, errors.New("BACKUP_ENCRYPTION_KEY must be at least 32 characters (openssl rand -base64 32); keep a copy outside Railway"))
 		}
 		for i, v := range k.Previous {
-			if v.Len() < 32 {
+			if v.Len() < backup.MinKeyLength {
 				errs = append(errs, fmt.Errorf("BACKUP_ENCRYPTION_KEY_PREVIOUS entry %d must be at least 32 characters", i+1))
 			}
 		}
