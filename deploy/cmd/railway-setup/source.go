@@ -66,11 +66,14 @@ func (s *setup) instanceSource(ctx context.Context, svc, env string) (repo strin
 
 // connectRepo connects the web service to the repo: the real access check
 // when repoAccess can't tell. Railway answers with a GraphQL error when its
-// GitHub app cannot read the repo; nothing changes then.
+// GitHub app cannot read the repo, or when the branch does not exist;
+// nothing changes then. It connects production's branch (the last
+// environment's), which a repo has from its first push: staging's dev may
+// not exist yet, and IaC sets each environment's own branch afterwards.
 func (s *setup) connectRepo(ctx context.Context) error {
 	id := s.project.Services[platform.ServiceWeb]
 	return s.rw.gql(ctx, `mutation($id: String!, $input: ServiceConnectInput!) { serviceConnect(id: $id, input: $input) { id } }`,
-		map[string]any{"id": id, "input": map[string]any{"repo": s.cfg.Repo, "branch": s.cfg.BranchFor(s.cfg.Environments[0])}}, nil)
+		map[string]any{"id": id, "input": map[string]any{"repo": s.cfg.Repo, "branch": s.cfg.BranchFor(s.cfg.Environments[len(s.cfg.Environments)-1])}}, nil)
 }
 
 // checkBranches says which environment deploys which branch, and warns
