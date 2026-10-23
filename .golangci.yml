@@ -12,6 +12,7 @@ linters:
     - errorlint
     - intrange
     - misspell
+    - mnd # magic numbers: name the value as a commented const (AGENTS.md "Taste")
     - nilerr
     - noctx
     - paralleltest # fast tests: every test calls t.Parallel() (AGENTS.md "Fast tests")
@@ -58,6 +59,12 @@ linters:
         # Tests only (see exclusions): a test that sleeps is slow and flaky.
         - pattern: ^time\.Sleep$
           msg: tests never sleep; wait on a channel or condition, or use testing/synctest for a fake clock (AGENTS.md "Fast tests")
+    # Magic numbers: a literal that carries meaning is a named const with a
+    # comment saying what it is (`const maxRequestBody = 1 << 20 // 1 MiB cap
+    # on JSON bodies`). 0 and 1 (and so -1) as plain counters and indexes are
+    # fine. go-mnd always skips _test.go: a test's literals are its expectations.
+    mnd:
+      ignored-numbers: ["0", "1"]
     # Top-level tests must call t.Parallel(); a test that cannot (shared
     # global state) says why with //nolint:paralleltest // <reason>.
     # Subtests are parallel where they are slow; tparallel keeps it consistent.

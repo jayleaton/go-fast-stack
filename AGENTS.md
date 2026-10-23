@@ -239,4 +239,6 @@ Exit codes:
 - Typed values over `any` and `map[string]any`. Generics only where they remove real repetition.
 - Errors are values: wrap with context, compare with `errors.Is`/`errors.As`, and never log and return the same error.
 - Comments say how a thing is used and move with the code. Document functions, not every line.
+- No magic numbers: a literal that carries meaning is a named const with a comment (`const maxRequestBody = 1 << 20 // 1 MiB cap on JSON bodies`); 0 and 1 as plain counters and indexes are fine. `mnd` in golangci-lint enforces it outside tests, and `make lint-layering` proves it bites.
+- Names are words where they have to carry meaning: in a long or complex function, name variables and parameters for what they hold (`request`, `writer`, `service`, `caller`), not one letter. Short, conventional names (`i` in a three-line loop, `ctx`, `err`) are fine where the whole scope fits on screen. This is review advice, not a lint rule.
 - If a rule here fights the task in front of you, say so loudly and get a human sign-off before breaking it.

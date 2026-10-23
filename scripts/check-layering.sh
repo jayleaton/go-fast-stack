@@ -2,7 +2,8 @@
 # Proves the depguard layering rules in .golangci.yml still bite: drops a probe
 # package with a forbidden import into each guarded layer, and an external
 # _test.go file with a forbidden import into each test boundary, runs
-# golangci-lint, and fails unless depguard reports every probe. Then plants
+# golangci-lint, and fails unless depguard reports every probe. A bare magic
+# number must fail mnd and the same value as a named const must pass. Then plants
 # code that must not compile (reading a secret around reveal.Value) and fails
 # unless the compiler rejects it. Probes are always removed.
 # GOLANGCI_LINT overrides the binary (CI uses the prebuilt one).
@@ -177,6 +178,13 @@ for i in "${!calls[@]}"; do
   called+=("$layer must not call $call|$dir/probe.go|./$dir/")
 done
 
+# Magic numbers (mnd): the bare literal fails, the named const passes.
+magic="apps/web/internal/services/${probe}_mnd"
+mkdir -p "$magic"
+paths+=("$magic")
+printf 'package %s\n\nimport "io"\n\nfunc limit(body io.Reader) io.Reader { return io.LimitReader(body, 1<<20) }\n' "${probe}_mnd" > "$magic/bare.go"
+printf 'package %s\n\nimport "io"\n\n// maxBody caps a request body at 1 MiB.\nconst maxBody = 1 << 20\n\nfunc capped(body io.Reader) io.Reader { return io.LimitReader(body, maxBody) }\n' "${probe}_mnd" > "$magic/named.go"
+
 # Where reveal.Value is allowed, the rule must stay quiet.
 allowed=(./apps/web/cmd/server/ ./apps/admin/cmd/admin/ ./packages/secrets/)
 # Where the session is read (the Resolver) and admitted (the route
@@ -186,7 +194,8 @@ access_allowed=(./apps/web/internal/server/ ./apps/admin/internal/server/
 
 pkgs=("${allowed[@]}" "${access_allowed[@]}")
 for p in "${planted[@]}" "${called[@]}"; do pkgs+=("${p##*|}"); done
-out=$($lint run --enable-only depguard,forbidigo --max-issues-per-linter 0 --max-same-issues 0 \
+pkgs+=("./$magic/")
+out=$($lint run --enable-only depguard,forbidigo,mnd --max-issues-per-linter 0 --max-same-issues 0 \
   $(printf '%s\n' "${pkgs[@]}" | sort -u) 2>&1 || true)
 
 failed=0
@@ -208,6 +217,18 @@ for p in "${called[@]}"; do
     failed=1
   fi
 done
+if grep -q "^$magic/bare.go:.*Magic number: 20.*(mnd)" <<<"$out"; then
+  echo "ok    a bare magic number (io.LimitReader(body, 1<<20)) fails mnd"
+else
+  echo "FAIL  a bare magic number (io.LimitReader(body, 1<<20)) is not reported by mnd"
+  failed=1
+fi
+if grep -q "^$magic/named.go:" <<<"$out"; then
+  echo "FAIL  a named const (const maxBody = 1 << 20) is reported"
+  failed=1
+else
+  echo "ok    a named const (const maxBody = 1 << 20) passes mnd"
+fi
 for p in "${allowed[@]}"; do
   if grep "^${p#./}[^/:]*:" <<<"$out" | grep -qv "$probe"; then
     echo "FAIL  ${p#./} may import $mod/packages/secrets/reveal (golangci-lint reported it)"
