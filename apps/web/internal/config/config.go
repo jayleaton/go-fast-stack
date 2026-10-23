@@ -39,6 +39,7 @@ type Config struct {
 	AuthSecretGrace time.Duration // AUTH_SECRET_GRACE: how long a retired AUTH_SECRET is accepted (0: packages/auth default)
 	FromEmail       string
 	ClientIPHeader  string // header the trusted proxy sets to the client IP (auth rate limits); empty uses the TCP peer
+	Social          Social // Google / Apple sign-in, each off until its client id is set
 	Features        Features
 }
 
@@ -90,7 +91,8 @@ func Load(getenv func(string) string) (Config, error) {
 	if cfg.AuthSecretGrace, err = secrets.ParseDuration("AUTH_SECRET_GRACE", get("AUTH_SECRET_GRACE", ""), 0); err != nil {
 		errs = append(errs, err)
 	}
-	cfg.Secrets = loadSecrets(cfg.Env, get, &errs)
+	cfg.Social = loadSocial(get, &errs)
+	cfg.Secrets = loadSecrets(cfg.Env, cfg.Social, get, &errs)
 
 	cfg.Features = FeaturesFor(cfg.Env)
 	if len(errs) > 0 {

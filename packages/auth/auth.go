@@ -89,9 +89,15 @@ type Config struct {
 	VerifyEmailPath string
 
 	// Social sign-in (social.go). Each provider is off while nil; the
-	// callback to register with it is <BaseURL>/api/auth/callback/<provider>.
+	// callback to register with it is <BaseURL>/api/auth/callback/<provider>,
+	// or <BaseURL><SocialCallbackPath><provider>.
 	Google *GoogleConfig
 	Apple  *AppleConfig
+	// SocialCallbackPath moves the provider callback to an app page prefix
+	// (root-relative, ending in "/"; e.g. "/auth/callback/") that the app
+	// serves with SocialCallback, so browsers never reach the JSON API.
+	// Handler then has no /callback routes. Empty: Better Auth's path.
+	SocialCallbackPath string
 	// SocialErrorPath is the app page (root-relative) browser sign-ins land
 	// on with ?error=<code> when they fail (default LoginPath).
 	SocialErrorPath string
@@ -228,6 +234,9 @@ func New(cfg Config, pool DB, mailer Mailer) (*Auth, error) {
 	}
 	if !isSafeRelativeURL(cfg.SocialErrorPath) {
 		return nil, fmt.Errorf("auth: SocialErrorPath must be a root-relative path, got %q", cfg.SocialErrorPath)
+	}
+	if path := cfg.SocialCallbackPath; path != "" && (!isSafeRelativeURL(path) || !strings.HasSuffix(path, "/") || strings.ContainsAny(path, "?#")) {
+		return nil, fmt.Errorf("auth: SocialCallbackPath must be a root-relative path ending in /, got %q", path)
 	}
 	if p := cfg.VerifyEmailPath; p != "" && (!isSafeRelativeURL(p) || strings.ContainsAny(p, "?#")) {
 		return nil, fmt.Errorf("auth: VerifyEmailPath must be a root-relative path without query, got %q", p)

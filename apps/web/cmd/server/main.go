@@ -118,6 +118,7 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	// One gate decides route access for both transports (docs/route-access.md).
 	gate := access.NewGate(server.Callers)
 	usersAPI := api.NewUsers(users, gate)
+	socialAPI := api.NewSocial(services.NewSocialSignInService(server.NewSocialAuth(authn)), gate)
 	handler := server.New(server.Deps{
 		Config:  cfg,
 		Log:     log,
@@ -125,8 +126,9 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		Secrets: cfg.Secrets,
 		Auth:    authn,
 		Users:   usersAPI,
+		Social:  socialAPI,
 		UI: ui.New(ui.Deps{
-			Auth: authn, API: api.NewClient(usersAPI), Gate: gate, Features: cfg.Features, AppName: cfg.AppName,
+			Auth: authn, API: api.NewClient(usersAPI).WithSocial(socialAPI), Gate: gate, Features: cfg.Features, AppName: cfg.AppName,
 			SecureCookies: cfg.PublicURL.Scheme == "https", Logger: log,
 		}).Handler(),
 	})
@@ -221,6 +223,10 @@ func newAuth(ctx context.Context, cfg config.Config, pool *database.Pool, log *s
 		return nil, err
 	}
 	current, previous, revoked := reveal.Keyring(keys)
+	google, apple, err := socialProviders(cfg)
+	if err != nil {
+		return nil, err
+	}
 	authn, err := auth.New(auth.Config{
 		Secret:                   current,
 		PreviousSecrets:          previous,
@@ -233,9 +239,27 @@ func newAuth(ctx context.Context, cfg config.Config, pool *database.Pool, log *s
 		VerifyEmailPath:          config.AppRoutes.VerifyEmailSuccess,
 		ClientIPHeader:           cfg.ClientIPHeader,
 		Logger:                   log,
+		Google:                   google,
+		Apple:                    apple,
+		SocialErrorPath:          config.AppRoutes.Login,
+		SocialCallbackPath:       config.SocialCallbackPrefix,
 	}, pool, mailer)
 	if err != nil {
 		return nil, err
+	}
+	if google != nil || apple != nil {
+		log.Info("auth: social sign-in on", "providers", authn.SocialProviders())
+		cfg.Secrets.OnSocialSecrets(func(creds config.SocialSecrets) error {
+			if err := authn.SetSocialSecrets(auth.SocialSecrets{
+				GoogleClientSecret: reveal.Value(creds.GoogleClientSecret),
+				ApplePrivateKey:    reveal.Value(creds.ApplePrivateKey),
+				AppleKeyID:         reveal.Value(creds.AppleKeyID),
+			}); err != nil {
+				return err // the old credentials stay; retried after the next fetch
+			}
+			log.Info("auth: social sign-in credentials rotated", "credentials", creds.Fingerprint())
+			return nil
+		})
 	}
 	applied := keys.Fingerprint()
 	log.Info("auth: keyring loaded", "keyring", applied)
@@ -254,6 +278,28 @@ func newAuth(ctx context.Context, cfg config.Config, pool *database.Pool, log *s
 		return nil
 	})
 	return authn, nil
+}
+
+// socialProviders builds the Google and Apple configs that are turned on
+// (config.Social), with their current credentials.
+func socialProviders(cfg config.Config) (*auth.GoogleConfig, *auth.AppleConfig, error) {
+	social := cfg.Social
+	if !social.GoogleEnabled() && !social.AppleEnabled() {
+		return nil, nil, nil
+	}
+	creds, err := cfg.Secrets.SocialSecrets()
+	if err != nil {
+		return nil, nil, err
+	}
+	var google *auth.GoogleConfig
+	var apple *auth.AppleConfig
+	if social.GoogleEnabled() {
+		google = &auth.GoogleConfig{ClientID: social.GoogleClientID, ClientSecret: reveal.Value(creds.GoogleClientSecret)}
+	}
+	if social.AppleEnabled() {
+		apple = &auth.AppleConfig{ClientID: social.AppleClientID, TeamID: social.AppleTeamID, KeyID: reveal.Value(creds.AppleKeyID), PrivateKey: reveal.Value(creds.ApplePrivateKey)}
+	}
+	return google, apple, nil
 }
 
 // newLogger redacts credentials from every record (secrets.NewRedactingHandler);

@@ -12,7 +12,8 @@ import (
 // a network hop. ctx must be the context of the request being served (it
 // carries the session auth.Middleware loaded).
 type Client struct {
-	users *Users
+	users  *Users
+	social *Social // nil: no social sign-in endpoints (SocialProviders is empty)
 }
 
 var _ apiclient.Client = (*Client)(nil)
@@ -20,6 +21,37 @@ var _ apiclient.Client = (*Client)(nil)
 // NewClient returns the in-process client over the endpoints.
 func NewClient(users *Users) *Client {
 	return &Client{users: users}
+}
+
+// WithSocial adds the social sign-in endpoints and returns client.
+func (client *Client) WithSocial(social *Social) *Client {
+	client.social = social
+	return client
+}
+
+// SocialProviders is GET /auth/social/providers.
+func (client *Client) SocialProviders(ctx context.Context) ([]string, error) {
+	if client.social == nil {
+		return []string{}, nil
+	}
+	list, err := client.social.providers.Call(ctx, client.social.gate, NoInput{})
+	return list.Providers, err
+}
+
+// StartSocialSignIn is POST /auth/social/{provider}/start.
+func (client *Client) StartSocialSignIn(ctx context.Context, provider string, input apiclient.StartSocialSignIn) (apiclient.SocialStart, error) {
+	if client.social == nil {
+		return apiclient.SocialStart{}, apiclient.ErrProviderNotFound
+	}
+	return client.social.start.Call(ctx, client.social.gate, input, PathValue{Name: "provider", Value: provider})
+}
+
+// FinishSocialSignIn is POST /auth/social/{provider}/finish.
+func (client *Client) FinishSocialSignIn(ctx context.Context, provider string, input apiclient.FinishSocialSignIn) (apiclient.SocialOutcome, error) {
+	if client.social == nil {
+		return apiclient.SocialOutcome{}, apiclient.ErrProviderNotFound
+	}
+	return client.social.finish.Call(ctx, client.social.gate, input, PathValue{Name: "provider", Value: provider})
 }
 
 // Me is GET /users/me.

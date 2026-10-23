@@ -40,7 +40,8 @@ func (ui *UI) why(writer http.ResponseWriter, request *http.Request, _ apiclient
 }
 
 func (ui *UI) loginPage(writer http.ResponseWriter, request *http.Request, _ apiclient.Caller) {
-	ui.render(writer, request, http.StatusOK, LoginPage(AuthForm{}))
+	ctx := request.Context()
+	ui.render(writer, request, http.StatusOK, LoginPage(AuthForm{Error: socialErrorMessage(ctx, request.URL.Query().Get("error")), Providers: ui.socialProviders(ctx)}))
 }
 
 func (ui *UI) login(writer http.ResponseWriter, request *http.Request, _ apiclient.Caller) {
@@ -60,7 +61,7 @@ func (ui *UI) login(writer http.ResponseWriter, request *http.Request, _ apiclie
 				msg = i18n.T(ctx, "pages.verifyEmail.checkEmail")
 			}
 		}
-		ui.patch(writer, request, http.StatusUnprocessableEntity, LoginPage(AuthForm{Email: in.Email, Error: msg}), FormError(msg))
+		ui.patch(writer, request, http.StatusUnprocessableEntity, LoginPage(AuthForm{Email: in.Email, Error: msg, Providers: ui.socialProviders(ctx)}), FormError(msg))
 		return
 	}
 	ui.auth.SetSessionCookie(writer, session)
@@ -68,7 +69,7 @@ func (ui *UI) login(writer http.ResponseWriter, request *http.Request, _ apiclie
 }
 
 func (ui *UI) signupPage(writer http.ResponseWriter, request *http.Request, _ apiclient.Caller) {
-	ui.render(writer, request, http.StatusOK, SignupPage(AuthForm{}))
+	ui.render(writer, request, http.StatusOK, SignupPage(AuthForm{Providers: ui.socialProviders(request.Context())}))
 }
 
 func (ui *UI) signup(writer http.ResponseWriter, request *http.Request, _ apiclient.Caller) {
@@ -82,7 +83,7 @@ func (ui *UI) signup(writer http.ResponseWriter, request *http.Request, _ apicli
 	_, session, err := ui.auth.SignUpEmail(ctx, in)
 	if err != nil {
 		msg := ui.errorMessage(ctx, err)
-		ui.patch(writer, request, http.StatusUnprocessableEntity, SignupPage(AuthForm{Name: in.Name, Email: in.Email, Error: msg}), FormError(msg))
+		ui.patch(writer, request, http.StatusUnprocessableEntity, SignupPage(AuthForm{Name: in.Name, Email: in.Email, Error: msg, Providers: ui.socialProviders(ctx)}), FormError(msg))
 		return
 	}
 	if ui.features.EmailVerification || session.Token == "" {

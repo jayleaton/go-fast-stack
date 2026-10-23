@@ -39,6 +39,7 @@ type Deps struct {
 	Secrets SecretsHealth // nil: /healthz checks the database only
 	Auth    Auth
 	Users   *api.Users
+	Social  *api.Social  // Google and Apple sign-in; nil when unused
 	UI      http.Handler // apps/web/ui routes, mounted at "/"; nil until the UI lands
 }
 
@@ -51,6 +52,9 @@ func New(d Deps) http.Handler {
 	apiMux := http.NewServeMux()
 	apiMux.Handle(config.APIRoutes.Auth, d.Auth.Handler())
 	d.Users.Routes(apiMux)
+	if d.Social != nil {
+		d.Social.Routes(apiMux)
+	}
 
 	var public string
 	if d.Config.PublicURL != nil {

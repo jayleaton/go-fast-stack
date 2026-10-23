@@ -86,6 +86,30 @@ func authCodeMessage(ctx context.Context, code string) string {
 	return i18n.T(ctx, "pages.verifyEmail.unexpectedErrorDuringVerification")
 }
 
+// socialErrors are the ?error= codes a failed Google / Apple sign-in lands
+// on the login page with (packages/auth README "Social sign-in") that get
+// their own message; every other code shows pages.login.social.failed.
+var socialErrors = map[string]string{
+	"access_denied":       "pages.login.social.cancelled",
+	"account_not_linked":  "pages.login.social.accountNotLinked",
+	"email_not_verified":  "pages.login.social.emailNotVerified",
+	"signup_disabled":     "pages.login.social.signupDisabled",
+	"too_many_requests":   "errors.tooManyRequests",
+	"two_factor_required": "pages.login.social.twoFactorRequired",
+	"banned":              "errors.banned",
+}
+
+// socialErrorMessage translates a social sign-in ?error= code ("" for none).
+func socialErrorMessage(ctx context.Context, code string) string {
+	if code == "" {
+		return ""
+	}
+	if key, ok := socialErrors[code]; ok {
+		return i18n.T(ctx, key)
+	}
+	return i18n.T(ctx, "pages.login.social.failed")
+}
+
 // Deps are the in-process dependencies of the UI.
 type Deps struct {
 	Auth Auth

@@ -22,6 +22,8 @@ type AuthForm struct {
 	Email string
 	// Error is already translated.
 	Error string
+	// Providers are the configured social sign-in providers (buttons).
+	Providers []string
 }
 
 // authPage is the public layout around uikit.AuthLayout (which renders the h1).
@@ -56,10 +58,11 @@ templ LoginPage(f AuthForm) {
 				</p>
 			</div>
 			@authSubmit(i18n.T(ctx, "pages.login.loginButton"), i18n.T(ctx, "common.loading"))
-			<div class="border-t border-border pt-5">
-				@view.AltLink(i18n.T(ctx, "pages.login.dontHaveAccount"), i18n.T(ctx, "pages.login.signUpInstead"), config.AppRoutes.Signup)
-			</div>
 		</form>
+		@socialButtons(f.Providers)
+		<div class="mt-5 border-t border-border pt-5">
+			@view.AltLink(i18n.T(ctx, "pages.login.dontHaveAccount"), i18n.T(ctx, "pages.login.signUpInstead"), config.AppRoutes.Signup)
+		</div>
 	}
 }
 
@@ -71,10 +74,30 @@ templ SignupPage(f AuthForm) {
 			@uikit.Input(uikit.Field{ID: "email", Type: "email", Label: i18n.T(ctx, "common.email"), Placeholder: i18n.T(ctx, "pages.signup.emailPlaceholder"), Autocomplete: "email", Value: f.Email})
 			@uikit.Input(uikit.Field{ID: "password", Type: "password", Label: i18n.T(ctx, "common.password"), Placeholder: i18n.T(ctx, "pages.signup.passwordPlaceholder"), Autocomplete: "new-password", MinLength: 8, Hint: i18n.T(ctx, "pages.resetPassword.passwordRequirement")})
 			@authSubmit(i18n.T(ctx, "pages.signup.signupButton"), i18n.T(ctx, "common.loading"))
-			<div class="border-t border-border pt-5">
-				@view.AltLink(i18n.T(ctx, "pages.signup.alreadyHaveAccount"), i18n.T(ctx, "pages.signup.signInInstead"), config.AppRoutes.Login)
-			</div>
 		</form>
+		@socialButtons(f.Providers)
+		<div class="mt-5 border-t border-border pt-5">
+			@view.AltLink(i18n.T(ctx, "pages.signup.alreadyHaveAccount"), i18n.T(ctx, "pages.signup.signInInstead"), config.AppRoutes.Login)
+		</div>
+	}
+}
+
+// socialButtons are the "Continue with ..." buttons of the configured
+// providers. Each posts through Datastar and is answered with a Datastar
+// redirect to the provider: a plain form POST would be refused by the CSP
+// (form-action 'self' also covers the redirect that follows a submit).
+templ socialButtons(providers []string) {
+	if len(providers) > 0 {
+		<div class="mt-5 space-y-3">
+			<p class="text-center text-sm text-muted-foreground">{ i18n.T(ctx, "pages.login.social.or") }</p>
+			for _, provider := range providers {
+				<form method="post" action={ templ.SafeURL(config.SocialSignInPath(provider)) } data-on:submit={ view.PostForm(config.SocialSignInPath(provider)) }>
+					@uikit.Button(uikit.ButtonProps{Type: "submit", Variant: uikit.Secondary, Full: true, Attrs: templ.Attributes{"id": "social-" + provider}}) {
+						{ i18n.T(ctx, "pages.login.social." + provider) }
+					}
+				</form>
+			}
+		</div>
 	}
 }
 

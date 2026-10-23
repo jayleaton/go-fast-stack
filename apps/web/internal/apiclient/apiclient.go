@@ -34,6 +34,11 @@ type Client interface {
 	RevokeOtherSessions(ctx context.Context) error
 	DeleteMe(ctx context.Context) error
 	DataSummary(ctx context.Context) (UserDataSummary, error)
+
+	// Google and Apple sign-in, the browser flow (public).
+	SocialProviders(ctx context.Context) ([]string, error)
+	StartSocialSignIn(ctx context.Context, provider string, input StartSocialSignIn) (SocialStart, error)
+	FinishSocialSignIn(ctx context.Context, provider string, input FinishSocialSignIn) (SocialOutcome, error)
 }
 
 // Responses.
@@ -48,6 +53,10 @@ type (
 		Success bool `json:"success"`
 		User    User `json:"user"`
 	}
+	// SocialProviders is the GET /auth/social/providers response.
+	SocialProviders struct {
+		Providers []string `json:"providers"`
+	}
 )
 
 // Data the API returns.
@@ -55,6 +64,10 @@ type (
 	User            = services.User
 	Session         = services.Session // one of the user's sessions (ListSessions)
 	UserDataSummary = services.UserDataSummary
+	// SocialStart and SocialOutcome carry the cookies the UI sets as data.
+	SocialStart   = services.SocialStart
+	SocialOutcome = services.SocialOutcome
+	Cookie        = services.Cookie
 )
 
 // Inputs, validated by the API (Validate runs there, not in the UI).
@@ -64,6 +77,8 @@ type (
 	UpdateUserPassword  = validate.UpdateUserPassword
 	Nullable[Value any] = validate.Nullable[Value]
 	ValidationError     = validate.Error
+	StartSocialSignIn   = validate.StartSocialSignIn
+	FinishSocialSignIn  = validate.FinishSocialSignIn
 )
 
 // Password limits the API enforces, for form hints.
@@ -86,10 +101,13 @@ var (
 	ErrCurrentSession  = services.ErrCurrentSession
 	ErrUserNotFound    = services.ErrUserNotFound
 	ErrRateLimited     = services.ErrRateLimited
-	ErrValidation      = services.ErrValidation
-	ErrForbidden       = services.ErrForbidden
-	ErrNotFound        = services.ErrNotFound
-	ErrConflict        = services.ErrConflict
+	// Social sign-in.
+	ErrProviderNotFound   = services.ErrProviderNotFound
+	ErrInvalidCallbackURL = services.ErrInvalidCallbackURL
+	ErrValidation         = services.ErrValidation
+	ErrForbidden          = services.ErrForbidden
+	ErrNotFound           = services.ErrNotFound
+	ErrConflict           = services.ErrConflict
 )
 
 // Route access, as the UI declares it on its own pages (the same policies
