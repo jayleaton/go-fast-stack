@@ -223,18 +223,43 @@ func resetTwoFactor(ctx context.Context, cfg config.Config, log *slog.Logger, em
 }
 
 func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
+	// Listen first: until both databases are ready every request gets a 503
+	// (startingHandler), so the platform keeps the previous deploy.
+	starting := &startingHandler{}
+	srv := &http.Server{
+		Addr:              cfg.Addr,
+		Handler:           starting,
+		ReadHeaderTimeout: readHeaderTimeout,
+		IdleTimeout:       idleTimeout,
+		// No WriteTimeout: Datastar SSE streams stay open.
+		ErrorLog: slog.NewLogLogger(log.Handler(), slog.LevelWarn),
+	}
+	errc := make(chan error, 1)
+	go func() { errc <- srv.ListenAndServe() }()
+	log.Info("admin listening; waiting for the databases", "addr", cfg.Addr)
+	fail := func(err error) error {
+		_ = srv.Close()
+		return err
+	}
+
 	// The admin service migrates neither database at runtime: both must be at
-	// least as far as this binary's migrations, before boot and after a rotation.
-	appPool, err := livePool(ctx, log, "app", cfg.Secrets.AppDatabaseURL, cfg.Secrets.OnAppDatabaseURL,
-		map[string]fs.FS{auth.MigrationTable: auth.Migrations, database.MigrationTable: database.Migrations})
+	// least as far as this binary's migrations, before boot and after a
+	// rotation. The app database is migrated by the web service's deploy,
+	// which runs alongside this one, so wait for it (bounded).
+	appPool, err := waitForDatabase(ctx, log, "app", func(ctx context.Context) (*database.Pool, error) {
+		return livePool(ctx, log, "app", cfg.Secrets.AppDatabaseURL, cfg.Secrets.OnAppDatabaseURL,
+			map[string]fs.FS{auth.MigrationTable: auth.Migrations, database.MigrationTable: database.Migrations})
+	})
 	if err != nil {
-		return fmt.Errorf("app database: %w", err)
+		return fail(fmt.Errorf("app database: %w", err))
 	}
 	defer appPool.Close()
-	adminPool, err := livePool(ctx, log, "admin", cfg.Secrets.AdminDatabaseURL, cfg.Secrets.OnAdminDatabaseURL,
-		map[string]fs.FS{auth.MigrationTable: auth.Migrations, adminrepo.MigrationTable: adminrepo.Migrations})
+	adminPool, err := waitForDatabase(ctx, log, "admin", func(ctx context.Context) (*database.Pool, error) {
+		return livePool(ctx, log, "admin", cfg.Secrets.AdminDatabaseURL, cfg.Secrets.OnAdminDatabaseURL,
+			map[string]fs.FS{auth.MigrationTable: auth.Migrations, adminrepo.MigrationTable: adminrepo.Migrations})
+	})
 	if err != nil {
-		return fmt.Errorf("admin database: %w", err)
+		return fail(fmt.Errorf("admin database: %w", err))
 	}
 	defer adminPool.Close()
 
@@ -242,7 +267,7 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	events := server.NewAuditEvents(services.NewAuthEventService(auditLog), log)
 	admins, err := newAdminAuth(ctx, cfg, adminPool, events, log)
 	if err != nil {
-		return err
+		return fail(err)
 	}
 	adminPolicy := policy(cfg)
 	users := services.NewUserService(server.NewUserDirectory(auth.NewUserAdmin(appPool)), auditLog, adminPolicy)
@@ -275,17 +300,8 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		}).Handler(),
 	})
 
-	srv := &http.Server{
-		Addr:              cfg.Addr,
-		Handler:           handler,
-		ReadHeaderTimeout: readHeaderTimeout,
-		IdleTimeout:       idleTimeout,
-		// No WriteTimeout: Datastar SSE streams stay open.
-		ErrorLog: slog.NewLogLogger(log.Handler(), slog.LevelWarn),
-	}
-	errc := make(chan error, 1)
-	go func() { errc <- srv.ListenAndServe() }()
-	log.Info("admin listening", "addr", cfg.Addr, "public_url", cfg.PublicURL.String(), "env", cfg.Env, "require_2fa", cfg.RequireTwoFactor)
+	starting.ready(handler)
+	log.Info("admin ready", "addr", cfg.Addr, "public_url", cfg.PublicURL.String(), "env", cfg.Env, "require_2fa", cfg.RequireTwoFactor)
 
 	select {
 	case err := <-errc:
