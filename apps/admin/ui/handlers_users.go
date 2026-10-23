@@ -6,91 +6,86 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/jayleaton/go-fast-stack/apps/admin/internal/access"
 	"github.com/jayleaton/go-fast-stack/apps/admin/internal/config"
 	"github.com/jayleaton/go-fast-stack/apps/admin/internal/services"
 	"github.com/jayleaton/go-fast-stack/apps/admin/internal/validate"
 	"github.com/jayleaton/go-fast-stack/apps/admin/ui/i18n"
 )
 
-func (u *UI) usersPage(w http.ResponseWriter, r *http.Request) {
-	a, ok := u.signedIn(w, r)
-	if !ok {
-		return
-	}
-	ctx := r.Context()
-	q := r.URL.Query()
-	d := UsersData{Filters: userFilters(q)}
-	d.Sort = d.Filters.sortLinks()
-	in, err := validate.DecodeQuery[validate.ListUsers](q)
+func (ui *UI) usersPage(writer http.ResponseWriter, request *http.Request, caller access.Caller) {
+	actor := caller.Actor()
+	ctx := request.Context()
+	query := request.URL.Query()
+	data := UsersData{Filters: userFilters(query)}
+	data.Sort = data.Filters.sortLinks()
+	in, err := validate.DecodeQuery[validate.ListUsers](query)
 	var page services.UserPage
 	if err == nil {
-		page, err = u.users.ListUsers(ctx, a, in)
+		page, err = ui.users.ListUsers(ctx, actor, in)
 	}
-	if u.needsTwoFactor(w, r, err) {
+	if ui.needsTwoFactor(writer, request, err) {
 		return
 	}
 	if err != nil {
-		d.Error = u.errorMessage(ctx, err)
-		u.render(w, r, statusOf(err), UsersPage(d))
+		data.Error = ui.errorMessage(ctx, err)
+		ui.render(writer, request, statusOf(err), UsersPage(data))
 		return
 	}
-	d.Users = page.Users
-	d.Pager = pager(page.Offset, page.Limit, len(page.Users), page.Total, d.Filters.url)
-	u.render(w, r, http.StatusOK, UsersPage(d))
+	data.Users = page.Users
+	data.Pager = pager(page.Offset, page.Limit, len(page.Users), page.Total, data.Filters.url)
+	ui.render(writer, request, http.StatusOK, UsersPage(data))
 }
 
-func (u *UI) userPage(w http.ResponseWriter, r *http.Request) {
-	a, ok := u.signedIn(w, r)
-	if !ok {
-		return
-	}
-	ctx := r.Context()
-	d, err := u.users.GetUser(ctx, a, r.PathValue("id"))
-	if u.needsTwoFactor(w, r, err) {
+func (ui *UI) userPage(writer http.ResponseWriter, request *http.Request, caller access.Caller) {
+	actor := caller.Actor()
+	ctx := request.Context()
+	data, err := ui.users.GetUser(ctx, actor, request.PathValue("id"))
+	if ui.needsTwoFactor(writer, request, err) {
 		return
 	}
 	if err != nil {
-		u.render(w, r, statusOf(err), UserPage(UserData{Missing: true, Status: Status{Error: true, Message: u.errorMessage(ctx, err)}}))
+		ui.render(writer, request, statusOf(err), UserPage(UserData{Missing: true, Status: Status{Error: true, Message: ui.errorMessage(ctx, err)}}))
 		return
 	}
-	u.render(w, r, http.StatusOK, UserPage(UserData{Detail: d}))
+	ui.render(writer, request, http.StatusOK, UserPage(UserData{Detail: data}))
 }
 
-func (u *UI) banUser(w http.ResponseWriter, r *http.Request) {
-	u.userAction(w, r, "pages.user.status.banned", func(ctx context.Context, a services.Actor, id string) error {
-		in, err := banInput(r.PostFormValue("banReason"), r.PostFormValue("banExpiresIn"))
+func (ui *UI) banUser(writer http.ResponseWriter, request *http.Request, caller access.Caller) {
+	ui.userAction(writer, request, caller, "pages.user.status.banned", func(ctx context.Context, actor services.Actor, id string) error {
+		in, err := banInput(request.PostFormValue("banReason"), request.PostFormValue("banExpiresIn"))
 		if err != nil {
 			return err
 		}
-		return u.users.BanUser(ctx, a, id, in)
+		return ui.users.BanUser(ctx, actor, id, in)
 	})
 }
 
-func (u *UI) unbanUser(w http.ResponseWriter, r *http.Request) {
-	u.userAction(w, r, "pages.user.status.unbanned", func(ctx context.Context, a services.Actor, id string) error {
-		return u.users.UnbanUser(ctx, a, id)
+func (ui *UI) unbanUser(writer http.ResponseWriter, request *http.Request, caller access.Caller) {
+	ui.userAction(writer, request, caller, "pages.user.status.unbanned", func(ctx context.Context, actor services.Actor, id string) error {
+		return ui.users.UnbanUser(ctx, actor, id)
 	})
 }
 
-func (u *UI) setRole(w http.ResponseWriter, r *http.Request) {
-	u.userAction(w, r, "pages.user.status.roleSet", func(ctx context.Context, a services.Actor, id string) error {
-		in := validate.SetUserRole{Role: r.PostFormValue("role")}
+func (ui *UI) setRole(writer http.ResponseWriter, request *http.Request, caller access.Caller) {
+	ui.userAction(writer, request, caller, "pages.user.status.roleSet", func(ctx context.Context, actor services.Actor, id string) error {
+		in := validate.SetUserRole{Role: request.PostFormValue("role")}
 		if err := in.Validate(); err != nil {
 			return err
 		}
-		return u.users.SetRole(ctx, a, id, in)
+		return ui.users.SetRole(ctx, actor, id, in)
 	})
 }
 
-func (u *UI) revokeSessions(w http.ResponseWriter, r *http.Request) {
-	u.userAction(w, r, "pages.user.status.sessionsRevoked", func(ctx context.Context, a services.Actor, id string) error {
-		return u.users.RevokeSessions(ctx, a, id)
+func (ui *UI) revokeSessions(writer http.ResponseWriter, request *http.Request, caller access.Caller) {
+	ui.userAction(writer, request, caller, "pages.user.status.sessionsRevoked", func(ctx context.Context, actor services.Actor, id string) error {
+		return ui.users.RevokeSessions(ctx, actor, id)
 	})
 }
 
-func (u *UI) revokeSession(w http.ResponseWriter, r *http.Request) {
-	u.userAction(w, r, "pages.user.status.sessionRevoked", func(ctx context.Context, a services.Actor, id string) error {
-		return u.users.RevokeSession(ctx, a, id, r.PathValue("sessionId"))
+func (ui *UI) revokeSession(writer http.ResponseWriter, request *http.Request, caller access.Caller) {
+	ui.userAction(writer, request, caller, "pages.user.status.sessionRevoked", func(ctx context.Context, actor services.Actor, id string) error {
+		return ui.users.RevokeSession(ctx, actor, id, request.PathValue("sessionId"))
 	})
 }
 
@@ -98,51 +93,48 @@ func (u *UI) revokeSession(w http.ResponseWriter, r *http.Request) {
 // gets the refreshed profile, ban and sessions fragments plus a status alert
 // (or just an error alert); a plain post gets a 303 back to the user page, or
 // the full page with the error.
-func (u *UI) userAction(w http.ResponseWriter, r *http.Request, doneKey string, do func(ctx context.Context, a services.Actor, id string) error) {
-	a, ok := u.signedInAction(w, r)
-	if !ok {
-		return
-	}
-	ctx := r.Context()
-	id := r.PathValue("id")
-	err := do(ctx, a, id)
-	if u.needsTwoFactor(w, r, err) {
+func (ui *UI) userAction(writer http.ResponseWriter, request *http.Request, caller access.Caller, doneKey string, do func(ctx context.Context, actor services.Actor, id string) error) {
+	actor := caller.Actor()
+	ctx := request.Context()
+	id := request.PathValue("id")
+	err := do(ctx, actor, id)
+	if ui.needsTwoFactor(writer, request, err) {
 		return
 	}
 	if err != nil {
-		st := Status{Error: true, Message: u.errorMessage(ctx, err)}
-		if isDatastar(r) {
-			u.patchOnly(w, r, UserStatus(st))
+		st := Status{Error: true, Message: ui.errorMessage(ctx, err)}
+		if isDatastar(request) {
+			ui.patchOnly(writer, request, UserStatus(st))
 			return
 		}
-		d, gerr := u.users.GetUser(ctx, a, id)
-		u.render(w, r, http.StatusUnprocessableEntity, UserPage(UserData{Detail: d, Missing: gerr != nil, Status: st}))
+		data, gerr := ui.users.GetUser(ctx, actor, id)
+		ui.render(writer, request, http.StatusUnprocessableEntity, UserPage(UserData{Detail: data, Missing: gerr != nil, Status: st}))
 		return
 	}
-	if !isDatastar(r) {
-		http.Redirect(w, r, config.UserPage(id), http.StatusSeeOther)
+	if !isDatastar(request) {
+		http.Redirect(writer, request, config.UserPage(id), http.StatusSeeOther)
 		return
 	}
 	st := Status{Message: i18n.T(ctx, doneKey)}
-	d, err := u.users.GetUser(ctx, a, id)
+	data, err := ui.users.GetUser(ctx, actor, id)
 	if err != nil {
-		u.log.WarnContext(ctx, "ui: reload user after action", "err", err)
-		u.patchOnly(w, r, UserStatus(st))
+		ui.log.WarnContext(ctx, "ui: reload user after action", "err", err)
+		ui.patchOnly(writer, request, UserStatus(st))
 		return
 	}
-	u.patchOnly(w, r, UserProfile(d.User), UserBan(d.User), UserSessions(d.User, d.Sessions), UserStatus(st))
+	ui.patchOnly(writer, request, UserProfile(data.User), UserBan(data.User), UserSessions(data.User, data.Sessions), UserStatus(st))
 }
 
 // banInput reads the ban form: the reason and the expiry select in seconds
 // ("0" or empty: permanent).
 func banInput(reason, expiresIn string) (validate.BanUser, error) {
 	in := validate.BanUser{BanReason: reason}
-	if v := strings.TrimSpace(expiresIn); v != "" && v != "0" {
-		n, err := strconv.ParseInt(v, 10, 64)
+	if value := strings.TrimSpace(expiresIn); value != "" && value != "0" {
+		seconds, err := strconv.ParseInt(value, 10, 64)
 		if err != nil {
 			return in, validate.Fields{"banExpiresIn": "must be a whole number"}.Err()
 		}
-		in.BanExpiresIn = &n
+		in.BanExpiresIn = &seconds
 	}
 	return in, in.Validate()
 }

@@ -6,6 +6,7 @@ import (
 	"context"
 	"net/http"
 
+	"github.com/jayleaton/go-fast-stack/apps/admin/internal/access"
 	"github.com/jayleaton/go-fast-stack/apps/admin/internal/config"
 	"github.com/jayleaton/go-fast-stack/apps/admin/internal/services"
 	"github.com/jayleaton/go-fast-stack/apps/admin/internal/validate"
@@ -20,24 +21,24 @@ var _ AuditService = (*services.AuditService)(nil)
 
 // Audit serves the audit log under /api/admin/v1/audit.
 type Audit struct {
-	svc    AuditService
-	caller CallerFrom
+	svc  AuditService
+	gate *access.Gate
 }
 
 // NewAudit returns the audit endpoint.
-func NewAudit(svc AuditService, caller CallerFrom) *Audit {
-	return &Audit{svc: svc, caller: caller}
+func NewAudit(svc AuditService, gate *access.Gate) *Audit {
+	return &Audit{svc: svc, gate: gate}
 }
 
-// Routes registers the endpoint on mux.
-func (a *Audit) Routes(mux *http.ServeMux) {
-	mux.Handle("GET "+config.APIRoutes.Audit, Authenticated(a.caller, a.list))
+// Routes registers the endpoint on mux with its access policy.
+func (audit *Audit) Routes(mux *http.ServeMux) {
+	mux.Handle("GET "+config.APIRoutes.Audit, Route(audit.gate, access.SignedIn, audit.list))
 }
 
-func (a *Audit) list(r *http.Request, c Caller) (services.AuditPage, error) {
-	in, err := validate.DecodeQuery[validate.ListAuditLog](r.URL.Query())
+func (audit *Audit) list(request *http.Request, caller access.Caller) (services.AuditPage, error) {
+	input, err := validate.DecodeQuery[validate.ListAuditLog](request.URL.Query())
 	if err != nil {
 		return services.AuditPage{}, err
 	}
-	return a.svc.List(r.Context(), c.Actor(), in)
+	return audit.svc.List(request.Context(), caller.Actor(), input)
 }

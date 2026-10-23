@@ -24,10 +24,10 @@ var (
 	anyCtx = gomock.Any()
 )
 
-func newRouter(t *testing.T) (*mocks.MockUserService, http.Handler) {
-	svc := mocks.NewMockUserService(gomock.NewController(t))
+func newRouter(test *testing.T) (*mocks.MockUserService, http.Handler) {
+	svc := mocks.NewMockUserService(gomock.NewController(test))
 	mux := http.NewServeMux()
-	api.NewUsers(svc, apitest.CallerFrom).Routes(mux)
+	api.NewUsers(svc, apitest.Gate()).Routes(mux)
 	return svc, mux
 }
 

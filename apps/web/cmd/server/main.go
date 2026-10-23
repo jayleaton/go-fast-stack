@@ -19,6 +19,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/jayleaton/go-fast-stack/apps/web/internal/access"
 	"github.com/jayleaton/go-fast-stack/apps/web/internal/api"
 	"github.com/jayleaton/go-fast-stack/apps/web/internal/config"
 	"github.com/jayleaton/go-fast-stack/apps/web/internal/server"
@@ -114,15 +115,17 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	}
 
 	users := services.NewUserService(database.NewUserRepository(pool), server.NewAccountCredentials(authn))
+	// One gate decides route access for both transports (docs/route-access.md).
+	gate := access.NewGate(server.Callers)
 	handler := server.New(server.Deps{
 		Config:  cfg,
 		Log:     log,
 		DB:      pool,
 		Secrets: cfg.Secrets,
 		Auth:    authn,
-		Users:   api.NewUsers(users, server.CallerFrom),
+		Users:   api.NewUsers(users, gate),
 		UI: ui.New(ui.Deps{
-			Auth: authn, Users: users, Features: cfg.Features, AppName: cfg.AppName,
+			Auth: authn, Users: users, Gate: gate, Features: cfg.Features, AppName: cfg.AppName,
 			SecureCookies: cfg.PublicURL.Scheme == "https", Logger: log,
 		}).Handler(),
 	})

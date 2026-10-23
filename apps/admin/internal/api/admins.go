@@ -6,6 +6,7 @@ import (
 	"context"
 	"net/http"
 
+	"github.com/jayleaton/go-fast-stack/apps/admin/internal/access"
 	"github.com/jayleaton/go-fast-stack/apps/admin/internal/config"
 	"github.com/jayleaton/go-fast-stack/apps/admin/internal/services"
 	"github.com/jayleaton/go-fast-stack/apps/admin/internal/validate"
@@ -27,32 +28,32 @@ var _ AdminService = (*services.AdminService)(nil)
 
 // Admins serves the dashboard's admins under /api/admin/v1/admins.
 type Admins struct {
-	svc    AdminService
-	caller CallerFrom
+	svc  AdminService
+	gate *access.Gate
 }
 
 // NewAdmins returns the admins endpoints.
-func NewAdmins(svc AdminService, caller CallerFrom) *Admins {
-	return &Admins{svc: svc, caller: caller}
+func NewAdmins(svc AdminService, gate *access.Gate) *Admins {
+	return &Admins{svc: svc, gate: gate}
 }
 
-// Routes registers the endpoints on mux.
+// Routes registers the endpoints on mux, each with its access policy.
 func (endpoints *Admins) Routes(mux *http.ServeMux) {
 	paths := config.APIRoutes
-	mux.Handle("GET "+paths.Admins, Authenticated(endpoints.caller, endpoints.list))
-	mux.Handle("POST "+paths.AdminInvites, Authenticated(endpoints.caller, endpoints.invite))
-	mux.Handle("POST "+paths.AdminDisable, Authenticated(endpoints.caller, endpoints.disable))
-	mux.Handle("POST "+paths.AdminEnable, Authenticated(endpoints.caller, endpoints.enable))
-	mux.Handle("DELETE "+paths.AdminByID, Authenticated(endpoints.caller, endpoints.remove))
-	mux.Handle("POST "+paths.AdminPasswordReset, Authenticated(endpoints.caller, endpoints.passwordReset))
-	mux.Handle("POST "+paths.AdminTwoFactorReset, Authenticated(endpoints.caller, endpoints.resetTwoFactor))
+	mux.Handle("GET "+paths.Admins, Route(endpoints.gate, access.SignedIn, endpoints.list))
+	mux.Handle("POST "+paths.AdminInvites, Route(endpoints.gate, access.SignedIn, endpoints.invite))
+	mux.Handle("POST "+paths.AdminDisable, Route(endpoints.gate, access.SignedIn, endpoints.disable))
+	mux.Handle("POST "+paths.AdminEnable, Route(endpoints.gate, access.SignedIn, endpoints.enable))
+	mux.Handle("DELETE "+paths.AdminByID, Route(endpoints.gate, access.SignedIn, endpoints.remove))
+	mux.Handle("POST "+paths.AdminPasswordReset, Route(endpoints.gate, access.SignedIn, endpoints.passwordReset))
+	mux.Handle("POST "+paths.AdminTwoFactorReset, Route(endpoints.gate, access.SignedIn, endpoints.resetTwoFactor))
 }
 
-func (endpoints *Admins) list(request *http.Request, caller Caller) ([]services.Admin, error) {
+func (endpoints *Admins) list(request *http.Request, caller access.Caller) ([]services.Admin, error) {
 	return endpoints.svc.ListAdmins(request.Context(), caller.Actor())
 }
 
-func (endpoints *Admins) invite(request *http.Request, caller Caller) (services.Admin, error) {
+func (endpoints *Admins) invite(request *http.Request, caller access.Caller) (services.Admin, error) {
 	in, err := validate.Decode[validate.CreateAdminInvite](request.Body)
 	if err != nil {
 		return services.Admin{}, err
@@ -60,27 +61,27 @@ func (endpoints *Admins) invite(request *http.Request, caller Caller) (services.
 	return endpoints.svc.InviteAdmin(request.Context(), caller.Actor(), in)
 }
 
-func (endpoints *Admins) disable(request *http.Request, caller Caller) (Success, error) {
+func (endpoints *Admins) disable(request *http.Request, caller access.Caller) (Success, error) {
 	err := endpoints.svc.DisableAdmin(request.Context(), caller.Actor(), request.PathValue("id"))
 	return Success{err == nil}, err
 }
 
-func (endpoints *Admins) enable(request *http.Request, caller Caller) (Success, error) {
+func (endpoints *Admins) enable(request *http.Request, caller access.Caller) (Success, error) {
 	err := endpoints.svc.EnableAdmin(request.Context(), caller.Actor(), request.PathValue("id"))
 	return Success{err == nil}, err
 }
 
-func (endpoints *Admins) remove(request *http.Request, caller Caller) (Success, error) {
+func (endpoints *Admins) remove(request *http.Request, caller access.Caller) (Success, error) {
 	err := endpoints.svc.RemoveAdmin(request.Context(), caller.Actor(), request.PathValue("id"))
 	return Success{err == nil}, err
 }
 
-func (endpoints *Admins) passwordReset(request *http.Request, caller Caller) (Success, error) {
+func (endpoints *Admins) passwordReset(request *http.Request, caller access.Caller) (Success, error) {
 	err := endpoints.svc.SendPasswordReset(request.Context(), caller.Actor(), request.PathValue("id"))
 	return Success{err == nil}, err
 }
 
-func (endpoints *Admins) resetTwoFactor(request *http.Request, caller Caller) (Success, error) {
+func (endpoints *Admins) resetTwoFactor(request *http.Request, caller access.Caller) (Success, error) {
 	err := endpoints.svc.ResetTwoFactor(request.Context(), caller.Actor(), request.PathValue("id"))
 	return Success{err == nil}, err
 }

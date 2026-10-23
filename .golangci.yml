@@ -34,6 +34,17 @@ linters:
         - pattern: ^auth\.Auth\.Users$
           pkg: ^github\.com/jayleaton/go-fast-stack/packages/auth$
           msg: user administration (ban, roles, any user's sessions) is for apps/admin only
+        # Route access (AGENTS.md "Architecture"): a request's session is read
+        # by one adapter per app (apps/*/internal/server, the gate's Resolver)
+        # and admitted by one route handler per transport (api.Route, the
+        # UI's route), so no handler checks a session by hand or skips its
+        # route's policy. See exclusions for where each is allowed.
+        - pattern: ^auth\.UserFrom$
+          pkg: ^github\.com/jayleaton/go-fast-stack/packages/auth$
+          msg: "the caller comes from the route's access policy: register the route with api.Route / the UI's page or action and use the caller it passes (AGENTS.md \"Architecture\", docs/route-access.md)"
+        - pattern: ^access\.Gate\.Admit$
+          pkg: ^github\.com/jayleaton/go-fast-stack/apps/(web|admin)/internal/access$
+          msg: "only the central route handler admits a request: register the route with api.Route / the UI's page or action and its access.Policy (docs/route-access.md)"
         # Tests only (see exclusions): a test that sleeps is slow and flaky.
         - pattern: ^time\.Sleep$
           msg: tests never sleep; wait on a channel or condition, or use testing/synctest for a fake clock (AGENTS.md "Fast tests")
@@ -75,6 +86,8 @@ linters:
               desc: services never import a transport
             - pkg: github.com/jayleaton/go-fast-stack/apps/web/ui
               desc: services never import a transport
+            - pkg: github.com/jayleaton/go-fast-stack/apps/web/internal/access
+              desc: route access is the transports' coarse gate; services get a services.Actor and decide record-level authorization themselves
             - pkg: github.com/jayleaton/go-fast-stack/packages/secrets
               desc: services declare a port for what a secret enables (a client); cmd/server wires it from config.Secrets
         database:
@@ -197,6 +210,31 @@ linters:
               desc: packages/uikit never talks to Postgres
             - pkg: github.com/starfederation/datastar-go
               desc: packages/uikit renders HTML; SSE belongs to the app UIs
+        # Route access sits between the services and the transports: policies
+        # see the caller and the request, never data, auth or a transport.
+        # What a policy needs (roles, tenant) is loaded by the Resolver in
+        # apps/*/internal/server, behind a port.
+        access:
+          files:
+            - "**/apps/web/internal/access/**"
+            - "**/apps/admin/internal/access/**"
+          deny:
+            - pkg: github.com/jackc/pgx
+              desc: policies decide on the caller; the Resolver in apps/*/internal/server loads what they need
+            - pkg: github.com/jayleaton/go-fast-stack/packages/database
+              desc: policies decide on the caller; the Resolver in apps/*/internal/server loads what they need
+            - pkg: github.com/jayleaton/go-fast-stack/packages/auth
+              desc: the Resolver in apps/*/internal/server adapts auth to access.Caller
+            - pkg: github.com/jayleaton/go-fast-stack/packages/secrets
+              desc: route access never sees secrets
+            - pkg: github.com/jayleaton/go-fast-stack/apps/web/internal/api
+              desc: both transports import access, never the other way round
+            - pkg: github.com/jayleaton/go-fast-stack/apps/web/ui
+              desc: both transports import access, never the other way round
+            - pkg: github.com/jayleaton/go-fast-stack/apps/admin/internal/api
+              desc: both transports import access, never the other way round
+            - pkg: github.com/jayleaton/go-fast-stack/apps/admin/ui
+              desc: both transports import access, never the other way round
         # The browser UI never talks to or renders the JSON API: both
         # transports call services in-process, side by side.
         ui-not-api:
@@ -233,6 +271,8 @@ linters:
               desc: services never import a transport
             - pkg: github.com/jayleaton/go-fast-stack/apps/admin/ui
               desc: services never import a transport
+            - pkg: github.com/jayleaton/go-fast-stack/apps/admin/internal/access
+              desc: route access is the transports' coarse gate; services get a services.Actor and decide record-level authorization themselves
         # Test boundaries: tests exist only for the business logic (services,
         # with mocked ports), route handlers (mocked service) and packages/auth.
         # scripts/check-test-boundaries.sh rejects tests anywhere else. See
@@ -321,6 +361,12 @@ linters:
       - path-except: _test\.go
         linters: [forbidigo]
         text: tests never sleep
+      - path: (apps/(web|admin)/internal/server|packages/auth)/
+        linters: [forbidigo]
+        text: the caller comes from the route's access policy
+      - path: apps/(web|admin)/(internal/api|ui)/route\.go
+        linters: [forbidigo]
+        text: only the central route handler admits a request
 
 formatters:
   enable:

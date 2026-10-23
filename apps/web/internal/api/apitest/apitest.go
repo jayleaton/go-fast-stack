@@ -4,7 +4,7 @@
 //
 //	svc := mocks.NewMockUserService(gomock.NewController(t))
 //	mux := http.NewServeMux()
-//	api.NewUsers(svc, apitest.CallerFrom).Routes(mux)
+//	api.NewUsers(svc, apitest.Gate()).Routes(mux)
 //	res := apitest.Do(t, mux, apitest.AsUser(ada), "GET", config.APIRoutes.Me, "")
 package apitest
 
@@ -17,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jayleaton/go-fast-stack/apps/web/internal/api"
+	"github.com/jayleaton/go-fast-stack/apps/web/internal/access"
 	"github.com/jayleaton/go-fast-stack/apps/web/internal/services"
 )
 
@@ -25,29 +25,36 @@ import (
 type Session func(*http.Request) *http.Request
 
 // Anonymous sends the request without a session.
-func Anonymous(r *http.Request) *http.Request { return r }
+func Anonymous(request *http.Request) *http.Request { return request }
 
 type callerKey struct{}
 
-// AsUser signs the request in as u, on the session Caller(u).Session.
-func AsUser(u services.User) Session {
-	return func(r *http.Request) *http.Request {
-		return r.WithContext(context.WithValue(r.Context(), callerKey{}, Caller(u)))
+// AsUser signs the request in as user, on the session Caller(user).Session.
+func AsUser(user services.User) Session {
+	return func(request *http.Request) *http.Request {
+		return request.WithContext(context.WithValue(request.Context(), callerKey{}, Caller(user)))
 	}
 }
 
-// Caller is the caller a request signed in AsUser(u) carries.
-func Caller(u services.User) api.Caller {
-	return api.Caller{User: u, Session: api.Session{ID: "session-" + u.ID, UserID: u.ID, ExpiresAt: time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC)}}
+// sessionExpiry is when every test session expires: far enough ahead that no
+// test sees it lapse.
+var sessionExpiry = time.Date(2030, time.January, 1, 0, 0, 0, 0, time.UTC)
+
+// Caller is the caller a request signed in AsUser(user) carries.
+func Caller(user services.User) access.Caller {
+	return access.Caller{User: user, Session: access.Session{ID: "session-" + user.ID, UserID: user.ID, ExpiresAt: sessionExpiry}}
 }
 
-// Actor is the services.Actor handlers pass for a request signed in AsUser(u).
-func Actor(u services.User) services.Actor { return Caller(u).Actor() }
+// Actor is the services.Actor handlers pass for a request signed in AsUser(user).
+func Actor(user services.User) services.Actor { return Caller(user).Actor() }
 
-// CallerFrom is the api.CallerFrom of a router under test.
-func CallerFrom(ctx context.Context) (api.Caller, bool) {
-	c, ok := ctx.Value(callerKey{}).(api.Caller)
-	return c, ok
+// Gate is the access gate of a router under test: it admits the session the
+// request was signed in with (AsUser, Anonymous).
+func Gate() *access.Gate {
+	return access.NewGate(access.FromContext(func(ctx context.Context) (access.Caller, bool) {
+		caller, ok := ctx.Value(callerKey{}).(access.Caller)
+		return caller, ok
+	}))
 }
 
 // Response is a decoded envelope.
@@ -60,13 +67,13 @@ type Response struct {
 
 // Do serves one request through h. It fails the test unless the response is
 // JSON and carries exactly one of data and error.
-func Do(t testing.TB, h http.Handler, as Session, method, path, body string) Response {
-	t.Helper()
-	req := as(httptest.NewRequestWithContext(t.Context(), method, path, strings.NewReader(body)))
+func Do(test testing.TB, handler http.Handler, as Session, method, path, body string) Response {
+	test.Helper()
+	req := as(httptest.NewRequestWithContext(test.Context(), method, path, strings.NewReader(body)))
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
+	handler.ServeHTTP(rec, req)
 	if ct := rec.Header().Get("Content-Type"); ct != "application/json" {
-		t.Fatalf("%s %s: content-type %q, body %s", method, path, ct, rec.Body)
+		test.Fatalf("%s %s: content-type %q, body %s", method, path, ct, rec.Body)
 	}
 	var env struct {
 		Data    json.RawMessage   `json:"data"`
@@ -74,21 +81,21 @@ func Do(t testing.TB, h http.Handler, as Session, method, path, body string) Res
 		Details map[string]string `json:"details"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
-		t.Fatalf("%s %s: body %q: %v", method, path, rec.Body, err)
+		test.Fatalf("%s %s: body %q: %v", method, path, rec.Body, err)
 	}
 	hasData := len(env.Data) > 0 && string(env.Data) != "null"
 	if hasData == (env.Error != nil) {
-		t.Fatalf("%s %s: envelope must carry exactly one of data and error: %s", method, path, rec.Body)
+		test.Fatalf("%s %s: envelope must carry exactly one of data and error: %s", method, path, rec.Body)
 	}
 	return Response{Status: rec.Code, Data: env.Data, Error: env.Error, Details: env.Details}
 }
 
-// Data decodes the data of a success response into T.
-func Data[T any](t testing.TB, r Response) T {
-	t.Helper()
-	var v T
-	if err := json.Unmarshal(r.Data, &v); err != nil {
-		t.Fatalf("data %s: %v", r.Data, err)
+// Data decodes the data of a success response into Value.
+func Data[Value any](test testing.TB, response Response) Value {
+	test.Helper()
+	var value Value
+	if err := json.Unmarshal(response.Data, &value); err != nil {
+		test.Fatalf("data %s: %v", response.Data, err)
 	}
-	return v
+	return value
 }

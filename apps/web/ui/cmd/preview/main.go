@@ -15,6 +15,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/jayleaton/go-fast-stack/apps/web/internal/access"
 	"github.com/jayleaton/go-fast-stack/apps/web/internal/config"
 	"github.com/jayleaton/go-fast-stack/apps/web/ui"
 )
@@ -42,7 +43,7 @@ func main() {
 	mux.Handle("/", ui.New(ui.Deps{
 		Auth:     fakeAuth,
 		Users:    Users{S: store},
-		UserFrom: fakeAuth.UserFrom,
+		Gate:     access.NewGate(access.FromContext(fakeAuth.Caller)),
 		Features: config.Features{EmailVerification: *verify, TemplateWelcome: *welcome},
 		Logger:   log,
 	}).Handler())

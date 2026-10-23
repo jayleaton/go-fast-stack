@@ -243,6 +243,7 @@
   },
   "errors": {
     "somethingWentWrong": "問題が発生しました",
+    "accessDenied": "このページへのアクセス権がありません",
     "tryAgain": "もう一度お試しください",
     "invalidCredentials": "無効な認証情報",
     "emailRequired": "メールアドレスが必要です",

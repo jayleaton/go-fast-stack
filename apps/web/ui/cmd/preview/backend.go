@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jayleaton/go-fast-stack/apps/web/internal/access"
 	"github.com/jayleaton/go-fast-stack/apps/web/internal/services"
 	"github.com/jayleaton/go-fast-stack/apps/web/internal/validate"
 	"github.com/jayleaton/go-fast-stack/apps/web/ui"
@@ -261,10 +262,17 @@ type current struct {
 	session ui.Session
 }
 
-// UserFrom is the preview's ui.Deps.UserFrom.
-func (a Auth) UserFrom(ctx context.Context) (ui.User, ui.Session, bool) {
-	c, ok := ctx.Value(sessionKey{}).(current)
-	return c.user, c.session, ok
+// Caller reads the preview's session for its access gate
+// (access.FromContext), like server.Callers over auth.Middleware.
+func (fake Auth) Caller(ctx context.Context) (access.Caller, bool) {
+	signedIn, ok := ctx.Value(sessionKey{}).(current)
+	if !ok {
+		return access.Caller{}, false
+	}
+	return access.Caller{
+		User:    services.User(signedIn.user),
+		Session: access.Session{ID: signedIn.session.ID, UserID: signedIn.session.UserID, ExpiresAt: signedIn.session.ExpiresAt, Token: signedIn.session.Token},
+	}, true
 }
 
 // Middleware loads the session from the cookie, like auth.Middleware.

@@ -23,6 +23,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jayleaton/go-fast-stack/apps/admin/internal/access"
 	"github.com/jayleaton/go-fast-stack/apps/admin/internal/config"
 	"github.com/jayleaton/go-fast-stack/apps/admin/internal/server"
 	"github.com/jayleaton/go-fast-stack/apps/admin/internal/services"
@@ -234,12 +235,13 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	p := policy(cfg)
-	users := services.NewUserService(server.NewUserDirectory(auth.NewUserAdmin(appPool)), auditLog, p)
-	adminSvc := services.NewAdminService(server.NewAdminAccounts(admins, adminrepo.NewAdmins(adminPool)), auditLog, p)
-	auditSvc := services.NewAuditService(auditLog, p)
-	analytics := services.NewAnalyticsService(adminrepo.NewStats(appPool), p)
-	callers := server.NewCallers(admins)
+	adminPolicy := policy(cfg)
+	users := services.NewUserService(server.NewUserDirectory(auth.NewUserAdmin(appPool)), auditLog, adminPolicy)
+	adminSvc := services.NewAdminService(server.NewAdminAccounts(admins, adminrepo.NewAdmins(adminPool)), auditLog, adminPolicy)
+	auditSvc := services.NewAuditService(auditLog, adminPolicy)
+	analytics := services.NewAnalyticsService(adminrepo.NewStats(appPool), adminPolicy)
+	// One gate decides route access for both transports (docs/route-access.md).
+	gate := access.NewGate(server.NewCallers(admins).Resolve)
 	reconciler := services.NewAuditReconciler(auditLog, server.NewUserDirectory(auth.NewUserAdmin(appPool)), server.NewAdminAccounts(admins, adminrepo.NewAdmins(adminPool)))
 	go reconcileAudit(ctx, reconciler, cfg.AuditReconcileAfter, log)
 
@@ -251,11 +253,11 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		Auth:    admins,
 		// No JSON API on the network: the UI calls the services in-process
 		// (sign-ins are audited through the admin auth instance's events). To let scripts call
-		// /api/admin/v1, pass api.NewUsers(users, callers.API) etc. as API;
+		// /api/admin/v1, pass api.NewUsers(users, gate) etc. as API;
 		// the audited auth endpoints come with it, hidden from browsers.
 		UI: ui.New(ui.Deps{
 			Auth: server.NewUIAuth(admins), Users: users, Admins: adminSvc, Audit: auditSvc, Analytics: analytics,
-			UserFrom: callers.UI, RequireTwoFactor: cfg.RequireTwoFactor, AppName: cfg.AppName,
+			Gate: gate, RequireTwoFactor: cfg.RequireTwoFactor, AppName: cfg.AppName,
 			SecureCookies: cfg.PublicURL.Scheme == "https", Logger: log,
 		}).Handler(),
 	})

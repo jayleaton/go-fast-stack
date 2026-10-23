@@ -6,6 +6,7 @@ import (
 	"context"
 	"net/http"
 
+	"github.com/jayleaton/go-fast-stack/apps/web/internal/access"
 	"github.com/jayleaton/go-fast-stack/apps/web/internal/config"
 	"github.com/jayleaton/go-fast-stack/apps/web/internal/services"
 	"github.com/jayleaton/go-fast-stack/apps/web/internal/validate"
@@ -29,8 +30,8 @@ var _ UserService = (*services.UserService)(nil)
 
 // CurrentUser is the GET /users/me response.
 type CurrentUser struct {
-	User    services.User `json:"user"`
-	Session Session       `json:"session"`
+	User    services.User  `json:"user"`
+	Session access.Session `json:"session"`
 }
 
 // UserUpdated is the PATCH /users/me response.
@@ -46,89 +47,89 @@ type Success struct {
 
 // Users serves the signed-in user's account under /api/core/v1/users.
 type Users struct {
-	svc    UserService
-	caller CallerFrom
+	svc  UserService
+	gate *access.Gate
 }
 
 // NewUsers returns the users endpoints.
-func NewUsers(svc UserService, caller CallerFrom) *Users {
-	return &Users{svc: svc, caller: caller}
+func NewUsers(svc UserService, gate *access.Gate) *Users {
+	return &Users{svc: svc, gate: gate}
 }
 
-// Routes registers the endpoints on mux.
-func (u *Users) Routes(mux *http.ServeMux) {
-	r := config.APIRoutes
-	mux.Handle("GET "+r.Me, Authenticated(u.caller, u.get))
-	mux.Handle("PATCH "+r.Me, Authenticated(u.caller, u.updateSelf))
-	mux.Handle("PATCH "+r.UserByID, Authenticated(u.caller, u.updateByID))
-	mux.Handle("DELETE "+r.Me, Authenticated(u.caller, u.delete))
-	mux.Handle("GET "+r.MeData, Authenticated(u.caller, u.dataSummary))
-	mux.Handle("POST "+r.MeEmail, Authenticated(u.caller, u.changeEmail))
-	mux.Handle("POST "+r.MePassword, Authenticated(u.caller, u.changePassword))
-	mux.Handle("GET "+r.MeSessions, Authenticated(u.caller, u.listSessions))
-	mux.Handle("DELETE "+r.MeSessionByID, Authenticated(u.caller, u.revokeSession))
-	mux.Handle("DELETE "+r.MeOtherSessions, Authenticated(u.caller, u.revokeOtherSessions))
+// Routes registers the endpoints on mux, each with its access policy.
+func (users *Users) Routes(mux *http.ServeMux) {
+	routes := config.APIRoutes
+	mux.Handle("GET "+routes.Me, Route(users.gate, access.SignedIn, users.get))
+	mux.Handle("PATCH "+routes.Me, Route(users.gate, access.SignedIn, users.updateSelf))
+	mux.Handle("PATCH "+routes.UserByID, Route(users.gate, access.SignedIn, users.updateByID))
+	mux.Handle("DELETE "+routes.Me, Route(users.gate, access.SignedIn, users.delete))
+	mux.Handle("GET "+routes.MeData, Route(users.gate, access.SignedIn, users.dataSummary))
+	mux.Handle("POST "+routes.MeEmail, Route(users.gate, access.SignedIn, users.changeEmail))
+	mux.Handle("POST "+routes.MePassword, Route(users.gate, access.SignedIn, users.changePassword))
+	mux.Handle("GET "+routes.MeSessions, Route(users.gate, access.SignedIn, users.listSessions))
+	mux.Handle("DELETE "+routes.MeSessionByID, Route(users.gate, access.SignedIn, users.revokeSession))
+	mux.Handle("DELETE "+routes.MeOtherSessions, Route(users.gate, access.SignedIn, users.revokeOtherSessions))
 }
 
-func (u *Users) get(r *http.Request, c Caller) (CurrentUser, error) {
-	user, err := u.svc.GetProfile(r.Context(), c.Actor(), c.User.ID)
-	return CurrentUser{User: user, Session: c.Session}, err
+func (users *Users) get(request *http.Request, caller access.Caller) (CurrentUser, error) {
+	user, err := users.svc.GetProfile(request.Context(), caller.Actor(), caller.User.ID)
+	return CurrentUser{User: user, Session: caller.Session}, err
 }
 
-func (u *Users) updateSelf(r *http.Request, c Caller) (UserUpdated, error) {
-	return u.update(r, c, c.User.ID)
+func (users *Users) updateSelf(request *http.Request, caller access.Caller) (UserUpdated, error) {
+	return users.update(request, caller, caller.User.ID)
 }
 
-func (u *Users) updateByID(r *http.Request, c Caller) (UserUpdated, error) {
-	return u.update(r, c, r.PathValue("id"))
+func (users *Users) updateByID(request *http.Request, caller access.Caller) (UserUpdated, error) {
+	return users.update(request, caller, request.PathValue("id"))
 }
 
-func (u *Users) update(r *http.Request, c Caller, id string) (UserUpdated, error) {
-	in, err := validate.Decode[validate.UpdateUserSettings](r.Body)
+func (users *Users) update(request *http.Request, caller access.Caller, userID string) (UserUpdated, error) {
+	input, err := validate.Decode[validate.UpdateUserSettings](request.Body)
 	if err != nil {
 		return UserUpdated{}, err
 	}
-	user, err := u.svc.UpdateProfile(r.Context(), c.Actor(), id, in)
+	user, err := users.svc.UpdateProfile(request.Context(), caller.Actor(), userID, input)
 	return UserUpdated{Success: err == nil, User: user}, err
 }
 
-func (u *Users) delete(r *http.Request, c Caller) (Success, error) {
-	err := u.svc.DeleteAccount(r.Context(), c.Actor(), c.User.ID)
+func (users *Users) delete(request *http.Request, caller access.Caller) (Success, error) {
+	err := users.svc.DeleteAccount(request.Context(), caller.Actor(), caller.User.ID)
 	return Success{err == nil}, err
 }
 
-func (u *Users) dataSummary(r *http.Request, c Caller) (services.UserDataSummary, error) {
-	return u.svc.DataSummary(r.Context(), c.Actor(), c.User.ID)
+func (users *Users) dataSummary(request *http.Request, caller access.Caller) (services.UserDataSummary, error) {
+	return users.svc.DataSummary(request.Context(), caller.Actor(), caller.User.ID)
 }
 
-func (u *Users) changeEmail(r *http.Request, c Caller) (Success, error) {
-	in, err := validate.Decode[validate.UpdateUserEmail](r.Body)
+func (users *Users) changeEmail(request *http.Request, caller access.Caller) (Success, error) {
+	input, err := validate.Decode[validate.UpdateUserEmail](request.Body)
 	if err != nil {
 		return Success{}, err
 	}
-	err = u.svc.RequestEmailChange(r.Context(), c.Actor(), c.User.ID, in)
+	err = users.svc.RequestEmailChange(request.Context(), caller.Actor(), caller.User.ID, input)
 	return Success{err == nil}, err
 }
 
-func (u *Users) changePassword(r *http.Request, c Caller) (Success, error) {
-	in, err := validate.Decode[validate.UpdateUserPassword](r.Body)
+func (users *Users) changePassword(request *http.Request, caller access.Caller) (Success, error) {
+	input, err := validate.Decode[validate.UpdateUserPassword](request.Body)
 	if err != nil {
 		return Success{}, err
 	}
-	err = u.svc.ChangePassword(r.Context(), c.Actor(), c.User.ID, in)
+	err = users.svc.ChangePassword(request.Context(), caller.Actor(), caller.User.ID, input)
 	return Success{err == nil}, err
 }
 
-func (u *Users) listSessions(r *http.Request, c Caller) ([]services.Session, error) {
-	return u.svc.ListSessions(r.Context(), c.Actor(), c.User.ID)
+func (users *Users) listSessions(request *http.Request, caller access.Caller) ([]services.Session, error) {
+	return users.svc.ListSessions(request.Context(), caller.Actor(), caller.User.ID)
 }
 
-func (u *Users) revokeSession(r *http.Request, c Caller) (Success, error) {
-	err := u.svc.RevokeSession(r.Context(), c.Actor(), c.User.ID, r.PathValue("id"))
+func (users *Users) revokeSession(request *http.Request, caller access.Caller) (Success, error) {
+	err := users.svc.RevokeSession(request.Context(), caller.Actor(), caller.User.ID, request.PathValue("id"))
 	return Success{err == nil}, err
 }
 
-func (u *Users) revokeOtherSessions(r *http.Request, c Caller) (Success, error) {
-	err := u.svc.RevokeOtherSessions(r.Context(), c.Actor(), c.User.ID)
+func (users *Users) revokeOtherSessions(request *http.Request, caller access.Caller) (Success, error) {
+	err := users.svc.RevokeOtherSessions(request.Context(), caller.Actor(), caller.User.ID)
 	return Success{err == nil}, err
 }
