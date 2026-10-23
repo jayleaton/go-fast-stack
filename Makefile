@@ -64,9 +64,10 @@ check-generated: generate ## Fail if generated code is out of date
 	@test -z "$$(git status --porcelain --untracked-files=all -- '*.go')" || (git status --short -- '*.go'; echo 'untracked generated files: run make generate and commit'; exit 1)
 
 .PHONY: lint
-lint: ## gofmt + golangci-lint (incl. layering rules) + test file locations
+lint: ## gofmt + golangci-lint (incl. layering rules) + single-character names + test file locations
 	@test -z "$$(gofmt -l .)" || (gofmt -l . && echo 'gofmt: run gofmt -w .' && exit 1)
 	$(TOOL) golangci-lint run
+	$(GO) run ./scripts/namelint ./...
 	./scripts/check-test-boundaries.sh
 	./scripts/check-ui-api-paths.sh
 
@@ -75,7 +76,7 @@ check-migrations: ## Fail if a new migration is numbered at or below the highest
 	./scripts/check-migration-order.sh
 
 .PHONY: lint-layering
-lint-layering: ## Prove forbidden imports (code and tests) and magic numbers fail lint
+lint-layering: ## Prove forbidden imports (code and tests), magic numbers and single-character names fail lint
 	./scripts/check-layering.sh
 
 .PHONY: lint-tests
@@ -307,7 +308,8 @@ DEPLOY_KEEP ?=
 
 .PHONY: deploy-check
 deploy-check: ## vet and lint the deploy/ module (it has no tests), then deploy-vars
-	cd deploy && $(GO) vet ./... && (cd .railway && $(GO) vet railway.go) && $(GO) tool -modfile=../tools/go.mod golangci-lint run -c ../.golangci.yml ./...
+	$(GO) build -o bin/namelint ./scripts/namelint
+	cd deploy && $(GO) vet ./... && (cd .railway && $(GO) vet railway.go) && $(GO) tool -modfile=../tools/go.mod golangci-lint run -c ../.golangci.yml ./... && ../bin/namelint ./...
 	$(MAKE) --no-print-directory deploy-vars
 
 .PHONY: deploy-vars

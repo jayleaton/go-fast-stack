@@ -3,7 +3,8 @@
 # package with a forbidden import into each guarded layer, and an external
 # _test.go file with a forbidden import into each test boundary, runs
 # golangci-lint, and fails unless depguard reports every probe. A bare magic
-# number must fail mnd and the same value as a named const must pass. Then plants
+# number must fail mnd and the same value as a named const must pass, and
+# single-character names must fail scripts/namelint. Then plants
 # code that must not compile (reading a secret around reveal.Value) and fails
 # unless the compiler rejects it. Probes are always removed.
 # GOLANGCI_LINT overrides the binary (CI uses the prebuilt one).
@@ -282,4 +283,30 @@ for ui in apps/web/ui apps/admin/ui; do
     echo "ok    $ui must not render an API path"
   fi
 done
+
+# Single-character names (scripts/namelint): real past examples fail, the
+# same code with words passes.
+names="apps/web/internal/services/${probe}_names"
+mkdir -p "$names"
+paths+=("$names")
+printf 'package %s\n\nimport "net/http"\n\ntype Service struct{ hits int }\n\nfunc (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {\n\tfor i := range 3 {\n\t\ts.hits += i\n\t}\n\tw.WriteHeader(http.StatusNoContent)\n\t_ = r\n}\n' "${probe}_names" > "$names/bad.go"
+printf 'package %s\n\nimport "testing"\n\nfunc TestBad(t *testing.T) { t.Parallel() }\n' "${probe}_names" > "$names/bad_test.go"
+printf 'package %s\n\nimport "net/http"\n\ntype Fixed struct{ hits int }\n\nfunc (service *Fixed) ServeHTTP(writer http.ResponseWriter, request *http.Request) {\n\tfor index := range 3 {\n\t\tservice.hits += index\n\t}\n\twriter.WriteHeader(http.StatusNoContent)\n\t_ = request\n}\n' "${probe}_names" > "$names/good.go"
+printf 'package %s\n\nimport "testing"\n\nfunc TestGood(test *testing.T) { test.Parallel() }\n' "${probe}_names" > "$names/good_test.go"
+nout=$(go run ./scripts/namelint "./$names/" 2>&1 || true)
+for want in "bad.go:.*\"s\"|func (s *Service)" "bad.go:.*\"w\"|w http.ResponseWriter" "bad.go:.*\"r\"|r *http.Request" "bad.go:.*\"i\"|for i := range" "bad_test.go:.*\"t\"|t *testing.T"; do
+  if grep -q "$names/${want%%|*}" <<<"$nout"; then
+    echo "ok    a single-character name fails namelint: ${want#*|}"
+  else
+    echo "FAIL  namelint does not report: ${want#*|}"
+    failed=1
+  fi
+done
+if grep -qE "$names/good(_test)?\.go:" <<<"$nout"; then
+  echo "FAIL  namelint reports the fixed form (service, writer, request, index, test)"
+  failed=1
+else
+  echo "ok    the fixed form (service, writer, request, index, test) passes namelint"
+fi
+[ "$failed" = 0 ] || { echo "--- namelint output:"; echo "$nout"; }
 [ "$failed" = 0 ] || exit 1

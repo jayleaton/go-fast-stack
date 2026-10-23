@@ -73,6 +73,7 @@ lint_go() {
   # word splitting intended: DIRS is a list. --allow-parallel-runners: the
   # deploy task lints at the same time (same cache, safe).
   golangci-lint run --allow-parallel-runners $DIRS
+  go run ./scripts/namelint $DIRS # single-character names (AGENTS.md "Taste")
   ./scripts/check-test-boundaries.sh
   ./scripts/check-ui-api-paths.sh
   if [ "$FULL" = true ]; then ./scripts/check-coverage.sh --exist; fi
@@ -176,10 +177,12 @@ smoke() {
 
 deploy_mod() {
   set -e
+  go build -o "$tmp/namelint" ./scripts/namelint
   cd deploy
   go vet ./...
   (cd .railway && go vet railway.go)
   golangci-lint run --allow-parallel-runners -c ../.golangci.yml ./...
+  "$tmp/namelint" ./...
 }
 
 # node_modules comes from the cache keyed by the lockfile (see the action);

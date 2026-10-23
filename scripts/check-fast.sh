@@ -127,6 +127,9 @@ if [ "${#pkgs[@]}" -gt 0 ]; then
   step "golangci-lint"
   if ! out=$(lint run "${pkgdirs[@]}" 2>&1); then done_; echo "$out" | sed 's/^/  /'; fail golangci-lint; else done_; fi
 
+  step "single-character names"
+  if ! out=$("$GO" run ./scripts/namelint "${pkgdirs[@]}" 2>&1); then done_; echo "$out" | sed 's/^/  /'; fail namelint; else done_; fi
+
   step "test locations"
   if ! out=$(./scripts/check-test-boundaries.sh 2>&1); then done_; echo "$out" | sed 's/^/  /'; fail test-boundaries; else done_; fi
 
@@ -146,8 +149,9 @@ if [ "${#pkgs[@]}" -gt 0 ]; then
 fi
 
 if [ "$deploy" = true ] && [ -d deploy ]; then
-  step "deploy/ vet, lint"
-  if ! out=$(cd deploy && { "$GO" vet ./... && "$GO" tool -modfile=../tools/go.mod golangci-lint run -c ../.golangci.yml ./...; } 2>&1); then
+  step "deploy/ vet, lint, names"
+  if ! out=$(mkdir -p .cache && "$GO" build -o .cache/namelint ./scripts/namelint 2>&1 &&
+    cd deploy && { "$GO" vet ./... && "$GO" tool -modfile=../tools/go.mod golangci-lint run -c ../.golangci.yml ./... && ../.cache/namelint ./...; } 2>&1); then
     done_
     echo "$out" | grep -vE '^(ok|\?) ' | sed 's/^/  /'
     fail deploy
