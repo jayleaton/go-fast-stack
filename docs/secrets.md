@@ -1,6 +1,6 @@
 # Secrets
 
-Secrets come from one place, `SECRETS_PROVIDER`, through [`packages/secrets`](packages/secrets): a manager that fetches the whole set for this service and environment, validates it, and hands each consumer its value. With `doppler`, **every secret rotates without a redeploy except `DOPPLER_TOKEN`** itself. Non-secret settings stay plain env vars read once at boot.
+Secrets come from one place, `SECRETS_PROVIDER`, through [`packages/secrets`](../packages/secrets): a manager that fetches the whole set for this service and environment, validates it, and hands each consumer its value. With `doppler`, **every secret rotates without a redeploy except `DOPPLER_TOKEN`** itself. Non-secret settings stay plain env vars read once at boot.
 
 | `SECRETS_PROVIDER` | What it is | Live rotation |
 |---|---|---|
@@ -22,7 +22,7 @@ With `env`, all of these are read at boot and change with a redeploy. The admin 
 
 1. Create a Doppler workspace and a project (e.g. `go-fast-stack`). Each environment (`dev`, `stg`, `prd`) is a config; add `DATABASE_URL`, `AUTH_SECRET` and `RESEND_API_KEY` to each (`AUTH_SECRET_PREVIOUS` only while rotating). The Developer plan is free for three people and service tokens are free.
 2. Per Railway environment, create a **read-only service token** for that environment's config (project → config → Access → Generate). One token per service per environment, so staging can't read production and a future admin service gets its own config.
-3. `make railway-secrets` (see "Deploy to Railway") stores each token sealed on its service and environment and sets `SECRETS_PROVIDER=doppler`, which redeploys it. The Railway copies of `DATABASE_URL`, `AUTH_SECRET` and `RESEND_API_KEY` are then ignored. The pre-deploy `server migrate` reads `DATABASE_URL` from Doppler too, so put the Postgres service's private `DATABASE_URL` in the Doppler config first.
+3. `make railway-secrets` (see [Deploy to Railway](deploy.md)) stores each token sealed on its service and environment and sets `SECRETS_PROVIDER=doppler`, which redeploys it. The Railway copies of `DATABASE_URL`, `AUTH_SECRET` and `RESEND_API_KEY` are then ignored. The pre-deploy `server migrate` reads `DATABASE_URL` from Doppler too, so put the Postgres service's private `DATABASE_URL` in the Doppler config first.
 4. Deploy. The log shows `secrets: loaded provider=doppler`. From now on a change in Doppler reaches every replica within one interval (60 s ± 10 %): `secrets: rotated changed=[…]`, then the consumer's line (`database: DATABASE_URL rotated`, `auth: AUTH_SECRET rotated`, `mailer: resend client built`) with fingerprints. Revoke an old credential upstream once every replica logged the new fingerprint.
 5. Leave Doppler's Railway sync off for live keys: it writes Railway variables and redeploys, which is the `env` path.
 
@@ -109,7 +109,7 @@ To set one by hand instead (another provider account, say), `make railway-secret
 
 Without Doppler, set `secrets.provider: env` and give `RESEND_API_KEY` the same way (`RESEND_API_KEY_PRODUCTION=re_xxx make railway-secrets`). Your local `.env` is never sent to Railway.
 
-Railway currently gives a database added to a second environment the literal text of its password generator as its password, a public string ([issue draft 0](docs/railway-go-iac-issues.md)). `make railway-apply` detects this and sets a random password inside the database over `railway ssh`. That needs an SSH key registered with Railway (`railway ssh keys`).
+Railway currently gives a database added to a second environment the literal text of its password generator as its password, a public string ([issue draft 0](railway-go-iac-issues.md)). `make railway-apply` detects this and sets a random password inside the database over `railway ssh`. That needs an SSH key registered with Railway (`railway ssh keys`).
 
 ## Where secrets live, and rotating after an incident
 
@@ -138,7 +138,7 @@ That is why the runbook below gives the app its own login roles.
    ```
    Delete `AUTH_SECRET_REVOKED` once the new deployment is live. Everyone signs in again, and 2FA enrolments survive.
 4. **Everything else in Doppler:** roll `RESEND_API_KEY` in Resend, save it in Doppler (live), then revoke the old key.
-5. **Backups** (see [Backups and restore](#backups-and-restore)):
+5. **Backups** (see [Backups and restore](backups.md)):
    - **Encryption key:** `BACKUP_ENCRYPTION_KEY` lives on Railway, so treat it as leaked. Move it to `BACKUP_ENCRYPTION_KEY_PREVIOUS` and set a new one in one deploy:
      ```sh
      old=$(railway variable list --service backup --environment production --json | jq -r .BACKUP_ENCRYPTION_KEY)

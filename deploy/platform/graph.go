@@ -27,8 +27,8 @@ type SecretKind int
 const (
 	// Generated: 48 random bytes, created once per service and environment,
 	// never copied between environments. Not sealed: rotating an auth secret
-	// needs its old value (AUTH_SECRET_PREVIOUS / _REVOKED, see README
-	// "Secrets"), and a sealed value can never be read back.
+	// needs its old value (AUTH_SECRET_PREVIOUS / _REVOKED, see docs/secrets.md),
+	// and a sealed value can never be read back.
 	Generated SecretKind = iota
 	// Provider: SECRETS_PROVIDER, set by setup from whether this service and
 	// environment has a real DOPPLER_TOKEN yet (doppler) or not (env).

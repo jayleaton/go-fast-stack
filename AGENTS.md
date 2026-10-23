@@ -42,7 +42,7 @@ The most common defect is a change that works on the path you tested and is miss
 - **Contracts.** Migrations and sqlc queries are the contract. Change them, run `make generate`, and follow every consumer: repository, service, validator, both transports.
 - **Reverse states.** If you add a way in, add the way out and a way to see it. Delete needs restore, disable needs enable, set needs clear.
 - **Environments.** Dev (Docker Postgres, email verification off, email links logged) and production (Resend, verification on) differ only through `config.Features` and env. Both paths must work.
-- **Docs.** Behaviour a template user would notice goes in `README.md`; patterns go here.
+- **Docs.** Behaviour a template user would notice goes in `README.md` or its topic file in `docs/`; patterns go here.
 
 ## The three ways to hurt yourself
 
@@ -131,7 +131,7 @@ Secrets never reach templates, SSE, JSON or logs:
 1. **It rotates live.** Every secret does except `DOPPLER_TOKEN`; pick the mechanism by consumer: an outbound API key rebuilds its client (`auth.SwapMailer`), a database URL goes through a `database.Pool` (`Swap`: probe, atomic switch, drain), a signing/encryption key goes through a keyring with a grace period (`secrets.Keyring` + `auth.Auth.SetSecrets`; data at rest under a wrapped data key, never directly under the secret). Non-secret settings stay plain env vars in `config.Load`.
 2. **Live secret.** Add the name to `liveSecrets` in the app's `internal/config/secrets.go` (a keyring adds `secrets.KeyringNames(name)`), its checks to `validateLive` (they run on the env at boot and on every fetch before it is published; use `Len`/`IsZero`/`Equal`, never `Reveal`), and a typed accessor next to `OnDatabaseURL` / `OnAuthSecrets`.
 3. **Consumer.** In `cmd/server`, register the hook: build the new client and swap it in atomically (see `auth.SwapMailer`); on a zero value fall back or keep the old client; return an error to keep the previous client (the manager retries it after each later fetch). A hook must not call back into the manager (`OnChange`, `Refresh`, `Stop`). Log `v.Fingerprint()`, never the value. Never cache the value elsewhere.
-4. **Tests and docs.** Cover the swap at the consumer's boundary (like `TestSwapMailerUsesTheLatestMailer`), add the name to `.env.example` and README "Secrets", and add it to every Doppler config.
+4. **Tests and docs.** Cover the swap at the consumer's boundary (like `TestSwapMailerUsesTheLatestMailer`), add the name to `.env.example` and [docs/secrets.md](docs/secrets.md), and add it to every Doppler config.
 
 ## Deploy to Railway (for agents)
 
@@ -140,7 +140,7 @@ Only when the developer asks: it creates billed resources in their Railway accou
 1. **Preflight.** `bin/railway-setup` is built by any `make railway-*` target. Run `make railway-doctor ARGS=--json` and fix every check with `"status": "fail"`; each check carries a `fix`. Typical fixes: `railway login` (the developer's browser), `--workspace` when they belong to several, and `railway ssh keys add` when there is more than one environment.
 2. **Setup.** `make railway-setup ARGS="--yes --json --environments staging,production"`. Add `--admin true`, `--region`, `--project` or `--workspace` as asked. Every flag has a `PLATFORM_*` env equivalent (`PLATFORM_YES=1`, `PLATFORM_JSON=1`, `PLATFORM_ENVIRONMENTS`, ...). The flags are written into `deploy/platform.yaml`: commit that file. Without `--yes`, and with no terminal to ask on, creating a project stops with exit 3.
 3. **Read the summary.** stdout is one JSON object: `ok`, `project.{id,url}`, `source` (`github` or `upload`), each environment's services with `url`, `deployment` and `health`, and `nextSteps`. Logs go to stderr. Relay `nextSteps` to the developer verbatim. They are things only a person can do, such as installing the GitHub app, Doppler tokens or a real `RESEND_API_KEY`. Never invent or fill in secrets yourself.
-4. **Doppler** (`secrets.provider: doppler`): when the developer has run `doppler login`, setup also moves the app secrets into Doppler (README "Secrets and Doppler"); otherwise `nextSteps` says so, and `make doppler-setup ARGS="--json"` does it later. Its output names configs, secret names and fingerprints only. Keep it that way: never print, log or paste a token or secret value.
+4. **Doppler** (`secrets.provider: doppler`): when the developer has run `doppler login`, setup also moves the app secrets into Doppler ([docs/secrets.md](docs/secrets.md#secrets-and-doppler)); otherwise `nextSteps` says so, and `make doppler-setup ARGS="--json"` does it later. Its output names configs, secret names and fingerprints only. Keep it that way: never print, log or paste a token or secret value.
 5. **Re-run anytime.** `make railway-setup` is idempotent: no changes, no redeploys when healthy. Removing an environment or `admin` never deletes anything without `CONFIRM_DESTRUCTIVE=1`; ask before passing it.
 
 Exit codes:
@@ -180,7 +180,7 @@ Exit codes:
 - `apps/web/internal/services`: business rules and the ports they need; `services/mocks` (generated) for service tests. `apps/web/internal/validate`: input types.
 - `apps/web/ui`: templ pages, Datastar handlers, i18n, static assets, and the browser security headers (`security.go`).
 - `packages/uikit`: the templ components and design tokens both UIs share (`theme.css` is the one file to re-theme). It renders translated strings and values only; depguard keeps it from importing `apps/` or the data, auth and secrets packages.
-- `apps/backup`, `packages/backup`: the nightly encrypted Postgres backup and restore (README "Backups and restore").
+- `apps/backup`, `packages/backup`: the nightly encrypted Postgres backup and restore ([docs/backups.md](docs/backups.md)).
 - `packages/database`: pool (`Pool`: swaps itself when `DATABASE_URL` rotates), `migrations/` (goose, embedded), `queries/` (sqlc input), `sqlc/` (generated, never edit), repositories, `model/`.
 - `packages/secrets`: live secrets: `Manager` (polling, validation, last-good cache, staleness, change hooks) and providers (`Env`, `Doppler`; Infisical/1Password stubs behind build tags), `Secret`, and the redacting log handler. Self-contained; never reads the env.
 - `packages/auth`: Better Auth–style auth: its own migrations, queries, endpoints (Better Auth paths and response shapes, not the envelope), sessions, mailers. Self-contained: it never imports `apps/` or `packages/database` (depguard).

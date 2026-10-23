@@ -67,7 +67,7 @@ func DopplerSeeds(service string) []Seed {
 }
 
 // RailwayCopies are a service's Railway variables made redundant once it
-// reads Doppler (README "Where secrets live"). DATABASE_URL stays: it is the
+// reads Doppler (docs/secrets.md "Where secrets live"). DATABASE_URL stays: it is the
 // IaC reference to the Postgres service and is ignored under Doppler.
 func RailwayCopies(service string) []string {
 	if service == ServiceAdmin {

@@ -2,7 +2,7 @@
 
 ## Try the API
 
-Try the API (it is for the mobile app and servers: a browser gets a 404, see [Security](#security)). In development email verification is off and verification/reset links are logged by the server instead of emailed:
+Try the API (it is for the mobile app and servers: a browser gets a 404, see [Security](security.md)). In development email verification is off and verification/reset links are logged by the server instead of emailed:
 
 ```sh
 curl localhost:3000/healthz
@@ -28,7 +28,7 @@ The signed-in user's account lives under `/api/core/v1/users/me` (all JSON, enve
 
 `PATCH /api/core/v1/users/{id}` answers 403 for anyone but the caller.
 
-Auth endpoints live under `/api/auth/` (sign-up, sign-in, sign-out, get-session, verify-email, send-verification-email, request-password-reset, reset-password); see [packages/auth/README.md](packages/auth/README.md).
+Auth endpoints live under `/api/auth/` (sign-up, sign-in, sign-out, get-session, verify-email, send-verification-email, request-password-reset, reset-password); see [packages/auth/README.md](../packages/auth/README.md).
 
 Each checkout gets its own compose project and database ports, derived from its path, so any number of clones or git worktrees can run `make db-up` and `make test` at once. `make env` prints them (pgweb URL included). To pin them, set `COMPOSE_PROJECT_NAME`, `POSTGRES_PORT`, `PGWEB_PORT`, `TEST_POSTGRES_PORT` or `DATABASE_URL` in `.env`. The app's `PORT` stays 3000 unless you set it.
 
@@ -48,15 +48,15 @@ Each checkout gets its own compose project and database ports, derived from its 
 | `make bench-devloop` | timing tables for the dev loop: build per binary (with size and cold start), generators, lint per linter, probes, tests per package with and without `-race`; `BENCH_COLD=1` adds cold caches, `BENCH_BASE=<ref>` an A/B of the test run against that ref on the same machine |
 | `make build` / `make docker` | static binary / production image |
 | `make db-up` / `make db-down` | start / stop the local databases |
-| `make db-backup` / `make db-backups` / `make db-restore ID=… YES=1` | encrypted backup of this checkout's Postgres, list, restore (see "Backups and restore") |
+| `make db-backup` / `make db-backups` / `make db-restore ID=… YES=1` | encrypted backup of this checkout's Postgres, list, restore (see [Backups and restore](backups.md)) |
 | `make railway-backup` / `railway-backups` / `railway-restore` | the same against a Railway environment (`PLATFORM_ENV=production`) |
 | `make env` | print this checkout's compose project, ports and `DATABASE_URL` |
 
 ## Look and feel
 
-Both apps render through one component set, [packages/uikit](packages/uikit/README.md) (app shell with a responsive
+Both apps render through one component set, [packages/uikit](../packages/uikit/README.md) (app shell with a responsive
 nav, buttons, fields, cards, alerts, badges, tables, confirm dialogs, empty and loading states), styled by design
-tokens with a light and a dark value each. **Re-theme by editing [packages/uikit/theme.css](packages/uikit/theme.css)
+tokens with a light and a dark value each. **Re-theme by editing [packages/uikit/theme.css](../packages/uikit/theme.css)
 and running `make css`.** Pages follow the system theme until someone uses the toggle (a `theme` cookie the server
 renders as `<html class>`, so there is no flash). The product name in the header and titles is `APP_NAME` (default
 "My App"); the admin app's is `ADMIN_APP_NAME` (default "Admin").
@@ -67,4 +67,4 @@ Go stdlib `net/http` · `templ` + Datastar + Tailwind (standalone CLI) · `pgx` 
 
 ## Working on it
 
-Read [AGENTS.md](AGENTS.md) (architecture, test boundaries, how to add a service, PR rules) and [CONTEXT.md](CONTEXT.md) (shared vocabulary).
+Read [AGENTS.md](../AGENTS.md) (architecture, test boundaries, how to add a service, PR rules) and [CONTEXT.md](../CONTEXT.md) (shared vocabulary).

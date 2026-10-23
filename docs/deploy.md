@@ -1,6 +1,6 @@
 # Deploy to Railway
 
-One file decides the whole Railway project: [`deploy/platform.yaml`](deploy/platform.yaml) (admin yes/no, which environments, previews, region, sizes). From a fresh clone, one command creates everything and deploys it: the project, the environments, the services and databases, the domains, the secrets (generated, or placeholders), and a first healthy deploy. It runs on Railway's [Infrastructure as Code](https://docs.railway.com/infrastructure-as-code) (Go authoring, beta). Re-running converges, and editing the file (add `qa`, turn on `admin`) updates the project.
+One file decides the whole Railway project: [`deploy/platform.yaml`](../deploy/platform.yaml) (admin yes/no, which environments, previews, region, sizes). From a fresh clone, one command creates everything and deploys it: the project, the environments, the services and databases, the domains, the secrets (generated, or placeholders), and a first healthy deploy. It runs on Railway's [Infrastructure as Code](https://docs.railway.com/infrastructure-as-code) (Go authoring, beta). Re-running converges, and editing the file (add `qa`, turn on `admin`) updates the project.
 
 Needs the [Railway CLI](https://docs.railway.com/cli) 5.71.0 or newer and Go. No dashboard or GitHub step first:
 
@@ -65,7 +65,7 @@ Off by default. `previews: true` (needs `staging`) turns on Railway PR environme
 - `deploy/.railway/railway.go` is what `railway config plan|apply --file deploy/.railway/railway.go --environment <env>` evaluates.
 - `deploy/cmd/railway-setup` does what IaC cannot: create the project and environments, seal secrets, generate domains and toggle previews.
 - There is no `railway.json` (Config as Code) any more, for web or admin: Railway stops reading those files on 2026-12-01.
-- Railway bugs found on the way: [docs/railway-go-iac-issues.md](docs/railway-go-iac-issues.md).
+- Railway bugs found on the way: [docs/railway-go-iac-issues.md](railway-go-iac-issues.md).
 
 `/healthz` is only the deploy gate: Railway checks it until a new deployment goes live, never afterwards. It answers 503 when Doppler secrets go stale (`SECRETS_MAX_STALENESS`), so never wire it up as a liveness or restart probe, or a Doppler outage turns into a restart loop. Services restart only when the process exits (`ON_FAILURE`, 5 retries).
 
