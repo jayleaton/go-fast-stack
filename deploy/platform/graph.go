@@ -2,6 +2,8 @@ package platform
 
 import (
 	"fmt"
+	"slices"
+	"strings"
 
 	railway "github.com/railwayapp/railway-go-sdk"
 )
@@ -100,6 +102,18 @@ func (c Config) SecretVars() []Secret {
 	return out
 }
 
+// HasService reports whether the graph has a service with this name.
+func (c Config) HasService(name string) bool {
+	services := append(c.PublicServices(), ServicePostgres)
+	if c.Admin {
+		services = append(services, ServiceAdminPostgres)
+	}
+	if c.Backups.Enabled {
+		services = append(services, ServiceBackup)
+	}
+	return slices.Contains(services, name)
+}
+
 // PublicServices are the services that get a Railway-generated domain.
 func (c Config) PublicServices() []string {
 	if c.Admin {
@@ -132,26 +146,26 @@ func (c Config) Build(env string) (Project, error) {
 	if c.Project == Auto || c.Repo == Auto {
 		return Project{}, fmt.Errorf("project/repo: auto is unresolved: load platform.yaml with LoadResolved")
 	}
+	settings := c.Settings(env)
 	db := c.postgres(ServicePostgres)
+	webEnv := map[string]any{"DATABASE_URL": db.Env("DATABASE_URL")}
+	setURL(webEnv, "PUBLIC_URL", settings.PublicURL)
 	web := railway.ServiceNamed(ServiceWeb, c.service(env, app{
 		dockerfile: "Dockerfile",
 		migrate:    "/server migrate",
 		watch:      []any{"apps/web/**", "packages/**", "go.mod", "go.sum", "Dockerfile"},
 		size:       c.Resources.Web,
-		env: map[string]any{
-			"PUBLIC_URL":   "https://${{RAILWAY_PUBLIC_DOMAIN}}",
-			"DATABASE_URL": db.Env("DATABASE_URL"),
-		},
+		env:        webEnv,
 	}))
 	resources := []any{db, web}
 	var adminBackupURL map[string]any
 	if c.Admin {
 		adminDB := c.postgres(ServiceAdminPostgres)
 		vars := map[string]any{
-			"ADMIN_PUBLIC_URL":   "https://${{RAILWAY_PUBLIC_DOMAIN}}",
 			"DATABASE_URL":       db.Env("DATABASE_URL"),
 			"ADMIN_DATABASE_URL": adminDB.Env("DATABASE_URL"),
 		}
+		setURL(vars, "ADMIN_PUBLIC_URL", settings.AdminPublicURL)
 		if c.AdminBootstrapEmail != "" {
 			vars["ADMIN_BOOTSTRAP_EMAIL"] = c.AdminBootstrapEmail
 		}
@@ -175,7 +189,20 @@ func (c Config) Build(env string) (Project, error) {
 	for _, s := range c.SecretVars() {
 		ignore = append(ignore, s.Service+"/"+s.Name)
 	}
-	ignore = append(ignore, c.Unmanaged...)
+	// A pattern scoped to a service this environment does not have is an
+	// error to Railway, not a no-op (docs/railway-go-iac-issues.md #18):
+	// keep only the ones whose service is in the graph.
+	for _, pattern := range c.Unmanaged {
+		if service, _, scoped := strings.Cut(pattern, "/"); !scoped || c.HasService(service) {
+			ignore = append(ignore, pattern)
+		}
+	}
+	// Without admin_bootstrap_email, a value set by hand is left alone.
+	if c.Admin && c.AdminBootstrapEmail == "" {
+		ignore = append(ignore, ServiceAdmin+"/ADMIN_BOOTSTRAP_EMAIL")
+	}
+	// Values platform.yaml marks manual stay whatever the environment holds.
+	ignore = append(ignore, c.HandSet(env)...)
 	return Project{Project: railway.ProjectNamed(c.Project, resources), Ignore: ignore}, nil
 }
 
@@ -233,6 +260,18 @@ func (c Config) backups(env string, appURL, adminURL map[string]any) []any {
 	return append(out, railway.ServiceNamed(ServiceBackup, sc))
 }
 
+// setURL sets name to the origin value names, unless it is manual (left
+// out of the graph and ignored).
+func setURL(vars map[string]any, name, value string) {
+	switch value {
+	case ManualValue:
+	case RailwayDomain:
+		vars[name] = "https://${{RAILWAY_PUBLIC_DOMAIN}}"
+	default:
+		vars[name] = value
+	}
+}
+
 type app struct {
 	dockerfile string
 	migrate    string
@@ -256,7 +295,9 @@ func (c Config) service(env string, a app) railway.ServiceConfig {
 		"APP_ENV":          "production",
 		"PORT":             fmt.Sprint(AppPort),
 		"CLIENT_IP_HEADER": "X-Real-IP", // Railway's edge sets it; auth rate limits key on it
-		"FROM_EMAIL":       c.Email.From,
+	}
+	if from := c.Settings(env).FromEmail; from != ManualValue {
+		vars["FROM_EMAIL"] = from
 	}
 	for k, v := range a.env {
 		vars[k] = v

@@ -287,6 +287,23 @@ railway-restore: ## Restore ID=<backup id> into PLATFORM_ENV's database it came 
 railway-verify: ## GET /healthz on every public Railway service
 	@$(DEPLOY_SETUP) verify -config $(PLATFORM_FILE) $(ARGS)
 
+# What each Railway service reads (check-vars -reads), from the apps'
+# config packages: web everything but the admin's and backup job's names;
+# admin its ADMIN_* names plus the shared ones apps/admin/internal/config
+# reads; backup its BACKUP_* names and DATABASE_URL (ADMIN_DATABASE_URL
+# only with admin, where the graph sets it).
+DEPLOY_READS := -reads 'web=*,!ADMIN_*,!BACKUP_*' \
+	-reads 'admin=ADMIN_*,APP_ENV,PORT,CLIENT_IP_HEADER,DATABASE_URL,FROM_EMAIL,RESEND_API_KEY,SECRETS_*,DOPPLER_*' \
+	-reads 'backup=BACKUP_*,APP_ENV,DATABASE_URL'
+# Names your project sets by hand on Railway (comma separated): deploy-vars
+# fails if apply would set or delete one. Empty in the template.
+DEPLOY_KEEP ?=
+
 .PHONY: deploy-check
-deploy-check: ## vet and lint the deploy/ module (it has no tests)
+deploy-check: ## vet and lint the deploy/ module (it has no tests), then deploy-vars
 	cd deploy && $(GO) vet ./... && (cd .railway && $(GO) vet railway.go) && $(GO) tool -modfile=../tools/go.mod golangci-lint run -c ../.golangci.yml ./...
+	$(MAKE) --no-print-directory deploy-vars
+
+.PHONY: deploy-vars
+deploy-vars: ## Prove offline that railway-apply never deletes or overwrites a hand-set variable (deploy/cmd/check-vars)
+	cd deploy && $(GO) run ./cmd/check-vars -config $(PLATFORM_FILE) -env-example ../.env.example $(DEPLOY_READS) $(if $(DEPLOY_KEEP),-keep '$(DEPLOY_KEEP)')

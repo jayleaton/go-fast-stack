@@ -63,6 +63,16 @@ secrets:
 email:
   from: noreply@example.com
 
+# What one environment's apps see as their origin and sender. public_url
+# (web PUBLIC_URL) and admin_public_url (ADMIN_PUBLIC_URL): railway for the
+# Railway-generated domain (the default), or an https origin (a custom
+# domain). from_email: FROM_EMAIL (default email.from). manual: you set it
+# by hand in Railway, and apply never sets, resets or deletes it.
+# per_environment:
+#   production:
+#     public_url: https://app.example.com
+#     from_email: manual
+
 # admin_bootstrap_email: you@example.com   # first admin, seeded by `admin migrate`
 
 # Nightly database backups (docs/backups.md): a small cron
@@ -90,4 +100,20 @@ resources:
 
 # Extra variables IaC leaves alone (set them in the dashboard or with
 # `railway variable set`): NAME, a glob like STRIPE_*, or service/NAME.
-unmanaged_variables: []
+# The project is managed: a variable neither set by IaC nor listed here (or
+# a bootstrap secret) is deleted by the next apply. make deploy-vars fails
+# when a name in .env.example is neither, or when IaC sets a listed one.
+# The defaults are the optional settings the apps read.
+unmanaged_variables:
+  - TRUSTED_ORIGINS
+  - ADMIN_TRUSTED_ORIGINS
+  - INTERNAL_URL
+  - APP_NAME
+  - ADMIN_APP_NAME
+  - AUTH_SECRET_GRACE
+  - ADMIN_AUTH_SECRET_GRACE
+  - ADMIN_REQUIRE_2FA
+  - ADMIN_AUDIT_RECONCILE_AFTER
+  - SECRETS_REFRESH_INTERVAL
+  - SECRETS_MAX_STALENESS
+  - backup/BACKUP_S3_PATH_STYLE

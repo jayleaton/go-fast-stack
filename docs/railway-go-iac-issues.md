@@ -26,6 +26,7 @@ Each entry says how this repo works around it today, so you can drop the workaro
 | 15 | api/cli | A deleted database's volume comes back: IaC re-attaches it by name to the next database | high (stale data) | yes |
 | 16 | api | GitHub access can't be checked with a CLI login token | medium | yes |
 | 17 | api/cli | 32-character project name limit only surfaces on create | low | yes |
+| 18 | cli | A `variables.ignore` pattern scoped to an absent service fails the plan | low | yes |
 
 ---
 
@@ -243,3 +244,16 @@ A template that only talks to Postgres over the private network still gets a pub
 **Summary.** `projectCreate` rejects names over 32 characters (`Project names must be between 1 and 32 characters.`). Nothing documents the limit, and IaC `project("…")` accepts longer names. An automated setup finds out only when it tries to create the project.
 
 **Workaround here.** `platform.yaml` validation enforces 32 characters, and `project: auto` truncates long repo names.
+
+## 18. cli: a `variables.ignore` pattern scoped to an absent service fails the plan
+
+**Summary.** `variables.ignore: ["backup/BACKUP_S3_PATH_STYLE"]` in an environment without a `backup` service makes `railway config plan` fail: `Error error: variables.ignore: variables.ignore pattern "backup/BACKUP_S3_PATH_STYLE" names "backup", which is neither in the file nor on Railway.` An unscoped pattern that matches nothing is only a warning (`matches no variable`).
+
+**Why it matters.** A shared ignore list (one project-wide list of hand-set names) cannot mention an optional service. Turning that service off breaks every plan.
+
+**Expected.** The same warning as an unmatched unscoped pattern: an ignore rule for nothing ignores nothing.
+
+**Repro (verified 2026-10-23, CLI 5.71.0).** Run a project with web + postgres only, `variables.managed: true`, and `variables.ignore: ["backup/X"]`, then `railway config plan`.
+
+**Workaround here.** `platform.Build` drops `unmanaged_variables` entries scoped to a service the environment does not have (`Config.HasService`).
+
