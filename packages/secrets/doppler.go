@@ -57,23 +57,23 @@ func newDopplerClient() *http.Client {
 }
 
 // Format redacts the token, so %+v of the provider is safe to log.
-func (d *Doppler) Format(f fmt.State, _ rune) {
-	_, _ = fmt.Fprintf(f, "secrets.Doppler{APIURL: %q, Token: %s}", d.APIURL, redacted)
+func (doppler *Doppler) Format(state fmt.State, _ rune) {
+	_, _ = fmt.Fprintf(state, "secrets.Doppler{APIURL: %q, Token: %s}", doppler.APIURL, redacted)
 }
 
 // LogValue implements slog.LogValuer without the token.
-func (d *Doppler) LogValue() slog.Value { return slog.StringValue("doppler " + d.APIURL) }
+func (doppler *Doppler) LogValue() slog.Value { return slog.StringValue("doppler " + doppler.APIURL) }
 
 // Name returns "doppler".
 func (*Doppler) Name() string { return "doppler" }
 
 // Fetch downloads the config. Errors carry the status code only, never the
 // token or the response body.
-func (d *Doppler) Fetch(ctx context.Context, previous Snapshot) (Snapshot, error) {
-	if d.Token.IsZero() {
+func (doppler *Doppler) Fetch(ctx context.Context, previous Snapshot) (Snapshot, error) {
+	if doppler.Token.IsZero() {
 		return Snapshot{}, errors.New("doppler: missing token")
 	}
-	base := d.APIURL
+	base := doppler.APIURL
 	if base == "" {
 		base = DefaultDopplerURL
 	}
@@ -81,13 +81,13 @@ func (d *Doppler) Fetch(ctx context.Context, previous Snapshot) (Snapshot, error
 	if err != nil {
 		return Snapshot{}, fmt.Errorf("doppler: build request: %w", err)
 	}
-	req.Header.Set("Authorization", "Bearer "+d.Token.v)
+	req.Header.Set("Authorization", "Bearer "+doppler.Token.value)
 	req.Header.Set("Accept", "application/json")
 	if previous.Len() > 0 && previous.Revision() != "" {
 		req.Header.Set("If-None-Match", previous.Revision())
 	}
 
-	client := d.HTTPClient
+	client := doppler.HTTPClient
 	if client == nil {
 		client = newDopplerClient()
 	}
@@ -137,30 +137,30 @@ func decodeDoppler(body []byte) (map[string]string, error) {
 		return nil, errors.New("doppler: malformed response: trailing data after the JSON object")
 	}
 	values := make(map[string]string, len(raw))
-	for k, v := range raw {
-		var s string
-		if err := json.Unmarshal(v, &s); err != nil {
-			return nil, fmt.Errorf("doppler: malformed response: %s is not a string", k)
+	for key, message := range raw {
+		var text string
+		if err := json.Unmarshal(message, &text); err != nil {
+			return nil, fmt.Errorf("doppler: malformed response: %s is not a string", key)
 		}
-		values[k] = s
+		values[key] = text
 	}
 	return values, nil
 }
 
 type rateLimited struct{ wait time.Duration }
 
-func (e *rateLimited) Error() string {
-	return fmt.Sprintf("doppler: rate limited (429), retry after %s", e.wait)
+func (limited *rateLimited) Error() string {
+	return fmt.Sprintf("doppler: rate limited (429), retry after %s", limited.wait)
 }
-func (e *rateLimited) RetryAfter() time.Duration { return e.wait }
+func (limited *rateLimited) RetryAfter() time.Duration { return limited.wait }
 
 // parseRetryAfter reads delta-seconds or an HTTP date; unknown means 0.
-func parseRetryAfter(v string) time.Duration {
-	if s, err := strconv.Atoi(strings.TrimSpace(v)); err == nil && s > 0 {
-		return time.Duration(s) * time.Second
+func parseRetryAfter(value string) time.Duration {
+	if size, err := strconv.Atoi(strings.TrimSpace(value)); err == nil && size > 0 {
+		return time.Duration(size) * time.Second
 	}
-	if t, err := http.ParseTime(v); err == nil {
-		return max(time.Until(t), 0)
+	if moment, err := http.ParseTime(value); err == nil {
+		return max(time.Until(moment), 0)
 	}
 	return 0
 }

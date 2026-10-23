@@ -24,4 +24,4 @@ func (*Env) Name() string { return "env" }
 func (*Env) Static() {}
 
 // Fetch returns the captured values.
-func (e *Env) Fetch(context.Context, Snapshot) (Snapshot, error) { return e.snap, nil }
+func (env *Env) Fetch(context.Context, Snapshot) (Snapshot, error) { return env.snap, nil }

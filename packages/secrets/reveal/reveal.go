@@ -13,19 +13,19 @@ import (
 
 // Value returns the secret's value. Pass it straight to the client that needs
 // it; never store, log or return it.
-func Value(s secrets.Secret) string {
-	v, _ := access.Reveal(s)
-	return v
+func Value(secret secrets.Secret) string {
+	reveal, _ := access.Reveal(secret)
+	return reveal
 }
 
 // Keyring returns a keyring's values (current signs, previous still verify,
 // revoked never do), for the one consumer that needs them (auth's keys).
-func Keyring(k secrets.Keyring) (current string, previous, revoked []string) {
-	for _, p := range k.Previous {
-		previous = append(previous, Value(p))
+func Keyring(keyring secrets.Keyring) (current string, previous, revoked []string) {
+	for _, secret := range keyring.Previous {
+		previous = append(previous, Value(secret))
 	}
-	for _, r := range k.Revoked {
-		revoked = append(revoked, Value(r))
+	for _, secret := range keyring.Revoked {
+		revoked = append(revoked, Value(secret))
 	}
-	return Value(k.Current), previous, revoked
+	return Value(keyring.Current), previous, revoked
 }
