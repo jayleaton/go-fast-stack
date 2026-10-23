@@ -119,6 +119,10 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	gate := access.NewGate(server.Callers)
 	usersAPI := api.NewUsers(users, gate)
 	socialAPI := api.NewSocial(services.NewSocialSignInService(server.NewSocialAuth(authn)), gate)
+	images, err := newImages(ctx, cfg, gate, log)
+	if err != nil {
+		return err
+	}
 	handler := server.New(server.Deps{
 		Config:  cfg,
 		Log:     log,
@@ -127,6 +131,7 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		Auth:    authn,
 		Users:   usersAPI,
 		Social:  socialAPI,
+		Images:  images,
 		UI: ui.New(ui.Deps{
 			API: api.NewClient(usersAPI, api.NewSessions(server.NewAuthenticator(authn), gate)).WithSocial(socialAPI), Gate: gate, Features: cfg.Features, AppName: cfg.AppName,
 			SecureCookies: cfg.PublicURL.Scheme == "https", Logger: log,

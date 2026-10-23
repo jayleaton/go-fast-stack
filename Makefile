@@ -38,9 +38,14 @@ help: ## List targets
 dev: ## Run the server (0.0.0.0, PORT or 3000) with .env (USE_DOPPLER=1: secrets from Doppler's dev config)
 	$(if $(filter 1,$(USE_DOPPLER)),doppler run --) $(GO) run ./apps/web/cmd/server serve
 
+# nodynamic: the pure-Go image codecs (packages/storage/imaging) would
+# otherwise link purego to try a system libwebp/libavif, and the binary
+# would come out dynamically linked even with CGO_ENABLED=0.
+STATIC_TAGS := nodynamic
+
 .PHONY: build
 build: ## Build a static binary into bin/server
-	CGO_ENABLED=0 $(GO) build -trimpath -ldflags='-s -w' -o $(BIN) ./apps/web/cmd/server
+	CGO_ENABLED=0 $(GO) build -tags $(STATIC_TAGS) -trimpath -ldflags='-s -w' -o $(BIN) ./apps/web/cmd/server
 
 .PHONY: generate
 generate: ## Regenerate sqlc, go:generate (mocks) and templ (shared uikit + web + admin UIs)

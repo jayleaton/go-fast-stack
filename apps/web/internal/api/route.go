@@ -3,8 +3,10 @@ package api
 import (
 	"context"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/jayleaton/go-fast-stack/apps/web/internal/access"
@@ -24,22 +26,19 @@ type Handler[Result any] func(request *http.Request, caller access.Caller) (Resu
 // envelope); then the body is capped, handler runs, and its result or error
 // becomes the envelope. Endpoint.Serve is Route for an Endpoint.
 func Route[Result any](gate *access.Gate, policy access.Policy, handler Handler[Result]) http.Handler {
+	return RouteLimit(gate, policy, maxBody, handler)
+}
+
+// RouteLimit is Route with a body cap of limit bytes instead of the JSON
+// default, for a raw upload. Reading past it fails with an
+// *http.MaxBytesError (see isTooLarge).
+func RouteLimit[Result any](gate *access.Gate, policy access.Policy, limit int64, handler Handler[Result]) http.Handler {
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		caller, request, err := gate.Admit(request, policy)
-		switch {
-		case err == nil:
-		case errors.Is(err, access.ErrSignedOut):
-			WriteError(writer, http.StatusUnauthorized, "Unauthorized", nil)
-			return
-		case errors.Is(err, access.ErrDenied):
-			slog.InfoContext(request.Context(), "access denied", "method", request.Method, "path", request.URL.Path, "err", err)
-			WriteError(writer, http.StatusForbidden, "Forbidden", nil)
-			return
-		default:
-			writeErr(writer, request, err)
+		caller, request, ok := admit(writer, request, gate, policy)
+		if !ok {
 			return
 		}
-		request.Body = http.MaxBytesReader(writer, request.Body, maxBody)
+		request.Body = http.MaxBytesReader(writer, request.Body, limit)
 		data, err := handler(request, caller)
 		if err != nil {
 			writeErr(writer, request, err)
@@ -47,6 +46,69 @@ func Route[Result any](gate *access.Gate, policy access.Policy, handler Handler[
 		}
 		WriteData(writer, http.StatusOK, data)
 	})
+}
+
+// File is a response streamed as it is instead of the envelope (an image, a
+// download). Errors before it is returned still use the envelope.
+type File struct {
+	ContentType string
+	Size        int64 // -1 when unknown
+	Body        io.ReadCloser
+}
+
+// fileCSP sandboxes a served file so it can never run as a page.
+const fileCSP = "default-src 'none'; sandbox"
+
+// decimal is the base Content-Length is written in.
+const decimal = 10
+
+// RouteFile is Route for a handler that streams a File: the same gate and
+// errors, then the file's bytes with its type and length.
+func RouteFile(gate *access.Gate, policy access.Policy, handler Handler[File]) http.Handler {
+	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		caller, request, ok := admit(writer, request, gate, policy)
+		if !ok {
+			return
+		}
+		file, err := handler(request, caller)
+		if err != nil {
+			writeErr(writer, request, err)
+			return
+		}
+		defer func() { _ = file.Body.Close() }()
+		header := writer.Header()
+		header.Set("Content-Type", file.ContentType)
+		header.Set("Content-Security-Policy", fileCSP)
+		if file.Size >= 0 {
+			header.Set("Content-Length", strconv.FormatInt(file.Size, decimal))
+		}
+		writer.WriteHeader(http.StatusOK)
+		_, _ = io.Copy(writer, file.Body)
+	})
+}
+
+// admit runs the gate for one request and answers it when it is refused
+// (signed out: 401, denied: 403, a resolver error: 500, all in the envelope).
+func admit(writer http.ResponseWriter, request *http.Request, gate *access.Gate, policy access.Policy) (access.Caller, *http.Request, bool) {
+	caller, request, err := gate.Admit(request, policy)
+	switch {
+	case err == nil:
+		return caller, request, true
+	case errors.Is(err, access.ErrSignedOut):
+		WriteError(writer, http.StatusUnauthorized, "Unauthorized", nil)
+	case errors.Is(err, access.ErrDenied):
+		slog.InfoContext(request.Context(), "access denied", "method", request.Method, "path", request.URL.Path, "err", err)
+		WriteError(writer, http.StatusForbidden, "Forbidden", nil)
+	default:
+		writeErr(writer, request, err)
+	}
+	return access.Caller{}, request, false
+}
+
+// isTooLarge reports whether err is a body read past its MaxBytesReader cap.
+func isTooLarge(err error) bool {
+	var maxBytesErr *http.MaxBytesError
+	return errors.As(err, &maxBytesErr)
 }
 
 // NoInput is the Input of an endpoint that takes no body.

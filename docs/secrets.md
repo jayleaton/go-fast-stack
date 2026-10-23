@@ -14,6 +14,7 @@ Secrets come from one place, `SECRETS_PROVIDER`, through [`packages/secrets`](..
 | `DATABASE_URL` | opens a new pool, pings it and checks it is migrated at least as far as this binary, then switches atomically; queries already running finish on the old pool, which closes once they are done (at most 30 s). If the new URL fails, the old pool stays (and `/healthz` only goes red if the old database fails too). Migrations stay a deploy step (`server migrate`). |
 | `AUTH_SECRET` + `AUTH_SECRET_PREVIOUS` | updates the auth keyring: the new secret signs; previous ones (comma-separated) still verify for `AUTH_SECRET_GRACE`, so no session, email link or trusted device breaks. Cookies signed with an old secret are re-signed on their next request. 2FA secrets are protected by data keys the auth secret only *wraps*, so they are rewrapped, never lost. |
 | `RESEND_API_KEY` | rebuilds the mailer's Resend client. |
+| `STORAGE_S3_ENDPOINT`, `_BUCKET`, `_ACCESS_KEY_ID`, `_SECRET_ACCESS_KEY` (optional, [object storage](storage.md)) | is read when the server starts: restart it to use new values. |
 | `DOPPLER_TOKEN` | — it is the credential that reaches Doppler: update the Railway variable (redeploy), then revoke the old token. |
 
 With `env`, all of these are read at boot and change with a redeploy. The admin service does the same with its own Doppler config: `DATABASE_URL` and `ADMIN_DATABASE_URL` each go through a `database.Pool`, the `ADMIN_AUTH_SECRET` keyring (`_PREVIOUS`, `_REVOKED`, grace `ADMIN_AUTH_SECRET_GRACE`) through the admin auth instance's `SetSecrets`, and `RESEND_API_KEY` rebuilds its mailer. Its `/healthz` also reports stale secrets.
@@ -73,7 +74,7 @@ A URL that can't connect or points at an unmigrated database is refused (`databa
 | `SECRETS_MAX_STALENESS` | `15m` | at least twice the interval |
 | `AUTH_SECRET_GRACE` | session / trust-device lifetime | how long a retired `AUTH_SECRET` still verifies (not a secret: plain env) |
 
-Secrets read from `SECRETS_PROVIDER`: `DATABASE_URL`, `AUTH_SECRET`, `AUTH_SECRET_PREVIOUS` and `AUTH_SECRET_REVOKED` (comma-separated, each at least 32 characters), `RESEND_API_KEY`. Every fetch is validated before it replaces the last good set.
+Secrets read from `SECRETS_PROVIDER`: `DATABASE_URL`, `AUTH_SECRET`, `AUTH_SECRET_PREVIOUS` and `AUTH_SECRET_REVOKED` (comma-separated, each at least 32 characters), `RESEND_API_KEY`, and the optional `STORAGE_S3_ENDPOINT`, `STORAGE_S3_BUCKET`, `STORAGE_S3_ACCESS_KEY_ID` and `STORAGE_S3_SECRET_ACCESS_KEY` (all four or none). Every fetch is validated before it replaces the last good set.
 
 Infisical and 1Password adapters are stubs with an implementation plan (`packages/secrets/infisical.go`, `onepassword.go`, outside the default build).
 

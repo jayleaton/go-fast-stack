@@ -26,6 +26,11 @@ cases=(
   "apps/web/internal/services|$mod/packages/secrets"
   "apps/web/internal/api|$mod/packages/secrets"
   "packages/secrets|$mod/packages/auth"
+  # Object storage sits behind service ports and stays self-contained.
+  "apps/web/internal/services|$mod/packages/storage"
+  "apps/web/internal/api|$mod/packages/storage/safefetch"
+  "packages/storage|$mod/packages/secrets"
+  "packages/storage/imaging|$mod/apps/web/ui"
   # Admin isolation, both ways.
   "apps/web/internal/server|$mod/packages/database/adminrepo"
   "apps/web/internal/services|$mod/packages/database/adminrepo/model"
