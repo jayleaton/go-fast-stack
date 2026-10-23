@@ -25,8 +25,10 @@ cd "$(dirname "$0")/.."
 readonly pg_server=postgres://postgres:postgres@127.0.0.1:5432
 readonly pg_wait_seconds=0.25
 readonly pg_wait_attempts=180
-# How often the timed test run checks whether the other tasks are done.
-readonly sibling_poll_seconds=0.5
+# Every task but the tests runs at the lowest CPU priority, so the timed test
+# run gets the CPUs whenever it wants them and the others use what is left
+# (see test_go).
+readonly background_niceness=19
 
 tmp=${RUNNER_TEMP:-$(mktemp -d)}/ci-check
 rm -rf "$tmp" && mkdir -p "$tmp" .cache
@@ -36,8 +38,14 @@ lint=false
 names=() pids=() starts=()
 start() { # start <name> <function>: run it in the background, log to $tmp/<name>.log
   names+=("$1") starts+=("$(date +%s.%N)")
-  # The inner subshell is the task (its set -e exits it, not the bookkeeping).
-  ( ("$2") >"$tmp/$1.log" 2>&1; echo $? >"$tmp/$1.rc"; date +%s.%N >"$tmp/$1.end") &
+  # The inner subshell is the task (its set -e exits it, not the bookkeeping);
+  # its children inherit the outer subshell's priority.
+  (
+    [ "$1" = test ] || renice -n "$background_niceness" -p "$BASHPID" >/dev/null
+    ("$2") >"$tmp/$1.log" 2>&1
+    echo $? >"$tmp/$1.rc"
+    date +%s.%N >"$tmp/$1.end"
+  ) &
   pids+=($!)
 }
 failed=0
@@ -111,19 +119,13 @@ SH
   # The time budgets (AGENTS.md "Fast tests") must measure tests, not
   # compilation on a 2-vCPU runner. So: build and link every test binary
   # first, untimed, with the timed run's -race -cover instrumentation (each
-  # "runs" as `true`, so no test, TestMain or database is touched), then wait
-  # for the other tasks (lint, generators, smoke, deploy/, mobile: all
-  # compilers) to finish, so the timed run has the CPUs to itself.
-  local phase_start=$SECONDS
+  # "runs" as `true`, so no test, TestMain or database is touched); the timed
+  # run then only links and runs. The other tasks (lint, generators, smoke,
+  # deploy/, mobile) run at background_niceness: they use the CPU time the
+  # tests leave instead of slowing them down.
+  local build_start=$SECONDS
   go test -race -cover -exec true $TESTS >"$tmp/test-build.log" 2>&1 || { cat "$tmp/test-build.log"; return 1; }
-  echo "test binaries built in $((SECONDS - phase_start))s"
-  phase_start=$SECONDS
-  local sibling
-  for sibling in "${names[@]}"; do
-    [ "$sibling" != test ] || continue
-    while [ ! -e "$tmp/$sibling.rc" ]; do sleep "$sibling_poll_seconds"; done
-  done
-  echo "waited $((SECONDS - phase_start))s for the other tasks"
+  echo "test binaries built in $((SECONDS - build_start))s"
   # testbudget prints plain go test output, the slowest tests, and fails a
   # package or test over its time budget.
   go test -race -json "${exec_flag[@]}" -coverprofile=.cache/coverage.out $TESTS | go run ./scripts/testbudget
@@ -192,11 +194,10 @@ mobile() {
 [ "$lint" = true ] && start lint lint_go
 [ "$MODE" != other ] && [ -n "${EVENT:-}" ] && start migrations migration_order
 [ "$MODE" != other ] && { [ "${SQLC:-}" = true ] || [ "${TEMPL:-}" = true ] || [ -n "${GENERATE:-}" ]; } && start generated generated
+[ -n "${TESTS:-}" ] && start test test_go
 [ "$MODE" != db ] && [ "${SMOKE:-}" = true ] && start smoke smoke
 [ "${DEPLOY:-}" = true ] && start deploy deploy_mod
 [ "${MOBILE:-}" = true ] && start mobile mobile
-# Last: its timed run waits for every task started above (see test_go).
-[ -n "${TESTS:-}" ] && start test test_go
 wait "${pids[@]}" 2>/dev/null
 report
 [ -d "$tmp/gen" ] && git worktree remove --force "$tmp/gen"
