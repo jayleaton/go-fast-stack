@@ -44,8 +44,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET "+confirmEmailPath, store.ConfirmEmail)
 	mux.Handle("/", ui.New(ui.Deps{
-		Auth:     fakeAuth,
-		API:      api.NewClient(api.NewUsers(Users{S: store}, gate)),
+		API:      api.NewClient(api.NewUsers(Users{S: store}, gate), api.NewSessions(authenticator{fake: fakeAuth}, gate)),
 		Gate:     gate,
 		Features: config.Features{EmailVerification: *verify, TemplateWelcome: *welcome},
 		Logger:   log,

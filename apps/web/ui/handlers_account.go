@@ -16,7 +16,7 @@ import (
 // accountData loads the Account page through the API; load failures show
 // as a banner, an access refusal is returned for the caller to answer.
 func (ui *UI) accountData(ctx context.Context, caller apiclient.Caller) (AccountData, error) {
-	account := AccountData{User: User(caller.User)}
+	account := AccountData{User: caller.User}
 	var err error
 	for _, load := range []func() error{
 		func() error { account.Sessions, err = ui.api.ListSessions(ctx); return err },
@@ -39,7 +39,7 @@ func (ui *UI) accountPage(writer http.ResponseWriter, request *http.Request, cal
 	}
 	// The change-email link lands here; on failure auth adds ?error=<code>.
 	if code := request.URL.Query().Get("error"); code != "" {
-		account.LoadError = authCodeMessage(request.Context(), code)
+		account.LoadError = ui.authCodeMessage(request.Context(), code)
 	} else {
 		account.EmailChanged = request.URL.Query().Get("email-changed") == "1"
 	}
@@ -82,7 +82,7 @@ func (ui *UI) updateProfile(writer http.ResponseWriter, request *http.Request, c
 		ui.accountResult(writer, request, caller, msg, StatusAlert(profileStatusID, Status{Error: msg}))
 		return
 	}
-	updated := userFromService(updatedUser.User)
+	updated := updatedUser.User
 	ui.hub.publish(caller.User.ID, userEvent{User: updated})
 	ui.accountResult(writer, request, caller, "", ProfileCard(updated, Status{Message: i18n.T(ctx, "pages.account.profile.saved")}))
 }
@@ -181,10 +181,11 @@ func (ui *UI) deleteAccount(writer http.ResponseWriter, request *http.Request, c
 		return
 	}
 	// Sessions go with the user row; sign out anyway in case they do not cascade.
-	if err := ui.auth.SignOut(ctx, caller.Session.Token); err != nil {
+	signedOut, err := ui.api.SignOut(ctx)
+	if err != nil {
 		ui.log.WarnContext(ctx, "ui: sign out after delete", "err", err)
 	}
-	ui.auth.ClearSessionCookie(writer)
+	setCookies(writer, signedOut.Cookies)
 	ui.hub.publish(caller.User.ID, userEvent{Deleted: true})
 	ui.redirect(writer, request, config.AppRoutes.Home)
 }

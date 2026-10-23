@@ -84,6 +84,12 @@ cases=(
   "apps/admin/internal/apiclient|net/http"
   "apps/web/internal/apiclient|$mod/packages/database"
   "apps/admin/internal/apiclient|$mod/apps/admin/internal/api"
+  # Sign-in flows go through the API too: the UI never reaches auth itself,
+  # and no server adapter is written for the UI.
+  "apps/web/ui|$mod/packages/auth"
+  "apps/admin/ui|$mod/packages/auth"
+  "apps/web/internal/server|$mod/apps/web/ui"
+  "apps/admin/internal/server|$mod/apps/admin/ui"
 )
 
 # Test files. boundary dir | forbidden import

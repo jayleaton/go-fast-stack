@@ -45,22 +45,34 @@ var APIRoutes = struct {
 	UserByID string
 	// Google and Apple sign-in, the web UI's browser flow (public).
 	SocialProviders, SocialStart, SocialFinish string
+	// Email and password sign-in flows (api.Sessions), called in-process by
+	// the UI. Not mounted: native clients use auth's endpoints under Auth.
+	SignUp, SignIn, SignOut        string
+	PasswordReset, Password        string
+	VerifyEmail, VerificationEmail string
 
 	Healthz string
 }{
-	Auth:            "/api/auth/",
-	Me:              "/api/core/v1/users/me",
-	MeEmail:         "/api/core/v1/users/me/email",
-	MePassword:      "/api/core/v1/users/me/password",
-	MeData:          "/api/core/v1/users/me/data",
-	MeSessions:      "/api/core/v1/users/me/sessions",
-	MeSessionByID:   "/api/core/v1/users/me/sessions/{id}",
-	MeOtherSessions: "/api/core/v1/users/me/sessions/others",
-	UserByID:        "/api/core/v1/users/{id}",
-	SocialProviders: "/api/core/v1/auth/social/providers",
-	SocialStart:     "/api/core/v1/auth/social/{provider}/start",
-	SocialFinish:    "/api/core/v1/auth/social/{provider}/finish",
-	Healthz:         "/healthz",
+	Auth:              "/api/auth/",
+	Me:                "/api/core/v1/users/me",
+	MeEmail:           "/api/core/v1/users/me/email",
+	MePassword:        "/api/core/v1/users/me/password",
+	MeData:            "/api/core/v1/users/me/data",
+	MeSessions:        "/api/core/v1/users/me/sessions",
+	MeSessionByID:     "/api/core/v1/users/me/sessions/{id}",
+	MeOtherSessions:   "/api/core/v1/users/me/sessions/others",
+	UserByID:          "/api/core/v1/users/{id}",
+	SocialProviders:   "/api/core/v1/auth/social/providers",
+	SocialStart:       "/api/core/v1/auth/social/{provider}/start",
+	SocialFinish:      "/api/core/v1/auth/social/{provider}/finish",
+	SignUp:            "/api/core/v1/auth/sign-up",
+	SignIn:            "/api/core/v1/auth/sign-in",
+	SignOut:           "/api/core/v1/auth/sign-out",
+	PasswordReset:     "/api/core/v1/auth/password-reset",
+	Password:          "/api/core/v1/auth/password",
+	VerifyEmail:       "/api/core/v1/auth/verify-email",
+	VerificationEmail: "/api/core/v1/auth/verification-email",
+	Healthz:           "/healthz",
 }
 
 // UserPath is the concrete path for APIRoutes.UserByID.

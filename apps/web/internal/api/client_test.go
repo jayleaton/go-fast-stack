@@ -112,7 +112,7 @@ func TestClientMethods(test *testing.T) {
 			test.Parallel()
 			service := mocks.NewMockUserService(gomock.NewController(test))
 			testCase.expect(service.EXPECT())
-			client := api.NewClient(api.NewUsers(service, apitest.Gate()))
+			client := api.NewClient(api.NewUsers(service, apitest.Gate()), nil)
 			if err := testCase.call(signedIn(test, apitest.AsUser(ada)), client); err != nil {
 				test.Fatal(err)
 			}
@@ -125,7 +125,7 @@ func TestClientMethods(test *testing.T) {
 func TestClientRefusesLikeTheRoute(test *testing.T) {
 	test.Parallel()
 	service := mocks.NewMockUserService(gomock.NewController(test)) // no calls expected
-	client := api.NewClient(api.NewUsers(service, apitest.Gate()))
+	client := api.NewClient(api.NewUsers(service, apitest.Gate()), nil)
 
 	if _, err := client.Me(signedIn(test, apitest.Anonymous)); !errors.Is(err, access.ErrSignedOut) {
 		test.Errorf("signed out: err = %v, want access.ErrSignedOut", err)

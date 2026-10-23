@@ -23,7 +23,6 @@ import (
 
 // UI serves the HTML pages and their Datastar actions.
 type UI struct {
-	auth     Auth
 	gate     *apiclient.Gate
 	api      apiclient.Client
 	features config.Features
@@ -36,13 +35,12 @@ type UI struct {
 	csrf     *http.CrossOriginProtection
 }
 
-// New builds the UI. Auth, API and Gate are required.
+// New builds the UI. API and Gate are required.
 func New(deps Deps) *UI {
-	if deps.Auth == nil || deps.API == nil || deps.Gate == nil {
-		panic("ui.New: Auth, API and Gate are required")
+	if deps.API == nil || deps.Gate == nil {
+		panic("ui.New: API and Gate are required")
 	}
 	ui := &UI{
-		auth:     deps.Auth,
 		gate:     deps.Gate,
 		api:      deps.API,
 		features: deps.Features,
@@ -194,12 +192,6 @@ func (ui *UI) errorMessage(ctx context.Context, err error) string {
 	}
 	ui.log.ErrorContext(ctx, "ui: service error", "err", err)
 	return i18n.T(ctx, "errors.somethingWentWrong")
-}
-
-// userFromService converts the service's user row; both describe the
-// auth-owned "user" table.
-func userFromService(session apiclient.User) User {
-	return User(session)
 }
 
 // safeNext keeps redirects on this site.

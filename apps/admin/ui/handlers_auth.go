@@ -30,7 +30,7 @@ func (ui *UI) loginPage(w http.ResponseWriter, r *http.Request, caller apiclient
 func (ui *UI) login(w http.ResponseWriter, r *http.Request, _ apiclient.Caller) {
 	ctx := r.Context()
 	email := strings.TrimSpace(r.PostFormValue("email"))
-	s, err := ui.auth.SignIn(ctx, email, r.PostFormValue("password"))
+	result, err := ui.api.SignIn(ctx, apiclient.SignIn{Email: email, Password: r.PostFormValue("password")})
 	if err != nil {
 		if ui.challenge(w, r, err) {
 			return
@@ -39,7 +39,7 @@ func (ui *UI) login(w http.ResponseWriter, r *http.Request, _ apiclient.Caller) 
 		ui.patch(w, r, http.StatusUnprocessableEntity, LoginPage(AuthForm{Email: email, Error: msg}), uikit.Alert(formErrorID, uikit.Error, msg))
 		return
 	}
-	ui.auth.SetSessionCookie(w, s)
+	setCookies(w, result.Cookies)
 	ui.redirect(w, r, config.AppRoutes.Users)
 }
 
@@ -51,7 +51,7 @@ func (ui *UI) challenge(w http.ResponseWriter, r *http.Request, err error) bool 
 	if !errors.As(err, &c) {
 		return false
 	}
-	ui.auth.SetTwoFactorCookie(w, c)
+	setCookies(w, c.Cookies)
 	if c.SetupRequired {
 		ui.redirect(w, r, config.AppRoutes.TwoFactorSetup)
 	} else {
@@ -98,7 +98,7 @@ func (ui *UI) choosePassword(writer http.ResponseWriter, request *http.Request, 
 		fail(i18n.T(ctx, "pages.setPassword.passwordMismatch"))
 		return
 	}
-	session, err := ui.auth.CompleteSetPassword(ctx, token, password)
+	result, err := ui.api.SetPassword(ctx, apiclient.SetPassword{Token: token, Password: password})
 	if err != nil {
 		if ui.challenge(writer, request, err) {
 			return
@@ -110,7 +110,7 @@ func (ui *UI) choosePassword(writer http.ResponseWriter, request *http.Request, 
 		fail(ui.errorMessage(ctx, err))
 		return
 	}
-	ui.auth.SetSessionCookie(writer, session)
+	setCookies(writer, result.Cookies)
 	ui.redirect(writer, request, config.AppRoutes.Users)
 }
 
@@ -127,7 +127,7 @@ func (ui *UI) forgotPasswordPage(writer http.ResponseWriter, request *http.Reque
 func (ui *UI) forgotPassword(writer http.ResponseWriter, request *http.Request, _ apiclient.Caller) {
 	ctx := request.Context()
 	email := strings.TrimSpace(request.PostFormValue("email"))
-	if err := ui.auth.RequestPasswordReset(ctx, email); err != nil {
+	if err := ui.api.RequestPasswordReset(ctx, apiclient.CreatePasswordReset{Email: email}); err != nil {
 		msg := ui.errorMessage(ctx, err)
 		ui.patch(writer, request, http.StatusUnprocessableEntity, ForgotPasswordPage(AuthForm{Email: email, Error: msg}, ""), uikit.Alert(formErrorID, uikit.Error, msg))
 		return
@@ -143,7 +143,7 @@ func (ui *UI) twoFactorPage(w http.ResponseWriter, r *http.Request, _ apiclient.
 // twoFactor is the second sign-in step, with a TOTP or a backup code.
 func (ui *UI) twoFactor(w http.ResponseWriter, r *http.Request, _ apiclient.Caller) {
 	ctx := r.Context()
-	in := VerifyTwoFactorInput{
+	in := apiclient.VerifyTwoFactor{
 		Code:        strings.TrimSpace(r.PostFormValue("code")),
 		Method:      MethodTOTP,
 		TrustDevice: r.PostFormValue("trustDevice") != "",
@@ -151,22 +151,19 @@ func (ui *UI) twoFactor(w http.ResponseWriter, r *http.Request, _ apiclient.Call
 	if r.PostFormValue("method") == MethodBackupCode {
 		in.Method = MethodBackupCode
 	}
-	s, trust, err := ui.auth.VerifyTwoFactor(ctx, in)
+	result, err := ui.api.VerifyTwoFactor(ctx, in)
 	if err != nil {
 		f := TwoFactorForm{Backup: in.Method == MethodBackupCode, Trust: in.TrustDevice, Error: ui.errorMessage(ctx, err), Expired: errors.Is(err, ErrChallengeExpired)}
 		ui.patch(w, r, http.StatusUnprocessableEntity, TwoFactorPage(f), TwoFactorError(f))
 		return
 	}
-	ui.signIn(w, r, s, trust)
+	ui.signIn(w, r, result)
 }
 
-// signIn issues the session (and the trusted-device cookie) and goes to the
-// dashboard.
-func (ui *UI) signIn(w http.ResponseWriter, r *http.Request, s Session, trustToken string) {
-	ui.auth.SetSessionCookie(w, s)
-	if trustToken != "" {
-		ui.auth.SetTrustDeviceCookie(w, trustToken)
-	}
+// signIn sets the cookies a finished sign-in returned (the session, and the
+// trusted device when asked for) and goes to the dashboard.
+func (ui *UI) signIn(w http.ResponseWriter, r *http.Request, result apiclient.AuthResult) {
+	setCookies(w, result.Cookies)
 	ui.redirect(w, r, config.AppRoutes.Users)
 }
 
@@ -181,7 +178,7 @@ func (ui *UI) twoFactorSetupPage(w http.ResponseWriter, r *http.Request, caller 
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store") // the page shows the secret
-	setup, err := ui.auth.StartTwoFactorSetup(ctx)
+	setup, err := ui.api.StartTwoFactorSetup(ctx)
 	switch {
 	case errors.Is(err, ErrChallengeExpired):
 		ui.render(w, r, http.StatusOK, TwoFactorSetupPage(SetupState{Expired: true}))
@@ -197,7 +194,7 @@ func (ui *UI) twoFactorSetupPage(w http.ResponseWriter, r *http.Request, caller 
 func (ui *UI) enableTwoFactor(w http.ResponseWriter, r *http.Request, caller apiclient.Caller) {
 	ctx := r.Context()
 	st := SetupState{SignedIn: true, Required: ui.requireTwoFactor}
-	setup, err := ui.auth.EnableTwoFactor(ctx, caller.Admin.ID, r.PostFormValue("password"))
+	setup, err := ui.api.EnableTwoFactor(ctx, apiclient.EnableTwoFactor{Password: r.PostFormValue("password")})
 	if err != nil {
 		st.Error = ui.errorMessage(ctx, err)
 		ui.patch(w, r, http.StatusUnprocessableEntity, TwoFactorSetupPage(st), uikit.Alert(formErrorID, uikit.Error, st.Error))
@@ -221,13 +218,12 @@ func (ui *UI) twoFactorSetup(w http.ResponseWriter, r *http.Request, caller apic
 
 	var err error
 	if signedIn {
-		err = ui.auth.ConfirmTwoFactor(ctx, caller.Admin.ID, code)
+		err = ui.api.ConfirmTwoFactor(ctx, apiclient.ConfirmTwoFactor{Code: code})
 	} else {
-		var s Session
-		var trust string
-		s, trust, err = ui.auth.VerifyTwoFactor(ctx, VerifyTwoFactorInput{Code: code, Method: MethodTOTP})
+		var result apiclient.AuthResult
+		result, err = ui.api.VerifyTwoFactor(ctx, apiclient.VerifyTwoFactor{Code: code, Method: MethodTOTP})
 		if err == nil {
-			ui.signIn(w, r, s, trust)
+			ui.signIn(w, r, result)
 			return
 		}
 	}
@@ -245,14 +241,15 @@ func (ui *UI) twoFactorSetup(w http.ResponseWriter, r *http.Request, caller apic
 	ui.patch(w, r, http.StatusOK, TwoFactorSetupPage(st), SetupBody(st))
 }
 
-func (ui *UI) logout(w http.ResponseWriter, r *http.Request, caller apiclient.Caller) {
+func (ui *UI) logout(w http.ResponseWriter, r *http.Request, _ apiclient.Caller) {
 	ctx := r.Context()
-	if caller.SignedIn() {
-		if err := ui.auth.SignOut(ctx, caller.Session.Token); err != nil {
-			ui.log.WarnContext(ctx, "ui: sign out", "err", err)
-		}
+	// Signed out or not: SignOut ends the session if there is one and
+	// always returns the cookie that clears it.
+	signedOut, err := ui.api.SignOut(ctx)
+	if err != nil {
+		ui.log.WarnContext(ctx, "ui: sign out", "err", err)
 	}
-	ui.auth.ClearSessionCookie(w)
+	setCookies(w, signedOut.Cookies)
 	ui.redirect(w, r, config.AppRoutes.Login)
 }
 

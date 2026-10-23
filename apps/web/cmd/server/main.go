@@ -128,7 +128,7 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		Users:   usersAPI,
 		Social:  socialAPI,
 		UI: ui.New(ui.Deps{
-			Auth: authn, API: api.NewClient(usersAPI).WithSocial(socialAPI), Gate: gate, Features: cfg.Features, AppName: cfg.AppName,
+			API: api.NewClient(usersAPI, api.NewSessions(server.NewAuthenticator(authn), gate)).WithSocial(socialAPI), Gate: gate, Features: cfg.Features, AppName: cfg.AppName,
 			SecureCookies: cfg.PublicURL.Scheme == "https", Logger: log,
 		}).Handler(),
 	})

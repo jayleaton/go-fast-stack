@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/url"
@@ -13,7 +14,6 @@ import (
 	"github.com/jayleaton/go-fast-stack/apps/web/internal/config"
 	"github.com/jayleaton/go-fast-stack/apps/web/ui/i18n"
 	"github.com/jayleaton/go-fast-stack/apps/web/ui/welcome"
-	"github.com/jayleaton/go-fast-stack/packages/auth"
 )
 
 // resendCooldown matches the original's five minutes between resends.
@@ -46,17 +46,17 @@ func (ui *UI) loginPage(writer http.ResponseWriter, request *http.Request, _ api
 
 func (ui *UI) login(writer http.ResponseWriter, request *http.Request, _ apiclient.Caller) {
 	ctx := request.Context()
-	in := SignInInput{
+	in := apiclient.SignInEmail{
 		Email:       strings.TrimSpace(request.PostFormValue("email")),
 		Password:    request.PostFormValue("password"),
 		CallbackURL: config.AppRoutes.VerifyEmailSuccess,
 	}
-	_, session, err := ui.auth.SignInEmail(ctx, in)
+	result, err := ui.api.SignIn(ctx, in)
 	if err != nil {
 		msg := ui.errorMessage(ctx, err)
-		if errors.Is(err, auth.ErrEmailNotVerified) {
+		if errors.Is(err, apiclient.ErrEmailNotVerified) {
 			// Like the original: send a fresh link and say so.
-			if err := ui.auth.SendVerificationEmail(ctx, in.Email, config.AppRoutes.VerifyEmailSuccess); err != nil {
+			if err := ui.api.SendVerificationEmail(ctx, apiclient.CreateVerificationEmail{Email: in.Email, CallbackURL: config.AppRoutes.VerifyEmailSuccess}); err != nil {
 				ui.log.WarnContext(ctx, "ui: resend verification on login", "err", err)
 				msg = i18n.T(ctx, "pages.verifyEmail.checkEmail")
 			}
@@ -64,7 +64,7 @@ func (ui *UI) login(writer http.ResponseWriter, request *http.Request, _ apiclie
 		ui.patch(writer, request, http.StatusUnprocessableEntity, LoginPage(AuthForm{Email: in.Email, Error: msg, Providers: ui.socialProviders(ctx)}), FormError(msg))
 		return
 	}
-	ui.auth.SetSessionCookie(writer, session)
+	setCookies(writer, result.Cookies)
 	ui.redirect(writer, request, config.AppRoutes.Dashboard)
 }
 
@@ -74,23 +74,23 @@ func (ui *UI) signupPage(writer http.ResponseWriter, request *http.Request, _ ap
 
 func (ui *UI) signup(writer http.ResponseWriter, request *http.Request, _ apiclient.Caller) {
 	ctx := request.Context()
-	in := SignUpInput{
+	in := apiclient.SignUpEmail{
 		Name:        strings.TrimSpace(request.PostFormValue("name")),
 		Email:       strings.TrimSpace(request.PostFormValue("email")),
 		Password:    request.PostFormValue("password"),
 		CallbackURL: config.AppRoutes.VerifyEmailSuccess,
 	}
-	_, session, err := ui.auth.SignUpEmail(ctx, in)
+	result, err := ui.api.SignUp(ctx, in)
 	if err != nil {
 		msg := ui.errorMessage(ctx, err)
 		ui.patch(writer, request, http.StatusUnprocessableEntity, SignupPage(AuthForm{Name: in.Name, Email: in.Email, Error: msg, Providers: ui.socialProviders(ctx)}), FormError(msg))
 		return
 	}
-	if ui.features.EmailVerification || session.Token == "" {
+	if ui.features.EmailVerification || !result.SignedIn {
 		ui.redirect(writer, request, config.AppRoutes.VerifyEmail+"?"+url.Values{"email": {in.Email}}.Encode())
 		return
 	}
-	ui.auth.SetSessionCookie(writer, session)
+	setCookies(writer, result.Cookies)
 	ui.redirect(writer, request, config.AppRoutes.Dashboard)
 }
 
@@ -101,7 +101,7 @@ func (ui *UI) forgotPasswordPage(writer http.ResponseWriter, request *http.Reque
 func (ui *UI) forgotPassword(writer http.ResponseWriter, request *http.Request, _ apiclient.Caller) {
 	ctx := request.Context()
 	email := strings.TrimSpace(request.PostFormValue("email"))
-	if err := ui.auth.RequestPasswordReset(ctx, email, config.AppRoutes.ResetPassword); err != nil {
+	if err := ui.api.RequestPasswordReset(ctx, apiclient.CreatePasswordReset{Email: email, RedirectTo: config.AppRoutes.ResetPassword}); err != nil {
 		ui.log.ErrorContext(ctx, "ui: request password reset", "err", err)
 		msg := i18n.T(ctx, "common.error")
 		ui.patch(writer, request, http.StatusUnprocessableEntity, ForgotPasswordPage(AuthForm{Email: email, Error: msg}, false), FormError(msg))
@@ -131,15 +131,15 @@ func (ui *UI) resetPassword(writer http.ResponseWriter, request *http.Request, _
 		fail("pages.resetPassword.passwordMismatch")
 		return
 	}
-	if err := ui.auth.ResetPassword(ctx, token, password); err != nil {
+	if err := ui.api.ResetPassword(ctx, apiclient.ResetPassword{Token: token, NewPassword: password}); err != nil {
 		switch {
-		case errors.Is(err, auth.ErrInvalidToken), errors.Is(err, auth.ErrTokenExpired):
+		case errors.Is(err, apiclient.ErrInvalidToken), errors.Is(err, apiclient.ErrTokenExpired):
 			fail("pages.resetPassword.invalidResetLink")
-		case errors.Is(err, auth.ErrPasswordTooShort):
+		case errors.Is(err, apiclient.ErrPasswordTooShort):
 			fail("pages.resetPassword.passwordTooShort")
-		case errors.Is(err, auth.ErrPasswordTooLong):
+		case errors.Is(err, apiclient.ErrPasswordTooLong):
 			fail("errors.passwordTooLong")
-		case errors.Is(err, auth.ErrTooManyRequests):
+		case errors.Is(err, apiclient.ErrTooManyRequests):
 			fail("errors.tooManyRequests")
 		default:
 			ui.log.ErrorContext(ctx, "ui: reset password", "err", err)
@@ -162,7 +162,7 @@ func (ui *UI) resendVerification(writer http.ResponseWriter, request *http.Reque
 		CooldownSeconds: int(resendCooldown.Seconds()),
 	}
 	status := http.StatusOK
-	if err := ui.auth.SendVerificationEmail(ctx, email, config.AppRoutes.VerifyEmailSuccess); err != nil {
+	if err := ui.api.SendVerificationEmail(ctx, apiclient.CreateVerificationEmail{Email: email, CallbackURL: config.AppRoutes.VerifyEmailSuccess}); err != nil {
 		state = ResendState{Error: ui.errorMessage(ctx, err)}
 		status = http.StatusUnprocessableEntity
 	}
@@ -174,7 +174,7 @@ func (ui *UI) verifyEmailSuccessPage(writer http.ResponseWriter, request *http.R
 	query := request.URL.Query()
 	// auth's own link handler lands here with ?error=<code> when it failed.
 	if code := query.Get("error"); code != "" {
-		ui.render(writer, request, http.StatusOK, VerifyEmailSuccessPage("", "", VerifyEmailFailed(authCodeMessage(request.Context(), code))))
+		ui.render(writer, request, http.StatusOK, VerifyEmailSuccessPage("", "", VerifyEmailFailed(ui.authCodeMessage(request.Context(), code))))
 		return
 	}
 	ui.render(writer, request, http.StatusOK, VerifyEmailSuccessPage(query.Get("token"), query.Get("callbackURL"), nil))
@@ -192,15 +192,15 @@ func (ui *UI) verifyEmail(writer http.ResponseWriter, request *http.Request, _ a
 		ui.patch(writer, request, http.StatusUnprocessableEntity, VerifyEmailSuccessPage(token, callback, result), result)
 		return
 	}
-	result, status := VerifyEmailSucceeded(ui.verifyNext(callback)), http.StatusOK
-	_, session, err := ui.auth.VerifyEmail(ctx, token)
+	result, status := VerifyEmailSucceeded(ui.verifyNext(ctx, callback)), http.StatusOK
+	verified, err := ui.api.VerifyEmail(ctx, apiclient.VerifyEmail{Token: token})
 	switch {
-	case errors.Is(err, auth.ErrInvalidToken), errors.Is(err, auth.ErrTokenExpired):
+	case errors.Is(err, apiclient.ErrInvalidToken), errors.Is(err, apiclient.ErrTokenExpired):
 		result, status = VerifyEmailFailed(i18n.T(ctx, "pages.verifyEmail.invalidToken")), http.StatusUnprocessableEntity
 	case err != nil:
 		result, status = VerifyEmailFailed(ui.errorMessage(ctx, err)), http.StatusUnprocessableEntity
-	case session.Token != "":
-		ui.auth.SetSessionCookie(writer, session)
+	case verified.SignedIn:
+		setCookies(writer, verified.Cookies)
 	}
 	ui.patch(writer, request, status, VerifyEmailSuccessPage(token, callback, result), result)
 }
@@ -208,8 +208,8 @@ func (ui *UI) verifyEmail(writer http.ResponseWriter, request *http.Request, _ a
 // verifyNext is where a verified link continues: its callbackURL when that
 // is another page on this site or a callback auth trusts (the mobile app's
 // deep link), else the dashboard.
-func (ui *UI) verifyNext(callback string) string {
-	if callback != "" && !strings.HasPrefix(callback, "/") && ui.auth.CheckCallbackURL(callback) == nil {
+func (ui *UI) verifyNext(ctx context.Context, callback string) string {
+	if callback != "" && !strings.HasPrefix(callback, "/") && ui.api.CheckCallbackURL(ctx, callback) == nil {
 		return callback
 	}
 	next := safeNext(callback)
@@ -236,7 +236,7 @@ func (ui *UI) dashboard(writer http.ResponseWriter, request *http.Request, _ api
 		ui.apiFailed(writer, request, err)
 		return
 	}
-	ui.render(writer, request, http.StatusOK, DashboardPage(DashboardData{User: User(current.User), Tab: newTabID()}))
+	ui.render(writer, request, http.StatusOK, DashboardPage(DashboardData{User: current.User, Tab: newTabID()}))
 }
 
 // dashboardLive is the server-push example: one SSE stream per open
@@ -283,14 +283,15 @@ func (ui *UI) dashboardLive(writer http.ResponseWriter, request *http.Request, c
 	}
 }
 
-func (ui *UI) logout(writer http.ResponseWriter, request *http.Request, caller apiclient.Caller) {
+func (ui *UI) logout(writer http.ResponseWriter, request *http.Request, _ apiclient.Caller) {
 	ctx := request.Context()
-	if caller.SignedIn() {
-		if err := ui.auth.SignOut(ctx, caller.Session.Token); err != nil {
-			ui.log.WarnContext(ctx, "ui: sign out", "err", err)
-		}
+	// Signed out or not: SignOut ends the session if there is one and
+	// always returns the cookie that clears it.
+	signedOut, err := ui.api.SignOut(ctx)
+	if err != nil {
+		ui.log.WarnContext(ctx, "ui: sign out", "err", err)
 	}
-	ui.auth.ClearSessionCookie(writer)
+	setCookies(writer, signedOut.Cookies)
 	ui.redirect(writer, request, config.AppRoutes.Login)
 }
 

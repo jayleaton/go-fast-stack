@@ -39,6 +39,37 @@ type Client interface {
 	SocialProviders(ctx context.Context) ([]string, error)
 	StartSocialSignIn(ctx context.Context, provider string, input StartSocialSignIn) (SocialStart, error)
 	FinishSocialSignIn(ctx context.Context, provider string, input FinishSocialSignIn) (SocialOutcome, error)
+
+	// Email and password sign-in flows. A result's Cookies are what the
+	// UI server action sets on its response (the session cookie auth
+	// signed, or the one clearing it), as with the social flows; the
+	// browser never sees the API. Errors are the auth errors below.
+	SignUp(ctx context.Context, input SignUpEmail) (AuthResult, error)
+	SignIn(ctx context.Context, input SignInEmail) (AuthResult, error)
+	// SignOut ends the request's session (if any) and clears its cookie.
+	SignOut(ctx context.Context) (AuthResult, error)
+	RequestPasswordReset(ctx context.Context, input CreatePasswordReset) error
+	ResetPassword(ctx context.Context, input ResetPassword) error
+	VerifyEmail(ctx context.Context, input VerifyEmail) (AuthResult, error)
+	SendVerificationEmail(ctx context.Context, input CreateVerificationEmail) error
+	// CheckCallbackURL reports (nil) whether an emailed link's callbackURL
+	// may be redirected to: a safe relative path, a trusted origin or the
+	// mobile app's deep-link scheme.
+	CheckCallbackURL(ctx context.Context, callbackURL string) error
+	// AuthErrorForCode is the auth error behind an ?error=<code> an emailed
+	// link's redirect carries (Better Auth codes, e.g. INVALID_USER); nil
+	// for an unknown code.
+	AuthErrorForCode(code string) error
+}
+
+// AuthResult is the outcome of a sign-in flow step.
+type AuthResult struct {
+	// SignedIn is false when no session was created: sign-up that needs
+	// email verification, an email that was already verified.
+	SignedIn bool `json:"signedIn"`
+	// Cookies are for the UI's response (ui.setCookies). Never serialized:
+	// they carry the session credential.
+	Cookies []Cookie `json:"-"`
 }
 
 // Responses.
@@ -72,13 +103,19 @@ type (
 
 // Inputs, validated by the API (Validate runs there, not in the UI).
 type (
-	UpdateUserSettings  = validate.UpdateUserSettings
-	UpdateUserEmail     = validate.UpdateUserEmail
-	UpdateUserPassword  = validate.UpdateUserPassword
-	Nullable[Value any] = validate.Nullable[Value]
-	ValidationError     = validate.Error
-	StartSocialSignIn   = validate.StartSocialSignIn
-	FinishSocialSignIn  = validate.FinishSocialSignIn
+	UpdateUserSettings      = validate.UpdateUserSettings
+	UpdateUserEmail         = validate.UpdateUserEmail
+	UpdateUserPassword      = validate.UpdateUserPassword
+	Nullable[Value any]     = validate.Nullable[Value]
+	ValidationError         = validate.Error
+	StartSocialSignIn       = validate.StartSocialSignIn
+	FinishSocialSignIn      = validate.FinishSocialSignIn
+	SignUpEmail             = validate.SignUpEmail
+	SignInEmail             = validate.SignInEmail
+	CreatePasswordReset     = validate.CreatePasswordReset
+	ResetPassword           = validate.ResetPassword
+	VerifyEmail             = validate.VerifyEmail
+	CreateVerificationEmail = validate.CreateVerificationEmail
 )
 
 // Password limits the API enforces, for form hints.
@@ -108,6 +145,22 @@ var (
 	ErrForbidden          = services.ErrForbidden
 	ErrNotFound           = services.ErrNotFound
 	ErrConflict           = services.ErrConflict
+)
+
+// Auth errors the sign-in flows return (the server adapter translates
+// packages/auth's errors into these), matched with errors.Is.
+var (
+	ErrInvalidEmail       = &services.Error{Kind: services.KindInvalid, Message: "Invalid email"}
+	ErrInvalidCredentials = &services.Error{Kind: services.KindUnauthorized, Message: "Invalid email or password"}
+	ErrPasswordTooShort   = &services.Error{Kind: services.KindInvalid, Message: "Password too short"}
+	ErrPasswordTooLong    = &services.Error{Kind: services.KindInvalid, Message: "Password too long"}
+	ErrUserAlreadyExists  = &services.Error{Kind: services.KindConflict, Message: "User already exists"}
+	ErrEmailNotVerified   = &services.Error{Kind: services.KindForbidden, Message: "Email not verified"}
+	ErrInvalidToken       = &services.Error{Kind: services.KindInvalid, Message: "Invalid token"}
+	ErrTokenExpired       = &services.Error{Kind: services.KindInvalid, Message: "Token expired"}
+	ErrTooManyRequests    = &services.Error{Kind: services.KindRateLimited, Message: "Too many requests. Please try again later."}
+	ErrBannedUser         = &services.Error{Kind: services.KindForbidden, Message: "You have been banned from this application"}
+	ErrInvalidUser        = &services.Error{Kind: services.KindInvalid, Message: "Invalid user"}
 )
 
 // Route access, as the UI declares it on its own pages (the same policies
