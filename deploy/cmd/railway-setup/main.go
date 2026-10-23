@@ -266,6 +266,9 @@ func (s *setup) reconcile(ctx context.Context, wait time.Duration) error {
 }
 
 func (s *setup) reconcileEnv(ctx context.Context, env string) error {
+	for _, name := range s.cfg.HandSet(env) {
+		s.say("left as it is (manual in platform.yaml per_environment.%s): %s", env, name)
+	}
 	if err := s.iac(ctx, env); err != nil {
 		return err
 	}

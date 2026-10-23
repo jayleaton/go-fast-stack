@@ -50,6 +50,9 @@ type Config struct {
 	Region       string            `yaml:"region"`
 	Secrets      Secrets           `yaml:"secrets"`
 	Email        Email             `yaml:"email"`
+	// PerEnvironment sets what one environment's apps see as their origin
+	// and sender (EnvSettings); environments not listed use the defaults.
+	PerEnvironment map[string]EnvSettings `yaml:"per_environment"`
 	// AdminBootstrapEmail is seeded as the first admin by `admin migrate`.
 	AdminBootstrapEmail string    `yaml:"admin_bootstrap_email"`
 	Resources           Resources `yaml:"resources"`
@@ -96,6 +99,62 @@ type Secrets struct {
 // Email holds the sender address auth emails use.
 type Email struct {
 	From string `yaml:"from"`
+}
+
+// EnvSettings are one environment's values for variables IaC would
+// otherwise derive. Each is "" (the default), a value, or ManualValue: set
+// by hand in Railway (a custom domain's origin, a sender on a verified
+// domain), so IaC leaves the variable out of the graph and adds it to
+// variables.ignore. Apply then neither sets, resets nor deletes it.
+type EnvSettings struct {
+	// PublicURL is the web app's PUBLIC_URL: "" or "railway" for the
+	// Railway-generated domain, an https origin (a custom domain), or manual.
+	PublicURL string `yaml:"public_url"`
+	// AdminPublicURL is the admin app's ADMIN_PUBLIC_URL, the same way.
+	AdminPublicURL string `yaml:"admin_public_url"`
+	// FromEmail is FROM_EMAIL on every app service: "" for email.from, an
+	// address, or manual.
+	FromEmail string `yaml:"from_email"`
+}
+
+// RailwayDomain is the PUBLIC_URL value for the Railway-generated domain.
+const RailwayDomain = "railway"
+
+// ManualValue is the EnvSettings value for a variable set by hand in Railway.
+const ManualValue = "manual"
+
+// Settings returns env's settings with the defaults filled in.
+func (c Config) Settings(env string) EnvSettings {
+	settings := c.PerEnvironment[env]
+	if settings.PublicURL == "" {
+		settings.PublicURL = RailwayDomain
+	}
+	if settings.AdminPublicURL == "" {
+		settings.AdminPublicURL = RailwayDomain
+	}
+	if settings.FromEmail == "" {
+		settings.FromEmail = c.Email.From
+	}
+	return settings
+}
+
+// HandSet lists env's variables IaC leaves alone because platform.yaml
+// marks them manual, as "service/NAME". Plan and apply print them.
+func (c Config) HandSet(env string) []string {
+	settings := c.Settings(env)
+	var out []string
+	if settings.PublicURL == ManualValue {
+		out = append(out, ServiceWeb+"/PUBLIC_URL")
+	}
+	if c.Admin && settings.AdminPublicURL == ManualValue {
+		out = append(out, ServiceAdmin+"/ADMIN_PUBLIC_URL")
+	}
+	if settings.FromEmail == ManualValue {
+		for _, service := range c.PublicServices() {
+			out = append(out, service+"/FROM_EMAIL")
+		}
+	}
+	return out
 }
 
 // Backups configure the backup cron service (apps/backup).
@@ -172,6 +231,7 @@ var (
 	// Railway allows 1 to 32 characters.
 	projectName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9 ._-]{0,31}$`)
 	repoName    = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
+	httpsOrigin = regexp.MustCompile(`^https://[A-Za-z0-9.-]+(:[0-9]+)?$`)
 	varPattern  = regexp.MustCompile(`^([A-Za-z0-9 ._-]+/)?[A-Za-z_*][A-Za-z0-9_*]*$`)
 )
 
@@ -260,6 +320,19 @@ func (c Config) Validate() error {
 	}
 	if !strings.Contains(c.Email.From, "@") {
 		add("email.from must be an email address, got %q", c.Email.From)
+	}
+	for env, settings := range c.PerEnvironment {
+		if !slices.Contains(c.Environments, env) {
+			add("per_environment.%s: %q is not in environments", env, env)
+		}
+		for key, value := range map[string]string{"public_url": settings.PublicURL, "admin_public_url": settings.AdminPublicURL} {
+			if value != "" && value != RailwayDomain && value != ManualValue && !httpsOrigin.MatchString(value) {
+				add("per_environment.%s.%s must be %q, an https origin (https://host, no path) or %q, got %q", env, key, RailwayDomain, ManualValue, value)
+			}
+		}
+		if from := settings.FromEmail; from != "" && from != ManualValue && !strings.Contains(from, "@") {
+			add("per_environment.%s.from_email must be an email address or %q, got %q", env, ManualValue, from)
+		}
 	}
 	if c.AdminBootstrapEmail != "" && !strings.Contains(c.AdminBootstrapEmail, "@") {
 		add("admin_bootstrap_email must be an email address, got %q", c.AdminBootstrapEmail)

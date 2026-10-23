@@ -36,6 +36,10 @@ Each service gets:
 
 Removing something from `platform.yaml` (an environment, `admin`) never deletes it unless you run `CONFIRM_DESTRUCTIVE=1 make railway-apply`. Environments you drop are left alone and listed.
 
+## Hand-set variables
+
+The project's variables are managed: `make railway-apply` deletes any variable that IaC neither sets nor ignores. So list the ones you set yourself in `unmanaged_variables` (the template lists the optional settings its apps read: `TRUSTED_ORIGINS`, `APP_NAME`, `SECRETS_REFRESH_INTERVAL`, ...). Per environment, `per_environment.<env>` sets `public_url` / `admin_public_url` (`railway`, an https origin for a custom domain, or `manual`) and `from_email` (an address or `manual`). `manual` means you set the value in Railway yourself, and apply never sets, resets or deletes it; plan and apply print it as `left as it is`. `make deploy-vars` proves this offline. It builds every environment's graph and fails when a name in `.env.example` would be deleted, when a name is both set and ignored, or when a name in `DEPLOY_KEEP` (your own hand-set names) is set by IaC. `make deploy-check` runs it.
+
 ## Cost
 
 Railway bills what containers actually use: about $10 per GB of memory per month, $20 per vCPU per month, and $0.15 per GB of volume. The plan minimum includes that much usage: Hobby $5/month, Pro $20/month. Idle footprint, measured on Railway on 2026-10-22:
