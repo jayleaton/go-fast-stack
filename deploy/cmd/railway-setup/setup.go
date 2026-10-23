@@ -76,125 +76,125 @@ type edges struct {
 	} `json:"edges"`
 }
 
-func (e edges) byName() map[string]string {
-	m := map[string]string{}
-	for _, n := range e.Edges {
-		m[n.Node.Name] = n.Node.ID
+func (edges edges) byName() map[string]string {
+	lookup := map[string]string{}
+	for _, edge := range edges.Edges {
+		lookup[edge.Node.Name] = edge.Node.ID
 	}
-	return m
+	return lookup
 }
 
-func (s *setup) say(format string, a ...any) { fmt.Fprintf(s.out, format+"\n", a...) }
+func (setup *setup) say(format string, values ...any) { fmt.Fprintf(setup.out, format+"\n", values...) }
 
 // change records a change: done in apply mode, pending in plan mode.
-func (s *setup) change(format string, a ...any) {
-	if s.apply {
-		s.say("  ✓ "+format, a...)
+func (setup *setup) change(format string, values ...any) {
+	if setup.apply {
+		setup.say("  ✓ "+format, values...)
 	} else {
-		s.pending++
-		s.say("  + "+format, a...)
+		setup.pending++
+		setup.say("  + "+format, values...)
 	}
 }
 
 // findProject loads the project named in platform.yaml, if it exists.
 // Only the configured workspace is searched (or your only one), so a
 // same-named project elsewhere is never touched.
-func (s *setup) findProject(ctx context.Context) error {
-	ws, err := s.workspaceID(ctx)
+func (setup *setup) findProject(ctx context.Context) error {
+	ws, err := setup.workspaceID(ctx)
 	if err != nil {
 		return err
 	}
 	var all []listedProject
-	if err := s.rw.json(ctx, &all, "list"); err != nil {
+	if err := setup.rw.json(ctx, &all, "list"); err != nil {
 		return err
 	}
 	var hits []listedProject
-	for _, p := range all {
-		if p.Name == s.cfg.Project && p.Workspace.ID == ws {
-			hits = append(hits, p)
+	for _, project := range all {
+		if project.Name == setup.cfg.Project && project.Workspace.ID == ws {
+			hits = append(hits, project)
 		}
 	}
 	switch len(hits) {
 	case 0:
-		s.project = nil
+		setup.project = nil
 	case 1:
-		p := hits[0]
-		s.project = &project{ID: p.ID, Name: p.Name, Workspace: p.Workspace.Name,
-			Environments: p.Environments.byName(), Services: p.Services.byName()}
-		s.rw.projectID = p.ID
+		listedProject := hits[0]
+		setup.project = &project{ID: listedProject.ID, Name: listedProject.Name, Workspace: listedProject.Workspace.Name,
+			Environments: listedProject.Environments.byName(), Services: listedProject.Services.byName()}
+		setup.rw.projectID = listedProject.ID
 	default:
-		return fmt.Errorf("%d projects named %q in this workspace: rename one", len(hits), s.cfg.Project)
+		return fmt.Errorf("%d projects named %q in this workspace: rename one", len(hits), setup.cfg.Project)
 	}
 	return nil
 }
 
-func (s *setup) workspaceID(ctx context.Context) (string, error) {
-	if s.ws != "" {
-		return s.ws, nil
+func (setup *setup) workspaceID(ctx context.Context) (string, error) {
+	if setup.ws != "" {
+		return setup.ws, nil
 	}
-	id, err := s.lookupWorkspace(ctx)
-	s.ws = id
+	id, err := setup.lookupWorkspace(ctx)
+	setup.ws = id
 	return id, err
 }
 
-func (s *setup) lookupWorkspace(ctx context.Context) (string, error) {
+func (setup *setup) lookupWorkspace(ctx context.Context) (string, error) {
 	var me struct {
 		Workspaces []struct{ ID, Name string } `json:"workspaces"`
 	}
-	if err := s.rw.json(ctx, &me, "whoami"); err != nil {
+	if err := setup.rw.json(ctx, &me, "whoami"); err != nil {
 		return "", err
 	}
 	var names []string
-	for _, w := range me.Workspaces {
-		if s.cfg.Workspace != "" && (w.ID == s.cfg.Workspace || w.Name == s.cfg.Workspace) {
-			return w.ID, nil
+	for _, workspace := range me.Workspaces {
+		if setup.cfg.Workspace != "" && (workspace.ID == setup.cfg.Workspace || workspace.Name == setup.cfg.Workspace) {
+			return workspace.ID, nil
 		}
-		names = append(names, fmt.Sprintf("%q", w.Name))
+		names = append(names, fmt.Sprintf("%q", workspace.Name))
 	}
-	if s.cfg.Workspace == "" && len(me.Workspaces) == 1 {
+	if setup.cfg.Workspace == "" && len(me.Workspaces) == 1 {
 		return me.Workspaces[0].ID, nil
 	}
-	if s.cfg.Workspace != "" {
-		return "", fmt.Errorf("workspace %q not found; yours: %s", s.cfg.Workspace, strings.Join(names, ", "))
+	if setup.cfg.Workspace != "" {
+		return "", fmt.Errorf("workspace %q not found; yours: %s", setup.cfg.Workspace, strings.Join(names, ", "))
 	}
 	return "", fmt.Errorf("you belong to several workspaces; set workspace in platform.yaml to one of %s", strings.Join(names, ", "))
 }
 
 // ensureProject creates the project (with its production environment).
-func (s *setup) ensureProject(ctx context.Context) error {
-	if err := s.findProject(ctx); err != nil || s.project != nil {
-		if s.project != nil {
-			s.say("project %s (%s) in %s", s.project.Name, s.project.ID, s.project.Workspace)
+func (setup *setup) ensureProject(ctx context.Context) error {
+	if err := setup.findProject(ctx); err != nil || setup.project != nil {
+		if setup.project != nil {
+			setup.say("project %s (%s) in %s", setup.project.Name, setup.project.ID, setup.project.Workspace)
 		}
 		return err
 	}
-	ws, err := s.workspaceID(ctx)
+	ws, err := setup.workspaceID(ctx)
 	if err != nil {
 		return err
 	}
-	if !s.apply {
-		s.change("create project %q", s.cfg.Project)
+	if !setup.apply {
+		setup.change("create project %q", setup.cfg.Project)
 		return nil
 	}
-	if err := s.confirm(fmt.Sprintf("Create Railway project %q (billed to that workspace)?", s.cfg.Project)); err != nil {
+	if err := setup.confirm(fmt.Sprintf("Create Railway project %q (billed to that workspace)?", setup.cfg.Project)); err != nil {
 		return err
 	}
 	var res struct {
 		ProjectCreate struct{ ID string } `json:"projectCreate"`
 	}
-	err = s.rw.gql(ctx, `mutation($input: ProjectCreateInput!) { projectCreate(input: $input) { id } }`,
+	err = setup.rw.gql(ctx, `mutation($input: ProjectCreateInput!) { projectCreate(input: $input) { id } }`,
 		map[string]any{"input": map[string]any{
-			"name": s.cfg.Project, "workspaceId": ws, "defaultEnvironmentName": "production",
+			"name": setup.cfg.Project, "workspaceId": ws, "defaultEnvironmentName": "production",
 			"isMonorepo": true, "prDeploys": false,
 		}}, &res)
 	if err != nil {
 		return err
 	}
-	s.change("created project %q (%s)", s.cfg.Project, res.ProjectCreate.ID)
-	if err := s.findProject(ctx); err != nil {
+	setup.change("created project %q (%s)", setup.cfg.Project, res.ProjectCreate.ID)
+	if err := setup.findProject(ctx); err != nil {
 		return err
 	}
-	if s.project == nil {
+	if setup.project == nil {
 		return fmt.Errorf("created project %s but cannot list it yet: re-run in a minute (it will be reused, not duplicated)", res.ProjectCreate.ID)
 	}
 	return nil
@@ -202,28 +202,28 @@ func (s *setup) ensureProject(ctx context.Context) error {
 
 // ensureEnvironments creates missing environments empty (never duplicated
 // from production: no copied data or secrets) and only warns about extras.
-func (s *setup) ensureEnvironments(ctx context.Context) error {
-	for _, env := range s.cfg.Environments {
-		if s.project != nil && s.project.Environments[env] != "" {
+func (setup *setup) ensureEnvironments(ctx context.Context) error {
+	for _, env := range setup.cfg.Environments {
+		if setup.project != nil && setup.project.Environments[env] != "" {
 			continue
 		}
-		if s.project == nil && env == "production" {
+		if setup.project == nil && env == "production" {
 			continue // created with the project
 		}
-		if !s.apply {
-			s.change("create environment %s", env)
+		if !setup.apply {
+			setup.change("create environment %s", env)
 			continue
 		}
 		// Railway allows one environment create per 30 s per project.
 		const rateLimitWait = 31 * time.Second // just past that window
 		var err error
 		for range 4 {
-			err = s.rw.gql(ctx, `mutation($input: EnvironmentCreateInput!) { environmentCreate(input: $input) { id } }`,
-				map[string]any{"input": map[string]any{"projectId": s.project.ID, "name": env, "skipInitialDeploys": true}}, nil)
+			err = setup.rw.gql(ctx, `mutation($input: EnvironmentCreateInput!) { environmentCreate(input: $input) { id } }`,
+				map[string]any{"input": map[string]any{"projectId": setup.project.ID, "name": env, "skipInitialDeploys": true}}, nil)
 			if err == nil || !strings.Contains(strings.ToLower(err.Error()), "rate limit") {
 				break
 			}
-			s.say("  … Railway rate limit on environment create; retrying in %s", rateLimitWait)
+			setup.say("  … Railway rate limit on environment create; retrying in %s", rateLimitWait)
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
@@ -233,25 +233,25 @@ func (s *setup) ensureEnvironments(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("creating environment %s: %w", env, err)
 		}
-		s.change("created environment %s", env)
+		setup.change("created environment %s", env)
 	}
-	if s.project == nil {
+	if setup.project == nil {
 		return nil
 	}
-	for name := range s.project.Environments {
-		if !s.cfg.Has(name) && !strings.Contains(name, "-pr-") {
-			s.say("  ! environment %s exists on Railway but not in platform.yaml; it is left alone (delete it with: railway environment delete %s)", name, name)
+	for name := range setup.project.Environments {
+		if !setup.cfg.Has(name) && !strings.Contains(name, "-pr-") {
+			setup.say("  ! environment %s exists on Railway but not in platform.yaml; it is left alone (delete it with: railway environment delete %s)", name, name)
 		}
 	}
-	return s.findProject(ctx)
+	return setup.findProject(ctx)
 }
 
 // ensurePreviews turns Railway PR environments on or off. Previews copy the
 // base environment: staging when there is one, never production otherwise.
-func (s *setup) ensurePreviews(ctx context.Context) error {
-	if s.project == nil {
-		if s.cfg.Previews {
-			s.change("enable PR environments")
+func (setup *setup) ensurePreviews(ctx context.Context) error {
+	if setup.project == nil {
+		if setup.cfg.Previews {
+			setup.change("enable PR environments")
 		}
 		return nil
 	}
@@ -261,66 +261,66 @@ func (s *setup) ensurePreviews(ctx context.Context) error {
 			BaseEnvironmentID *string `json:"baseEnvironmentId"`
 		} `json:"project"`
 	}
-	if err := s.rw.gql(ctx, `query($id: String!) { project(id: $id) { prDeploys baseEnvironmentId } }`,
-		map[string]any{"id": s.project.ID}, &res); err != nil {
+	if err := setup.rw.gql(ctx, `query($id: String!) { project(id: $id) { prDeploys baseEnvironmentId } }`,
+		map[string]any{"id": setup.project.ID}, &res); err != nil {
 		return err
 	}
 	input := map[string]any{}
-	if res.Project.PrDeploys != s.cfg.Previews {
-		input["prDeploys"] = s.cfg.Previews
+	if res.Project.PrDeploys != setup.cfg.Previews {
+		input["prDeploys"] = setup.cfg.Previews
 	}
-	if s.cfg.Previews {
-		base := s.cfg.Environments[0] // staging, or production in the production-only profile
-		if id := s.project.Environments[base]; id != "" && (res.Project.BaseEnvironmentID == nil || *res.Project.BaseEnvironmentID != id) {
+	if setup.cfg.Previews {
+		base := setup.cfg.Environments[0] // staging, or production in the production-only profile
+		if id := setup.project.Environments[base]; id != "" && (res.Project.BaseEnvironmentID == nil || *res.Project.BaseEnvironmentID != id) {
 			input["baseEnvironmentId"] = id
 		}
 	}
 	if len(input) == 0 {
 		return nil
 	}
-	if s.apply {
-		if err := s.rw.gql(ctx, `mutation($id: String!, $input: ProjectUpdateInput!) { projectUpdate(id: $id, input: $input) { id } }`,
-			map[string]any{"id": s.project.ID, "input": input}, nil); err != nil {
+	if setup.apply {
+		if err := setup.rw.gql(ctx, `mutation($id: String!, $input: ProjectUpdateInput!) { projectUpdate(id: $id, input: $input) { id } }`,
+			map[string]any{"id": setup.project.ID, "input": input}, nil); err != nil {
 			return err
 		}
 	}
-	s.change("PR environments: %v (base %s)", s.cfg.Previews, s.cfg.Environments[0])
+	setup.change("PR environments: %v (base %s)", setup.cfg.Previews, setup.cfg.Environments[0])
 	return nil
 }
 
 // iac runs `railway config plan|apply` for env. Plan streams the CLI's own
 // diff; apply runs with --json so per-change failures and their diagnostics
 // are printed (the CLI's text output only says "failed changes: change").
-func (s *setup) iac(ctx context.Context, env string) error {
-	if s.project == nil || s.project.Environments[env] == "" {
-		s.change("apply the IaC graph to %s (new environment: everything is created)", env)
+func (setup *setup) iac(ctx context.Context, env string) error {
+	if setup.project == nil || setup.project.Environments[env] == "" {
+		setup.change("apply the IaC graph to %s (new environment: everything is created)", env)
 		return nil
 	}
-	if !s.apply {
+	if !setup.apply {
 		const planChanges = 2 // railway config plan --detailed-exit-code: changes are pending
-		code, err := s.rw.stream(ctx, "config", "plan", "--file", s.iacFile, "--environment", env, "--detailed-exit-code")
+		code, err := setup.rw.stream(ctx, "config", "plan", "--file", setup.iacFile, "--environment", env, "--detailed-exit-code")
 		switch {
 		case err != nil:
 			return err
 		case code == planChanges:
-			s.pending++
+			setup.pending++
 		case code != 0:
 			return fmt.Errorf("railway config plan for %s failed with exit code %d", env, code)
 		}
 		return nil
 	}
-	args := []string{"config", "apply", "--file", s.iacFile, "--environment", env, "--yes", "--json"}
-	if s.destruct {
+	args := []string{"config", "apply", "--file", setup.iacFile, "--environment", env, "--yes", "--json"}
+	if setup.destruct {
 		args = append(args, "--confirm-destructive")
 	}
-	out, runErr := s.rw.output(ctx, nil, args...)
+	out, runErr := setup.rw.output(ctx, nil, args...)
 	failed := runErr != nil
 	if runErr == nil || len(bytes.TrimSpace(out)) > 0 {
-		failed = s.renderApply(out) || failed
+		failed = setup.renderApply(out) || failed
 	}
 	if runErr != nil || failed {
 		hint := ""
-		if !s.destruct {
+		if !setup.destruct {
 			hint = " (if it deletes something you removed from platform.yaml on purpose, re-run with CONFIRM_DESTRUCTIVE=1)"
 		}
 		if runErr == nil {
@@ -333,89 +333,89 @@ func (s *setup) iac(ctx context.Context, env string) error {
 
 // renderApply prints the changes and diagnostics of `config apply --json`
 // output (values are redacted by the CLI) and reports whether any failed.
-func (s *setup) renderApply(out []byte) bool {
+func (setup *setup) renderApply(out []byte) bool {
 	if len(bytes.TrimSpace(out)) == 0 { // the CLI prints nothing, not even {}, when nothing changes
-		s.say("  no changes")
+		setup.say("  no changes")
 		return false
 	}
 	var doc any
 	if json.Unmarshal(out, &doc) != nil {
-		s.say("%s", tail(string(out))) // plan output: values are redacted by the CLI
+		setup.say("%s", tail(string(out))) // plan output: values are redacted by the CLI
 		return true
 	}
 	failed, seen := false, map[string]bool{}
-	var walk func(v any)
-	walk = func(v any) {
-		switch v := v.(type) {
+	var walk func(value any)
+	walk = func(value any) {
+		switch value := value.(type) {
 		case []any:
-			for _, x := range v {
-				walk(x)
+			for _, element := range value {
+				walk(element)
 			}
 		case map[string]any:
-			kind, _ := v["kind"].(string)
-			status, _ := v["status"].(string)
+			kind, _ := value["kind"].(string)
+			status, _ := value["status"].(string)
 			if kind != "" && status != "" {
-				what, _ := v["summary"].(string)
+				what, _ := value["summary"].(string)
 				if what == "" {
-					what, _ = v["path"].(string)
+					what, _ = value["path"].(string)
 				}
 				line := fmt.Sprintf("  %s %s %s", status, kind, what)
 				if !seen[line] {
 					seen[line] = true
-					s.say("%s", line)
+					setup.say("%s", line)
 				}
 				failed = failed || status == "failed"
 			}
-			if msg, ok := v["message"].(string); ok {
-				sev, _ := v["severity"].(string)
+			if msg, ok := value["message"].(string); ok {
+				sev, _ := value["severity"].(string)
 				line := fmt.Sprintf("  %s %s", strings.ToUpper(firstOr(sev, "note")), msg)
 				if !seen[line] && sev != "warning" { // warnings: "ignore pattern matches no variable" before bootstrap
 					seen[line] = true
-					s.say("%s", line)
+					setup.say("%s", line)
 				}
 			}
-			for _, x := range v {
-				walk(x)
+			for _, element := range value {
+				walk(element)
 			}
 		}
 	}
 	walk(doc)
 	if len(seen) == 0 {
-		s.say("  no changes")
+		setup.say("  no changes")
 	}
 	return failed
 }
 
-func firstOr(s, d string) string {
-	if s == "" {
-		return d
+func firstOr(text, dir string) string {
+	if text == "" {
+		return dir
 	}
-	return s
+	return text
 }
 
 // up uploads this checkout to every app service in env with `railway up`
 // (upload mode, repo: ""), waiting for each build. Railway builds it with
 // the service's Dockerfile and runs the pre-deploy migration.
-func (s *setup) up(ctx context.Context, env string) error {
-	return s.upload(ctx, env, false)
+func (setup *setup) up(ctx context.Context, env string) error {
+	return setup.upload(ctx, env, false)
 }
 
 // upload deploys every app service in env with `railway up`; missingOnly
 // skips services whose latest deployment succeeded (apply's fallback, so a
 // re-run does not redeploy).
-func (s *setup) upload(ctx context.Context, env string, missingOnly bool) error {
-	if s.project == nil || s.project.Environments[env] == "" || !s.servicesExist() {
+func (setup *setup) upload(ctx context.Context, env string, missingOnly bool) error {
+	if setup.project == nil || setup.project.Environments[env] == "" || !setup.servicesExist() {
 		return fmt.Errorf("%s is not set up yet: run make railway-apply first", env)
 	}
 	var errs []error // one failed service does not stop the others
-	for _, svc := range s.allServices() {
+	for _, svc := range setup.allServices() {
 		if missingOnly {
-			if st, err := s.deploymentStatus(ctx, svc, env); err == nil && (st == "SUCCESS" || !settled(st)) {
+			if st, err := setup.deploymentStatus(ctx, svc, env); err == nil && (st == "SUCCESS" || !settled(st)) {
 				continue // live, or a deploy is already running
 			}
 		}
-		s.say("== %s/%s: railway up", env, svc)
-		code, err := s.rw.streamIn(ctx, s.root, "up", "--service", svc, "--environment", env, "--ci", "-m", "make railway-up")
+		setup.say("== %s/%s: railway up", env, svc)
+		code, err := setup.rw.streamIn(ctx, setup.root, "up", "--service", svc, "--environment", env, "--ci", "-m", "make railway-up")
 		switch {
 		case err != nil:
 			return err
@@ -432,63 +432,63 @@ func (s *setup) upload(ctx context.Context, env string, missingOnly bool) error 
 // same public string everywhere and DATABASE_URL does not parse (spaces).
 // It sets a random password inside the running container (railway ssh,
 // SQL on stdin), then stores it in POSTGRES_PASSWORD.
-func (s *setup) repairDatabases(ctx context.Context, env string) error {
-	return s.setDatabasePasswords(ctx, env, false)
+func (setup *setup) repairDatabases(ctx context.Context, env string) error {
+	return setup.setDatabasePasswords(ctx, env, false)
 }
 
 // rotateDatabases gives every database in env a new random superuser
 // password (after a provider incident: Railway holds POSTGRES_PASSWORD),
 // then redeploys the app services that read DATABASE_URL from Railway.
 // Services on Doppler read it from Doppler: update it there.
-func (s *setup) rotateDatabases(ctx context.Context, env string) error {
-	if s.project == nil || s.project.Environments[env] == "" {
+func (setup *setup) rotateDatabases(ctx context.Context, env string) error {
+	if setup.project == nil || setup.project.Environments[env] == "" {
 		return fmt.Errorf("%s is not set up yet: run make railway-apply first", env)
 	}
-	if err := s.setDatabasePasswords(ctx, env, true); err != nil {
+	if err := setup.setDatabasePasswords(ctx, env, true); err != nil {
 		return err
 	}
-	for _, svc := range s.allServices() {
-		if s.project.Services[svc] == "" {
+	for _, svc := range setup.allServices() {
+		if setup.project.Services[svc] == "" {
 			continue
 		}
-		vars, err := s.variables(ctx, svc, env)
+		vars, err := setup.variables(ctx, svc, env)
 		if err != nil {
 			return err
 		}
-		if s.onDoppler(vars) {
-			s.say("  ! %s/%s reads DATABASE_URL from Doppler: if it uses the superuser, update it there (docs/secrets.md: rotate the database password)", env, svc)
+		if setup.onDoppler(vars) {
+			setup.say("  ! %s/%s reads DATABASE_URL from Doppler: if it uses the superuser, update it there (docs/secrets.md: rotate the database password)", env, svc)
 			continue
 		}
 		args := []string{"redeploy", "--service", svc, "--environment", env, "--yes"}
-		if !s.cfg.Upload() {
+		if !setup.cfg.Upload() {
 			// The branch's latest commit: a plain redeploy repeats the latest
 			// deployment's build, which may be an old one (docs/deploy.md).
 			args = append(args, "--from-source")
 		}
-		if _, err := s.rw.output(ctx, nil, args...); err != nil {
+		if _, err := setup.rw.output(ctx, nil, args...); err != nil {
 			return err
 		}
-		s.change("%s/%s redeployed with the new DATABASE_URL", env, svc)
+		setup.change("%s/%s redeployed with the new DATABASE_URL", env, svc)
 	}
 	return nil
 }
 
-func (s *setup) setDatabasePasswords(ctx context.Context, env string, force bool) error {
-	if s.project == nil || s.project.Environments[env] == "" {
+func (setup *setup) setDatabasePasswords(ctx context.Context, env string, force bool) error {
+	if setup.project == nil || setup.project.Environments[env] == "" {
 		return nil
 	}
-	for _, db := range s.databases() {
-		if s.project.Services[db] == "" {
+	for _, db := range setup.databases() {
+		if setup.project.Services[db] == "" {
 			continue
 		}
-		vars, err := s.variables(ctx, db, env)
+		vars, err := setup.variables(ctx, db, env)
 		if err != nil {
 			return err
 		}
 		pw, ok := vars["POSTGRES_PASSWORD"]
 		if !ok || pw == nil { // missing or sealed by hand: not ours to change
 			if force {
-				s.say("  ! %s/%s has no readable POSTGRES_PASSWORD; rotate it in the dashboard", env, db)
+				setup.say("  ! %s/%s has no readable POSTGRES_PASSWORD; rotate it in the dashboard", env, db)
 			}
 			continue
 		}
@@ -496,37 +496,37 @@ func (s *setup) setDatabasePasswords(ctx context.Context, env string, force bool
 		if !force && !broken {
 			continue
 		}
-		if !s.apply {
-			s.change("%s/%s POSTGRES_PASSWORD is Railway's unevaluated generator: set a random one", env, db)
+		if !setup.apply {
+			setup.change("%s/%s POSTGRES_PASSWORD is Railway's unevaluated generator: set a random one", env, db)
 			continue
 		}
-		if err := s.waitDeployed(ctx, db, env); err != nil {
+		if err := setup.waitDeployed(ctx, db, env); err != nil {
 			return err
 		}
 		const passwordBytes = 24 // random bytes in a Postgres password (48 hex characters)
-		b := make([]byte, passwordBytes)
-		if _, err := rand.Read(b); err != nil {
+		data := make([]byte, passwordBytes)
+		if _, err := rand.Read(data); err != nil {
 			return err
 		}
-		fresh := hex.EncodeToString(b) // URL-safe: DATABASE_URL embeds it unescaped
+		fresh := hex.EncodeToString(data) // URL-safe: DATABASE_URL embeds it unescaped
 		user := "postgres"
-		if u := vars["POSTGRES_USER"]; u != nil && *u != "" {
-			user = *u
+		if raw := vars["POSTGRES_USER"]; raw != nil && *raw != "" {
+			user = *raw
 		}
 		sql := fmt.Sprintf("ALTER USER %q WITH PASSWORD '%s';\n", user, fresh)
-		if _, err := s.rw.output(ctx, []byte(sql), "ssh", "--service", db, "--environment", env, "--",
+		if _, err := setup.rw.output(ctx, []byte(sql), "ssh", "--service", db, "--environment", env, "--",
 			// The local socket, not PGHOST over TCP: the container's PGPASSWORD
 			// is the value being replaced and may not match the database.
 			"env", "-u", "PGHOST", "-u", "PGPASSWORD", "psql", "-h", "/var/run/postgresql", "-U", user, "-v", "ON_ERROR_STOP=1", "-qtA"); err != nil {
 			return fmt.Errorf("%s/%s: setting a real password over railway ssh (needs an SSH key: railway ssh keys): %w", env, db, err)
 		}
-		if err := s.commit(ctx, env, map[string]map[string]secretWrite{db: {"POSTGRES_PASSWORD": {fresh, false}}}); err != nil {
+		if err := setup.commit(ctx, env, map[string]map[string]secretWrite{db: {"POSTGRES_PASSWORD": {fresh, false}}}); err != nil {
 			return err
 		}
 		if broken {
-			s.change("%s/%s POSTGRES_PASSWORD was Railway's unevaluated generator: replaced with a random password", env, db)
+			setup.change("%s/%s POSTGRES_PASSWORD was Railway's unevaluated generator: replaced with a random password", env, db)
 		} else {
-			s.change("%s/%s POSTGRES_PASSWORD rotated", env, db)
+			setup.change("%s/%s POSTGRES_PASSWORD rotated", env, db)
 		}
 	}
 	return nil
@@ -535,8 +535,8 @@ func (s *setup) setDatabasePasswords(ctx context.Context, env string, force bool
 // clearWatchPaths removes watch paths left on app services when a project
 // moves from GitHub to upload mode: Railway would skip every `railway up`
 // that changes nothing under them. IaC cannot express "none" (see graph.go).
-func (s *setup) clearWatchPaths(ctx context.Context, env string) error {
-	if !s.cfg.Upload() || s.project == nil || s.project.Environments[env] == "" {
+func (setup *setup) clearWatchPaths(ctx context.Context, env string) error {
+	if !setup.cfg.Upload() || setup.project == nil || setup.project.Environments[env] == "" {
 		return nil
 	}
 	var cfg struct {
@@ -546,41 +546,41 @@ func (s *setup) clearWatchPaths(ctx context.Context, env string) error {
 			} `json:"build"`
 		} `json:"services"`
 	}
-	if err := s.rw.json(ctx, &cfg, "environment", "config", "--environment", env); err != nil {
+	if err := setup.rw.json(ctx, &cfg, "environment", "config", "--environment", env); err != nil {
 		return err
 	}
 	services := map[string]any{}
-	for _, svc := range s.allServices() {
-		id := s.project.Services[svc]
+	for _, svc := range setup.allServices() {
+		id := setup.project.Services[svc]
 		if id == "" || len(cfg.Services[id].Build.WatchPatterns) == 0 {
 			continue
 		}
 		services[id] = map[string]any{"build": map[string]any{"watchPatterns": []string{}}}
-		s.change("%s/%s clear watch paths (upload mode)", env, svc)
+		setup.change("%s/%s clear watch paths (upload mode)", env, svc)
 	}
-	if len(services) == 0 || !s.apply {
+	if len(services) == 0 || !setup.apply {
 		return nil
 	}
-	return s.rw.gql(ctx, `mutation($env: String!, $patch: EnvironmentConfig) { environmentPatchCommit(environmentId: $env, patch: $patch, commitMessage: "railway-setup: upload mode has no watch paths") }`,
-		map[string]any{"env": s.project.Environments[env], "patch": map[string]any{"services": services}}, nil)
+	return setup.rw.gql(ctx, `mutation($env: String!, $patch: EnvironmentConfig) { environmentPatchCommit(environmentId: $env, patch: $patch, commitMessage: "railway-setup: upload mode has no watch paths") }`,
+		map[string]any{"env": setup.project.Environments[env], "patch": map[string]any{"services": services}}, nil)
 }
 
-func (s *setup) databases() []string {
-	if s.cfg.Admin {
+func (setup *setup) databases() []string {
+	if setup.cfg.Admin {
 		return []string{platform.ServicePostgres, platform.ServiceAdminPostgres}
 	}
 	return []string{platform.ServicePostgres}
 }
 
 // waitDeployed waits up to 5 minutes for svc's latest deployment in env.
-func (s *setup) waitDeployed(ctx context.Context, svc, env string) error {
+func (setup *setup) waitDeployed(ctx context.Context, svc, env string) error {
 	const deployWait = 5 * time.Minute // how long a fresh database may take to come up
 	deadline := time.Now().Add(deployWait)
 	for {
 		var deps []struct {
 			Status string `json:"status"`
 		}
-		if err := s.rw.json(ctx, &deps, "deployment", "list", "--service", svc, "--environment", env); err != nil {
+		if err := setup.rw.json(ctx, &deps, "deployment", "list", "--service", svc, "--environment", env); err != nil {
 			return err
 		}
 		if len(deps) > 0 && deps[0].Status == "SUCCESS" {
@@ -599,7 +599,7 @@ func (s *setup) waitDeployed(ctx context.Context, svc, env string) error {
 
 // variables lists a service's variables in env: name -> value, nil when
 // sealed. Values never leave this process.
-func (s *setup) variables(ctx context.Context, service, env string) (map[string]*string, error) {
+func (setup *setup) variables(ctx context.Context, service, env string) (map[string]*string, error) {
 	var err error
 	for attempt := range 3 { // reads only: Railway's API sometimes sends a body the CLI cannot decode
 		if attempt > 0 {
@@ -610,7 +610,7 @@ func (s *setup) variables(ctx context.Context, service, env string) (map[string]
 			}
 		}
 		vars := map[string]*string{}
-		if err = s.rw.json(ctx, &vars, "variable", "list", "--service", service, "--environment", env); err == nil {
+		if err = setup.rw.json(ctx, &vars, "variable", "list", "--service", service, "--environment", env); err == nil {
 			return vars, nil
 		}
 	}
@@ -626,57 +626,57 @@ type secretWrite struct {
 // generated auth secrets, the Doppler token placeholder, SECRETS_PROVIDER
 // and an operator-supplied RESEND_API_KEY (Manual ones are left alone). Existing values are never
 // replaced; all writes for an environment land in one commit (one deploy).
-func (s *setup) bootstrap(ctx context.Context, env string) error {
-	if s.project == nil || s.project.Environments[env] == "" || !s.servicesExist() {
-		s.change("bootstrap secrets in %s (auth secrets generated, SECRETS_PROVIDER, Doppler token placeholder)", env)
+func (setup *setup) bootstrap(ctx context.Context, env string) error {
+	if setup.project == nil || setup.project.Environments[env] == "" || !setup.servicesExist() {
+		setup.change("bootstrap secrets in %s (auth secrets generated, SECRETS_PROVIDER, Doppler token placeholder)", env)
 		return nil
 	}
 	writes := map[string]map[string]secretWrite{} // service -> name -> value
 	current := map[string]map[string]*string{}
-	for _, svc := range s.allServices() {
-		vars, err := s.variables(ctx, svc, env)
+	for _, svc := range setup.allServices() {
+		vars, err := setup.variables(ctx, svc, env)
 		if err != nil {
 			return err
 		}
 		current[svc] = vars
 		writes[svc] = map[string]secretWrite{}
 	}
-	for _, sec := range s.cfg.SecretVars() {
+	for _, sec := range setup.cfg.SecretVars() {
 		_, exists := current[sec.Service][sec.Name]
-		if s.onDoppler(current[sec.Service]) && (sec.Kind == platform.Generated || sec.Kind == platform.Operator) {
+		if setup.onDoppler(current[sec.Service]) && (sec.Kind == platform.Generated || sec.Kind == platform.Operator) {
 			continue // Doppler holds them; Railway copies were deleted on purpose
 		}
 		switch sec.Kind {
 		case platform.Generated:
 			if !exists {
-				v, err := randomSecret()
+				secret, err := randomSecret()
 				if err != nil {
 					return err
 				}
-				writes[sec.Service][sec.Name] = secretWrite{v, false} // not sealed: see platform.Generated
-				s.change("%s/%s %s: generate", env, sec.Service, sec.Name)
+				writes[sec.Service][sec.Name] = secretWrite{secret, false} // not sealed: see platform.Generated
+				setup.change("%s/%s %s: generate", env, sec.Service, sec.Name)
 			}
 		case platform.DopplerToken:
-			if !exists && s.cfg.Secrets.Provider == platform.ProviderDoppler {
+			if !exists && setup.cfg.Secrets.Provider == platform.ProviderDoppler {
 				writes[sec.Service][sec.Name] = secretWrite{platform.DopplerPlaceholder, false}
-				s.change("%s/%s DOPPLER_TOKEN: placeholder (add the real token: make railway-secrets)", env, sec.Service)
+				setup.change("%s/%s DOPPLER_TOKEN: placeholder (add the real token: make railway-secrets)", env, sec.Service)
 			}
 		case platform.Operator:
 			if exists {
 				continue
 			}
-			if v := operatorValue(sec.Name, sec.Service, env); v != "" {
-				writes[sec.Service][sec.Name] = secretWrite{v, true}
-				s.change("%s/%s %s: from your shell (sealed)", env, sec.Service, sec.Name)
+			if value := operatorValue(sec.Name, sec.Service, env); value != "" {
+				writes[sec.Service][sec.Name] = secretWrite{value, true}
+				setup.change("%s/%s %s: from your shell (sealed)", env, sec.Service, sec.Name)
 				continue
 			}
 			// Production refuses to boot without it; a placeholder gets the
 			// first deploy live. Not sealed, so setup can tell it apart.
 			writes[sec.Service][sec.Name] = secretWrite{platform.ResendPlaceholder, false}
-			s.change("%s/%s %s: placeholder (auth emails fail until you set a real key)", env, sec.Service, sec.Name)
+			setup.change("%s/%s %s: placeholder (auth emails fail until you set a real key)", env, sec.Service, sec.Name)
 		}
 	}
-	for _, sec := range s.cfg.SecretVars() {
+	for _, sec := range setup.cfg.SecretVars() {
 		if sec.Kind != platform.Provider {
 			continue
 		}
@@ -685,13 +685,13 @@ func (s *setup) bootstrap(ctx context.Context, env string) error {
 		// staged environment on env. Here: a missing value, and back to env
 		// when the provider is no longer doppler.
 		provider, ok := current[sec.Service][sec.Name]
-		backToEnv := s.cfg.Secrets.Provider != platform.ProviderDoppler && (provider == nil || *provider != platform.ProviderEnv)
+		backToEnv := setup.cfg.Secrets.Provider != platform.ProviderDoppler && (provider == nil || *provider != platform.ProviderEnv)
 		if !ok || backToEnv {
 			writes[sec.Service][sec.Name] = secretWrite{platform.ProviderEnv, false}
-			s.change("%s/%s SECRETS_PROVIDER=%s", env, sec.Service, platform.ProviderEnv)
+			setup.change("%s/%s SECRETS_PROVIDER=%s", env, sec.Service, platform.ProviderEnv)
 		}
 	}
-	return s.commit(ctx, env, writes)
+	return setup.commit(ctx, env, writes)
 }
 
 // realToken: DOPPLER_TOKEN is set and is not the placeholder (sealed counts
@@ -704,86 +704,86 @@ func realToken(vars map[string]*string) bool {
 // onDoppler: the service reads Doppler now (SECRETS_PROVIDER=doppler with a
 // real token), so Railway no longer needs its secrets. A staged environment
 // has a real token but still reads Railway.
-func (s *setup) onDoppler(vars map[string]*string) bool {
+func (setup *setup) onDoppler(vars map[string]*string) bool {
 	provider := vars["SECRETS_PROVIDER"]
-	return s.cfg.Secrets.Provider == platform.ProviderDoppler && provider != nil && *provider == platform.ProviderDoppler && realToken(vars)
+	return setup.cfg.Secrets.Provider == platform.ProviderDoppler && provider != nil && *provider == platform.ProviderDoppler && realToken(vars)
 }
 
 // commit writes variables through one environment patch (a deploy of the
 // services it touches); sealed values cannot be read back by anyone,
 // including the CLI and the dashboard.
-func (s *setup) commit(ctx context.Context, env string, writes map[string]map[string]secretWrite) error {
-	return s.commitVars(ctx, env, writes, false)
+func (setup *setup) commit(ctx context.Context, env string, writes map[string]map[string]secretWrite) error {
+	return setup.commitVars(ctx, env, writes, false)
 }
 
 // commitStaged is commit without a deploy: the running deployments keep
 // their variables until the next one.
-func (s *setup) commitStaged(ctx context.Context, env string, writes map[string]map[string]secretWrite) error {
-	return s.commitVars(ctx, env, writes, true)
+func (setup *setup) commitStaged(ctx context.Context, env string, writes map[string]map[string]secretWrite) error {
+	return setup.commitVars(ctx, env, writes, true)
 }
 
-func (s *setup) commitVars(ctx context.Context, env string, writes map[string]map[string]secretWrite, skipDeploys bool) error {
+func (setup *setup) commitVars(ctx context.Context, env string, writes map[string]map[string]secretWrite, skipDeploys bool) error {
 	services := map[string]any{}
 	for svc, vars := range writes {
 		if len(vars) == 0 {
 			continue
 		}
 		patch := map[string]any{}
-		for name, w := range vars {
-			v := map[string]any{"value": w.value}
-			if w.sealed {
-				v["isSealed"] = true
+		for name, write := range vars {
+			lookup := map[string]any{"value": write.value}
+			if write.sealed {
+				lookup["isSealed"] = true
 			}
-			patch[name] = v
+			patch[name] = lookup
 		}
-		services[s.project.Services[svc]] = map[string]any{"variables": patch}
+		services[setup.project.Services[svc]] = map[string]any{"variables": patch}
 	}
-	if len(services) == 0 || !s.apply {
+	if len(services) == 0 || !setup.apply {
 		return nil
 	}
-	return s.rw.gql(ctx, `mutation($env: String!, $patch: EnvironmentConfig, $skip: Boolean) { environmentPatchCommit(environmentId: $env, patch: $patch, skipDeploys: $skip, commitMessage: "railway-setup: bootstrap variables") }`,
-		map[string]any{"env": s.project.Environments[env], "patch": map[string]any{"services": services}, "skip": skipDeploys}, nil)
+	return setup.rw.gql(ctx, `mutation($env: String!, $patch: EnvironmentConfig, $skip: Boolean) { environmentPatchCommit(environmentId: $env, patch: $patch, skipDeploys: $skip, commitMessage: "railway-setup: bootstrap variables") }`,
+		map[string]any{"env": setup.project.Environments[env], "patch": map[string]any{"services": services}, "skip": skipDeploys}, nil)
 }
 
 // ensureDomains gives each public service a Railway-generated domain, which
 // PUBLIC_URL / ADMIN_PUBLIC_URL reference as ${{RAILWAY_PUBLIC_DOMAIN}}.
-func (s *setup) ensureDomains(ctx context.Context, env string) error {
-	for _, svc := range s.cfg.PublicServices() {
-		if s.project == nil || s.project.Environments[env] == "" || s.project.Services[svc] == "" {
-			s.change("generate a public domain for %s in %s", svc, env)
+func (setup *setup) ensureDomains(ctx context.Context, env string) error {
+	for _, svc := range setup.cfg.PublicServices() {
+		if setup.project == nil || setup.project.Environments[env] == "" || setup.project.Services[svc] == "" {
+			setup.change("generate a public domain for %s in %s", svc, env)
 			continue
 		}
-		d, err := s.domain(ctx, svc, env)
+		domain, err := setup.domain(ctx, svc, env)
 		if err != nil {
 			return err
 		}
-		if d != "" {
+		if domain != "" {
 			continue
 		}
-		if s.apply {
-			if _, err := s.rw.output(ctx, nil, "domain", "--service", svc, "--environment", env, "--port", fmt.Sprint(platform.AppPort), "--json"); err != nil {
+		if setup.apply {
+			if _, err := setup.rw.output(ctx, nil, "domain", "--service", svc, "--environment", env, "--port", fmt.Sprint(platform.AppPort), "--json"); err != nil {
 				return err
 			}
-			d, _ = s.domain(ctx, svc, env)
+			domain, _ = setup.domain(ctx, svc, env)
 		}
-		s.change("%s/%s public domain %s", env, svc, d)
+		setup.change("%s/%s public domain %s", env, svc, domain)
 	}
 	return nil
 }
 
-func (s *setup) domain(ctx context.Context, svc, env string) (string, error) {
+func (setup *setup) domain(ctx context.Context, svc, env string) (string, error) {
 	var res struct {
 		Domains []struct {
 			Domain string `json:"domain"`
 			Type   string `json:"type"`
 		} `json:"domains"`
 	}
-	if err := s.rw.json(ctx, &res, "domain", "list", "--service", svc, "--environment", env); err != nil {
+	if err := setup.rw.json(ctx, &res, "domain", "list", "--service", svc, "--environment", env); err != nil {
 		return "", err
 	}
-	for _, d := range res.Domains {
-		if strings.HasSuffix(d.Domain, ".up.railway.app") {
-			return d.Domain, nil
+	for _, domain := range res.Domains {
+		if strings.HasSuffix(domain.Domain, ".up.railway.app") {
+			return domain.Domain, nil
 		}
 	}
 	if len(res.Domains) > 0 {
@@ -792,8 +792,8 @@ func (s *setup) domain(ctx context.Context, svc, env string) (string, error) {
 	return "", nil
 }
 
-func (s *setup) services() []string {
-	if s.cfg.Admin {
+func (setup *setup) services() []string {
+	if setup.cfg.Admin {
 		return []string{platform.ServiceWeb, platform.ServiceAdmin}
 	}
 	return []string{platform.ServiceWeb}
@@ -802,16 +802,16 @@ func (s *setup) services() []string {
 // allServices are services() plus the backup cron when backups are on:
 // everything setup deploys, bootstraps and redeploys. Doppler prompts and
 // checks use services(): the backup job reads Railway references.
-func (s *setup) allServices() []string {
-	if s.cfg.Backups.Enabled {
-		return append(s.services(), platform.ServiceBackup)
+func (setup *setup) allServices() []string {
+	if setup.cfg.Backups.Enabled {
+		return append(setup.services(), platform.ServiceBackup)
 	}
-	return s.services()
+	return setup.services()
 }
 
-func (s *setup) servicesExist() bool {
-	for _, svc := range s.allServices() {
-		if s.project.Services[svc] == "" {
+func (setup *setup) servicesExist() bool {
+	for _, svc := range setup.allServices() {
+		if setup.project.Services[svc] == "" {
 			return false
 		}
 	}
@@ -822,67 +822,67 @@ func (s *setup) servicesExist() bool {
 // env provider), sealed, then points SECRETS_PROVIDER at doppler. Values come
 // from DOPPLER_TOKEN_<SERVICE>_<ENV> / RESEND_API_KEY_[<SERVICE>_]<ENV> or a
 // hidden prompt; empty skips.
-func (s *setup) secrets(ctx context.Context) error {
-	if s.project == nil {
+func (setup *setup) secrets(ctx context.Context) error {
+	if setup.project == nil {
 		return errors.New("the project does not exist yet: run make railway-apply first")
 	}
 	in := bufio.NewReader(os.Stdin)
-	for _, env := range s.cfg.Environments {
-		if s.project.Environments[env] == "" {
+	for _, env := range setup.cfg.Environments {
+		if setup.project.Environments[env] == "" {
 			continue
 		}
 		writes, staged := map[string]map[string]secretWrite{}, map[string]map[string]secretWrite{}
-		for _, svc := range s.services() {
-			if s.project.Services[svc] == "" {
+		for _, svc := range setup.services() {
+			if setup.project.Services[svc] == "" {
 				continue
 			}
 			writes[svc] = map[string]secretWrite{}
-			current, err := s.variables(ctx, svc, env)
+			current, err := setup.variables(ctx, svc, env)
 			if err != nil {
 				return err
 			}
-			if s.cfg.Secrets.Provider == platform.ProviderDoppler {
-				if v := s.ask(ctx, in, "DOPPLER_TOKEN", svc, env); v != "" {
-					if s.cfg.DopplerMode(env) == platform.SecretsStaged {
-						staged[svc] = map[string]secretWrite{"DOPPLER_TOKEN": {v, true}}
-						s.change("%s/%s DOPPLER_TOKEN set (sealed, staged: no deploy, still reads its Railway secrets)", env, svc)
+			if setup.cfg.Secrets.Provider == platform.ProviderDoppler {
+				if ask := setup.ask(ctx, in, "DOPPLER_TOKEN", svc, env); ask != "" {
+					if setup.cfg.DopplerMode(env) == platform.SecretsStaged {
+						staged[svc] = map[string]secretWrite{"DOPPLER_TOKEN": {ask, true}}
+						setup.change("%s/%s DOPPLER_TOKEN set (sealed, staged: no deploy, still reads its Railway secrets)", env, svc)
 						continue
 					}
 					// The Railway copies stay until make doppler-setup sees it healthy.
-					writes[svc]["DOPPLER_TOKEN"] = secretWrite{v, true}
+					writes[svc]["DOPPLER_TOKEN"] = secretWrite{ask, true}
 					writes[svc]["SECRETS_PROVIDER"] = secretWrite{platform.ProviderDoppler, false}
-					s.change("%s/%s DOPPLER_TOKEN set (sealed), SECRETS_PROVIDER=doppler", env, svc)
+					setup.change("%s/%s DOPPLER_TOKEN set (sealed), SECRETS_PROVIDER=doppler", env, svc)
 					continue
 				}
 			}
-			if s.onDoppler(current) {
+			if setup.onDoppler(current) {
 				continue // RESEND_API_KEY comes from Doppler
 			}
-			if v := s.ask(ctx, in, "RESEND_API_KEY", svc, env); v != "" {
-				writes[svc]["RESEND_API_KEY"] = secretWrite{v, true}
-				s.change("%s/%s RESEND_API_KEY set (sealed)", env, svc)
+			if ask := setup.ask(ctx, in, "RESEND_API_KEY", svc, env); ask != "" {
+				writes[svc]["RESEND_API_KEY"] = secretWrite{ask, true}
+				setup.change("%s/%s RESEND_API_KEY set (sealed)", env, svc)
 			}
 		}
-		if err := s.commit(ctx, env, writes); err != nil {
+		if err := setup.commit(ctx, env, writes); err != nil {
 			return err
 		}
-		if err := s.commitStaged(ctx, env, staged); err != nil {
+		if err := setup.commitStaged(ctx, env, staged); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (s *setup) ask(ctx context.Context, in *bufio.Reader, name, svc, env string) string {
-	if v := operatorValue(name, svc, env); v != "" {
-		return v
+func (setup *setup) ask(ctx context.Context, in *bufio.Reader, name, svc, env string) string {
+	if value := operatorValue(name, svc, env); value != "" {
+		return value
 	}
 	if stty(ctx, "-g") != nil { // not a terminal (/dev/null is a char device too)
 		return ""
 	}
-	fmt.Fprintf(s.out, "%s for %s/%s (input hidden, empty to skip): ", name, env, svc)
+	fmt.Fprintf(setup.out, "%s for %s/%s (input hidden, empty to skip): ", name, env, svc)
 	if err := stty(ctx, "-echo"); err == nil {
-		defer func() { _ = stty(context.WithoutCancel(ctx), "echo"); fmt.Fprintln(s.out) }()
+		defer func() { _ = stty(context.WithoutCancel(ctx), "echo"); fmt.Fprintln(setup.out) }()
 	}
 	line, _ := in.ReadString('\n')
 	return strings.TrimSpace(line)
@@ -900,8 +900,8 @@ func stty(ctx context.Context, arg string) error {
 // reach Railway.
 func operatorValue(name, svc, env string) string {
 	up := strings.NewReplacer("-", "_").Replace
-	if v := os.Getenv(strings.ToUpper(up(name + "_" + svc + "_" + env))); v != "" {
-		return v
+	if value := os.Getenv(strings.ToUpper(up(name + "_" + svc + "_" + env))); value != "" {
+		return value
 	}
 	if name == "DOPPLER_TOKEN" {
 		return ""
@@ -911,9 +911,9 @@ func operatorValue(name, svc, env string) string {
 
 func randomSecret() (string, error) {
 	const secretBytes = 48 // random bytes in a generated secret (64 base64url characters)
-	b := make([]byte, secretBytes)
-	if _, err := rand.Read(b); err != nil {
+	data := make([]byte, secretBytes)
+	if _, err := rand.Read(data); err != nil {
 		return "", err
 	}
-	return base64.RawURLEncoding.EncodeToString(b), nil
+	return base64.RawURLEncoding.EncodeToString(data), nil
 }

@@ -29,13 +29,13 @@ func overrides() []*override {
 }
 
 // resolve picks each override from its flag, else its env var.
-func (o *override) resolve(flagValue string, set bool) {
+func (override *override) resolve(flagValue string, set bool) {
 	switch {
 	case set:
-		o.value = &flagValue
+		override.value = &flagValue
 	default:
-		if v, ok := os.LookupEnv(o.env); ok {
-			o.value = &v
+		if value, ok := os.LookupEnv(override.env); ok {
+			override.value = &value
 		}
 	}
 }
@@ -44,17 +44,17 @@ func (o *override) resolve(flagValue string, set bool) {
 // it returns the keys it changed.
 func persist(path string, ovs []*override) ([]string, error) {
 	var keys []platform.Key
-	for _, o := range ovs {
-		if o.value == nil {
+	for _, ov := range ovs {
+		if ov.value == nil {
 			continue
 		}
-		v := strings.TrimSpace(*o.value)
-		if o.key == "admin" {
-			if v = strings.ToLower(v); v != "true" && v != "false" {
-				return nil, fmt.Errorf("--admin must be true or false, got %q", *o.value)
+		value := strings.TrimSpace(*ov.value)
+		if ov.key == "admin" {
+			if value = strings.ToLower(value); value != "true" && value != "false" {
+				return nil, fmt.Errorf("--admin must be true or false, got %q", *ov.value)
 			}
 		}
-		keys = append(keys, platform.Key{Name: o.key, Value: v})
+		keys = append(keys, platform.Key{Name: ov.key, Value: value})
 	}
 	if len(keys) == 0 {
 		return nil, nil

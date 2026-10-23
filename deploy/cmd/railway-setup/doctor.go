@@ -18,59 +18,59 @@ type check struct {
 	Fix    string `json:"fix,omitempty"`
 }
 
-func (s *setup) report(c check) {
-	s.sum.Checks = append(s.sum.Checks, c)
-	mark := map[string]string{"ok": "✓", "warn": "!", "fail": "✗"}[c.Status]
-	s.say("  %s %-16s %s", mark, c.Name, c.Detail)
-	if c.Fix != "" && c.Status != "ok" {
-		s.say("    fix: %s", c.Fix)
+func (setup *setup) report(check check) {
+	setup.sum.Checks = append(setup.sum.Checks, check)
+	mark := map[string]string{"ok": "✓", "warn": "!", "fail": "✗"}[check.Status]
+	setup.say("  %s %-16s %s", mark, check.Name, check.Detail)
+	if check.Fix != "" && check.Status != "ok" {
+		setup.say("    fix: %s", check.Fix)
 	}
 }
 
 // doctor checks everything make railway-apply needs and prints fixes. Only
 // failures of required checks make it exit non-zero (exitPreflight).
-func (s *setup) doctor(ctx context.Context) error {
+func (setup *setup) doctor(ctx context.Context) error {
 	failed := false
-	fail := func(c check) { c.Status = "fail"; failed = true; s.report(c) }
+	fail := func(check check) { check.Status = "fail"; failed = true; setup.report(check) }
 
 	// Railway CLI and login (checkVersion already ran in main).
-	who, err := s.rw.output(ctx, nil, "whoami")
+	who, err := setup.rw.output(ctx, nil, "whoami")
 	if err != nil {
 		fail(check{Name: "railway login", Detail: "not logged in", Fix: "railway login"})
 		return withCode(exitPreflight, "preflight failed")
 	}
-	s.report(check{Name: "railway cli", Status: "ok", Detail: strings.TrimSpace(firstLine(string(who)))})
+	setup.report(check{Name: "railway cli", Status: "ok", Detail: strings.TrimSpace(firstLine(string(who)))})
 
-	if ws, err := s.workspaceID(ctx); err != nil {
+	if ws, err := setup.workspaceID(ctx); err != nil {
 		fail(check{Name: "workspace", Detail: err.Error(), Fix: "set workspace in deploy/platform.yaml or pass --workspace / PLATFORM_WORKSPACE"})
 	} else {
-		s.report(check{Name: "workspace", Status: "ok", Detail: ws})
+		setup.report(check{Name: "workspace", Status: "ok", Detail: ws})
 	}
 
 	if _, err := exec.LookPath("go"); err != nil {
 		fail(check{Name: "go", Detail: "go not on PATH (the Railway CLI evaluates deploy/.railway/railway.go with it)", Fix: "install Go (version in mise.toml): mise install"})
 	} else {
-		s.report(check{Name: "go", Status: "ok", Detail: "found"})
+		setup.report(check{Name: "go", Status: "ok", Detail: "found"})
 	}
 
-	if c := s.checkSSH(ctx); c.Status == "fail" {
-		fail(c)
+	if check := setup.checkSSH(ctx); check.Status == "fail" {
+		fail(check)
 	} else {
-		s.report(c)
+		setup.report(check)
 	}
 
 	// Project, source and secrets: what apply will do.
-	if err := s.findProject(ctx); err != nil {
+	if err := setup.findProject(ctx); err != nil {
 		fail(check{Name: "project", Detail: err.Error()})
-	} else if s.project == nil {
-		s.report(check{Name: "project", Status: "ok", Detail: "does not exist yet: apply creates " + s.cfg.Project})
+	} else if setup.project == nil {
+		setup.report(check{Name: "project", Status: "ok", Detail: "does not exist yet: apply creates " + setup.cfg.Project})
 	} else {
-		s.report(check{Name: "project", Status: "ok", Detail: s.project.Name + " (" + s.project.ID + ")"})
+		setup.report(check{Name: "project", Status: "ok", Detail: setup.project.Name + " (" + setup.project.ID + ")"})
 	}
-	s.report(s.checkRepo(ctx))
-	if s.cfg.Secrets.Provider == platform.ProviderDoppler {
-		s.report(s.checkDopplerCLI(ctx))
-		s.report(s.checkDoppler(ctx))
+	setup.report(setup.checkRepo(ctx))
+	if setup.cfg.Secrets.Provider == platform.ProviderDoppler {
+		setup.report(setup.checkDopplerCLI(ctx))
+		setup.report(setup.checkDoppler(ctx))
 	}
 	if failed {
 		return withCode(exitPreflight, "preflight failed: fix the ✗ items above")
@@ -78,12 +78,12 @@ func (s *setup) doctor(ctx context.Context) error {
 	return nil
 }
 
-func firstLine(s string) string { l, _, _ := strings.Cut(s, "\n"); return l }
+func firstLine(text string) string { line, _, _ := strings.Cut(text, "\n"); return line }
 
 // checkSSH: the second-environment database password fix runs psql over
 // railway ssh, which needs a local key registered with Railway.
-func (s *setup) checkSSH(ctx context.Context) check {
-	c := check{Name: "ssh key", Fix: "railway ssh keys add (registers ~/.ssh/id_ed25519.pub); needed when an environment after the first gets a database"}
+func (setup *setup) checkSSH(ctx context.Context) check {
+	result := check{Name: "ssh key", Fix: "railway ssh keys add (registers ~/.ssh/id_ed25519.pub); needed when an environment after the first gets a database"}
 	var res struct {
 		Keys struct {
 			Edges []struct {
@@ -94,27 +94,27 @@ func (s *setup) checkSSH(ctx context.Context) check {
 			} `json:"edges"`
 		} `json:"sshPublicKeys"`
 	}
-	if err := s.rw.gql(ctx, `query { sshPublicKeys { edges { node { fingerprint name } } } }`, nil, &res); err != nil {
-		c.Status, c.Detail = "warn", "could not list Railway SSH keys: "+err.Error()
-		return c
+	if err := setup.rw.gql(ctx, `query { sshPublicKeys { edges { node { fingerprint name } } } }`, nil, &res); err != nil {
+		result.Status, result.Detail = "warn", "could not list Railway SSH keys: "+err.Error()
+		return result
 	}
 	registered := map[string]string{}
-	for _, e := range res.Keys.Edges {
-		registered[e.Node.Fingerprint] = e.Node.Name
+	for _, edge := range res.Keys.Edges {
+		registered[edge.Node.Fingerprint] = edge.Node.Name
 	}
 	for _, fp := range localKeyFingerprints(ctx) {
 		if name, ok := registered[fp]; ok {
-			c.Status, c.Detail = "ok", "registered as "+name
-			return c
+			result.Status, result.Detail = "ok", "registered as "+name
+			return result
 		}
 	}
-	c.Status = "warn"
-	c.Detail = "no local key is registered with Railway"
-	if len(s.cfg.Environments) > 1 {
-		c.Status = "fail" // the fix is required for every environment after the first
-		c.Detail += " (needed: more than one environment)"
+	result.Status = "warn"
+	result.Detail = "no local key is registered with Railway"
+	if len(setup.cfg.Environments) > 1 {
+		result.Status = "fail" // the fix is required for every environment after the first
+		result.Detail += " (needed: more than one environment)"
 	}
-	return c
+	return result
 }
 
 // localKeyFingerprints lists SHA256 fingerprints of ~/.ssh/*.pub and the
@@ -123,14 +123,14 @@ func localKeyFingerprints(ctx context.Context) []string {
 	var out []string
 	home, _ := os.UserHomeDir()
 	pubs, _ := filepath.Glob(filepath.Join(home, ".ssh", "*.pub"))
-	for _, p := range pubs {
-		b, err := exec.CommandContext(ctx, "ssh-keygen", "-lf", p).Output()
+	for _, pub := range pubs {
+		output, err := exec.CommandContext(ctx, "ssh-keygen", "-lf", pub).Output()
 		if err == nil {
-			out = append(out, fingerprints(string(b))...)
+			out = append(out, fingerprints(string(output))...)
 		}
 	}
-	if b, err := exec.CommandContext(ctx, "ssh-add", "-l").Output(); err == nil {
-		out = append(out, fingerprints(string(b))...)
+	if output, err := exec.CommandContext(ctx, "ssh-add", "-l").Output(); err == nil {
+		out = append(out, fingerprints(string(output))...)
 	}
 	return out
 }
@@ -138,57 +138,57 @@ func localKeyFingerprints(ctx context.Context) []string {
 func fingerprints(listing string) []string {
 	var out []string
 	for line := range strings.SplitSeq(listing, "\n") {
-		for f := range strings.FieldsSeq(line) {
-			if strings.HasPrefix(f, "SHA256:") {
-				out = append(out, f)
+		for key := range strings.FieldsSeq(line) {
+			if strings.HasPrefix(key, "SHA256:") {
+				out = append(out, key)
 			}
 		}
 	}
 	return out
 }
 
-func (s *setup) checkRepo(ctx context.Context) check {
-	c := check{Name: "github source"}
+func (setup *setup) checkRepo(ctx context.Context) check {
+	result := check{Name: "github source"}
 	switch {
-	case s.cfg.Upload():
-		c.Status, c.Detail = "ok", `repo: "" (deploys by upload: make railway-up)`
-	case s.repoConnected(ctx):
-		c.Status, c.Detail = "ok", s.cfg.Repo+" connected: deploys on push"
+	case setup.cfg.Upload():
+		result.Status, result.Detail = "ok", `repo: "" (deploys by upload: make railway-up)`
+	case setup.repoConnected(ctx):
+		result.Status, result.Detail = "ok", setup.cfg.Repo+" connected: deploys on push"
 	default:
-		known, has := s.repoAccess(ctx)
+		known, has := setup.repoAccess(ctx)
 		switch {
 		case known && has:
-			c.Status, c.Detail = "ok", "Railway can read "+s.cfg.Repo
+			result.Status, result.Detail = "ok", "Railway can read "+setup.cfg.Repo
 		case known:
-			c.Status, c.Detail = "warn", "Railway cannot read "+s.cfg.Repo+": apply deploys by upload until it can"
-			c.Fix = "install the Railway GitHub app: " + installURL(ctx, s.cfg.Repo) + ", then re-run make railway-apply"
+			result.Status, result.Detail = "warn", "Railway cannot read "+setup.cfg.Repo+": apply deploys by upload until it can"
+			result.Fix = "install the Railway GitHub app: " + installURL(ctx, setup.cfg.Repo) + ", then re-run make railway-apply"
 		default:
-			c.Status, c.Detail = "ok", s.cfg.Repo+": apply tries to connect it and deploys by upload if Railway cannot read it yet"
+			result.Status, result.Detail = "ok", setup.cfg.Repo+": apply tries to connect it and deploys by upload if Railway cannot read it yet"
 		}
 	}
-	return c
+	return result
 }
 
-func (s *setup) checkDoppler(ctx context.Context) check {
-	c := check{Name: "doppler tokens", Status: "ok"}
-	if s.project == nil {
-		c.Detail = "optional; services run on SECRETS_PROVIDER=env until setup moves them to Doppler (doppler login, then make railway-setup or make doppler-setup)"
-		return c
+func (setup *setup) checkDoppler(ctx context.Context) check {
+	result := check{Name: "doppler tokens", Status: "ok"}
+	if setup.project == nil {
+		result.Detail = "optional; services run on SECRETS_PROVIDER=env until setup moves them to Doppler (doppler login, then make railway-setup or make doppler-setup)"
+		return result
 	}
 	var missing, staged, copies []string
-	for _, env := range s.cfg.Environments {
-		for _, svc := range s.services() {
-			if s.project.Environments[env] == "" || s.project.Services[svc] == "" {
+	for _, env := range setup.cfg.Environments {
+		for _, svc := range setup.services() {
+			if setup.project.Environments[env] == "" || setup.project.Services[svc] == "" {
 				continue
 			}
-			vars, err := s.variables(ctx, svc, env)
+			vars, err := setup.variables(ctx, svc, env)
 			switch {
 			case err != nil:
-			case s.onDoppler(vars):
+			case setup.onDoppler(vars):
 				if left := copiesOn(vars, svc); len(left) > 0 {
 					copies = append(copies, env+"/"+svc+" ("+strings.Join(left, ", ")+")")
 				}
-			case s.cfg.DopplerMode(env) == platform.SecretsStaged && realToken(vars):
+			case setup.cfg.DopplerMode(env) == platform.SecretsStaged && realToken(vars):
 				staged = append(staged, env+"/"+svc)
 			default:
 				missing = append(missing, env+"/"+svc)
@@ -197,49 +197,49 @@ func (s *setup) checkDoppler(ctx context.Context) check {
 	}
 	switch {
 	case len(copies) > 0:
-		c.Status = "warn"
-		c.Detail = "secrets still set as Railway variables on services that read Doppler: " + strings.Join(copies, "; ")
-		c.Fix = "make doppler-setup (removes them once the service is healthy)"
+		result.Status = "warn"
+		result.Detail = "secrets still set as Railway variables on services that read Doppler: " + strings.Join(copies, "; ")
+		result.Fix = "make doppler-setup (removes them once the service is healthy)"
 	case len(missing) > 0:
-		c.Status = "warn"
-		c.Detail = "optional; still on SECRETS_PROVIDER=env: " + strings.Join(missing, ", ")
-		c.Fix = "doppler login, then make doppler-setup"
+		result.Status = "warn"
+		result.Detail = "optional; still on SECRETS_PROVIDER=env: " + strings.Join(missing, ", ")
+		result.Fix = "doppler login, then make doppler-setup"
 	default:
-		c.Detail = "every service reads Doppler"
+		result.Detail = "every service reads Doppler"
 	}
 	if len(staged) > 0 {
-		c.Detail += "; staged (token sealed, still on its Railway secrets until per_environment.<env>.secrets is doppler): " + strings.Join(staged, ", ")
+		result.Detail += "; staged (token sealed, still on its Railway secrets until per_environment.<env>.secrets is doppler): " + strings.Join(staged, ", ")
 	}
-	return c
+	return result
 }
 
 // checkDopplerCLI: the CLI (pinned in mise.toml), its login and the project.
 // Optional: without it setup keeps secrets in Railway (SECRETS_PROVIDER=env).
-func (s *setup) checkDopplerCLI(ctx context.Context) check {
-	c := check{Name: "doppler cli", Status: "warn"}
-	d, err := newDoppler(s.cfg.Secrets.Project)
+func (setup *setup) checkDopplerCLI(ctx context.Context) check {
+	result := check{Name: "doppler cli", Status: "warn"}
+	cli, err := newDoppler(setup.cfg.Secrets.Project)
 	if err != nil {
-		c.Detail, c.Fix = "not installed (optional: secrets stay in Railway until you add it)", "mise install, then doppler login"
-		return c
+		result.Detail, result.Fix = "not installed (optional: secrets stay in Railway until you add it)", "mise install, then doppler login"
+		return result
 	}
-	v := d.version(ctx)
-	ws, err := d.whoami(ctx)
+	version := cli.version(ctx)
+	ws, err := cli.whoami(ctx)
 	if err != nil {
-		c.Detail, c.Fix = "doppler "+v+": not logged in", "doppler login"
-		return c
+		result.Detail, result.Fix = "doppler "+version+": not logged in", "doppler login"
+		return result
 	}
-	if v != dopplerVersion {
-		c.Detail, c.Fix = "doppler "+v+" (mise.toml pins "+dopplerVersion+"), workplace "+ws, "mise install"
-		return c
+	if version != dopplerVersion {
+		result.Detail, result.Fix = "doppler "+version+" (mise.toml pins "+dopplerVersion+"), workplace "+ws, "mise install"
+		return result
 	}
-	projects, err := d.names(ctx, "projects", "name")
+	projects, err := cli.names(ctx, "projects", "name")
 	if err != nil {
-		c.Detail = err.Error()
-		return c
+		result.Detail = err.Error()
+		return result
 	}
-	c.Status, c.Detail = "ok", "doppler "+v+", workplace "+ws+", project "+s.cfg.Secrets.Project
-	if !projects[s.cfg.Secrets.Project] {
-		c.Detail += " (setup creates it)"
+	result.Status, result.Detail = "ok", "doppler "+version+", workplace "+ws+", project "+setup.cfg.Secrets.Project
+	if !projects[setup.cfg.Secrets.Project] {
+		result.Detail += " (setup creates it)"
 	}
-	return c
+	return result
 }

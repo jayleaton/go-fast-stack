@@ -28,38 +28,38 @@ func Edit(raw []byte, keys []Key) ([]byte, []string, error) {
 	root := doc.Content[0]
 	lines := strings.SplitAfter(string(raw), "\n")
 	var changed []string
-	for _, k := range keys {
-		text := render(k)
+	for _, entry := range keys {
+		text := render(entry)
 		found := false
-		for i := 0; i+1 < len(root.Content); i += 2 {
-			key, val := root.Content[i], root.Content[i+1]
-			if key.Value != k.Name {
+		for index := 0; index+1 < len(root.Content); index += 2 {
+			key, val := root.Content[index], root.Content[index+1]
+			if key.Value != entry.Name {
 				continue
 			}
 			found = true
-			if val.Kind == yaml.ScalarNode && val.Value == k.Value {
+			if val.Kind == yaml.ScalarNode && val.Value == entry.Value {
 				break
 			}
 			if val.Line != key.Line || val.Line > len(lines) {
-				return nil, nil, fmt.Errorf("platform.yaml: put %s on one line (e.g. %s: %s) to set it automatically", k.Name, k.Name, text)
+				return nil, nil, fmt.Errorf("platform.yaml: put %s on one line (e.g. %s: %s) to set it automatically", entry.Name, entry.Name, text)
 			}
 			line := lines[val.Line-1]
 			start := val.Column - 1
 			rest := line[start:]
 			end := len(strings.TrimRight(rest, "\r\n"))
-			if c := strings.Index(rest, " #"); c >= 0 && c < end {
-				end = c
+			if count := strings.Index(rest, " #"); count >= 0 && count < end {
+				end = count
 			}
 			lines[val.Line-1] = line[:start] + text + rest[end:]
-			changed = append(changed, k.Name)
+			changed = append(changed, entry.Name)
 			break
 		}
 		if !found {
-			if n := len(lines); n > 0 && !strings.HasSuffix(lines[n-1], "\n") {
-				lines[n-1] += "\n"
+			if count := len(lines); count > 0 && !strings.HasSuffix(lines[count-1], "\n") {
+				lines[count-1] += "\n"
 			}
-			lines = append(lines, k.Name+": "+text+"\n")
-			changed = append(changed, k.Name)
+			lines = append(lines, entry.Name+": "+text+"\n")
+			changed = append(changed, entry.Name)
 		}
 	}
 	if len(changed) == 0 {
@@ -74,15 +74,15 @@ func Edit(raw []byte, keys []Key) ([]byte, []string, error) {
 
 // render is a value as YAML text: booleans bare, strings plain when that
 // reads back as the same string, else double-quoted.
-func render(k Key) string {
-	if k.Name == "admin" {
-		return k.Value
+func render(key Key) string {
+	if key.Name == "admin" {
+		return key.Value
 	}
-	var n yaml.Node
-	if k.Value != "" && yaml.Unmarshal([]byte("v: "+k.Value), &n) == nil && len(n.Content) == 1 &&
-		len(n.Content[0].Content) == 2 && n.Content[0].Content[1].Kind == yaml.ScalarNode &&
-		n.Content[0].Content[1].Tag == "!!str" && n.Content[0].Content[1].Value == k.Value {
-		return k.Value
+	var node yaml.Node
+	if key.Value != "" && yaml.Unmarshal([]byte("v: "+key.Value), &node) == nil && len(node.Content) == 1 &&
+		len(node.Content[0].Content) == 2 && node.Content[0].Content[1].Kind == yaml.ScalarNode &&
+		node.Content[0].Content[1].Tag == "!!str" && node.Content[0].Content[1].Value == key.Value {
+		return key.Value
 	}
-	return strconv.Quote(k.Value)
+	return strconv.Quote(key.Value)
 }

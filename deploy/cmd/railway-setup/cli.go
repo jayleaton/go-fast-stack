@@ -36,18 +36,18 @@ func newCLI() *cli {
 	return &cli{bin: bin, stdout: os.Stdout}
 }
 
-func (c *cli) cmd(ctx context.Context, args ...string) *exec.Cmd {
-	cmd := exec.CommandContext(ctx, c.bin, args...)
-	cmd.Env = append(os.Environ(), c.extraEnv...)
-	if c.projectID != "" {
-		cmd.Env = append(cmd.Env, "RAILWAY_PROJECT_ID="+c.projectID)
+func (cli *cli) cmd(ctx context.Context, args ...string) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, cli.bin, args...)
+	cmd.Env = append(os.Environ(), cli.extraEnv...)
+	if cli.projectID != "" {
+		cmd.Env = append(cmd.Env, "RAILWAY_PROJECT_ID="+cli.projectID)
 	}
 	return cmd
 }
 
 // output runs a command and returns its stdout. stdin may be nil.
-func (c *cli) output(ctx context.Context, stdin []byte, args ...string) ([]byte, error) {
-	cmd := c.cmd(ctx, args...)
+func (cli *cli) output(ctx context.Context, stdin []byte, args ...string) ([]byte, error) {
+	cmd := cli.cmd(ctx, args...)
 	if stdin != nil {
 		cmd.Stdin = bytes.NewReader(stdin)
 	}
@@ -62,15 +62,15 @@ func (c *cli) output(ctx context.Context, stdin []byte, args ...string) ([]byte,
 
 // stream runs a command with the terminal attached (plan/apply output).
 // It returns the exit code; err is only for failures to start.
-func (c *cli) stream(ctx context.Context, args ...string) (int, error) {
-	return c.streamIn(ctx, "", args...)
+func (cli *cli) stream(ctx context.Context, args ...string) (int, error) {
+	return cli.streamIn(ctx, "", args...)
 }
 
 // streamIn is stream with a working directory.
-func (c *cli) streamIn(ctx context.Context, dir string, args ...string) (int, error) {
-	cmd := c.cmd(ctx, args...)
+func (cli *cli) streamIn(ctx context.Context, dir string, args ...string) (int, error) {
+	cmd := cli.cmd(ctx, args...)
 	cmd.Dir = dir
-	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, c.stdout, os.Stderr
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, cli.stdout, os.Stderr
 	err := cmd.Run()
 	var exit *exec.ExitError
 	if errors.As(err, &exit) {
@@ -82,12 +82,12 @@ func (c *cli) streamIn(ctx context.Context, dir string, args ...string) (int, er
 	return 0, nil
 }
 
-func (c *cli) json(ctx context.Context, out any, args ...string) error {
-	b, err := c.output(ctx, nil, append(args, "--json")...)
+func (cli *cli) json(ctx context.Context, out any, args ...string) error {
+	output, err := cli.output(ctx, nil, append(args, "--json")...)
 	if err != nil {
 		return err
 	}
-	if err := json.Unmarshal(b, out); err != nil {
+	if err := json.Unmarshal(output, out); err != nil {
 		return fmt.Errorf("railway %s: decoding JSON: %w", args[0], err)
 	}
 	return nil
@@ -95,7 +95,7 @@ func (c *cli) json(ctx context.Context, out any, args ...string) error {
 
 // gql runs a GraphQL document through `railway api`; variables go on stdin.
 // HTTP 200 with errors is a failure.
-func (c *cli) gql(ctx context.Context, query string, vars map[string]any, out any) error {
+func (cli *cli) gql(ctx context.Context, query string, vars map[string]any, out any) error {
 	if vars == nil {
 		vars = map[string]any{}
 	}
@@ -103,14 +103,14 @@ func (c *cli) gql(ctx context.Context, query string, vars map[string]any, out an
 	if err != nil {
 		return err
 	}
-	b, runErr := c.output(ctx, in, "api", query, "--variables", "@-")
+	output, runErr := cli.output(ctx, in, "api", query, "--variables", "@-")
 	var resp struct {
 		Data   json.RawMessage `json:"data"`
 		Errors []struct {
 			Message string `json:"message"`
 		} `json:"errors"`
 	}
-	if err := json.Unmarshal(b, &resp); err != nil {
+	if err := json.Unmarshal(output, &resp); err != nil {
 		if runErr != nil {
 			return runErr
 		}
@@ -118,8 +118,8 @@ func (c *cli) gql(ctx context.Context, query string, vars map[string]any, out an
 	}
 	if len(resp.Errors) > 0 {
 		msgs := make([]string, len(resp.Errors))
-		for i, e := range resp.Errors {
-			msgs[i] = e.Message
+		for index, item := range resp.Errors {
+			msgs[index] = item.Message
 		}
 		return fmt.Errorf("railway api: %s", strings.Join(msgs, "; "))
 	}
@@ -132,50 +132,50 @@ func (c *cli) gql(ctx context.Context, query string, vars map[string]any, out an
 	return json.Unmarshal(resp.Data, out)
 }
 
-func (c *cli) checkVersion(ctx context.Context) error {
-	b, err := c.output(ctx, nil, "--version")
+func (cli *cli) checkVersion(ctx context.Context) error {
+	output, err := cli.output(ctx, nil, "--version")
 	if err != nil {
 		return fmt.Errorf("the Railway CLI is required (https://docs.railway.com/cli): %w", err)
 	}
-	fields := strings.Fields(string(b)) // "railway 5.71.0"
+	fields := strings.Fields(string(output)) // "railway 5.71.0"
 	if len(fields) == 0 {
 		return errors.New("railway --version printed nothing")
 	}
-	v := strings.Split(strings.TrimPrefix(fields[len(fields)-1], "v"), ".")
+	values := strings.Split(strings.TrimPrefix(fields[len(fields)-1], "v"), ".")
 	var got [3]int
-	for i := 0; i < 3 && i < len(v); i++ {
-		got[i], _ = strconv.Atoi(v[i])
+	for index := 0; index < 3 && index < len(values); index++ {
+		got[index], _ = strconv.Atoi(values[index])
 	}
-	for i := range got {
-		if got[i] != minCLI[i] {
-			if got[i] < minCLI[i] {
-				return fmt.Errorf("railway CLI %s is too old: need %d.%d.%d or newer (railway upgrade)", strings.TrimSpace(string(b)), minCLI[0], minCLI[1], minCLI[2])
+	for index := range got {
+		if got[index] != minCLI[index] {
+			if got[index] < minCLI[index] {
+				return fmt.Errorf("railway CLI %s is too old: need %d.%d.%d or newer (railway upgrade)", strings.TrimSpace(string(output)), minCLI[0], minCLI[1], minCLI[2])
 			}
 			break
 		}
 	}
 	// whoami can fail transiently while Railway's API is degraded.
-	for i := range 3 {
-		if _, err = c.output(ctx, nil, "whoami"); err == nil {
+	for index := range 3 {
+		if _, err = cli.output(ctx, nil, "whoami"); err == nil {
 			return nil
 		}
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(time.Duration(i+1) * 2 * time.Second):
+		case <-time.After(time.Duration(index+1) * 2 * time.Second):
 		}
 	}
 	return fmt.Errorf("not logged in to Railway: run railway login: %w", err)
 }
 
-func tail(s string) string {
+func tail(text string) string {
 	const maxTail = 2000 // bytes of a failed command's stderr kept in its error
-	s = strings.TrimSpace(s)
-	if len(s) > maxTail {
-		s = s[len(s)-maxTail:]
+	text = strings.TrimSpace(text)
+	if len(text) > maxTail {
+		text = text[len(text)-maxTail:]
 	}
-	if s == "" {
+	if text == "" {
 		return ""
 	}
-	return "\n" + s
+	return "\n" + text
 }

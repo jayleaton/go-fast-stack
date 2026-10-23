@@ -75,16 +75,16 @@ const Auto = "auto"
 type Environments []string
 
 // UnmarshalYAML implements yaml.Unmarshaler.
-func (e *Environments) UnmarshalYAML(n *yaml.Node) error {
+func (environments *Environments) UnmarshalYAML(node *yaml.Node) error {
 	var list []string
-	if n.Kind == yaml.ScalarNode {
-		for s := range strings.SplitSeq(n.Value, ",") {
-			list = append(list, strings.TrimSpace(s))
+	if node.Kind == yaml.ScalarNode {
+		for key := range strings.SplitSeq(node.Value, ",") {
+			list = append(list, strings.TrimSpace(key))
 		}
-	} else if err := n.Decode(&list); err != nil {
+	} else if err := node.Decode(&list); err != nil {
 		return err
 	}
-	*e = list
+	*environments = list
 	return nil
 }
 
@@ -136,11 +136,11 @@ const (
 
 // DopplerMode is env's secrets mode: "" when the provider is not Doppler,
 // else SecretsSwitched or SecretsStaged.
-func (c Config) DopplerMode(env string) string {
-	if c.Secrets.Provider != ProviderDoppler {
+func (config Config) DopplerMode(env string) string {
+	if config.Secrets.Provider != ProviderDoppler {
 		return ""
 	}
-	if c.PerEnvironment[env].Secrets == SecretsStaged {
+	if config.PerEnvironment[env].Secrets == SecretsStaged {
 		return SecretsStaged
 	}
 	return SecretsSwitched
@@ -153,8 +153,8 @@ const RailwayDomain = "railway"
 const ManualValue = "manual"
 
 // Settings returns env's settings with the defaults filled in.
-func (c Config) Settings(env string) EnvSettings {
-	settings := c.PerEnvironment[env]
+func (config Config) Settings(env string) EnvSettings {
+	settings := config.PerEnvironment[env]
 	if settings.PublicURL == "" {
 		settings.PublicURL = RailwayDomain
 	}
@@ -162,24 +162,24 @@ func (c Config) Settings(env string) EnvSettings {
 		settings.AdminPublicURL = RailwayDomain
 	}
 	if settings.FromEmail == "" {
-		settings.FromEmail = c.Email.From
+		settings.FromEmail = config.Email.From
 	}
 	return settings
 }
 
 // HandSet lists env's variables IaC leaves alone because platform.yaml
 // marks them manual, as "service/NAME". Plan and apply print them.
-func (c Config) HandSet(env string) []string {
-	settings := c.Settings(env)
+func (config Config) HandSet(env string) []string {
+	settings := config.Settings(env)
 	var out []string
 	if settings.PublicURL == ManualValue {
 		out = append(out, ServiceWeb+"/PUBLIC_URL")
 	}
-	if c.Admin && settings.AdminPublicURL == ManualValue {
+	if config.Admin && settings.AdminPublicURL == ManualValue {
 		out = append(out, ServiceAdmin+"/ADMIN_PUBLIC_URL")
 	}
 	if settings.FromEmail == ManualValue {
-		for _, service := range c.PublicServices() {
+		for _, service := range config.PublicServices() {
 			out = append(out, service+"/FROM_EMAIL")
 		}
 	}
@@ -216,9 +216,9 @@ var SnapshotKinds = []string{"daily", "weekly", "monthly"}
 // VolumeSnapshots is env's Railway volume snapshot schedule as the API
 // takes it (DAILY, WEEKLY, MONTHLY; sorted, unique), and whether
 // platform.yaml manages it at all.
-func (c Config) VolumeSnapshots(env string) (kinds []string, managed bool) {
-	want := c.Backups.VolumeSnapshots
-	if override := c.PerEnvironment[env].VolumeSnapshots; override != nil {
+func (config Config) VolumeSnapshots(env string) (kinds []string, managed bool) {
+	want := config.Backups.VolumeSnapshots
+	if override := config.PerEnvironment[env].VolumeSnapshots; override != nil {
 		want = override
 	}
 	if want == nil {
@@ -247,13 +247,13 @@ var BucketRegions = []string{"sjc", "iad", "ams", "sin"}
 
 // BucketRegion is backups.region, or the bucket region nearest the
 // services' region (us-west* sjc, us-east* iad, europe* ams, asia* sin).
-func (c Config) BucketRegion() string {
-	if c.Backups.Region != "" {
-		return c.Backups.Region
+func (config Config) BucketRegion() string {
+	if config.Backups.Region != "" {
+		return config.Backups.Region
 	}
-	for prefix, r := range map[string]string{"us-east": "iad", "europe": "ams", "asia": "sin"} {
-		if strings.HasPrefix(c.Region, prefix) {
-			return r
+	for prefix, raw := range map[string]string{"us-east": "iad", "europe": "ams", "asia": "sin"} {
+		if strings.HasPrefix(config.Region, prefix) {
+			return raw
 		}
 	}
 	return "sjc"
@@ -304,20 +304,20 @@ var (
 
 // Load reads and validates the file at path.
 func Load(path string) (Config, error) {
-	b, err := os.ReadFile(path)
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return Config{}, err
 	}
-	return Parse(b)
+	return Parse(data)
 }
 
 // Parse decodes platform.yaml, fills defaults and validates it. Unknown keys
 // are errors, so a typo never silently falls back to a default. Every
 // problem is reported at once.
-func Parse(b []byte) (Config, error) {
+func Parse(data []byte) (Config, error) {
 	cfg := defaults
 	cfg.Resources = Resources{} // zero: filled per field below
-	dec := yaml.NewDecoder(bytes.NewReader(b))
+	dec := yaml.NewDecoder(bytes.NewReader(data))
 	dec.KnownFields(true)
 	if err := dec.Decode(&cfg); err != nil {
 		return Config{}, fmt.Errorf("platform.yaml: %w", err)
@@ -330,66 +330,66 @@ func Parse(b []byte) (Config, error) {
 	return cfg, nil
 }
 
-func (s Size) or(d Size) Size {
-	if s.CPU == 0 {
-		s.CPU = d.CPU
+func (size Size) or(fallback Size) Size {
+	if size.CPU == 0 {
+		size.CPU = fallback.CPU
 	}
-	if s.MemoryMB == 0 {
-		s.MemoryMB = d.MemoryMB
+	if size.MemoryMB == 0 {
+		size.MemoryMB = fallback.MemoryMB
 	}
-	if s.Replicas == 0 {
-		s.Replicas = d.Replicas
+	if size.Replicas == 0 {
+		size.Replicas = fallback.Replicas
 	}
-	return s
+	return size
 }
 
 // Validate reports every problem in cfg.
-func (c Config) Validate() error {
+func (config Config) Validate() error {
 	var errs []error
-	add := func(format string, a ...any) { errs = append(errs, fmt.Errorf(format, a...)) }
-	if c.Version != 1 {
-		add("version must be 1, got %d", c.Version)
+	add := func(format string, values ...any) { errs = append(errs, fmt.Errorf(format, values...)) }
+	if config.Version != 1 {
+		add("version must be 1, got %d", config.Version)
 	}
-	if c.Project != Auto && !projectName.MatchString(c.Project) {
-		add("project must be a Railway project name (letters, digits, space . _ -; up to 32), got %q", c.Project)
+	if config.Project != Auto && !projectName.MatchString(config.Project) {
+		add("project must be a Railway project name (letters, digits, space . _ -; up to 32), got %q", config.Project)
 	}
-	if c.Repo != "" && c.Repo != Auto && !repoName.MatchString(c.Repo) {
-		add("repo must be auto, the GitHub owner/name Railway builds from, or empty to always upload, got %q", c.Repo)
+	if config.Repo != "" && config.Repo != Auto && !repoName.MatchString(config.Repo) {
+		add("repo must be auto, the GitHub owner/name Railway builds from, or empty to always upload, got %q", config.Repo)
 	}
-	if strings.TrimSpace(c.Branch) == "" {
+	if strings.TrimSpace(config.Branch) == "" {
 		add("branch must not be empty")
 	}
-	if !slices.ContainsFunc(Profiles, func(p []string) bool { return slices.Equal(p, c.Environments) }) {
-		add("environments must be one of production | staging,production | staging,qa,production, got %q", strings.Join(c.Environments, ","))
+	if !slices.ContainsFunc(Profiles, func(paths []string) bool { return slices.Equal(paths, config.Environments) }) {
+		add("environments must be one of production | staging,production | staging,qa,production, got %q", strings.Join(config.Environments, ","))
 	}
-	for env, branch := range c.Branches {
-		if !slices.Contains(c.Environments, env) {
+	for env, branch := range config.Branches {
+		if !slices.Contains(config.Environments, env) {
 			add("branches.%s: %q is not in environments", env, env)
 		}
 		if strings.TrimSpace(branch) == "" {
 			add("branches.%s must not be empty", env)
 		}
 	}
-	if c.Has("production") && len(c.Environments) > 1 {
-		for _, env := range c.Environments {
-			if env != "production" && c.BranchFor(env) == c.BranchFor("production") {
-				add("branches.%s: %q is production's branch too, so every push would deploy both; give %s its own branch (default %q)", env, c.BranchFor(env), env, DefaultPreviewBranch)
+	if config.Has("production") && len(config.Environments) > 1 {
+		for _, env := range config.Environments {
+			if env != "production" && config.BranchFor(env) == config.BranchFor("production") {
+				add("branches.%s: %q is production's branch too, so every push would deploy both; give %s its own branch (default %q)", env, config.BranchFor(env), env, DefaultPreviewBranch)
 			}
 		}
 	}
-	if c.Previews && !c.Has("staging") {
+	if config.Previews && !config.Has("staging") {
 		add("previews need a staging environment to copy (environments: staging,production): a preview must never start from production")
 	}
-	switch c.Secrets.Provider {
+	switch config.Secrets.Provider {
 	case ProviderDoppler, ProviderEnv:
 	default:
-		add("secrets.provider must be %s or %s, got %q", ProviderDoppler, ProviderEnv, c.Secrets.Provider)
+		add("secrets.provider must be %s or %s, got %q", ProviderDoppler, ProviderEnv, config.Secrets.Provider)
 	}
-	if !strings.Contains(c.Email.From, "@") {
-		add("email.from must be an email address, got %q", c.Email.From)
+	if !strings.Contains(config.Email.From, "@") {
+		add("email.from must be an email address, got %q", config.Email.From)
 	}
-	for env, settings := range c.PerEnvironment {
-		if !slices.Contains(c.Environments, env) {
+	for env, settings := range config.PerEnvironment {
+		if !slices.Contains(config.Environments, env) {
 			add("per_environment.%s: %q is not in environments", env, env)
 		}
 		for key, value := range map[string]string{"public_url": settings.PublicURL, "admin_public_url": settings.AdminPublicURL} {
@@ -406,39 +406,39 @@ func (c Config) Validate() error {
 			add("per_environment.%s.secrets must be %q or %q, got %q", env, SecretsSwitched, SecretsStaged, settings.Secrets)
 		}
 	}
-	if c.AdminBootstrapEmail != "" && !strings.Contains(c.AdminBootstrapEmail, "@") {
-		add("admin_bootstrap_email must be an email address, got %q", c.AdminBootstrapEmail)
+	if config.AdminBootstrapEmail != "" && !strings.Contains(config.AdminBootstrapEmail, "@") {
+		add("admin_bootstrap_email must be an email address, got %q", config.AdminBootstrapEmail)
 	}
-	for name, s := range map[string]Size{"web": c.Resources.Web, "admin": c.Resources.Admin} {
-		if s.CPU < 0.1 || s.CPU > 32 {
-			add("resources.%s.cpu must be between 0.1 and 32 vCPU, got %g", name, s.CPU)
+	for name, size := range map[string]Size{"web": config.Resources.Web, "admin": config.Resources.Admin} {
+		if size.CPU < 0.1 || size.CPU > 32 {
+			add("resources.%s.cpu must be between 0.1 and 32 vCPU, got %g", name, size.CPU)
 		}
-		if s.MemoryMB < 64 || s.MemoryMB > 32*1024 {
-			add("resources.%s.memory_mb must be between 64 and 32768, got %d", name, s.MemoryMB)
+		if size.MemoryMB < 64 || size.MemoryMB > 32*1024 {
+			add("resources.%s.memory_mb must be between 64 and 32768, got %d", name, size.MemoryMB)
 		}
-		if s.Replicas < 1 || s.Replicas > 50 {
-			add("resources.%s.replicas must be between 1 and 50, got %d", name, s.Replicas)
-		}
-	}
-	if c.Backups.Enabled {
-		if !validCron(c.Backups.Schedule) {
-			add("backups.schedule must be a 5-field cron expression in UTC (minute 0-59, hour 0-23, day 1-31, month 1-12, weekday 0-7; e.g. \"0 3 * * *\"), got %q", c.Backups.Schedule)
-		}
-		if c.Backups.KeepDaily < 1 || c.Backups.KeepDaily > 366 {
-			add("backups.keep_daily must be between 1 and 366, got %d", c.Backups.KeepDaily)
-		}
-		if c.Backups.Storage != StorageRailway && c.Backups.Storage != StorageExternal {
-			add("backups.storage must be %s or %s, got %q", StorageRailway, StorageExternal, c.Backups.Storage)
-		}
-		if c.Backups.Region != "" && !slices.Contains(BucketRegions, c.Backups.Region) {
-			add("backups.region must be one of %v (Railway bucket regions), got %q", BucketRegions, c.Backups.Region)
-		}
-		if c.Backups.KeepWeekly < 0 || c.Backups.KeepWeekly > 520 {
-			add("backups.keep_weekly must be between 0 and 520, got %d", c.Backups.KeepWeekly)
+		if size.Replicas < 1 || size.Replicas > 50 {
+			add("resources.%s.replicas must be between 1 and 50, got %d", name, size.Replicas)
 		}
 	}
-	snapshotLists := map[string][]string{"backups.volume_snapshots": c.Backups.VolumeSnapshots}
-	for env, settings := range c.PerEnvironment {
+	if config.Backups.Enabled {
+		if !validCron(config.Backups.Schedule) {
+			add("backups.schedule must be a 5-field cron expression in UTC (minute 0-59, hour 0-23, day 1-31, month 1-12, weekday 0-7; e.g. \"0 3 * * *\"), got %q", config.Backups.Schedule)
+		}
+		if config.Backups.KeepDaily < 1 || config.Backups.KeepDaily > 366 {
+			add("backups.keep_daily must be between 1 and 366, got %d", config.Backups.KeepDaily)
+		}
+		if config.Backups.Storage != StorageRailway && config.Backups.Storage != StorageExternal {
+			add("backups.storage must be %s or %s, got %q", StorageRailway, StorageExternal, config.Backups.Storage)
+		}
+		if config.Backups.Region != "" && !slices.Contains(BucketRegions, config.Backups.Region) {
+			add("backups.region must be one of %v (Railway bucket regions), got %q", BucketRegions, config.Backups.Region)
+		}
+		if config.Backups.KeepWeekly < 0 || config.Backups.KeepWeekly > 520 {
+			add("backups.keep_weekly must be between 0 and 520, got %d", config.Backups.KeepWeekly)
+		}
+	}
+	snapshotLists := map[string][]string{"backups.volume_snapshots": config.Backups.VolumeSnapshots}
+	for env, settings := range config.PerEnvironment {
 		snapshotLists["per_environment."+env+".volume_snapshots"] = settings.VolumeSnapshots
 	}
 	for key, kinds := range snapshotLists {
@@ -448,9 +448,9 @@ func (c Config) Validate() error {
 			}
 		}
 	}
-	for _, p := range c.Unmanaged {
-		if !varPattern.MatchString(p) {
-			add("unmanaged_variables: %q must be NAME, NAME_* or service/NAME", p)
+	for _, path := range config.Unmanaged {
+		if !varPattern.MatchString(path) {
+			add("unmanaged_variables: %q must be NAME, NAME_* or service/NAME", path)
 		}
 	}
 	return errors.Join(errs...)
@@ -461,34 +461,34 @@ func (c Config) Validate() error {
 // lists and steps within each field's bounds.
 func validCron(expr string) bool {
 	const cronFields = 5 // minute hour day-of-month month day-of-week
-	f := strings.Fields(expr)
-	if len(f) != cronFields {
+	fields := strings.Fields(expr)
+	if len(fields) != cronFields {
 		return false
 	}
 	bounds := [cronFields][2]int{{0, 59}, {0, 23}, {1, 31}, {1, 12}, {0, 7}}
-	num := func(s string, lo, hi int) (int, bool) {
-		n, err := strconv.Atoi(s)
-		return n, err == nil && n >= lo && n <= hi
+	num := func(text string, lo, hi int) (int, bool) {
+		count, err := strconv.Atoi(text)
+		return count, err == nil && count >= lo && count <= hi
 	}
-	for i, field := range f {
-		lo, hi := bounds[i][0], bounds[i][1]
+	for index, field := range fields {
+		lo, hi := bounds[index][0], bounds[index][1]
 		for part := range strings.SplitSeq(field, ",") {
 			rng, step, hasStep := strings.Cut(part, "/")
 			if hasStep {
-				if n, err := strconv.Atoi(step); err != nil || n < 1 {
+				if count, err := strconv.Atoi(step); err != nil || count < 1 {
 					return false
 				}
 			}
 			if rng == "*" {
 				continue
 			}
-			a, b, isRange := strings.Cut(rng, "-")
-			x, ok := num(a, lo, hi)
+			left, right, isRange := strings.Cut(rng, "-")
+			value, ok := num(left, lo, hi)
 			if !ok {
 				return false
 			}
 			if isRange {
-				if y, ok := num(b, lo, hi); !ok || y < x {
+				if row, ok := num(right, lo, hi); !ok || row < value {
 					return false
 				}
 			}
@@ -499,7 +499,7 @@ func validCron(expr string) bool {
 
 // Upload reports whether services have no GitHub source: code is shipped
 // with `railway up` (make railway-up) instead of Railway building on push.
-func (c Config) Upload() bool { return c.Repo == "" || c.ForceUpload }
+func (config Config) Upload() bool { return config.Repo == "" || config.ForceUpload }
 
 // DefaultPreviewBranch is the branch staging (and qa) deploy when
 // production is not the only environment and branches does not name one:
@@ -510,15 +510,15 @@ const DefaultPreviewBranch = "dev"
 // BranchFor is the git branch env deploys: branches.<env>, else branch for
 // production (and for every environment of a production-only project), else
 // DefaultPreviewBranch.
-func (c Config) BranchFor(env string) string {
-	if branch := c.Branches[env]; branch != "" {
+func (config Config) BranchFor(env string) string {
+	if branch := config.Branches[env]; branch != "" {
 		return branch
 	}
-	if env == "production" || len(c.Environments) == 1 {
-		return c.Branch
+	if env == "production" || len(config.Environments) == 1 {
+		return config.Branch
 	}
 	return DefaultPreviewBranch
 }
 
 // Has reports whether env is one of the configured environments.
-func (c Config) Has(env string) bool { return slices.Contains(c.Environments, env) }
+func (config Config) Has(env string) bool { return slices.Contains(config.Environments, env) }

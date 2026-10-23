@@ -19,14 +19,14 @@ import (
 
 // repoAccess asks Railway whether it can read the repo. known is false when
 // the API won't say (it refuses GitHub queries for CLI login tokens).
-func (s *setup) repoAccess(ctx context.Context) (known, has bool) {
+func (setup *setup) repoAccess(ctx context.Context) (known, has bool) {
 	var res struct {
 		Access struct {
 			HasAccess bool `json:"hasAccess"`
 		} `json:"gitHubRepoAccessAvailable"`
 	}
-	err := s.rw.gql(ctx, `query($repo: String!) { gitHubRepoAccessAvailable(fullRepoName: $repo) { hasAccess } }`,
-		map[string]any{"repo": s.cfg.Repo}, &res)
+	err := setup.rw.gql(ctx, `query($repo: String!) { gitHubRepoAccessAvailable(fullRepoName: $repo) { hasAccess } }`,
+		map[string]any{"repo": setup.cfg.Repo}, &res)
 	if err != nil {
 		return false, false
 	}
@@ -35,22 +35,22 @@ func (s *setup) repoAccess(ctx context.Context) (known, has bool) {
 
 // repoConnected reports whether the web service already builds from the repo
 // in any environment (a previous run connected it).
-func (s *setup) repoConnected(ctx context.Context) bool {
-	if s.project == nil || s.project.Services[platform.ServiceWeb] == "" {
+func (setup *setup) repoConnected(ctx context.Context) bool {
+	if setup.project == nil || setup.project.Services[platform.ServiceWeb] == "" {
 		return false
 	}
-	for _, env := range s.cfg.Environments {
-		if s.project.Environments[env] == "" {
+	for _, env := range setup.cfg.Environments {
+		if setup.project.Environments[env] == "" {
 			continue
 		}
-		if repo, _ := s.instanceSource(ctx, platform.ServiceWeb, env); strings.EqualFold(repo, s.cfg.Repo) {
+		if repo, _ := setup.instanceSource(ctx, platform.ServiceWeb, env); strings.EqualFold(repo, setup.cfg.Repo) {
 			return true
 		}
 	}
 	return false
 }
 
-func (s *setup) instanceSource(ctx context.Context, svc, env string) (repo string, err error) {
+func (setup *setup) instanceSource(ctx context.Context, svc, env string) (repo string, err error) {
 	var cfg struct {
 		Services map[string]struct {
 			Source struct {
@@ -58,10 +58,10 @@ func (s *setup) instanceSource(ctx context.Context, svc, env string) (repo strin
 			} `json:"source"`
 		} `json:"services"`
 	}
-	if err := s.rw.json(ctx, &cfg, "environment", "config", "--environment", env); err != nil {
+	if err := setup.rw.json(ctx, &cfg, "environment", "config", "--environment", env); err != nil {
 		return "", err
 	}
-	return cfg.Services[s.project.Services[svc]].Source.Repo, nil
+	return cfg.Services[setup.project.Services[svc]].Source.Repo, nil
 }
 
 // connectRepo connects the web service to the repo: the real access check
@@ -70,10 +70,10 @@ func (s *setup) instanceSource(ctx context.Context, svc, env string) (repo strin
 // nothing changes then. It connects production's branch (the last
 // environment's), which a repo has from its first push: staging's dev may
 // not exist yet, and IaC sets each environment's own branch afterwards.
-func (s *setup) connectRepo(ctx context.Context) error {
-	id := s.project.Services[platform.ServiceWeb]
-	return s.rw.gql(ctx, `mutation($id: String!, $input: ServiceConnectInput!) { serviceConnect(id: $id, input: $input) { id } }`,
-		map[string]any{"id": id, "input": map[string]any{"repo": s.cfg.Repo, "branch": s.cfg.BranchFor(s.cfg.Environments[len(s.cfg.Environments)-1])}}, nil)
+func (setup *setup) connectRepo(ctx context.Context) error {
+	id := setup.project.Services[platform.ServiceWeb]
+	return setup.rw.gql(ctx, `mutation($id: String!, $input: ServiceConnectInput!) { serviceConnect(id: $id, input: $input) { id } }`,
+		map[string]any{"id": id, "input": map[string]any{"repo": setup.cfg.Repo, "branch": setup.cfg.BranchFor(setup.cfg.Environments[len(setup.cfg.Environments)-1])}}, nil)
 }
 
 // checkBranches says which environment deploys which branch, and warns
@@ -81,29 +81,29 @@ func (s *setup) connectRepo(ctx context.Context) error {
 // anyway, but nothing deploys there until the branch is pushed. Asked with
 // git ls-remote (public repos need no login; private ones use your git
 // credentials); when git cannot tell, nothing is reported.
-func (s *setup) checkBranches(ctx context.Context) {
-	if s.cfg.Repo == "" {
+func (setup *setup) checkBranches(ctx context.Context) {
+	if setup.cfg.Repo == "" {
 		return
 	}
 	var mapping, branches []string
 	deploys := map[string][]string{} // branch -> the environments that deploy it
-	for _, env := range s.cfg.Environments {
-		branch := s.cfg.BranchFor(env)
+	for _, env := range setup.cfg.Environments {
+		branch := setup.cfg.BranchFor(env)
 		mapping = append(mapping, env+" <- "+branch)
 		if deploys[branch] == nil {
 			branches = append(branches, branch)
 		}
 		deploys[branch] = append(deploys[branch], env)
 	}
-	s.say("branches: %s (deploy on push to github.com/%s)", strings.Join(mapping, ", "), s.cfg.Repo)
+	setup.say("branches: %s (deploy on push to github.com/%s)", strings.Join(mapping, ", "), setup.cfg.Repo)
 	for _, branch := range branches {
-		if !errors.Is(branchExists(ctx, s.cfg.Repo, branch), errNoBranch) {
+		if !errors.Is(branchExists(ctx, setup.cfg.Repo, branch), errNoBranch) {
 			continue
 		}
 		envs := deploys[branch]
-		s.say("  ! %s deploys branch %s, which github.com/%s does not have yet: nothing deploys there until it is pushed", strings.Join(envs, ", "), branch, s.cfg.Repo)
-		s.next("Create branch %s, which %s deploys: git push origin %s:%s (or set branches.%s in platform.yaml)",
-			branch, strings.Join(envs, ", "), s.cfg.Branch, branch, envs[0])
+		setup.say("  ! %s deploys branch %s, which github.com/%s does not have yet: nothing deploys there until it is pushed", strings.Join(envs, ", "), branch, setup.cfg.Repo)
+		setup.next("Create branch %s, which %s deploys: git push origin %s:%s (or set branches.%s in platform.yaml)",
+			branch, strings.Join(envs, ", "), setup.cfg.Branch, branch, envs[0])
 	}
 }
 
@@ -150,11 +150,11 @@ func installURL(ctx context.Context, repo string) string {
 		return base
 	}
 	defer resp.Body.Close()
-	var u struct {
+	var item struct {
 		ID int64 `json:"id"`
 	}
-	if resp.StatusCode != http.StatusOK || json.NewDecoder(resp.Body).Decode(&u) != nil || u.ID == 0 {
+	if resp.StatusCode != http.StatusOK || json.NewDecoder(resp.Body).Decode(&item) != nil || item.ID == 0 {
 		return base
 	}
-	return fmt.Sprintf("%s/permissions?target_id=%d", base, u.ID)
+	return fmt.Sprintf("%s/permissions?target_id=%d", base, item.ID)
 }
