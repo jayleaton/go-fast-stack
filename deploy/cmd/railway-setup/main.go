@@ -44,6 +44,7 @@ func main() {
 }
 
 func run() int {
+	const defaultWait = 15 * time.Minute // --wait: how long apply waits for deployments to settle
 	fs := flag.NewFlagSet("railway-setup", flag.ContinueOnError)
 	config := fs.String("config", "platform.yaml", "path to platform.yaml")
 	iac := fs.String("iac", ".railway/railway.go", "path to the IaC entry point")
@@ -51,7 +52,7 @@ func run() int {
 	only := fs.String("env", "", "up, rotate-db: only this environment (default: all); backup: the environment (required)")
 	yes := fs.Bool("yes", envBool("PLATFORM_YES"), "create the project without asking (PLATFORM_YES=1)")
 	jsonOut := fs.Bool("json", envBool("PLATFORM_JSON"), "print a JSON summary on stdout, logs on stderr (PLATFORM_JSON=1)")
-	wait := fs.Duration("wait", 15*time.Minute, "apply: how long to wait for deployments to settle")
+	wait := fs.Duration("wait", defaultWait, "apply: how long to wait for deployments to settle")
 	ovs := overrides()
 	vals := map[string]*string{}
 	for _, o := range ovs {

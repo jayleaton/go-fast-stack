@@ -137,8 +137,9 @@ func branchExists(ctx context.Context, repo, branch string) error {
 // owner's account preselected when GitHub's public API answers.
 func installURL(ctx context.Context, repo string) string {
 	const base = "https://github.com/apps/railway-app/installations/new"
+	const lookupTimeout = 5 * time.Second // the owner lookup is a nicety; never hold setup up for it
 	owner, _, _ := strings.Cut(repo, "/")
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, lookupTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.github.com/users/"+owner, nil)
 	if err != nil {

@@ -49,7 +49,8 @@ func (d *dopplerCLI) run(ctx context.Context, stdin []byte, args ...string) ([]b
 	var out, errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errb
 	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("doppler %s: %w%s", strings.Join(args[:min(2, len(args))], " "), err, tail(errb.String()))
+		const callNameArgs = 2 // args that name the call ("secrets set"); the rest may carry values
+		return nil, fmt.Errorf("doppler %s: %w%s", strings.Join(args[:min(callNameArgs, len(args))], " "), err, tail(errb.String()))
 	}
 	return out.Bytes(), nil
 }

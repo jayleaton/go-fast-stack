@@ -19,6 +19,12 @@ import (
 	"github.com/jayleaton/go-fast-stack/deploy/platform"
 )
 
+// Waits between Railway CLI calls.
+const (
+	pollInterval = 10 * time.Second // between checks of a deployment that has not settled
+	retryDelay   = 10 * time.Second // before retrying a read Railway answered with a body the CLI cannot decode
+)
+
 // setup reconciles one Railway project with platform.yaml. Steps IaC covers
 // (services, databases, variables, builds, healthchecks) go through
 // `railway config plan|apply`; the rest (project, environments, previews,
@@ -209,6 +215,7 @@ func (s *setup) ensureEnvironments(ctx context.Context) error {
 			continue
 		}
 		// Railway allows one environment create per 30 s per project.
+		const rateLimitWait = 31 * time.Second // just past that window
 		var err error
 		for range 4 {
 			err = s.rw.gql(ctx, `mutation($input: EnvironmentCreateInput!) { environmentCreate(input: $input) { id } }`,
@@ -216,11 +223,11 @@ func (s *setup) ensureEnvironments(ctx context.Context) error {
 			if err == nil || !strings.Contains(strings.ToLower(err.Error()), "rate limit") {
 				break
 			}
-			s.say("  … Railway rate limit on environment create; retrying in 31s")
+			s.say("  … Railway rate limit on environment create; retrying in %s", rateLimitWait)
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
-			case <-time.After(31 * time.Second):
+			case <-time.After(rateLimitWait):
 			}
 		}
 		if err != nil {
@@ -290,11 +297,12 @@ func (s *setup) iac(ctx context.Context, env string) error {
 		return nil
 	}
 	if !s.apply {
+		const planChanges = 2 // railway config plan --detailed-exit-code: changes are pending
 		code, err := s.rw.stream(ctx, "config", "plan", "--file", s.iacFile, "--environment", env, "--detailed-exit-code")
 		switch {
 		case err != nil:
 			return err
-		case code == 2:
+		case code == planChanges:
 			s.pending++
 		case code != 0:
 			return fmt.Errorf("railway config plan for %s failed with exit code %d", env, code)
@@ -495,7 +503,8 @@ func (s *setup) setDatabasePasswords(ctx context.Context, env string, force bool
 		if err := s.waitDeployed(ctx, db, env); err != nil {
 			return err
 		}
-		b := make([]byte, 24)
+		const passwordBytes = 24 // random bytes in a Postgres password (48 hex characters)
+		b := make([]byte, passwordBytes)
 		if _, err := rand.Read(b); err != nil {
 			return err
 		}
@@ -565,7 +574,8 @@ func (s *setup) databases() []string {
 
 // waitDeployed waits up to 5 minutes for svc's latest deployment in env.
 func (s *setup) waitDeployed(ctx context.Context, svc, env string) error {
-	deadline := time.Now().Add(5 * time.Minute)
+	const deployWait = 5 * time.Minute // how long a fresh database may take to come up
+	deadline := time.Now().Add(deployWait)
 	for {
 		var deps []struct {
 			Status string `json:"status"`
@@ -582,7 +592,7 @@ func (s *setup) waitDeployed(ctx context.Context, svc, env string) error {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(10 * time.Second):
+		case <-time.After(pollInterval):
 		}
 	}
 }
@@ -596,7 +606,7 @@ func (s *setup) variables(ctx context.Context, service, env string) (map[string]
 			select {
 			case <-ctx.Done():
 				return nil, ctx.Err()
-			case <-time.After(10 * time.Second):
+			case <-time.After(retryDelay):
 			}
 		}
 		vars := map[string]*string{}
@@ -900,7 +910,8 @@ func operatorValue(name, svc, env string) string {
 }
 
 func randomSecret() (string, error) {
-	b := make([]byte, 48)
+	const secretBytes = 48 // random bytes in a generated secret (64 base64url characters)
+	b := make([]byte, secretBytes)
 	if _, err := rand.Read(b); err != nil {
 		return "", err
 	}
