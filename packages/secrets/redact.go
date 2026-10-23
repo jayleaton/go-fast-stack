@@ -362,6 +362,10 @@ var (
 	paramName = regexp.MustCompile(`[A-Za-z0-9_.\-]+=`)
 )
 
+// minRedactLength is a quick exit: a string shorter than this cannot hold a
+// credential worth redacting.
+const minRedactLength = 4
+
 const (
 	paramSeps = "?&;,\"'("  // and whitespace
 	paramEnds = "&#;,\"'<>" // and whitespace
@@ -369,7 +373,7 @@ const (
 
 // RedactString applies the string rules of NewRedactingHandler to s.
 func RedactString(s string) string {
-	if len(s) < 4 {
+	if len(s) < minRedactLength {
 		return s
 	}
 	for _, r := range stringRules {

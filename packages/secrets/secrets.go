@@ -84,8 +84,12 @@ func (s Secret) Fingerprint() string {
 	return "fp:" + hex.EncodeToString(mac.Sum(nil)[:4])
 }
 
+// fingerprintKeyBytes sizes the per-process HMAC key: 256 bits, the size of
+// SHA-256's output.
+const fingerprintKeyBytes = 32
+
 var fingerprintKey = func() []byte {
-	k := make([]byte, 32)
+	k := make([]byte, fingerprintKeyBytes)
 	_, _ = rand.Read(k) // never fails on supported platforms (crypto/rand docs)
 	return k
 }()
