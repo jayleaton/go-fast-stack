@@ -101,7 +101,7 @@ func (s *store) setCredentialPassword(ctx context.Context, q querier, userID, ha
 	_, err = q.Exec(ctx, `
 		INSERT INTO "account" ("id", "accountId", "providerId", "userId", "password", "createdAt", "updatedAt")
 		VALUES ($1, $2, $3, $2, $4, $5, $5)`,
-		generateID(32), userID, credentialProvider, hash, now)
+		generateID(idLength), userID, credentialProvider, hash, now)
 	return err
 }
 
@@ -228,7 +228,7 @@ func (s *store) createVerification(ctx context.Context, identifier, value string
 	_, err := s.pool.Exec(ctx, `
 		INSERT INTO "verification" ("id", "identifier", "value", "expiresAt", "createdAt", "updatedAt")
 		VALUES ($1, $2, $3, $4, $5, $5)`,
-		generateID(32), identifier, value, expiresAt, now)
+		generateID(idLength), identifier, value, expiresAt, now)
 	return err
 }
 
@@ -355,7 +355,7 @@ func (s *store) startEmailChange(ctx context.Context, userID, nonce string, expi
 		_, err := q.Exec(ctx, `
 			INSERT INTO "verification" ("id", "identifier", "value", "expiresAt", "createdAt", "updatedAt")
 			VALUES ($1, $2, $3, $4, $5, $5)`,
-			generateID(32), changeEmailPrefix+nonce, userID, expiresAt, now)
+			generateID(idLength), changeEmailPrefix+nonce, userID, expiresAt, now)
 		return err
 	})
 }
@@ -445,7 +445,7 @@ func (s *store) startTwoFactor(ctx context.Context, userID, secret string, codes
 			"secret" = EXCLUDED."secret", "backupCodes" = EXCLUDED."backupCodes", "lastUsedStep" = 0,
 			"failedVerificationCount" = 0, "lockedUntil" = NULL, "updatedAt" = EXCLUDED."updatedAt"
 		WHERE NOT "twoFactor"."verified"`,
-		generateID(32), secret, string(raw), userID, now)
+		generateID(idLength), secret, string(raw), userID, now)
 	if err != nil {
 		return err
 	}

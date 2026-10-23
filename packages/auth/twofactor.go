@@ -113,7 +113,7 @@ func (a *Auth) secondFactor(ctx context.Context, userID string) (*TwoFactorChall
 		value, methods = setupChallengePrefix+userID, []string{}
 	}
 	now := a.now()
-	c := &TwoFactorChallenge{Token: generateID(32), Methods: methods, SetupRequired: !enabled, ExpiresAt: now.Add(challengeTTL)}
+	c := &TwoFactorChallenge{Token: generateID(idLength), Methods: methods, SetupRequired: !enabled, ExpiresAt: now.Add(challengeTTL)}
 	if err := a.store.createVerification(ctx, challengePrefix+c.Token, value, c.ExpiresAt, now); err != nil {
 		return nil, err
 	}
@@ -282,7 +282,7 @@ func (a *Auth) verifyTwoFactor(ctx context.Context, in VerifyTwoFactorInput) (_ 
 	}
 	res := TwoFactorResult{User: user, Session: sess}
 	if in.TrustDevice && a.cfg.TwoFactor.TrustDeviceTTL > 0 {
-		res.TrustToken = generateID(32)
+		res.TrustToken = generateID(idLength)
 		now := a.now()
 		if err := a.store.createVerification(ctx, trustDevicePrefix+res.TrustToken, userID, now.Add(a.cfg.TwoFactor.TrustDeviceTTL), now); err != nil {
 			// The sign-in stands; this device just is not remembered.

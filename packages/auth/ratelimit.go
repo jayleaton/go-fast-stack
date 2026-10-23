@@ -14,9 +14,14 @@ type RateRule struct {
 
 // Better Auth's default rules, applied per client IP and endpoint.
 var (
-	RuleSignIn        = RateRule{Window: 10 * time.Second, Max: 3} // sign-in, sign-up
-	RuleEmailSending  = RateRule{Window: time.Minute, Max: 3}      // request-password-reset, send-verification-email
-	RuleResetPassword = RateRule{Window: 10 * time.Second, Max: 3} // reset-password (token guessing)
+	RuleSignIn        = RateRule{Window: ruleWindow, Max: ruleMax}  // sign-in, sign-up
+	RuleEmailSending  = RateRule{Window: time.Minute, Max: ruleMax} // request-password-reset, send-verification-email
+	RuleResetPassword = RateRule{Window: ruleWindow, Max: ruleMax}  // reset-password (token guessing)
+)
+
+const (
+	ruleWindow = 10 * time.Second // Better Auth's window for sign-in and reset-password
+	ruleMax    = 3                // requests per window in every default rule
 )
 
 // RateLimiter decides whether a request identified by key may proceed. Plug

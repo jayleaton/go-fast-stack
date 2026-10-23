@@ -23,9 +23,11 @@ type SignInInput struct {
 	CallbackURL string `json:"callbackURL,omitempty"`
 }
 
+const maxEmailLength = 254 // bytes: the longest address SMTP allows (RFC 5321 path limit)
+
 // normalizeEmail lowercases a syntactically valid bare address.
 func normalizeEmail(email string) (string, error) {
-	if len(email) > 254 {
+	if len(email) > maxEmailLength {
 		return "", ErrInvalidEmail
 	}
 	addr, err := mail.ParseAddress(email)
@@ -62,7 +64,7 @@ func (a *Auth) SignUpEmail(ctx context.Context, in SignUpInput) (User, Session, 
 	}
 
 	now := a.now()
-	user := User{ID: generateID(32), Name: in.Name, Email: email, Image: in.Image, CreatedAt: now, UpdatedAt: now}
+	user := User{ID: generateID(idLength), Name: in.Name, Email: email, Image: in.Image, CreatedAt: now, UpdatedAt: now}
 	// Hash before looking up so both branches cost the same.
 	hash, err := hashPassword(in.Password, a.argon)
 	if err != nil {
@@ -244,7 +246,7 @@ func (a *Auth) RequestPasswordReset(ctx context.Context, email, redirectTo strin
 	if err != nil {
 		return err
 	}
-	token := generateID(24)
+	token := generateID(resetTokenLength)
 	if err := a.store.createVerification(ctx, "reset-password:"+token, user.ID, now.Add(ResetPasswordTokenTTL), now); err != nil {
 		return err
 	}

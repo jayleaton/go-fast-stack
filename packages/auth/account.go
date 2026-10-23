@@ -139,7 +139,7 @@ func (a *Auth) ChangeEmail(ctx context.Context, userID, newEmail, callbackURL st
 		return err
 	}
 
-	now, nonce := a.now(), generateID(32)
+	now, nonce := a.now(), generateID(idLength)
 	if err := a.store.startEmailChange(ctx, user.ID, nonce, now.Add(VerificationTokenTTL), now); err != nil {
 		return err
 	}

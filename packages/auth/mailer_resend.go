@@ -18,6 +18,11 @@ import (
 // DefaultResendEndpoint is the Resend API URL used when ResendMailer.Endpoint is empty.
 const DefaultResendEndpoint = "https://api.resend.com/emails"
 
+const (
+	resendTimeout      = 15 * time.Second // the default HTTPClient's timeout
+	resendErrorSnippet = 512              // bytes of a failed response quoted in the error
+)
+
 //go:embed templates
 var emailTemplatesFS embed.FS
 
@@ -52,7 +57,7 @@ func NewResendMailer(apiKey, from string) *ResendMailer {
 		APIKey:     apiKey,
 		From:       from,
 		Endpoint:   DefaultResendEndpoint,
-		HTTPClient: &http.Client{Timeout: 15 * time.Second},
+		HTTPClient: &http.Client{Timeout: resendTimeout},
 	}
 }
 
@@ -117,7 +122,7 @@ func (m *ResendMailer) send(ctx context.Context, to, subject, name string, data 
 
 	client := m.HTTPClient
 	if client == nil {
-		client = &http.Client{Timeout: 15 * time.Second}
+		client = &http.Client{Timeout: resendTimeout}
 	}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -126,7 +131,7 @@ func (m *ResendMailer) send(ctx context.Context, to, subject, name string, data 
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		snippet, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		snippet, _ := io.ReadAll(io.LimitReader(resp.Body, resendErrorSnippet))
 		return fmt.Errorf("auth: resend returned %s: %s", resp.Status, strings.TrimSpace(string(snippet)))
 	}
 	_, _ = io.Copy(io.Discard, resp.Body)
