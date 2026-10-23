@@ -115,6 +115,20 @@ func (cli *dopplerCLI) secretNames(ctx context.Context, config string) (map[stri
 	return out, nil
 }
 
+// values reads a config's values into memory, for comparing only: they are
+// never printed, logged or returned to a caller outside this file.
+func (cli *dopplerCLI) values(ctx context.Context, config string) (map[string]string, error) {
+	body, err := cli.run(ctx, nil, "secrets", "download", "-p", cli.project, "-c", config, "--no-file", "--format", "json")
+	if err != nil {
+		return nil, err
+	}
+	var values map[string]string
+	if err := json.Unmarshal(body, &values); err != nil {
+		return nil, errors.New("doppler secrets download: undecodable response") // never echo the body
+	}
+	return values, nil
+}
+
 func (cli *dopplerCLI) setSecret(ctx context.Context, config, name, value string) error {
 	_, err := cli.run(ctx, []byte(value), "secrets", "set", name, "-p", cli.project, "-c", config, "--no-interactive", "--json")
 	return err
@@ -178,13 +192,17 @@ func (setup *setup) dopplerPhase(ctx context.Context, required bool, wait time.D
 		setup.next("Move secrets to Doppler (live rotation): %v, then make doppler-setup", err)
 		return nil
 	}
-	if setup.project == nil {
+	if setup.project == nil && setup.apply {
 		return errors.New("the Railway project does not exist yet: run make railway-setup first")
 	}
 	setup.say("\n== doppler (project %s)", doppler.project)
 	exists, err := setup.dopplerLayout(ctx, doppler)
 	if err != nil {
 		return err
+	}
+	if setup.project == nil { // plan before the first apply: no services to read yet
+		setup.change("doppler: once the services exist, for each of them: seed its config, seal DOPPLER_TOKEN, SECRETS_PROVIDER=doppler (a redeploy, unless its environment is staged), then remove its Railway copies once the new deployment is healthy")
+		return nil
 	}
 	if setup.apply {
 		if err := setup.dopplerLocal(ctx, doppler); err != nil {
@@ -325,6 +343,11 @@ func (setup *setup) dopplerService(ctx context.Context, doppler *dopplerCLI, pro
 	if setup.onDoppler(vars) {
 		return setup.retrySwitch(ctx, env, svc) // switched by an earlier run
 	}
+	if project {
+		if err := setup.dopplerDrift(ctx, doppler, env, svc, config, vars, have); err != nil {
+			return "", false, err
+		}
+	}
 
 	writes := map[string]secretWrite{}
 	name := platform.DopplerTokenName(setup.project.Name, svc)
@@ -400,6 +423,39 @@ func (setup *setup) retrySwitch(ctx context.Context, env, svc string) (before st
 	}
 	setup.change("%s/%s reads Doppler but its last deployment %s: redeploy to retry", env, svc, strings.ToLower(status))
 	return id, true, nil
+}
+
+// dopplerDrift warns about Doppler-owned names whose Railway value differs
+// from Doppler's, for a service that still reads Railway: the switch would
+// load Doppler's. Expected after a rotation made in Doppler; otherwise the
+// Railway value changed after seeding (make railway-rotate-db, a hand edit)
+// and Doppler needs it first. Values are compared in memory; only names are
+// printed.
+func (setup *setup) dopplerDrift(ctx context.Context, doppler *dopplerCLI, env, svc, config string, vars map[string]*string, have map[string]bool) error {
+	var compare []string
+	for _, seed := range platform.DopplerSeeds(svc) {
+		if current := vars[seed.Name]; current != nil && *current != platform.ResendPlaceholder && have[seed.Name] {
+			compare = append(compare, seed.Name)
+		}
+	}
+	if len(compare) == 0 {
+		return nil
+	}
+	inDoppler, err := doppler.values(ctx, config)
+	if err != nil {
+		return err
+	}
+	var differ []string
+	for _, name := range compare {
+		if value, ok := inDoppler[name]; ok && value != *vars[name] {
+			differ = append(differ, name)
+		}
+	}
+	if len(differ) > 0 {
+		setup.say("  ! %s/%s: Railway and Doppler %s differ in %s; the switch uses Doppler's (fine after a rotation in Doppler, else update Doppler first)", env, svc, config, strings.Join(differ, ", "))
+		setup.next("Check Doppler config %s before %s/%s reads it: %s differ from Railway", config, env, svc, strings.Join(differ, ", "))
+	}
+	return nil
 }
 
 // dopplerSeed copies a service's Railway values into its Doppler config, for
