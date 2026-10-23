@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Prints how each Dockerfile builds its Go binary, read from the Dockerfile
-# itself so nothing copies its flags: one line per tracked Dockerfile, fields
-# separated by the ASCII unit separator (0x1f; an empty field survives `read`,
-# which collapses repeated tabs), for each Dockerfile with a `RUN ... go build ...` in its build stage (before the
-# second FROM):
+# itself so nothing copies its flags. One line per tracked Dockerfile with a
+# `RUN ... go build ...` in its build stage (before the second FROM), fields
+# separated by the ASCII unit separator (0x1f: an empty field survives `read`,
+# which collapses repeated tabs):
 #   <dockerfile> <env> <run> <output> <package>
 #   env      the build stage's ENV assignments (ENV GOFLAGS=-tags=x ...)
 #   run      the whole RUN command (go build and any guard chained after it)
