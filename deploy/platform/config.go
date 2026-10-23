@@ -167,6 +167,49 @@ func (config Config) Settings(env string) EnvSettings {
 	return settings
 }
 
+// reservedSenderDomains are the example and test domains (RFC 2606, RFC
+// 6761) no mail provider sends from. The apps refuse a production
+// FROM_EMAIL on them at boot (apps/*/internal/config realSender): keep the
+// two lists the same.
+var reservedSenderDomains = []string{"example.com", "example.net", "example.org", "example", "test", "invalid", "localhost"}
+
+// RealSender reports whether address ("a@b.c" or "Name <a@b.c>") is an email
+// address off the reserved example and test domains: the rule the apps
+// apply to FROM_EMAIL in production.
+func RealSender(address string) bool {
+	address = strings.TrimSuffix(strings.TrimSpace(address), ">")
+	at := strings.LastIndex(address, "@")
+	if at <= 0 || at == len(address)-1 {
+		return false
+	}
+	domain := strings.TrimSuffix(strings.ToLower(address[at+1:]), ".")
+	for _, reserved := range reservedSenderDomains {
+		if domain == reserved || strings.HasSuffix(domain, "."+reserved) {
+			return false
+		}
+	}
+	return true
+}
+
+// SenderProblems lists the environments whose apps would get an unset or
+// example FROM_EMAIL (email.from, or per_environment.<env>.from_email):
+// every service runs with APP_ENV=production, which refuses to boot with
+// one. A manual value is set by hand in Railway and is not checked here.
+func (config Config) SenderProblems() []string {
+	var out []string
+	for _, env := range config.Environments {
+		from := config.Settings(env).FromEmail
+		switch {
+		case from == ManualValue:
+		case from == "":
+			out = append(out, env+": email.from is not set")
+		case !RealSender(from):
+			out = append(out, fmt.Sprintf("%s: %q is an example or test address", env, from))
+		}
+	}
+	return out
+}
+
 // HandSet lists env's variables IaC leaves alone because platform.yaml
 // marks them manual, as "service/NAME". Plan and apply print them.
 func (config Config) HandSet(env string) []string {
@@ -288,7 +331,7 @@ var (
 		Branch:       "main",
 		Environments: Environments{"production"},
 		Secrets:      Secrets{Provider: ProviderDoppler, Project: DefaultDopplerProject},
-		Email:        Email{From: "noreply@example.com"},
+		Email:        Email{}, // From is required: a sender on your verified domain (SenderProblems)
 		Backups:      Backups{Enabled: true, Schedule: "0 3 * * *", KeepDaily: defaultKeepDaily, KeepWeekly: defaultKeepWeekly, Admin: true, Storage: StorageRailway},
 		Resources: Resources{
 			Web:   Size{CPU: 1, MemoryMB: defaultWebMemoryMB, Replicas: 1},
@@ -385,7 +428,7 @@ func (config Config) Validate() error {
 	default:
 		add("secrets.provider must be %s or %s, got %q", ProviderDoppler, ProviderEnv, config.Secrets.Provider)
 	}
-	if !strings.Contains(config.Email.From, "@") {
+	if config.Email.From != "" && !strings.Contains(config.Email.From, "@") {
 		add("email.from must be an email address, got %q", config.Email.From)
 	}
 	for env, settings := range config.PerEnvironment {

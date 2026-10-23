@@ -60,8 +60,12 @@ secrets:
   # config (prd_admin, ...) the web token cannot read.
   project: go-fast-stack
 
+# Required: the sender of every auth email (FROM_EMAIL), on a domain your
+# mail provider (Resend) has verified. The apps run with APP_ENV=production,
+# which refuses to boot without one or with an example address, so plan and
+# apply refuse first. Or pass --email-from / PLATFORM_EMAIL_FROM.
 email:
-  from: noreply@example.com
+  from: ""
 
 # What one environment's apps see as their origin and sender. public_url
 # (web PUBLIC_URL) and admin_public_url (ADMIN_PUBLIC_URL): railway for the

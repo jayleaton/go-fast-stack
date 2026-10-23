@@ -10,6 +10,8 @@ make railway-doctor   # login, workspace, SSH key, GitHub access, Doppler: print
 make railway-setup    # asks once before creating the project; ends with every /healthz checked
 ```
 
+**A real sender is required.** Every service runs with `APP_ENV=production`, which refuses to boot when `FROM_EMAIL` is unset or on an example or test domain (`example.com`, `example.net`, `example.org`, `.example`, `.test`, `.invalid`, `localhost`). So `make railway-plan`, `make railway-setup` and `make railway-apply` refuse first and touch nothing until `email.from` in `deploy/platform.yaml` is a sender on a domain your mail provider has verified. Per environment, `per_environment.<env>.from_email` overrides it (`manual`: you set `FROM_EMAIL` in Railway yourself). Setup on a terminal asks for the sender and writes it into `platform.yaml`. Otherwise pass `--email-from noreply@yourdomain.com` or `PLATFORM_EMAIL_FROM`, which are written into the file the same way. `make railway-doctor` reports it as a failed check.
+
 The defaults come from the checkout: the project is named after your repo, and production is the only environment. Choose on the first run: `make railway-setup ARGS="--environments staging,production --admin true --workspace acme"`. These flags (and `--project`, `--region`, `--repo`; or `PLATFORM_*` env vars) are written into `platform.yaml`, so commit it afterwards.
 
 `make railway-plan` shows what would change without touching anything (exit 2 when something would). `make railway-verify` checks `/healthz` on every public URL. `make railway-rotate-db` gives every Postgres a new superuser password (see below). Agents: see AGENTS.md "Deploy to Railway (for agents)" for `--yes`, `--json` and exit codes.

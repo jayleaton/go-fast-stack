@@ -182,6 +182,9 @@ func (setup *setup) main(cmd, config, iac, only string, wait time.Duration, ovs 
 func (setup *setup) reconcile(ctx context.Context, wait time.Duration) error {
 	setup.say("platform.yaml: project %q, environments %v, admin %v, previews %v, secrets %s, repo %q",
 		setup.cfg.Project, []string(setup.cfg.Environments), setup.cfg.Admin, setup.cfg.Previews, setup.cfg.Secrets.Provider, setup.cfg.Repo)
+	if err := setup.requireSender(); err != nil {
+		return err
+	}
 	if err := setup.ensureProject(ctx); err != nil {
 		return err
 	}
@@ -366,6 +369,42 @@ func (setup *setup) dopplerPlaceholders(ctx context.Context) []string {
 		}
 	}
 	return out
+}
+
+// senderFix is how to give the apps a real sender.
+const senderFix = "set email.from in deploy/platform.yaml to a sender on your verified email domain " +
+	"(or pass --email-from / PLATFORM_EMAIL_FROM; per environment: per_environment.<env>.from_email)"
+
+// requireSender refuses plan and apply before anything changes when an
+// environment's apps would get an unset or example FROM_EMAIL: they run
+// with APP_ENV=production, which refuses to boot with one, so the deploy
+// would end in a crash loop. apply on a terminal without --yes asks for one
+// and writes it into platform.yaml.
+func (setup *setup) requireSender() error {
+	problems := setup.cfg.SenderProblems()
+	if len(problems) == 0 {
+		return nil
+	}
+	if setup.apply && !setup.yes && stty(context.Background(), "-g") == nil {
+		fmt.Fprint(os.Stderr, "Sender address for auth emails, on your verified email domain (e.g. noreply@yourdomain.com): ")
+		line, _ := bufio.NewReader(os.Stdin).ReadString('\n')
+		sender := strings.TrimSpace(line)
+		if platform.RealSender(sender) {
+			changed, err := persist(setup.cfgPath, []*override{{key: "email.from", value: &sender}})
+			if err != nil {
+				return err
+			}
+			setup.say("platform.yaml: set %s (commit it)", strings.Join(changed, ", "))
+			if setup.cfg, err = platform.LoadResolved(setup.cfgPath); err != nil {
+				return err
+			}
+			if problems = setup.cfg.SenderProblems(); len(problems) == 0 {
+				return nil
+			}
+		}
+	}
+	setup.next("Set a real sender for auth emails: %s", senderFix)
+	return fmt.Errorf("refusing to deploy apps that would not boot: production needs a real FROM_EMAIL (%s): %s", strings.Join(problems, "; "), senderFix)
 }
 
 // confirm asks on a terminal; without one it needs --yes.
