@@ -16,48 +16,48 @@ import (
 	"github.com/jayleaton/go-fast-stack/packages/uikit"
 )
 
-func orDash(s string) string {
-	if s == "" {
+func orDash(text string) string {
+	if text == "" {
 		return "—"
 	}
-	return s
+	return text
 }
 
-func deref(s *string) string {
-	if s == nil {
+func deref(text *string) string {
+	if text == nil {
 		return ""
 	}
-	return *s
+	return *text
 }
 
 func firstNonEmpty(vals ...string) string {
-	for _, v := range vals {
-		if v != "" {
-			return v
+	for _, value := range vals {
+		if value != "" {
+			return value
 		}
 	}
 	return ""
 }
 
-func date(ctx context.Context, t time.Time) string {
-	if t.IsZero() {
+func date(ctx context.Context, moment time.Time) string {
+	if moment.IsZero() {
 		return "—"
 	}
-	return i18n.From(ctx).Date(t)
+	return i18n.From(ctx).Date(moment)
 }
 
-func dateTime(ctx context.Context, t time.Time) string {
-	if t.IsZero() {
+func dateTime(ctx context.Context, moment time.Time) string {
+	if moment.IsZero() {
 		return "—"
 	}
-	return i18n.From(ctx).DateTime(t.UTC())
+	return i18n.From(ctx).DateTime(moment.UTC())
 }
 
-func yesNo(ctx context.Context, b bool) string {
-	if b {
-		return i18n.T(ctx, "common.yes")
+func yesNo(ctx context.Context, flag bool) string {
+	if flag {
+		return i18n.Translate(ctx, "common.yes")
 	}
-	return i18n.T(ctx, "common.no")
+	return i18n.Translate(ctx, "common.no")
 }
 
 // UserFilters is the users list query as typed (form values and links keep
@@ -66,62 +66,62 @@ type UserFilters struct {
 	Search, SearchField, Banned, Role, SortBy, SortDirection, Limit string
 }
 
-func userFilters(q url.Values) UserFilters {
+func userFilters(values url.Values) UserFilters {
 	return UserFilters{
-		Search:        q.Get("search"),
-		SearchField:   q.Get("searchField"),
-		Banned:        q.Get("banned"),
-		Role:          q.Get("role"),
-		SortBy:        q.Get("sortBy"),
-		SortDirection: q.Get("sortDirection"),
-		Limit:         q.Get("limit"),
+		Search:        values.Get("search"),
+		SearchField:   values.Get("searchField"),
+		Banned:        values.Get("banned"),
+		Role:          values.Get("role"),
+		SortBy:        values.Get("sortBy"),
+		SortDirection: values.Get("sortDirection"),
+		Limit:         values.Get("limit"),
 	}
 }
 
 // url is the users list with these filters at offset.
-func (f UserFilters) url(offset int) string {
-	v := url.Values{}
-	set := func(k, val string) {
+func (filters UserFilters) url(offset int) string {
+	values := url.Values{}
+	set := func(key, val string) {
 		if val != "" {
-			v.Set(k, val)
+			values.Set(key, val)
 		}
 	}
-	set("search", f.Search)
-	set("searchField", f.SearchField)
-	set("banned", f.Banned)
-	set("role", f.Role)
-	set("sortBy", f.SortBy)
-	set("sortDirection", f.SortDirection)
-	set("limit", f.Limit)
+	set("search", filters.Search)
+	set("searchField", filters.SearchField)
+	set("banned", filters.Banned)
+	set("role", filters.Role)
+	set("sortBy", filters.SortBy)
+	set("sortDirection", filters.SortDirection)
+	set("limit", filters.Limit)
 	if offset > 0 {
-		v.Set("offset", strconv.Itoa(offset))
+		values.Set("offset", strconv.Itoa(offset))
 	}
-	return withQuery(config.AppRoutes.Users, v)
+	return withQuery(config.AppRoutes.Users, values)
 }
 
-func withQuery(path string, v url.Values) string {
-	if len(v) == 0 {
+func withQuery(path string, values url.Values) string {
+	if len(values) == 0 {
 		return path
 	}
-	return path + "?" + v.Encode()
+	return path + "?" + values.Encode()
 }
 
 // sortLinks: clicking the active column flips its direction; another column
 // starts ascending (newest first for the created date). Paging restarts.
-func (f UserFilters) sortLinks() SortLinks {
-	by := firstNonEmpty(f.SortBy, "createdAt")
-	desc := firstNonEmpty(f.SortDirection, "desc") == "desc"
+func (filters UserFilters) sortLinks() SortLinks {
+	by := firstNonEmpty(filters.SortBy, "createdAt")
+	desc := firstNonEmpty(filters.SortDirection, "desc") == "desc"
 	link := func(field, first string) SortLink {
-		g := f
-		g.SortBy, g.SortDirection = field, first
+		userFilters := filters
+		userFilters.SortBy, userFilters.SortDirection = field, first
 		active := by == field
 		if active {
-			g.SortDirection = "desc"
+			userFilters.SortDirection = "desc"
 			if desc {
-				g.SortDirection = "asc"
+				userFilters.SortDirection = "asc"
 			}
 		}
-		return SortLink{URL: g.url(0), Active: active, Desc: active && desc}
+		return SortLink{URL: userFilters.url(0), Active: active, Desc: active && desc}
 	}
 	return SortLinks{
 		Created: link("createdAt", "desc"),
@@ -131,11 +131,11 @@ func (f UserFilters) sortLinks() SortLinks {
 }
 
 // sortMark is the arrow after an active column heading.
-func sortMark(l SortLink) string {
+func sortMark(link SortLink) string {
 	switch {
-	case !l.Active:
+	case !link.Active:
 		return ""
-	case l.Desc:
+	case link.Desc:
 		return " ↓"
 	}
 	return " ↑"
@@ -149,43 +149,43 @@ type Pager struct {
 }
 
 // pager builds the pagination row of a page of count rows starting at offset.
-func pager[N int | int64](offset, limit, count int, total N, link func(offset int) string) Pager {
-	p := Pager{Total: int(total)}
+func pager[Value int | int64](offset, limit, count int, total Value, link func(offset int) string) Pager {
+	pager := Pager{Total: int(total)}
 	if count > 0 {
-		p.From, p.To = offset+1, offset+count
+		pager.From, pager.To = offset+1, offset+count
 	}
 	if offset > 0 {
-		p.PrevURL = link(max(0, offset-limit))
+		pager.PrevURL = link(max(0, offset-limit))
 	}
 	if offset+count < int(total) && count > 0 {
-		p.NextURL = link(offset + count)
+		pager.NextURL = link(offset + count)
 	}
-	return p
+	return pager
 }
 
 // pagination is p as the translated uikit pagination row.
-func pagination(ctx context.Context, p Pager) uikit.Pager {
+func pagination(ctx context.Context, pager Pager) uikit.Pager {
 	return uikit.Pager{
-		Summary:   i18n.Tf(ctx, "components.pager.showing", strconv.Itoa(p.From), strconv.Itoa(p.To), strconv.Itoa(p.Total)),
-		PrevURL:   p.PrevURL,
-		NextURL:   p.NextURL,
-		PrevLabel: i18n.T(ctx, "components.pager.previous"),
-		NextLabel: i18n.T(ctx, "components.pager.next"),
-		Label:     i18n.T(ctx, "components.pager.label"),
+		Summary:   i18n.Tf(ctx, "components.pager.showing", strconv.Itoa(pager.From), strconv.Itoa(pager.To), strconv.Itoa(pager.Total)),
+		PrevURL:   pager.PrevURL,
+		NextURL:   pager.NextURL,
+		PrevLabel: i18n.Translate(ctx, "components.pager.previous"),
+		NextLabel: i18n.Translate(ctx, "components.pager.next"),
+		Label:     i18n.Translate(ctx, "components.pager.label"),
 	}
 }
 
 // filtered reports whether the users list is narrowed by a search or filter.
-func (f UserFilters) filtered() bool {
-	return f.Search != "" || f.Banned != "" || f.Role != ""
+func (filters UserFilters) filtered() bool {
+	return filters.Search != "" || filters.Banned != "" || filters.Role != ""
 }
 
 // sortOrder is the aria-sort value of a column heading ("" when unsorted).
-func sortOrder(l SortLink) string {
+func sortOrder(link SortLink) string {
 	switch {
-	case !l.Active:
+	case !link.Active:
 		return ""
-	case l.Desc:
+	case link.Desc:
 		return "descending"
 	}
 	return "ascending"
@@ -193,56 +193,56 @@ func sortOrder(l SortLink) string {
 
 func searchFieldOptions(ctx context.Context) []uikit.Option {
 	return []uikit.Option{
-		{Value: "email", Label: i18n.T(ctx, "common.email")},
-		{Value: "name", Label: i18n.T(ctx, "common.name")},
+		{Value: "email", Label: i18n.Translate(ctx, "common.email")},
+		{Value: "name", Label: i18n.Translate(ctx, "common.name")},
 	}
 }
 
 func bannedOptions(ctx context.Context) []uikit.Option {
 	return []uikit.Option{
-		{Value: "", Label: i18n.T(ctx, "pages.users.filters.all")},
-		{Value: "true", Label: i18n.T(ctx, "pages.users.filters.banned")},
-		{Value: "false", Label: i18n.T(ctx, "pages.users.filters.active")},
+		{Value: "", Label: i18n.Translate(ctx, "pages.users.filters.all")},
+		{Value: "true", Label: i18n.Translate(ctx, "pages.users.filters.banned")},
+		{Value: "false", Label: i18n.Translate(ctx, "pages.users.filters.active")},
 	}
 }
 
 func roleOptions() []uikit.Option {
 	out := make([]uikit.Option, len(apiclient.Roles))
-	for i, r := range apiclient.Roles {
-		out[i] = uikit.Option{Value: r, Label: r}
+	for index, role := range apiclient.Roles {
+		out[index] = uikit.Option{Value: role, Label: role}
 	}
 	return out
 }
 
 func roleFilterOptions(ctx context.Context) []uikit.Option {
-	return append([]uikit.Option{{Value: "", Label: i18n.T(ctx, "pages.users.filters.anyRole")}}, roleOptions()...)
+	return append([]uikit.Option{{Value: "", Label: i18n.Translate(ctx, "pages.users.filters.anyRole")}}, roleOptions()...)
 }
 
 // banExpiryOptions are the ban lengths in seconds; "0" is permanent.
 func banExpiryOptions(ctx context.Context) []uikit.Option {
 	return []uikit.Option{
-		{Value: "3600", Label: i18n.T(ctx, "pages.user.ban.expiry.hour")},
-		{Value: "86400", Label: i18n.T(ctx, "pages.user.ban.expiry.day")},
-		{Value: "604800", Label: i18n.T(ctx, "pages.user.ban.expiry.week")},
-		{Value: "2592000", Label: i18n.T(ctx, "pages.user.ban.expiry.month")},
-		{Value: "0", Label: i18n.T(ctx, "pages.user.ban.expiry.permanent")},
+		{Value: "3600", Label: i18n.Translate(ctx, "pages.user.ban.expiry.hour")},
+		{Value: "86400", Label: i18n.Translate(ctx, "pages.user.ban.expiry.day")},
+		{Value: "604800", Label: i18n.Translate(ctx, "pages.user.ban.expiry.week")},
+		{Value: "2592000", Label: i18n.Translate(ctx, "pages.user.ban.expiry.month")},
+		{Value: "0", Label: i18n.Translate(ctx, "pages.user.ban.expiry.permanent")},
 	}
 }
 
 // banExpires is when a ban ends, or "permanent".
-func banExpires(ctx context.Context, u apiclient.User) string {
-	if u.BanExpires == nil {
-		return i18n.T(ctx, "pages.user.ban.permanent")
+func banExpires(ctx context.Context, user apiclient.User) string {
+	if user.BanExpires == nil {
+		return i18n.Translate(ctx, "pages.user.ban.permanent")
 	}
-	return dateTime(ctx, *u.BanExpires)
+	return dateTime(ctx, *user.BanExpires)
 }
 
 // banLabel is the ban button: ban, or update the ban of a banned user.
-func banLabel(ctx context.Context, u apiclient.User) string {
-	if u.Banned {
-		return i18n.T(ctx, "pages.user.ban.update")
+func banLabel(ctx context.Context, user apiclient.User) string {
+	if user.Banned {
+		return i18n.Translate(ctx, "pages.user.ban.update")
 	}
-	return i18n.T(ctx, "pages.user.ban.submit")
+	return i18n.Translate(ctx, "pages.user.ban.submit")
 }
 
 // actionKeys label the audit actions; unknown actions show raw.
@@ -274,18 +274,18 @@ var signInMethodKeys = map[string]string{
 }
 
 func actionLabel(ctx context.Context, action string) string {
-	for _, a := range actionKeys {
-		if a.action == action {
-			return i18n.T(ctx, a.key)
+	for _, actionKey := range actionKeys {
+		if actionKey.action == action {
+			return i18n.Translate(ctx, actionKey.key)
 		}
 	}
 	return action
 }
 
 func actionOptions(ctx context.Context) []uikit.Option {
-	out := []uikit.Option{{Value: "", Label: i18n.T(ctx, "pages.audit.allActions")}}
-	for _, a := range actionKeys {
-		out = append(out, uikit.Option{Value: a.action, Label: i18n.T(ctx, a.key)})
+	out := []uikit.Option{{Value: "", Label: i18n.Translate(ctx, "pages.audit.allActions")}}
+	for _, actionKey := range actionKeys {
+		out = append(out, uikit.Option{Value: actionKey.action, Label: i18n.Translate(ctx, actionKey.key)})
 	}
 	return out
 }
@@ -295,50 +295,50 @@ type AuditFilters struct {
 	Action, TargetID, Limit string
 }
 
-func auditFilters(q url.Values) AuditFilters {
-	return AuditFilters{Action: q.Get("action"), TargetID: q.Get("targetId"), Limit: q.Get("limit")}
+func auditFilters(values url.Values) AuditFilters {
+	return AuditFilters{Action: values.Get("action"), TargetID: values.Get("targetId"), Limit: values.Get("limit")}
 }
 
-func (f AuditFilters) url(offset int) string {
-	v := url.Values{}
-	for k, val := range map[string]string{"action": f.Action, "targetId": f.TargetID, "limit": f.Limit} {
+func (filters AuditFilters) url(offset int) string {
+	values := url.Values{}
+	for key, val := range map[string]string{"action": filters.Action, "targetId": filters.TargetID, "limit": filters.Limit} {
 		if val != "" {
-			v.Set(k, val)
+			values.Set(key, val)
 		}
 	}
 	if offset > 0 {
-		v.Set("offset", strconv.Itoa(offset))
+		values.Set("offset", strconv.Itoa(offset))
 	}
-	return withQuery(config.AppRoutes.Audit, v)
+	return withQuery(config.AppRoutes.Audit, values)
 }
 
 // auditTarget links user targets to their page.
-func auditTarget(e apiclient.AuditEntry) (href, label string) {
-	label = firstNonEmpty(e.TargetLabel, e.TargetID)
-	if e.TargetType == apiclient.TargetUser && e.TargetID != "" {
-		href = config.UserPage(e.TargetID)
+func auditTarget(entry apiclient.AuditEntry) (href, label string) {
+	label = firstNonEmpty(entry.TargetLabel, entry.TargetID)
+	if entry.TargetType == apiclient.TargetUser && entry.TargetID != "" {
+		href = config.UserPage(entry.TargetID)
 	}
 	return href, label
 }
 
 // auditDetails are the detail lines of an entry: the sign-in method and the
 // reason a 2FA code was refused translated, anything else as details does.
-func auditDetails(ctx context.Context, e apiclient.AuditEntry) []string {
-	if len(e.Details) == 1 {
-		if m, ok := e.Details["method"]; ok && e.Action == apiclient.ActionAdminSignIn {
-			if key, known := signInMethodKeys[m]; known {
-				m = i18n.T(ctx, key)
+func auditDetails(ctx context.Context, entry apiclient.AuditEntry) []string {
+	if len(entry.Details) == 1 {
+		if message, ok := entry.Details["method"]; ok && entry.Action == apiclient.ActionAdminSignIn {
+			if key, known := signInMethodKeys[message]; known {
+				message = i18n.Translate(ctx, key)
 			}
-			return []string{i18n.Tf(ctx, "pages.audit.signInMethod", m)}
+			return []string{i18n.Tf(ctx, "pages.audit.signInMethod", message)}
 		}
-		if r, ok := e.Details["reason"]; ok && e.Action == apiclient.ActionAdminTwoFactorFailed {
-			if key, known := twoFactorReasonKeys[r]; known {
-				r = i18n.T(ctx, key)
+		if raw, ok := entry.Details["reason"]; ok && entry.Action == apiclient.ActionAdminTwoFactorFailed {
+			if key, known := twoFactorReasonKeys[raw]; known {
+				raw = i18n.Translate(ctx, key)
 			}
-			return []string{i18n.Tf(ctx, "pages.audit.reason", r)}
+			return []string{i18n.Tf(ctx, "pages.audit.reason", raw)}
 		}
 	}
-	return details(e.Details)
+	return details(entry.Details)
 }
 
 // twoFactorReasonKeys translate the packages/auth error codes a refused 2FA
@@ -381,68 +381,68 @@ var reconciledReasonKeys = map[string]string{
 
 // auditStatus is the badge, hint and reason of an entry. A pending entry's
 // outcome was never recorded: the change may or may not have been applied.
-func auditStatus(ctx context.Context, e apiclient.AuditEntry) AuditStatus {
-	s := AuditStatus{Tone: uikit.Neutral, Label: orDash(e.Status), Reason: auditReason(ctx, e.Reason), Reconciled: e.Reconciled}
-	if k, ok := auditStatusKeys[e.Status]; ok {
-		s.Tone, s.Label = k.tone, i18n.T(ctx, k.key)
+func auditStatus(ctx context.Context, entry apiclient.AuditEntry) AuditStatus {
+	status := AuditStatus{Tone: uikit.Neutral, Label: orDash(entry.Status), Reason: auditReason(ctx, entry.Reason), Reconciled: entry.Reconciled}
+	if item, ok := auditStatusKeys[entry.Status]; ok {
+		status.Tone, status.Label = item.tone, i18n.Translate(ctx, item.key)
 	}
-	if e.Status == apiclient.StatusPending {
-		s.Hint = i18n.T(ctx, "pages.audit.statuses.pendingHint")
+	if entry.Status == apiclient.StatusPending {
+		status.Hint = i18n.Translate(ctx, "pages.audit.statuses.pendingHint")
 	}
-	if key, ok := reconciledReasonKeys[e.Status]; ok && e.Reconciled {
-		s.Reason = i18n.T(ctx, key)
+	if key, ok := reconciledReasonKeys[entry.Status]; ok && entry.Reconciled {
+		status.Reason = i18n.Translate(ctx, key)
 	}
-	return s
+	return status
 }
 
 // auditReason translates a recorded failure reason that is the message of a
 // service error the UI knows; anything else shows as recorded.
 func auditReason(ctx context.Context, reason string) string {
 	if reason == apiclient.ReasonInternal {
-		return i18n.T(ctx, "pages.audit.internalReason")
+		return i18n.Translate(ctx, "pages.audit.internalReason")
 	}
-	for _, k := range errorKeys {
+	for _, errorKey := range errorKeys {
 		var se *apiclient.ServiceError
-		if errors.As(k.err, &se) && se.Message == reason {
-			return i18n.T(ctx, k.key)
+		if errors.As(errorKey.err, &se) && se.Message == reason {
+			return i18n.Translate(ctx, errorKey.key)
 		}
 	}
 	return reason
 }
 
 // details renders an entry's details as "key: value" pairs, sorted by key.
-func details(d map[string]string) []string {
-	keys := make([]string, 0, len(d))
-	for k := range d {
-		keys = append(keys, k)
+func details(lookup map[string]string) []string {
+	keys := make([]string, 0, len(lookup))
+	for key := range lookup {
+		keys = append(keys, key)
 	}
 	slices.Sort(keys)
 	out := make([]string, len(keys))
-	for i, k := range keys {
-		out[i] = k + ": " + d[k]
+	for index, key := range keys {
+		out[index] = key + ": " + lookup[key]
 	}
 	return out
 }
 
 // statusTone is the alert tone of an action outcome.
-func statusTone(s Status) uikit.Tone {
-	if s.Error {
+func statusTone(status Status) uikit.Tone {
+	if status.Error {
 		return uikit.Error
 	}
 	return uikit.Success
 }
 
 // analyticsStats are the overview's figures as stat tiles, in reading order.
-func analyticsStats(ctx context.Context, o apiclient.Overview) []uikit.Stat {
-	stat := func(key, id string, v int64) uikit.Stat {
-		return uikit.Stat{Label: i18n.T(ctx, key), Value: strconv.FormatInt(v, 10), TestID: id}
+func analyticsStats(ctx context.Context, overview apiclient.Overview) []uikit.Stat {
+	stat := func(key, id string, value int64) uikit.Stat {
+		return uikit.Stat{Label: i18n.Translate(ctx, key), Value: strconv.FormatInt(value, 10), TestID: id}
 	}
 	return []uikit.Stat{
-		stat("pages.analytics.totalUsers", "stat-total-users", o.TotalUsers),
-		stat("pages.analytics.newUsers7d", "stat-new-users", o.NewUsers7d),
-		stat("pages.analytics.verifiedUsers", "stat-verified-users", o.VerifiedUsers),
-		stat("pages.analytics.bannedUsers", "stat-banned-users", o.BannedUsers),
-		stat("pages.analytics.activeSessions", "stat-active-sessions", o.ActiveSessions),
+		stat("pages.analytics.totalUsers", "stat-total-users", overview.TotalUsers),
+		stat("pages.analytics.newUsers7d", "stat-new-users", overview.NewUsers7d),
+		stat("pages.analytics.verifiedUsers", "stat-verified-users", overview.VerifiedUsers),
+		stat("pages.analytics.bannedUsers", "stat-banned-users", overview.BannedUsers),
+		stat("pages.analytics.activeSessions", "stat-active-sessions", overview.ActiveSessions),
 	}
 }
 
@@ -456,15 +456,15 @@ func otpLink(uri string) string {
 }
 
 // groupSecret splits a TOTP secret into groups of four for manual entry.
-func groupSecret(s string) string {
-	var b strings.Builder
-	for i, r := range s {
-		if i > 0 && i%4 == 0 {
-			b.WriteByte(' ')
+func groupSecret(text string) string {
+	var builder strings.Builder
+	for index, char := range text {
+		if index > 0 && index%4 == 0 {
+			builder.WriteByte(' ')
 		}
-		b.WriteRune(r)
+		builder.WriteRune(char)
 	}
-	return b.String()
+	return builder.String()
 }
 
 func backupSignals(on bool) string {

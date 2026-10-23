@@ -26,15 +26,15 @@ type Error struct {
 	Fields map[string]string
 }
 
-func (e *Error) Error() string {
-	keys := make([]string, 0, len(e.Fields))
-	for k := range e.Fields {
-		keys = append(keys, k)
+func (err *Error) Error() string {
+	keys := make([]string, 0, len(err.Fields))
+	for key := range err.Fields {
+		keys = append(keys, key)
 	}
 	sort.Strings(keys)
 	parts := make([]string, len(keys))
-	for i, k := range keys {
-		parts[i] = k + ": " + e.Fields[k]
+	for index, key := range keys {
+		parts[index] = key + ": " + err.Fields[key]
 	}
 	return "invalid input: " + strings.Join(parts, ", ")
 }
@@ -43,28 +43,28 @@ func (e *Error) Error() string {
 type Fields map[string]string
 
 // Add records msg for field when bad is true.
-func (f Fields) Add(bad bool, field, msg string) {
+func (fields Fields) Add(bad bool, field, msg string) {
 	if bad {
-		f[field] = msg
+		fields[field] = msg
 	}
 }
 
 // Err returns an *Error, or nil when no field failed.
-func (f Fields) Err() error {
-	if len(f) == 0 {
+func (fields Fields) Err() error {
+	if len(fields) == 0 {
 		return nil
 	}
-	return &Error{Fields: f}
+	return &Error{Fields: fields}
 }
 
 // Decode reads one JSON object into T, rejecting unknown fields and trailing
 // data, then runs (*T).Validate: validate.Decode[validate.BanUser](r.Body).
-func Decode[T any, PT interface {
-	*T
+func Decode[Value any, PT interface {
+	*Value
 	Validator
-}](r io.Reader) (T, error) {
-	var v T
-	return v, DecodeInto(r, PT(&v))
+}](reader io.Reader) (Value, error) {
+	var value Value
+	return value, DecodeInto(reader, PT(&value))
 }
 
 // DecodeInto is Decode for a target only known as a Validator (the API's
@@ -96,11 +96,11 @@ func jsonMessage(err error) string {
 }
 
 // jsonType names t the way a JSON client sees it, never as a Go type.
-func jsonType(t reflect.Type) string {
-	for t.Kind() == reflect.Pointer {
-		t = t.Elem()
+func jsonType(kind reflect.Type) string {
+	for kind.Kind() == reflect.Pointer {
+		kind = kind.Elem()
 	}
-	switch t.Kind() {
+	switch kind.Kind() {
 	case reflect.String:
 		return "a string"
 	case reflect.Bool:
@@ -120,18 +120,18 @@ func jsonType(t reflect.Type) string {
 // QueryDecoder is implemented by input types read from a query string (GET
 // lists): DecodeQuery fills the fields, leaving defaults to Validate.
 type QueryDecoder interface {
-	DecodeQuery(q url.Values) error
+	DecodeQuery(values url.Values) error
 }
 
 // DecodeQuery reads T from a query string, then runs (*T).Validate:
 // validate.DecodeQuery[validate.ListUsers](r.URL.Query()).
-func DecodeQuery[T any, PT interface {
-	*T
+func DecodeQuery[Value any, PT interface {
+	*Value
 	QueryDecoder
 	Validator
-}](q url.Values) (T, error) {
-	var v T
-	return v, DecodeQueryInto(q, PT(&v))
+}](values url.Values) (Value, error) {
+	var value Value
+	return value, DecodeQueryInto(values, PT(&value))
 }
 
 // QueryInput is an input read from a query string and then validated.

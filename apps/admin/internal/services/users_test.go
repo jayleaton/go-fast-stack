@@ -12,9 +12,9 @@ import (
 	"github.com/jayleaton/go-fast-stack/apps/admin/internal/validate"
 )
 
-func newUserService(t *testing.T) (*services.UserService, *mocks.MockUserDirectory, *mocks.MockAuditLog) {
-	p := newPorts(t)
-	return services.NewUserService(p.dir, p.log, services.Policy{RequireTwoFactor: true}), p.dir, p.log
+func newUserService(test *testing.T) (*services.UserService, *mocks.MockUserDirectory, *mocks.MockAuditLog) {
+	ports := newPorts(test)
+	return services.NewUserService(ports.dir, ports.log, services.Policy{RequireTwoFactor: true}), ports.dir, ports.log
 }
 
 // userAudit is the entry grace's action on ada writes.
@@ -25,9 +25,9 @@ func userAudit(action string, details map[string]string) services.NewAuditEntry 
 	}
 }
 
-func TestListUsers(t *testing.T) {
-	t.Parallel()
-	svc, dir, _ := newUserService(t)
+func TestListUsers(test *testing.T) {
+	test.Parallel()
+	svc, dir, _ := newUserService(test)
 	in := validate.ListUsers{
 		Search: "ada", SearchField: "name", Role: "admin", Banned: ptr(true),
 		SortBy: "email", SortDirection: "desc", Limit: 10, Offset: 20,
@@ -39,50 +39,50 @@ func TestListUsers(t *testing.T) {
 		SortBy: "email", SortDesc: true, Limit: 10, Offset: 20,
 	}).Return(want, nil)
 	if got, err := svc.ListUsers(ctx, grace, in); err != nil || len(got.Users) != 1 || got.Total != 21 {
-		t.Fatalf("ListUsers = %+v, %v", got, err)
+		test.Fatalf("ListUsers = %+v, %v", got, err)
 	}
 
 	in.SortDirection = "asc"
-	dir.EXPECT().ListUsers(ctx, gomock.Cond(func(q services.UserQuery) bool { return !q.SortDesc })).Return(services.UserPage{}, nil)
+	dir.EXPECT().ListUsers(ctx, gomock.Cond(func(query services.UserQuery) bool { return !query.SortDesc })).Return(services.UserPage{}, nil)
 	if got, err := svc.ListUsers(ctx, grace, in); err != nil || got.Users == nil {
-		t.Fatalf("empty page = %#v, %v; want an empty, non-nil list", got, err)
+		test.Fatalf("empty page = %#v, %v; want an empty, non-nil list", got, err)
 	}
 
 	dir.EXPECT().ListUsers(ctx, gomock.Any()).Return(services.UserPage{}, errDB)
 	_, err := svc.ListUsers(ctx, grace, in)
-	wantInternal(t, err, errDB)
+	wantInternal(test, err, errDB)
 }
 
-func TestGetUser(t *testing.T) {
-	t.Parallel()
-	svc, dir, _ := newUserService(t)
+func TestGetUser(test *testing.T) {
+	test.Parallel()
+	svc, dir, _ := newUserService(test)
 	sessions := []services.Session{{ID: "s1"}}
 
 	dir.EXPECT().GetUserDetail(ctx, "u1").Return(services.UserDetail{User: adaUser, Sessions: sessions}, nil)
 	if got, err := svc.GetUser(ctx, grace, "u1"); err != nil || got.User != adaUser || len(got.Sessions) != 1 {
-		t.Fatalf("GetUser = %+v, %v", got, err)
+		test.Fatalf("GetUser = %+v, %v", got, err)
 	}
 
 	dir.EXPECT().GetUserDetail(ctx, "u1").Return(services.UserDetail{User: adaUser}, nil)
 	if got, err := svc.GetUser(ctx, grace, "u1"); err != nil || got.Sessions == nil {
-		t.Fatalf("no sessions = %#v, %v; want an empty, non-nil list", got, err)
+		test.Fatalf("no sessions = %#v, %v; want an empty, non-nil list", got, err)
 	}
 
 	dir.EXPECT().GetUserDetail(ctx, "u1").Return(services.UserDetail{}, fmt.Errorf("auth: %w", services.ErrUserNotFound))
 	_, err := svc.GetUser(ctx, grace, "u1")
-	wantErr(t, err, services.ErrUserNotFound)
+	wantErr(test, err, services.ErrUserNotFound)
 
 	dir.EXPECT().GetUserDetail(ctx, "u1").Return(services.UserDetail{}, errDB)
 	_, err = svc.GetUser(ctx, grace, "u1")
-	wantInternal(t, err, errDB)
+	wantInternal(test, err, errDB)
 }
 
 // The generic fail-closed cases (intent or outcome not written, a refused or
 // failing change) of every mutation are in TestMutationsFailClosed.
 
-func TestBanUser(t *testing.T) {
-	t.Parallel()
-	svc, dir, log := newUserService(t)
+func TestBanUser(test *testing.T) {
+	test.Parallel()
+	svc, dir, log := newUserService(test)
 	detail := services.UserDetail{User: adaUser}
 
 	// No expiry is a permanent ban; 0 is permanent too.
@@ -94,7 +94,7 @@ func TestBanUser(t *testing.T) {
 			log.EXPECT().Resolve(ctx, entryID, succeeded).Return(nil),
 		)
 		if err := svc.BanUser(ctx, grace, "u1", validate.BanUser{BanReason: "spam", BanExpiresIn: expiresIn}); err != nil {
-			t.Fatal(err)
+			test.Fatal(err)
 		}
 	}
 
@@ -105,22 +105,22 @@ func TestBanUser(t *testing.T) {
 		log.EXPECT().Resolve(ctx, entryID, succeeded).Return(nil),
 	)
 	if err := svc.BanUser(ctx, grace, "u1", validate.BanUser{BanReason: "spam", BanExpiresIn: ptr[int64](3600)}); err != nil {
-		t.Fatal(err)
+		test.Fatal(err)
 	}
 
 	in := validate.BanUser{BanReason: "spam"}
 
 	// A missing user is a 404 before anything is written or changed.
 	dir.EXPECT().GetUserDetail(ctx, "u1").Return(services.UserDetail{}, fmt.Errorf("auth: %w", services.ErrUserNotFound))
-	wantErr(t, svc.BanUser(ctx, grace, "u1", in), services.ErrUserNotFound)
+	wantErr(test, svc.BanUser(ctx, grace, "u1", in), services.ErrUserNotFound)
 
 	dir.EXPECT().GetUserDetail(ctx, "u1").Return(services.UserDetail{}, errDB)
-	wantInternal(t, svc.BanUser(ctx, grace, "u1", in), errDB)
+	wantInternal(test, svc.BanUser(ctx, grace, "u1", in), errDB)
 }
 
-func TestUnbanUser(t *testing.T) {
-	t.Parallel()
-	svc, dir, log := newUserService(t)
+func TestUnbanUser(test *testing.T) {
+	test.Parallel()
+	svc, dir, log := newUserService(test)
 	banned := adaUser
 	banned.Banned = true
 
@@ -131,20 +131,20 @@ func TestUnbanUser(t *testing.T) {
 		log.EXPECT().Resolve(ctx, entryID, succeeded).Return(nil),
 	)
 	if err := svc.UnbanUser(ctx, grace, "u1"); err != nil {
-		t.Fatal(err)
+		test.Fatal(err)
 	}
 
 	// Rules and lookups write nothing.
 	dir.EXPECT().GetUserDetail(ctx, "u1").Return(services.UserDetail{User: adaUser}, nil)
-	wantErr(t, svc.UnbanUser(ctx, grace, "u1"), services.ErrUserNotBanned)
+	wantErr(test, svc.UnbanUser(ctx, grace, "u1"), services.ErrUserNotBanned)
 
 	dir.EXPECT().GetUserDetail(ctx, "u1").Return(services.UserDetail{}, services.ErrUserNotFound)
-	wantErr(t, svc.UnbanUser(ctx, grace, "u1"), services.ErrUserNotFound)
+	wantErr(test, svc.UnbanUser(ctx, grace, "u1"), services.ErrUserNotFound)
 }
 
-func TestSetRole(t *testing.T) {
-	t.Parallel()
-	svc, dir, log := newUserService(t)
+func TestSetRole(test *testing.T) {
+	test.Parallel()
+	svc, dir, log := newUserService(test)
 	detail := services.UserDetail{User: adaUser}
 	in := validate.SetUserRole{Role: "admin"}
 
@@ -155,17 +155,17 @@ func TestSetRole(t *testing.T) {
 		log.EXPECT().Resolve(ctx, entryID, succeeded).Return(nil),
 	)
 	if err := svc.SetRole(ctx, grace, "u1", in); err != nil {
-		t.Fatal(err)
+		test.Fatal(err)
 	}
 
 	// An unknown role is refused before any port call.
-	wantErr(t, svc.SetRole(ctx, grace, "u1", validate.SetUserRole{Role: "superuser"}), services.ErrInvalidRole)
+	wantErr(test, svc.SetRole(ctx, grace, "u1", validate.SetUserRole{Role: "superuser"}), services.ErrInvalidRole)
 
 	dir.EXPECT().GetUserDetail(ctx, "u1").Return(detail, nil)
-	wantErr(t, svc.SetRole(ctx, grace, "u1", validate.SetUserRole{Role: "user"}), services.ErrRoleUnchanged)
+	wantErr(test, svc.SetRole(ctx, grace, "u1", validate.SetUserRole{Role: "user"}), services.ErrRoleUnchanged)
 
 	dir.EXPECT().GetUserDetail(ctx, "u1").Return(services.UserDetail{}, services.ErrUserNotFound)
-	wantErr(t, svc.SetRole(ctx, grace, "u1", in), services.ErrUserNotFound)
+	wantErr(test, svc.SetRole(ctx, grace, "u1", in), services.ErrUserNotFound)
 
 	// Each refusal auth reports is recorded with its message.
 	for _, portErr := range []*services.Error{services.ErrInvalidRole, services.ErrUserNotFound} {
@@ -175,13 +175,13 @@ func TestSetRole(t *testing.T) {
 			dir.EXPECT().SetRole(ctx, "u1", "admin").Return(fmt.Errorf("auth: %w", portErr)),
 			log.EXPECT().Resolve(ctx, entryID, failed(portErr.Message)).Return(nil),
 		)
-		wantErr(t, svc.SetRole(ctx, grace, "u1", in), portErr)
+		wantErr(test, svc.SetRole(ctx, grace, "u1", in), portErr)
 	}
 }
 
-func TestRevokeSession(t *testing.T) {
-	t.Parallel()
-	svc, dir, log := newUserService(t)
+func TestRevokeSession(test *testing.T) {
+	test.Parallel()
+	svc, dir, log := newUserService(test)
 	detail := services.UserDetail{User: adaUser}
 
 	gomock.InOrder(
@@ -191,11 +191,11 @@ func TestRevokeSession(t *testing.T) {
 		log.EXPECT().Resolve(ctx, entryID, succeeded).Return(nil),
 	)
 	if err := svc.RevokeSession(ctx, grace, "u1", "s9"); err != nil {
-		t.Fatal(err)
+		test.Fatal(err)
 	}
 
 	dir.EXPECT().GetUserDetail(ctx, "u1").Return(services.UserDetail{}, services.ErrUserNotFound)
-	wantErr(t, svc.RevokeSession(ctx, grace, "u1", "s9"), services.ErrUserNotFound)
+	wantErr(test, svc.RevokeSession(ctx, grace, "u1", "s9"), services.ErrUserNotFound)
 
 	// Another user's session is not found, and the attempt is recorded as failed.
 	gomock.InOrder(
@@ -204,12 +204,12 @@ func TestRevokeSession(t *testing.T) {
 		dir.EXPECT().RevokeSession(ctx, "u1", "other-users-session").Return(fmt.Errorf("auth: %w", services.ErrSessionNotFound)),
 		log.EXPECT().Resolve(ctx, entryID, failed("Session not found")).Return(nil),
 	)
-	wantErr(t, svc.RevokeSession(ctx, grace, "u1", "other-users-session"), services.ErrSessionNotFound)
+	wantErr(test, svc.RevokeSession(ctx, grace, "u1", "other-users-session"), services.ErrSessionNotFound)
 }
 
-func TestRevokeSessions(t *testing.T) {
-	t.Parallel()
-	svc, dir, log := newUserService(t)
+func TestRevokeSessions(test *testing.T) {
+	test.Parallel()
+	svc, dir, log := newUserService(test)
 
 	gomock.InOrder(
 		dir.EXPECT().GetUserDetail(ctx, "u1").Return(services.UserDetail{User: adaUser}, nil),
@@ -218,9 +218,9 @@ func TestRevokeSessions(t *testing.T) {
 		log.EXPECT().Resolve(ctx, entryID, succeeded).Return(nil),
 	)
 	if err := svc.RevokeSessions(ctx, grace, "u1"); err != nil {
-		t.Fatal(err)
+		test.Fatal(err)
 	}
 
 	dir.EXPECT().GetUserDetail(ctx, "u1").Return(services.UserDetail{}, services.ErrUserNotFound)
-	wantErr(t, svc.RevokeSessions(ctx, grace, "u1"), services.ErrUserNotFound)
+	wantErr(test, svc.RevokeSessions(ctx, grace, "u1"), services.ErrUserNotFound)
 }

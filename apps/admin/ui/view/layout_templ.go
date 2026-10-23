@@ -19,21 +19,21 @@ import (
 )
 
 // appName is the brand of the request (State.AppName or DefaultAppName).
-func appName(s State) string {
-	if s.AppName == "" {
+func appName(state State) string {
+	if state.AppName == "" {
 		return DefaultAppName
 	}
-	return s.AppName
+	return state.AppName
 }
 
 // AppName is appName for pages (the auth card's brand mark).
 func AppName(ctx context.Context) string { return appName(StateFrom(ctx)) }
 
-func pageTitle(title string, s State) string {
+func pageTitle(title string, state State) string {
 	if title == "" {
-		return appName(s)
+		return appName(state)
 	}
-	return title + " — " + appName(s)
+	return title + " — " + appName(state)
 }
 
 // navItem is one header link; Section matches State.Section.
@@ -51,13 +51,13 @@ var navItems = []navItem{
 }
 
 func nav(ctx context.Context) []uikit.NavItem {
-	s := StateFrom(ctx)
-	if !s.Authenticated {
+	state := StateFrom(ctx)
+	if !state.Authenticated {
 		return nil
 	}
 	out := make([]uikit.NavItem, 0, len(navItems))
-	for _, n := range navItems {
-		out = append(out, uikit.NavItem{Href: n.Href, Label: i18n.T(ctx, n.Key), Current: n.Section == s.Section})
+	for _, navItem := range navItems {
+		out = append(out, uikit.NavItem{Href: navItem.Href, Label: i18n.Translate(ctx, navItem.Key), Current: navItem.Section == state.Section})
 	}
 	return out
 }
@@ -86,7 +86,7 @@ func Layout(title string) templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		s := StateFrom(ctx)
+		state := StateFrom(ctx)
 		templ_7745c5c3_Var2 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
@@ -118,12 +118,12 @@ func Layout(title string) templ.Component {
 				return nil
 			})
 			templ_7745c5c3_Err = uikit.AppShell(uikit.Shell{
-				Brand:     appName(s),
+				Brand:     appName(state),
 				BrandHref: config.AppRoutes.Home,
 				Nav:       nav(ctx),
-				NavLabel:  i18n.T(ctx, "components.nav.label"),
-				MenuLabel: i18n.T(ctx, "components.nav.menu"),
-				SkipLabel: i18n.T(ctx, "components.nav.skipToContent"),
+				NavLabel:  i18n.Translate(ctx, "components.nav.label"),
+				MenuLabel: i18n.Translate(ctx, "components.nav.menu"),
+				SkipLabel: i18n.Translate(ctx, "components.nav.skipToContent"),
 				Actions:   headerActions(),
 				MenuExtra: menuEmail(),
 			}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var3), templ_7745c5c3_Buffer)
@@ -134,8 +134,8 @@ func Layout(title string) templ.Component {
 		})
 		templ_7745c5c3_Err = uikit.Page(uikit.Document{
 			Lang:    string(i18n.From(ctx).Locale),
-			Title:   pageTitle(title, s),
-			Theme:   s.Theme,
+			Title:   pageTitle(title, state),
+			Theme:   state.Theme,
 			CSS:     static.URL(static.CSSFile),
 			Script:  static.URL(static.DatastarFile),
 			Favicon: static.URL(static.FaviconFile),
@@ -187,7 +187,7 @@ func headerActions() templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = uikit.ThemeToggle(i18n.T(ctx, "components.themeToggle.toggle")).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = uikit.ThemeToggle(i18n.Translate(ctx, "components.themeToggle.toggle")).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -196,7 +196,7 @@ func headerActions() templ.Component {
 			return templ_7745c5c3_Err
 		}
 		if StateFrom(ctx).Authenticated {
-			templ_7745c5c3_Err = uikit.SignOutButton(routes.Logout, i18n.T(ctx, "components.authStatus.logout")).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = uikit.SignOutButton(routes.Logout, i18n.Translate(ctx, "components.authStatus.logout")).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -272,16 +272,16 @@ func LanguageSelector() templ.Component {
 			templ_7745c5c3_Var8 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		t := i18n.From(ctx)
+		translator := i18n.From(ctx)
 		opts := make([]uikit.LocaleOption, 0, len(i18n.Locales))
-		for _, l := range i18n.Locales {
-			opts = append(opts, uikit.LocaleOption{Value: string(l), Label: t.Label(l), Selected: l == t.Locale})
+		for _, locale := range i18n.Locales {
+			opts = append(opts, uikit.LocaleOption{Value: string(locale), Label: translator.Label(locale), Selected: locale == translator.Locale})
 		}
 		templ_7745c5c3_Err = uikit.LocaleMenu(uikit.Locales{
 			Action:  routes.Locale,
 			Next:    StateFrom(ctx).Path,
-			Label:   t.T("components.languageSelector.language"),
-			Current: string(t.Locale),
+			Label:   translator.Translate("components.languageSelector.language"),
+			Current: string(translator.Locale),
 			Options: opts,
 		}).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {

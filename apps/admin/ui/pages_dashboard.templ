@@ -50,72 +50,72 @@ type AnalyticsData struct {
 	Error    string
 }
 
-templ AdminsPage(d AdminsData) {
-	@view.Layout(i18n.T(ctx, "pages.admins.title")) {
+templ AdminsPage(data AdminsData) {
+	@view.Layout(i18n.Translate(ctx, "pages.admins.title")) {
 		<div class={ uikit.ContainerClass, "py-8 sm:py-10" }>
-			@uikit.PageHeader(i18n.T(ctx, "pages.admins.title"), i18n.T(ctx, "pages.admins.subtitle"))
+			@uikit.PageHeader(i18n.Translate(ctx, "pages.admins.title"), i18n.Translate(ctx, "pages.admins.subtitle"))
 			<div class="flex flex-col gap-6">
-				@AdminsStatus(d.Status)
-				if d.Error != "" {
-					@uikit.Alert("admins-error", uikit.Error, d.Error)
+				@AdminsStatus(data.Status)
+				if data.Error != "" {
+					@uikit.Alert("admins-error", uikit.Error, data.Error)
 				} else {
-					@AdminsTable(d.Admins, d.SelfID)
+					@AdminsTable(data.Admins, data.SelfID)
 				}
-				@InviteCard(d.Invite)
+				@InviteCard(data.Invite)
 			</div>
 		</div>
 	}
 }
 
 // AdminsStatus is the patch target for admin action outcomes.
-templ AdminsStatus(s Status) {
-	@uikit.Alert(adminsStatusID, statusTone(s), s.Message)
+templ AdminsStatus(status Status) {
+	@uikit.Alert(adminsStatusID, statusTone(status), status.Message)
 }
 
 // AdminsTable lists every admin, pending invites included, with the actions
 // another admin may take on each row; selfID's row gets none.
 templ AdminsTable(admins []apiclient.Admin, selfID string) {
 	<div id={ adminsTableID }>
-		@uikit.TableWrap(i18n.T(ctx, "pages.admins.list")) {
+		@uikit.TableWrap(i18n.Translate(ctx, "pages.admins.list")) {
 			<table class={ uikit.TableClass }>
 				<thead class="bg-muted/50">
 					<tr>
-						<th scope="col" class={ uikit.ThClass }>{ i18n.T(ctx, "common.email") }</th>
-						<th scope="col" class={ uikit.ThClass }>{ i18n.T(ctx, "common.name") }</th>
-						<th scope="col" class={ uikit.ThClass }>{ i18n.T(ctx, "pages.users.created") }</th>
-						<th scope="col" class={ uikit.ThClass }>{ i18n.T(ctx, "pages.user.twoFactor") }</th>
-						<th scope="col" class={ uikit.ThClass }>{ i18n.T(ctx, "pages.users.filters.status") }</th>
-						<th scope="col" class={ uikit.ThClass, "text-right" }>{ i18n.T(ctx, "pages.admins.actions") }</th>
+						<th scope="col" class={ uikit.ThClass }>{ i18n.Translate(ctx, "common.email") }</th>
+						<th scope="col" class={ uikit.ThClass }>{ i18n.Translate(ctx, "common.name") }</th>
+						<th scope="col" class={ uikit.ThClass }>{ i18n.Translate(ctx, "pages.users.created") }</th>
+						<th scope="col" class={ uikit.ThClass }>{ i18n.Translate(ctx, "pages.user.twoFactor") }</th>
+						<th scope="col" class={ uikit.ThClass }>{ i18n.Translate(ctx, "pages.users.filters.status") }</th>
+						<th scope="col" class={ uikit.ThClass, "text-right" }>{ i18n.Translate(ctx, "pages.admins.actions") }</th>
 					</tr>
 				</thead>
 				<tbody class="divide-y divide-border">
-					for _, a := range admins {
+					for _, admin := range admins {
 						<tr class={ uikit.TrClass }>
-							<td class={ uikit.TdClass, "font-medium" }>{ a.Email }</td>
-							<td class={ uikit.TdClass }>{ orDash(a.Name) }</td>
-							<td class={ uikit.TdClass, "tabular-nums text-muted-foreground" }>{ date(ctx, a.CreatedAt) }</td>
+							<td class={ uikit.TdClass, "font-medium" }>{ admin.Email }</td>
+							<td class={ uikit.TdClass }>{ orDash(admin.Name) }</td>
+							<td class={ uikit.TdClass, "tabular-nums text-muted-foreground" }>{ date(ctx, admin.CreatedAt) }</td>
 							<td class={ uikit.TdClass }>
-								if a.TwoFactorEnabled {
-									@uikit.Badge(uikit.Success, i18n.T(ctx, "pages.admins.twoFactorOn"), false)
+								if admin.TwoFactorEnabled {
+									@uikit.Badge(uikit.Success, i18n.Translate(ctx, "pages.admins.twoFactorOn"), false)
 								} else {
-									@uikit.Badge(uikit.Neutral, i18n.T(ctx, "pages.admins.twoFactorOff"), false)
+									@uikit.Badge(uikit.Neutral, i18n.Translate(ctx, "pages.admins.twoFactorOff"), false)
 								}
 							</td>
 							<td class={ uikit.TdClass }>
 								switch {
-									case a.Disabled:
-										@uikit.Badge(uikit.Error, i18n.T(ctx, "pages.admins.disabled"), true)
-									case a.HasPassword:
-										@uikit.Badge(uikit.Success, i18n.T(ctx, "pages.admins.active"), true)
+									case admin.Disabled:
+										@uikit.Badge(uikit.Error, i18n.Translate(ctx, "pages.admins.disabled"), true)
+									case admin.HasPassword:
+										@uikit.Badge(uikit.Success, i18n.Translate(ctx, "pages.admins.active"), true)
 									default:
-										@uikit.Badge(uikit.Warning, i18n.T(ctx, "pages.admins.pending"), true)
+										@uikit.Badge(uikit.Warning, i18n.Translate(ctx, "pages.admins.pending"), true)
 								}
 							</td>
 							<td class={ uikit.TdClass, "text-right" }>
-								if a.ID == selfID {
-									@uikit.Badge(uikit.Brand, i18n.T(ctx, "pages.admins.you"), false)
+								if admin.ID == selfID {
+									@uikit.Badge(uikit.Brand, i18n.Translate(ctx, "pages.admins.you"), false)
 								} else {
-									@adminActions(a)
+									@adminActions(admin)
 								}
 							</td>
 						</tr>
@@ -134,16 +134,16 @@ templ adminActions(admin apiclient.Admin) {
 	<div class="flex items-center justify-end gap-2">
 		if admin.Disabled {
 			<form method="post" action={ templ.SafeURL(routes.Admin(routes.AdminEnable, admin.ID)) } data-on:submit={ uikit.PostForm(routes.Admin(routes.AdminEnable, admin.ID)) } data-indicator:_enabling>
-				@uikit.SubmitButton(uikit.Submit{Label: i18n.T(ctx, "pages.admins.enable"), Loading: i18n.T(ctx, "common.loading"), Signal: "_enabling", ButtonProps: uikit.ButtonProps{Variant: uikit.Secondary, Size: uikit.Small}})
+				@uikit.SubmitButton(uikit.Submit{Label: i18n.Translate(ctx, "pages.admins.enable"), Loading: i18n.Translate(ctx, "common.loading"), Signal: "_enabling", ButtonProps: uikit.ButtonProps{Variant: uikit.Secondary, Size: uikit.Small}})
 			</form>
 		} else {
 			<form method="post" action={ templ.SafeURL(routes.Admin(routes.AdminDisable, admin.ID)) } data-on:submit={ uikit.PostForm(routes.Admin(routes.AdminDisable, admin.ID)) } data-indicator:_disabling>
-				@uikit.SubmitButton(uikit.Submit{Label: i18n.T(ctx, "pages.admins.disable"), Loading: i18n.T(ctx, "common.loading"), Signal: "_disabling", ButtonProps: uikit.ButtonProps{Variant: uikit.Secondary, Size: uikit.Small}})
+				@uikit.SubmitButton(uikit.Submit{Label: i18n.Translate(ctx, "pages.admins.disable"), Loading: i18n.Translate(ctx, "common.loading"), Signal: "_disabling", ButtonProps: uikit.ButtonProps{Variant: uikit.Secondary, Size: uikit.Small}})
 			</form>
 		}
 		if admin.HasPassword {
 			<form method="post" action={ templ.SafeURL(routes.Admin(routes.AdminPasswordReset, admin.ID)) } data-on:submit={ uikit.PostForm(routes.Admin(routes.AdminPasswordReset, admin.ID)) } data-indicator:_resetting>
-				@uikit.SubmitButton(uikit.Submit{Label: i18n.T(ctx, "pages.admins.sendPasswordReset"), Loading: i18n.T(ctx, "common.loading"), Signal: "_resetting", ButtonProps: uikit.ButtonProps{Variant: uikit.Secondary, Size: uikit.Small}})
+				@uikit.SubmitButton(uikit.Submit{Label: i18n.Translate(ctx, "pages.admins.sendPasswordReset"), Loading: i18n.Translate(ctx, "common.loading"), Signal: "_resetting", ButtonProps: uikit.ButtonProps{Variant: uikit.Secondary, Size: uikit.Small}})
 			</form>
 		}
 		if admin.TwoFactorEnabled {
@@ -151,98 +151,98 @@ templ adminActions(admin apiclient.Admin) {
 				ID:           "reset-2fa-" + admin.ID,
 				Action:       routes.Admin(routes.AdminResetTwoFactor, admin.ID),
 				Signal:       "_resetting2fa",
-				Title:        i18n.T(ctx, "pages.admins.confirmResetTwoFactorTitle"),
+				Title:        i18n.Translate(ctx, "pages.admins.confirmResetTwoFactorTitle"),
 				Message:      i18n.Tf(ctx, "pages.admins.confirmResetTwoFactor", admin.Email),
-				ConfirmLabel: i18n.T(ctx, "pages.admins.resetTwoFactor"),
-				CancelLabel:  i18n.T(ctx, "components.confirm.cancel"),
+				ConfirmLabel: i18n.Translate(ctx, "pages.admins.resetTwoFactor"),
+				CancelLabel:  i18n.Translate(ctx, "components.confirm.cancel"),
 				Trigger:      uikit.ButtonProps{Variant: uikit.DangerOutline, Size: uikit.Small},
 				Variant:      uikit.Danger,
-			}, i18n.T(ctx, "pages.admins.resetTwoFactor"))
+			}, i18n.Translate(ctx, "pages.admins.resetTwoFactor"))
 		}
 		@uikit.ConfirmForm(uikit.Confirm{
 			ID:           "remove-" + admin.ID,
 			Action:       routes.Admin(routes.AdminRemove, admin.ID),
 			Signal:       "_removing",
-			Title:        i18n.T(ctx, "pages.admins.confirmRemoveTitle"),
+			Title:        i18n.Translate(ctx, "pages.admins.confirmRemoveTitle"),
 			Message:      i18n.Tf(ctx, "pages.admins.confirmRemove", admin.Email),
-			ConfirmLabel: i18n.T(ctx, "pages.admins.remove"),
-			CancelLabel:  i18n.T(ctx, "components.confirm.cancel"),
+			ConfirmLabel: i18n.Translate(ctx, "pages.admins.remove"),
+			CancelLabel:  i18n.Translate(ctx, "components.confirm.cancel"),
 			Trigger:      uikit.ButtonProps{Variant: uikit.DangerOutline, Size: uikit.Small},
 			Variant:      uikit.Danger,
-		}, i18n.T(ctx, "pages.admins.remove"))
+		}, i18n.Translate(ctx, "pages.admins.remove"))
 	</div>
 }
 
 // InviteCard is the invite form; actions patch it whole (cleared on success).
-templ InviteCard(s InviteState) {
+templ InviteCard(state InviteState) {
 	@uikit.Card("p-5 sm:p-6", templ.Attributes{"id": inviteCardID}) {
-		@uikit.CardHeader(i18n.T(ctx, "pages.admins.invite.title"), i18n.T(ctx, "pages.admins.invite.description"))
+		@uikit.CardHeader(i18n.Translate(ctx, "pages.admins.invite.title"), i18n.Translate(ctx, "pages.admins.invite.description"))
 		<form class="mt-5 space-y-4" method="post" action={ templ.SafeURL(routes.AdminInvite) } data-on:submit={ uikit.PostForm(routes.AdminInvite) } data-indicator:_inviting>
-			@uikit.Alert(inviteErrorID, uikit.Error, s.Error)
-			@uikit.Alert(inviteSentID, uikit.Success, s.Sent)
+			@uikit.Alert(inviteErrorID, uikit.Error, state.Error)
+			@uikit.Alert(inviteSentID, uikit.Success, state.Sent)
 			<div class="grid grid-cols-1 items-end gap-4 md:grid-cols-[1fr_1fr_auto]">
-				@uikit.Input(uikit.Field{ID: "email", Type: "email", Label: i18n.T(ctx, "common.email"), Placeholder: "name@example.com", Autocomplete: "off", Value: s.Email})
-				@uikit.Input(uikit.Field{ID: "name", Label: i18n.T(ctx, "pages.admins.invite.name"), Autocomplete: "off", Value: s.Name, Optional: true})
-				@uikit.SubmitButton(uikit.Submit{Label: i18n.T(ctx, "pages.admins.invite.submit"), Loading: i18n.T(ctx, "pages.admins.invite.sending"), Signal: "_inviting"})
+				@uikit.Input(uikit.Field{ID: "email", Type: "email", Label: i18n.Translate(ctx, "common.email"), Placeholder: "name@example.com", Autocomplete: "off", Value: state.Email})
+				@uikit.Input(uikit.Field{ID: "name", Label: i18n.Translate(ctx, "pages.admins.invite.name"), Autocomplete: "off", Value: state.Name, Optional: true})
+				@uikit.SubmitButton(uikit.Submit{Label: i18n.Translate(ctx, "pages.admins.invite.submit"), Loading: i18n.Translate(ctx, "pages.admins.invite.sending"), Signal: "_inviting"})
 			</div>
 		</form>
 	}
 }
 
-templ AuditPage(d AuditData) {
-	@view.Layout(i18n.T(ctx, "pages.audit.title")) {
+templ AuditPage(data AuditData) {
+	@view.Layout(i18n.Translate(ctx, "pages.audit.title")) {
 		<div class={ uikit.ContainerClass, "py-8 sm:py-10" }>
-			@uikit.PageHeader(i18n.T(ctx, "pages.audit.title"), i18n.T(ctx, "pages.audit.subtitle"))
+			@uikit.PageHeader(i18n.Translate(ctx, "pages.audit.title"), i18n.Translate(ctx, "pages.audit.subtitle"))
 			<div data-testid="audit-how-recorded" class="mb-6 max-w-4xl">
-				@uikit.Callout(uikit.Info, "", i18n.T(ctx, "pages.audit.howRecorded"))
+				@uikit.Callout(uikit.Info, "", i18n.Translate(ctx, "pages.audit.howRecorded"))
 			</div>
-			<form method="get" role="search" aria-label={ i18n.T(ctx, "pages.audit.filters") } action={ templ.SafeURL(config.AppRoutes.Audit) } class={ uikit.CardClass, "flex flex-col gap-4 p-4 sm:flex-row sm:flex-wrap sm:items-end sm:p-5" } data-signals="{_filtering: false}" data-on:submit="$_filtering = true; el.submit()">
-				if d.Filters.TargetID != "" {
-					<input type="hidden" name="targetId" value={ d.Filters.TargetID }/>
+			<form method="get" role="search" aria-label={ i18n.Translate(ctx, "pages.audit.filters") } action={ templ.SafeURL(config.AppRoutes.Audit) } class={ uikit.CardClass, "flex flex-col gap-4 p-4 sm:flex-row sm:flex-wrap sm:items-end sm:p-5" } data-signals="{_filtering: false}" data-on:submit="$_filtering = true; el.submit()">
+				if data.Filters.TargetID != "" {
+					<input type="hidden" name="targetId" value={ data.Filters.TargetID }/>
 				}
 				<div class="sm:w-80">
-					@uikit.Select(uikit.SelectField{ID: "action", Label: i18n.T(ctx, "pages.audit.action"), Options: actionOptions(ctx), Selected: d.Filters.Action})
+					@uikit.Select(uikit.SelectField{ID: "action", Label: i18n.Translate(ctx, "pages.audit.action"), Options: actionOptions(ctx), Selected: data.Filters.Action})
 				</div>
 				<div>
-					@filterButton(i18n.T(ctx, "pages.users.filters.apply"), "_filtering")
+					@filterButton(i18n.Translate(ctx, "pages.users.filters.apply"), "_filtering")
 				</div>
-				if d.Filters.TargetID != "" {
+				if data.Filters.TargetID != "" {
 					<p class="text-sm text-muted-foreground sm:ml-auto sm:self-center">
-						{ i18n.T(ctx, "pages.audit.filteredByTarget") }
-						<a href={ templ.SafeURL(AuditFilters{Action: d.Filters.Action, Limit: d.Filters.Limit}.url(0)) } class={ uikit.LinkClass }>{ i18n.T(ctx, "pages.audit.clearTarget") }</a>
+						{ i18n.Translate(ctx, "pages.audit.filteredByTarget") }
+						<a href={ templ.SafeURL(AuditFilters{Action: data.Filters.Action, Limit: data.Filters.Limit}.url(0)) } class={ uikit.LinkClass }>{ i18n.Translate(ctx, "pages.audit.clearTarget") }</a>
 					</p>
 				}
 			</form>
 			<div class="mt-6">
-				if d.Error != "" {
-					@uikit.Alert("audit-error", uikit.Error, d.Error)
+				if data.Error != "" {
+					@uikit.Alert("audit-error", uikit.Error, data.Error)
 				} else {
-					if len(d.Entries) == 0 {
-						@uikit.EmptyState(i18n.T(ctx, "pages.audit.empty"), "")
+					if len(data.Entries) == 0 {
+						@uikit.EmptyState(i18n.Translate(ctx, "pages.audit.empty"), "")
 					} else {
-						@uikit.TableWrap(i18n.T(ctx, "pages.audit.title")) {
+						@uikit.TableWrap(i18n.Translate(ctx, "pages.audit.title")) {
 							<table class={ uikit.TableClass }>
 								<thead class="bg-muted/50">
 									<tr>
-										<th scope="col" class={ uikit.ThClass }>{ i18n.T(ctx, "pages.audit.time") }</th>
-										<th scope="col" class={ uikit.ThClass }>{ i18n.T(ctx, "pages.audit.actor") }</th>
-										<th scope="col" class={ uikit.ThClass }>{ i18n.T(ctx, "pages.audit.action") }</th>
-										<th scope="col" class={ uikit.ThClass }>{ i18n.T(ctx, "pages.audit.status") }</th>
-										<th scope="col" class={ uikit.ThClass }>{ i18n.T(ctx, "pages.audit.target") }</th>
-										<th scope="col" class={ uikit.ThClass }>{ i18n.T(ctx, "pages.audit.details") }</th>
+										<th scope="col" class={ uikit.ThClass }>{ i18n.Translate(ctx, "pages.audit.time") }</th>
+										<th scope="col" class={ uikit.ThClass }>{ i18n.Translate(ctx, "pages.audit.actor") }</th>
+										<th scope="col" class={ uikit.ThClass }>{ i18n.Translate(ctx, "pages.audit.action") }</th>
+										<th scope="col" class={ uikit.ThClass }>{ i18n.Translate(ctx, "pages.audit.status") }</th>
+										<th scope="col" class={ uikit.ThClass }>{ i18n.Translate(ctx, "pages.audit.target") }</th>
+										<th scope="col" class={ uikit.ThClass }>{ i18n.Translate(ctx, "pages.audit.details") }</th>
 									</tr>
 								</thead>
 								<tbody class="divide-y divide-border">
-									for _, e := range d.Entries {
+									for _, entry := range data.Entries {
 										<tr class={ uikit.TrClass, "align-top" }>
-											<td class={ uikit.TdClass, "tabular-nums text-muted-foreground" }>{ dateTime(ctx, e.CreatedAt) }</td>
-											<td class={ uikit.TdClass }>{ orDash(e.ActorEmail) }</td>
-											<td class={ uikit.TdClass, "font-medium" }><span title={ e.Action }>{ actionLabel(ctx, e.Action) }</span></td>
+											<td class={ uikit.TdClass, "tabular-nums text-muted-foreground" }>{ dateTime(ctx, entry.CreatedAt) }</td>
+											<td class={ uikit.TdClass }>{ orDash(entry.ActorEmail) }</td>
+											<td class={ uikit.TdClass, "font-medium" }><span title={ entry.Action }>{ actionLabel(ctx, entry.Action) }</span></td>
 											<td class={ uikit.TdClass }>
-												@auditStatusCell(auditStatus(ctx, e))
+												@auditStatusCell(auditStatus(ctx, entry))
 											</td>
 											<td class={ uikit.TdClass }>
-												if href, label := auditTarget(e); href != "" {
+												if href, label := auditTarget(entry); href != "" {
 													<a href={ templ.SafeURL(href) } class={ uikit.LinkClass }>{ label }</a>
 												} else {
 													{ orDash(label) }
@@ -250,7 +250,7 @@ templ AuditPage(d AuditData) {
 											</td>
 											<td class="min-w-48 px-4 py-3 text-xs text-muted-foreground">
 												<ul class="space-y-0.5 font-mono">
-													for _, line := range auditDetails(ctx, e) {
+													for _, line := range auditDetails(ctx, entry) {
 														<li>{ line }</li>
 													}
 												</ul>
@@ -261,7 +261,7 @@ templ AuditPage(d AuditData) {
 							</table>
 						}
 					}
-					@uikit.Pagination(pagination(ctx, d.Pager))
+					@uikit.Pagination(pagination(ctx, data.Pager))
 				}
 			</div>
 		</div>
@@ -270,34 +270,34 @@ templ AuditPage(d AuditData) {
 
 // auditStatusCell is an entry's outcome: the badge, then what a pending
 // entry means, the reconciled marker and the reason.
-templ auditStatusCell(s AuditStatus) {
+templ auditStatusCell(status AuditStatus) {
 	<div class="flex w-64 max-w-xs flex-col items-start gap-1 whitespace-normal">
 		<div class="flex flex-wrap items-center gap-1.5">
-			@uikit.Badge(s.Tone, s.Label, true)
-			if s.Reconciled {
-				<span class="text-xs italic text-muted-foreground" title={ i18n.T(ctx, "pages.audit.statuses.reconciledHint") }>{ i18n.T(ctx, "pages.audit.statuses.reconciled") }</span>
+			@uikit.Badge(status.Tone, status.Label, true)
+			if status.Reconciled {
+				<span class="text-xs italic text-muted-foreground" title={ i18n.Translate(ctx, "pages.audit.statuses.reconciledHint") }>{ i18n.Translate(ctx, "pages.audit.statuses.reconciled") }</span>
 			}
 		</div>
-		if s.Hint != "" {
-			<p class="text-xs text-warning-soft-foreground">{ s.Hint }</p>
+		if status.Hint != "" {
+			<p class="text-xs text-warning-soft-foreground">{ status.Hint }</p>
 		}
-		if s.Reason != "" {
-			<p class="text-xs text-muted-foreground">{ s.Reason }</p>
+		if status.Reason != "" {
+			<p class="text-xs text-muted-foreground">{ status.Reason }</p>
 		}
 	</div>
 }
 
-templ AnalyticsPage(d AnalyticsData) {
-	@view.Layout(i18n.T(ctx, "pages.analytics.title")) {
+templ AnalyticsPage(data AnalyticsData) {
+	@view.Layout(i18n.Translate(ctx, "pages.analytics.title")) {
 		<div class={ uikit.ContainerClass, "py-8 sm:py-10" }>
-			@uikit.PageHeader(i18n.T(ctx, "pages.analytics.title"), i18n.T(ctx, "pages.analytics.subtitle"))
-			@uikit.Callout(uikit.Info, "", i18n.T(ctx, "pages.analytics.placeholder"))
+			@uikit.PageHeader(i18n.Translate(ctx, "pages.analytics.title"), i18n.Translate(ctx, "pages.analytics.subtitle"))
+			@uikit.Callout(uikit.Info, "", i18n.Translate(ctx, "pages.analytics.placeholder"))
 			<div class="mt-6">
-				if d.Error != "" {
-					@uikit.Alert("analytics-error", uikit.Error, d.Error)
+				if data.Error != "" {
+					@uikit.Alert("analytics-error", uikit.Error, data.Error)
 				} else {
-					@uikit.StatGrid(analyticsStats(ctx, d.Overview))
-					<p class="mt-4 text-xs text-muted-foreground">{ i18n.T(ctx, "pages.analytics.generatedAt") } <span class="tabular-nums">{ dateTime(ctx, d.Overview.GeneratedAt) }</span></p>
+					@uikit.StatGrid(analyticsStats(ctx, data.Overview))
+					<p class="mt-4 text-xs text-muted-foreground">{ i18n.Translate(ctx, "pages.analytics.generatedAt") } <span class="tabular-nums">{ dateTime(ctx, data.Overview.GeneratedAt) }</span></p>
 				}
 			</div>
 		</div>

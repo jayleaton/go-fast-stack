@@ -27,53 +27,63 @@ var liveSecrets = append([]string{secretAppDatabaseURL, secretAdminDatabaseURL, 
 
 // Secrets hands live secrets to cmd/admin through typed accessors; nothing
 // else reads them. Load builds it (no I/O); every command calls Start first.
-type Secrets struct{ m *secrets.Manager }
+type Secrets struct{ manager *secrets.Manager }
 
 // Start fetches and validates the first snapshot (failing without one), then
 // polls until ctx ends or Stop is called.
-func (s Secrets) Start(ctx context.Context) error { return s.m.Start(ctx) }
+func (accessors Secrets) Start(ctx context.Context) error { return accessors.manager.Start(ctx) }
 
 // Stop ends polling. Values already handed out keep working.
-func (s Secrets) Stop() { s.m.Stop() }
+func (accessors Secrets) Stop() { accessors.manager.Stop() }
 
 // Healthy reports secrets.ErrNotLoaded or secrets.ErrStale (server /healthz).
-func (s Secrets) Healthy() error { return s.m.Healthy() }
+func (accessors Secrets) Healthy() error { return accessors.manager.Healthy() }
 
 // Provider is SECRETS_PROVIDER.
-func (s Secrets) Provider() string { return s.m.Provider() }
+func (accessors Secrets) Provider() string { return accessors.manager.Provider() }
 
 // AppDatabaseURL is the current DATABASE_URL (after Start), trimmed.
-func (s Secrets) AppDatabaseURL() (secrets.Secret, error) {
-	return trimmed(s.m.Get(secretAppDatabaseURL))
+func (accessors Secrets) AppDatabaseURL() (secrets.Secret, error) {
+	return trimmed(accessors.manager.Get(secretAppDatabaseURL))
 }
 
 // OnAppDatabaseURL calls fn now and whenever DATABASE_URL changes upstream.
-func (s Secrets) OnAppDatabaseURL(fn secrets.Hook) { s.onURL(secretAppDatabaseURL, fn) }
+func (accessors Secrets) OnAppDatabaseURL(fn secrets.Hook) { accessors.onURL(secretAppDatabaseURL, fn) }
 
 // AdminDatabaseURL is the current ADMIN_DATABASE_URL (after Start), trimmed.
-func (s Secrets) AdminDatabaseURL() (secrets.Secret, error) {
-	return trimmed(s.m.Get(secretAdminDatabaseURL))
+func (accessors Secrets) AdminDatabaseURL() (secrets.Secret, error) {
+	return trimmed(accessors.manager.Get(secretAdminDatabaseURL))
 }
 
 // OnAdminDatabaseURL calls fn now and whenever ADMIN_DATABASE_URL changes upstream.
-func (s Secrets) OnAdminDatabaseURL(fn secrets.Hook) { s.onURL(secretAdminDatabaseURL, fn) }
+func (accessors Secrets) OnAdminDatabaseURL(fn secrets.Hook) {
+	accessors.onURL(secretAdminDatabaseURL, fn)
+}
 
 // AuthSecrets is the ADMIN_AUTH_SECRET keyring (after Start).
-func (s Secrets) AuthSecrets() (secrets.Keyring, error) { return s.m.Keyring(secretAdminAuth) }
+func (accessors Secrets) AuthSecrets() (secrets.Keyring, error) {
+	return accessors.manager.Keyring(secretAdminAuth)
+}
 
 // OnAuthSecrets calls fn now and whenever the ADMIN_AUTH_SECRET keyring
 // changes. fn updates the admin auth instance (Auth.SetSecrets).
-func (s Secrets) OnAuthSecrets(fn func(secrets.Keyring) error) { s.m.OnKeyring(secretAdminAuth, fn) }
+func (accessors Secrets) OnAuthSecrets(fn func(secrets.Keyring) error) {
+	accessors.manager.OnKeyring(secretAdminAuth, fn)
+}
 
 // OnResendAPIKey calls fn now with RESEND_API_KEY (a zero Secret when unset)
 // and whenever it changes upstream. fn rebuilds the Resend client.
-func (s Secrets) OnResendAPIKey(fn secrets.Hook) { s.m.OnChange(secretResendAPIKey, fn) }
-
-func (s Secrets) onURL(name string, fn secrets.Hook) {
-	s.m.OnChange(name, func(v secrets.Secret) error { u, _ := trimmed(v, nil); return fn(u) })
+func (accessors Secrets) OnResendAPIKey(fn secrets.Hook) {
+	accessors.manager.OnChange(secretResendAPIKey, fn)
 }
 
-func trimmed(v secrets.Secret, err error) (secrets.Secret, error) { return v.TrimSpace(), err }
+func (accessors Secrets) onURL(name string, fn secrets.Hook) {
+	accessors.manager.OnChange(name, func(updated secrets.Secret) error { trimmedURL, _ := trimmed(updated, nil); return fn(trimmedURL) })
+}
+
+func trimmed(secret secrets.Secret, err error) (secrets.Secret, error) {
+	return secret.TrimSpace(), err
+}
 
 // validateLive checks one snapshot (env at boot, every remote fetch before
 // it is published). appAuthSecret is the web app's AUTH_SECRET when the env
@@ -91,16 +101,16 @@ func validateLive(env Env, appAuthSecret string) func(get func(string) string) [
 		case get(secretAppDatabaseURL):
 			errs = append(errs, errors.New("ADMIN_DATABASE_URL must be a different database from DATABASE_URL"))
 		}
-		k := secrets.ParseKeyring(get, secretAdminAuth)
-		if k.Current.Len() < minSecretLength {
+		keyring := secrets.ParseKeyring(get, secretAdminAuth)
+		if keyring.Current.Len() < minSecretLength {
 			errs = append(errs, errors.New("ADMIN_AUTH_SECRET must be at least 32 characters (openssl rand -base64 32)"))
-		} else if appAuthSecret != "" && k.Current.Equal(secrets.NewSecret(appAuthSecret)) {
+		} else if appAuthSecret != "" && keyring.Current.Equal(secrets.NewSecret(appAuthSecret)) {
 			errs = append(errs, errors.New("ADMIN_AUTH_SECRET must differ from the app's AUTH_SECRET"))
 		}
-		for li, list := range [][]secrets.Secret{k.Previous, k.Revoked} {
-			for i, v := range list {
-				if v.Len() < minSecretLength {
-					errs = append(errs, fmt.Errorf("%s entry %d must be at least 32 characters", secrets.KeyringNames(secretAdminAuth)[li+1], i+1))
+		for li, list := range [][]secrets.Secret{keyring.Previous, keyring.Revoked} {
+			for index, secret := range list {
+				if secret.Len() < minSecretLength {
+					errs = append(errs, fmt.Errorf("%s entry %d must be at least 32 characters", secrets.KeyringNames(secretAdminAuth)[li+1], index+1))
 				}
 			}
 		}
@@ -112,9 +122,9 @@ func validateLive(env Env, appAuthSecret string) func(get func(string) string) [
 }
 
 func loadSecrets(env Env, get func(key, fallback string) string, errs *[]error) Secrets {
-	m, problems := secrets.Bootstrap(func(k string) string { return get(k, "") }, secrets.BootstrapOptions{
+	manager, problems := secrets.Bootstrap(func(key string) string { return get(key, "") }, secrets.BootstrapOptions{
 		Keys: liveSecrets, Validate: validateLive(env, get("AUTH_SECRET", "")), Production: env == Production,
 	})
 	*errs = append(*errs, problems...)
-	return Secrets{m}
+	return Secrets{manager}
 }

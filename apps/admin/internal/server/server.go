@@ -72,26 +72,26 @@ var authRoutes = []string{
 // New returns the root handler. Without Deps.API nothing under /api/ is
 // mounted: the UI signs in, sets passwords (invite links land on its
 // /set-password page) and runs 2FA through packages/auth in-process.
-func New(d Deps) http.Handler {
+func New(deps Deps) http.Handler {
 	mux := http.NewServeMux()
-	mux.Handle("GET "+config.APIRoutes.Healthz, apiOnly(healthz(d.DBs, d.Secrets)))
-	if len(d.API) > 0 {
+	mux.Handle("GET "+config.APIRoutes.Healthz, apiOnly(healthz(deps.DBs, deps.Secrets)))
+	if len(deps.API) > 0 {
 		apiMux := http.NewServeMux()
-		authHandler := d.Auth.Handler()
-		for _, p := range authRoutes {
-			apiMux.Handle(p, authHandler)
+		authHandler := deps.Auth.Handler()
+		for _, authRoute := range authRoutes {
+			apiMux.Handle(authRoute, authHandler)
 		}
-		for _, r := range d.API {
-			r.Routes(apiMux)
+		for _, router := range deps.API {
+			router.Routes(apiMux)
 		}
 		mux.Handle(apiPrefix, apiOnly(hideMethods(apiMux)))
 		// Without this, ServeMux would answer /api with a 307 to /api/.
 		mux.Handle(strings.TrimSuffix(apiPrefix, "/"), http.NotFoundHandler())
 	}
-	if d.UI != nil {
-		mux.Handle("/", d.UI)
+	if deps.UI != nil {
+		mux.Handle("/", deps.UI)
 	}
-	return securityHeaders(logRequests(d.Log, recoverPanics(d.Log, d.Auth.Middleware(mux))))
+	return securityHeaders(logRequests(deps.Log, recoverPanics(deps.Log, deps.Auth.Middleware(mux))))
 }
 
 // securityHeaders: the dashboard is never indexed, framed or cached,
@@ -99,14 +99,14 @@ func New(d Deps) http.Handler {
 // browser headers, and the static handler overrides Cache-Control for its
 // assets.
 func securityHeaders(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		h := w.Header()
-		h.Set("Cache-Control", "no-store")
-		h.Set("X-Frame-Options", "DENY")
-		h.Set("X-Content-Type-Options", "nosniff")
-		h.Set("X-Robots-Tag", "noindex, nofollow")
-		h.Set("Referrer-Policy", "strict-origin")
-		next.ServeHTTP(w, r)
+	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		header := writer.Header()
+		header.Set("Cache-Control", "no-store")
+		header.Set("X-Frame-Options", "DENY")
+		header.Set("X-Content-Type-Options", "nosniff")
+		header.Set("X-Robots-Tag", "noindex, nofollow")
+		header.Set("Referrer-Policy", "strict-origin")
+		next.ServeHTTP(writer, request)
 	})
 }
 
@@ -123,19 +123,19 @@ const healthzTimeout = 2 * time.Second
 // are past their max staleness (see the web app's healthz).
 func healthz(dbs map[string]Pinger, sec SecretsHealth) http.HandlerFunc {
 	names := slices.Sorted(maps.Keys(dbs))
-	return func(w http.ResponseWriter, r *http.Request) {
-		ctx, cancel := context.WithTimeout(r.Context(), healthzTimeout)
+	return func(writer http.ResponseWriter, request *http.Request) {
+		ctx, cancel := context.WithTimeout(request.Context(), healthzTimeout)
 		defer cancel()
 		for _, name := range names {
 			if err := dbs[name].Ping(ctx); err != nil {
-				api.WriteError(w, http.StatusServiceUnavailable, name+" database unavailable", nil)
+				api.WriteError(writer, http.StatusServiceUnavailable, name+" database unavailable", nil)
 				return
 			}
 		}
 		if sec != nil && sec.Healthy() != nil {
-			api.WriteError(w, http.StatusServiceUnavailable, "secrets stale", nil)
+			api.WriteError(writer, http.StatusServiceUnavailable, "secrets stale", nil)
 			return
 		}
-		api.WriteData(w, http.StatusOK, map[string]string{"status": "ok"})
+		api.WriteData(writer, http.StatusOK, map[string]string{"status": "ok"})
 	}
 }

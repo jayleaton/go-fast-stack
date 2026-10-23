@@ -33,15 +33,15 @@ var FS embed.FS
 
 var versions = func() map[string]string {
 	out := map[string]string{}
-	_ = fs.WalkDir(FS, ".", func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
+	_ = fs.WalkDir(FS, ".", func(path string, entry fs.DirEntry, err error) error {
+		if err != nil || entry.IsDir() {
 			return err
 		}
-		b, err := FS.ReadFile(path)
+		file, err := FS.ReadFile(path)
 		if err != nil {
 			return err
 		}
-		sum := sha256.Sum256(b)
+		sum := sha256.Sum256(file)
 		out[path] = hex.EncodeToString(sum[:8])
 		return nil
 	})
@@ -58,17 +58,17 @@ func URL(name string) string {
 // served: no directory listings, 404 for anything else.
 func Handler() http.Handler {
 	files := http.StripPrefix(routes.Static, http.FileServerFS(FS))
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		name := strings.TrimPrefix(r.URL.Path, routes.Static)
+	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		name := strings.TrimPrefix(request.URL.Path, routes.Static)
 		if _, ok := versions[name]; !ok {
-			http.NotFound(w, r)
+			http.NotFound(writer, request)
 			return
 		}
-		if v := r.URL.Query().Get("v"); v != "" && v == versions[name] {
-			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		if value := request.URL.Query().Get("v"); value != "" && value == versions[name] {
+			writer.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 		} else {
-			w.Header().Set("Cache-Control", "no-cache")
+			writer.Header().Set("Cache-Control", "no-cache")
 		}
-		files.ServeHTTP(w, r)
+		files.ServeHTTP(writer, request)
 	})
 }

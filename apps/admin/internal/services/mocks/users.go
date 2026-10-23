@@ -72,18 +72,18 @@ func (mr *MockUserDirectoryMockRecorder) GetUserDetail(ctx, userID any) *gomock.
 }
 
 // ListUsers mocks base method.
-func (m *MockUserDirectory) ListUsers(ctx context.Context, q services.UserQuery) (services.UserPage, error) {
+func (m *MockUserDirectory) ListUsers(ctx context.Context, query services.UserQuery) (services.UserPage, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ListUsers", ctx, q)
+	ret := m.ctrl.Call(m, "ListUsers", ctx, query)
 	ret0, _ := ret[0].(services.UserPage)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // ListUsers indicates an expected call of ListUsers.
-func (mr *MockUserDirectoryMockRecorder) ListUsers(ctx, q any) *gomock.Call {
+func (mr *MockUserDirectoryMockRecorder) ListUsers(ctx, query any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListUsers", reflect.TypeOf((*MockUserDirectory)(nil).ListUsers), ctx, q)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListUsers", reflect.TypeOf((*MockUserDirectory)(nil).ListUsers), ctx, query)
 }
 
 // RevokeSession mocks base method.

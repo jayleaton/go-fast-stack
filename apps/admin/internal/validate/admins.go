@@ -16,16 +16,16 @@ type CreateAdminInvite struct {
 }
 
 // Validate normalises the address and name.
-func (c *CreateAdminInvite) Validate() error {
-	c.Email = strings.ToLower(strings.TrimSpace(c.Email))
-	c.Name = strings.TrimSpace(c.Name)
-	if c.Name == "" {
-		c.Name, _, _ = strings.Cut(c.Email, "@")
+func (invite *CreateAdminInvite) Validate() error {
+	invite.Email = strings.ToLower(strings.TrimSpace(invite.Email))
+	invite.Name = strings.TrimSpace(invite.Name)
+	if invite.Name == "" {
+		invite.Name, _, _ = strings.Cut(invite.Email, "@")
 	}
-	f := Fields{}
-	f.Add(!isEmail(c.Email), "email", "must be a valid email address")
-	f.Add(utf8.RuneCountInString(c.Name) > maxNameLength, "name", "must be at most 255 characters")
-	return f.Err()
+	fields := Fields{}
+	fields.Add(!isEmail(invite.Email), "email", "must be a valid email address")
+	fields.Add(utf8.RuneCountInString(invite.Name) > maxNameLength, "name", "must be at most 255 characters")
+	return fields.Err()
 }
 
 // ResetAdminTwoFactor names the admin whose 2FA `admin reset-2fa <email>`
@@ -51,29 +51,29 @@ type ListAuditLog struct {
 }
 
 // DecodeQuery reads ?action=&targetId=&limit=&offset=.
-func (l *ListAuditLog) DecodeQuery(q url.Values) error {
-	f := Fields{}
-	l.Action = strings.TrimSpace(q.Get("action"))
-	l.TargetID = strings.TrimSpace(q.Get("targetId"))
-	l.Limit = queryInt(q, "limit", f)
-	l.Offset = queryInt(q, "offset", f)
-	return f.Err()
+func (log *ListAuditLog) DecodeQuery(values url.Values) error {
+	fields := Fields{}
+	log.Action = strings.TrimSpace(values.Get("action"))
+	log.TargetID = strings.TrimSpace(values.Get("targetId"))
+	log.Limit = queryInt(values, "limit", fields)
+	log.Offset = queryInt(values, "offset", fields)
+	return fields.Err()
 }
 
 // Validate applies the default page size and checks every field.
-func (l *ListAuditLog) Validate() error {
-	if l.Limit == 0 {
-		l.Limit = DefaultLimit
+func (log *ListAuditLog) Validate() error {
+	if log.Limit == 0 {
+		log.Limit = DefaultLimit
 	}
-	f := Fields{}
-	f.Add(len(l.Action) > maxAuditActionLength, "action", "must be at most 64 characters")
-	f.Add(len(l.TargetID) > maxAuditTargetLength, "targetId", "must be at most 255 characters")
-	f.Add(l.Limit < 1 || l.Limit > MaxLimit, "limit", "must be 1-100")
-	f.Add(l.Offset < 0, "offset", "must be 0 or more")
-	return f.Err()
+	fields := Fields{}
+	fields.Add(len(log.Action) > maxAuditActionLength, "action", "must be at most 64 characters")
+	fields.Add(len(log.TargetID) > maxAuditTargetLength, "targetId", "must be at most 255 characters")
+	fields.Add(log.Limit < 1 || log.Limit > MaxLimit, "limit", "must be 1-100")
+	fields.Add(log.Offset < 0, "offset", "must be 0 or more")
+	return fields.Err()
 }
 
-func isEmail(s string) bool {
-	a, err := mail.ParseAddress(s)
-	return err == nil && a.Address == s && len(s) <= maxEmailLength
+func isEmail(text string) bool {
+	address, err := mail.ParseAddress(text)
+	return err == nil && address.Address == text && len(text) <= maxEmailLength
 }

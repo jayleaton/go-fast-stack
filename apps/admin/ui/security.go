@@ -35,21 +35,21 @@ func contentSecurityPolicy(nonce string) string {
 // tokens), whatever the handler or the SSE writer set; the static handler
 // sets its own Cache-Control for assets. hsts is set behind https.
 func secure(next http.Handler, hsts bool) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		nonce := newNonce()
-		h := w.Header()
-		h.Set("Content-Security-Policy", contentSecurityPolicy(nonce))
-		h.Set("X-Content-Type-Options", "nosniff")
-		h.Set("X-Frame-Options", "DENY")
-		h.Set("Referrer-Policy", "strict-origin")
-		h.Set("Permissions-Policy", "accelerometer=(), browsing-topics=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()")
-		h.Set("Cross-Origin-Opener-Policy", "same-origin")
-		h.Set("Cross-Origin-Resource-Policy", "same-origin")
-		h.Set("Cache-Control", "no-store")
+		header := writer.Header()
+		header.Set("Content-Security-Policy", contentSecurityPolicy(nonce))
+		header.Set("X-Content-Type-Options", "nosniff")
+		header.Set("X-Frame-Options", "DENY")
+		header.Set("Referrer-Policy", "strict-origin")
+		header.Set("Permissions-Policy", "accelerometer=(), browsing-topics=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()")
+		header.Set("Cross-Origin-Opener-Policy", "same-origin")
+		header.Set("Cross-Origin-Resource-Policy", "same-origin")
+		header.Set("Cache-Control", "no-store")
 		if hsts {
-			h.Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
+			header.Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
 		}
-		next.ServeHTTP(&noStore{ResponseWriter: w}, r.WithContext(templ.WithNonce(r.Context(), nonce)))
+		next.ServeHTTP(&noStore{ResponseWriter: writer}, request.WithContext(templ.WithNonce(request.Context(), nonce)))
 	})
 }
 
@@ -60,54 +60,54 @@ type noStore struct {
 	done bool
 }
 
-func (n *noStore) header() {
-	if n.done {
+func (store *noStore) header() {
+	if store.done {
 		return
 	}
-	n.done = true
-	ct := n.Header().Get("Content-Type")
+	store.done = true
+	ct := store.Header().Get("Content-Type")
 	if strings.HasPrefix(ct, "text/html") || strings.HasPrefix(ct, "text/event-stream") {
-		n.Header().Set("Cache-Control", "no-store")
+		store.Header().Set("Cache-Control", "no-store")
 	}
 }
 
-func (n *noStore) WriteHeader(code int) {
-	n.header()
-	n.ResponseWriter.WriteHeader(code)
+func (store *noStore) WriteHeader(code int) {
+	store.header()
+	store.ResponseWriter.WriteHeader(code)
 }
 
-func (n *noStore) Write(b []byte) (int, error) {
-	n.header()
-	return n.ResponseWriter.Write(b)
+func (store *noStore) Write(data []byte) (int, error) {
+	store.header()
+	return store.ResponseWriter.Write(data)
 }
 
 // FlushError lets http.ResponseController flush SSE through the wrapper.
-func (n *noStore) FlushError() error {
-	n.header()
-	return http.NewResponseController(n.ResponseWriter).Flush()
+func (store *noStore) FlushError() error {
+	store.header()
+	return http.NewResponseController(store.ResponseWriter).Flush()
 }
 
-func (n *noStore) Unwrap() http.ResponseWriter { return n.ResponseWriter }
+func (store *noStore) Unwrap() http.ResponseWriter { return store.ResponseWriter }
 
 // nonceBytes is the CSP nonce's entropy: 144 bits, 24 base64 characters
 // with no padding.
 const nonceBytes = 18
 
 func newNonce() string {
-	b := make([]byte, nonceBytes)
-	_, _ = rand.Read(b) // never fails on supported platforms (crypto/rand docs)
-	return base64.RawStdEncoding.EncodeToString(b)
+	data := make([]byte, nonceBytes)
+	_, _ = rand.Read(data) // never fails on supported platforms (crypto/rand docs)
+	return base64.RawStdEncoding.EncodeToString(data)
 }
 
 // strict answers every request mux has no route for (unknown path, or a
 // known path with another method) with a bare 404: no 405, no Allow header,
 // nothing that maps the routes.
 func strict(mux *http.ServeMux) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if _, pattern := mux.Handler(r); pattern == "" {
-			http.NotFound(w, r)
+	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if _, pattern := mux.Handler(request); pattern == "" {
+			http.NotFound(writer, request)
 			return
 		}
-		mux.ServeHTTP(w, r)
+		mux.ServeHTTP(writer, request)
 	})
 }

@@ -15,13 +15,13 @@ var overview = services.Overview{
 
 var analyticsRoutes = map[string]route{
 	"GET analytics": {
-		method: "GET", path: r.Analytics,
-		expect: func(m svcs, err error) {
-			m.analytics.Overview(anyCtx, actor).Return(overview, err)
+		method: "GET", path: routes.Analytics,
+		expect: func(svcs svcs, err error) {
+			svcs.analytics.Overview(anyCtx, actor).Return(overview, err)
 		},
-		check: func(t *testing.T, res apitest.Response) {
-			if got := apitest.Data[services.Overview](t, res); got != overview {
-				t.Errorf("data = %s", res.Data)
+		check: func(test *testing.T, res apitest.Response) {
+			if got := apitest.Data[services.Overview](test, res); got != overview {
+				test.Errorf("data = %s", res.Data)
 			}
 		},
 	},

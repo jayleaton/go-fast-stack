@@ -70,7 +70,7 @@ type UserPage struct {
 // ErrSessionNotFound and a role auth rejects as ErrInvalidRole; any other
 // error is internal.
 type UserDirectory interface {
-	ListUsers(ctx context.Context, q UserQuery) (UserPage, error)
+	ListUsers(ctx context.Context, query UserQuery) (UserPage, error)
 	GetUserDetail(ctx context.Context, userID string) (UserDetail, error)
 	// BanUser revokes every session of the user; duration 0 is permanent.
 	BanUser(ctx context.Context, userID, reason string, duration time.Duration) error
@@ -117,11 +117,11 @@ func NewUserService(dir UserDirectory, log AuditLog, policy Policy) *UserService
 }
 
 // ListUsers returns one page of users.
-func (s *UserService) ListUsers(ctx context.Context, actor Actor, in validate.ListUsers) (UserPage, error) {
-	if err := s.policy.authorize(actor); err != nil {
+func (service *UserService) ListUsers(ctx context.Context, actor Actor, in validate.ListUsers) (UserPage, error) {
+	if err := service.policy.authorize(actor); err != nil {
 		return UserPage{}, err
 	}
-	page, err := s.dir.ListUsers(ctx, UserQuery{
+	page, err := service.dir.ListUsers(ctx, UserQuery{
 		Search: in.Search, SearchField: in.SearchField, Role: in.Role, Banned: in.Banned,
 		SortBy: in.SortBy, SortDesc: in.SortDirection == "desc", Limit: in.Limit, Offset: in.Offset,
 	})
@@ -132,107 +132,107 @@ func (s *UserService) ListUsers(ctx context.Context, actor Actor, in validate.Li
 }
 
 // GetUser returns the user with their active sessions.
-func (s *UserService) GetUser(ctx context.Context, actor Actor, userID string) (UserDetail, error) {
-	if err := s.policy.authorize(actor); err != nil {
+func (service *UserService) GetUser(ctx context.Context, actor Actor, userID string) (UserDetail, error) {
+	if err := service.policy.authorize(actor); err != nil {
 		return UserDetail{}, err
 	}
-	d, err := s.dir.GetUserDetail(ctx, userID)
+	detail, err := service.dir.GetUserDetail(ctx, userID)
 	if err != nil {
 		return UserDetail{}, err
 	}
-	if d.Sessions == nil {
-		d.Sessions = []Session{}
+	if detail.Sessions == nil {
+		detail.Sessions = []Session{}
 	}
-	return d, nil
+	return detail, nil
 }
 
 // BanUser bans the user (again, with a new reason and expiry, if already
 // banned) and signs them out everywhere.
-func (s *UserService) BanUser(ctx context.Context, actor Actor, userID string, in validate.BanUser) error {
-	u, err := s.target(ctx, actor, userID)
+func (service *UserService) BanUser(ctx context.Context, actor Actor, userID string, in validate.BanUser) error {
+	user, err := service.target(ctx, actor, userID)
 	if err != nil {
 		return err
 	}
-	var d time.Duration
+	var duration time.Duration
 	if in.BanExpiresIn != nil {
-		d = time.Duration(*in.BanExpiresIn) * time.Second
+		duration = time.Duration(*in.BanExpiresIn) * time.Second
 	}
 	expires := "permanent"
-	if d > 0 {
-		expires = d.String()
+	if duration > 0 {
+		expires = duration.String()
 	}
-	return mutate(ctx, s.log, actor, userEntry(ActionUserBan, u, map[string]string{"reason": in.BanReason, "expiresIn": expires}), func() error {
-		return s.dir.BanUser(ctx, userID, in.BanReason, d)
+	return mutate(ctx, service.log, actor, userEntry(ActionUserBan, user, map[string]string{"reason": in.BanReason, "expiresIn": expires}), func() error {
+		return service.dir.BanUser(ctx, userID, in.BanReason, duration)
 	})
 }
 
 // UnbanUser lifts the user's ban.
-func (s *UserService) UnbanUser(ctx context.Context, actor Actor, userID string) error {
-	u, err := s.target(ctx, actor, userID)
+func (service *UserService) UnbanUser(ctx context.Context, actor Actor, userID string) error {
+	user, err := service.target(ctx, actor, userID)
 	if err != nil {
 		return err
 	}
-	if !u.Banned {
+	if !user.Banned {
 		return ErrUserNotBanned
 	}
-	return mutate(ctx, s.log, actor, userEntry(ActionUserUnban, u, nil), func() error {
-		return s.dir.UnbanUser(ctx, userID)
+	return mutate(ctx, service.log, actor, userEntry(ActionUserUnban, user, nil), func() error {
+		return service.dir.UnbanUser(ctx, userID)
 	})
 }
 
 // SetRole changes the user's app role to one of Roles.
-func (s *UserService) SetRole(ctx context.Context, actor Actor, userID string, in validate.SetUserRole) error {
-	if err := s.policy.authorize(actor); err != nil {
+func (service *UserService) SetRole(ctx context.Context, actor Actor, userID string, in validate.SetUserRole) error {
+	if err := service.policy.authorize(actor); err != nil {
 		return err
 	}
 	if !slices.Contains(Roles, in.Role) {
 		return ErrInvalidRole
 	}
-	u, err := s.target(ctx, actor, userID)
+	user, err := service.target(ctx, actor, userID)
 	if err != nil {
 		return err
 	}
-	if u.Role == in.Role {
+	if user.Role == in.Role {
 		return ErrRoleUnchanged
 	}
-	return mutate(ctx, s.log, actor, userEntry(ActionUserSetRole, u, map[string]string{"from": u.Role, "to": in.Role}), func() error {
-		return s.dir.SetRole(ctx, userID, in.Role)
+	return mutate(ctx, service.log, actor, userEntry(ActionUserSetRole, user, map[string]string{"from": user.Role, "to": in.Role}), func() error {
+		return service.dir.SetRole(ctx, userID, in.Role)
 	})
 }
 
 // RevokeSession signs the user out of one session.
-func (s *UserService) RevokeSession(ctx context.Context, actor Actor, userID, sessionID string) error {
-	u, err := s.target(ctx, actor, userID)
+func (service *UserService) RevokeSession(ctx context.Context, actor Actor, userID, sessionID string) error {
+	user, err := service.target(ctx, actor, userID)
 	if err != nil {
 		return err
 	}
-	return mutate(ctx, s.log, actor, userEntry(ActionUserRevokeSession, u, map[string]string{"sessionId": sessionID}), func() error {
-		return s.dir.RevokeSession(ctx, userID, sessionID)
+	return mutate(ctx, service.log, actor, userEntry(ActionUserRevokeSession, user, map[string]string{"sessionId": sessionID}), func() error {
+		return service.dir.RevokeSession(ctx, userID, sessionID)
 	})
 }
 
 // RevokeSessions signs the user out everywhere.
-func (s *UserService) RevokeSessions(ctx context.Context, actor Actor, userID string) error {
-	u, err := s.target(ctx, actor, userID)
+func (service *UserService) RevokeSessions(ctx context.Context, actor Actor, userID string) error {
+	user, err := service.target(ctx, actor, userID)
 	if err != nil {
 		return err
 	}
-	return mutate(ctx, s.log, actor, userEntry(ActionUserRevokeSessions, u, nil), func() error {
-		return s.dir.RevokeUserSessions(ctx, userID)
+	return mutate(ctx, service.log, actor, userEntry(ActionUserRevokeSessions, user, nil), func() error {
+		return service.dir.RevokeUserSessions(ctx, userID)
 	})
 }
 
 // target authorizes the actor and loads the user a mutation acts on, so a
 // missing user is a 404 before anything changes and the audit entry can name
 // the user's email.
-func (s *UserService) target(ctx context.Context, actor Actor, userID string) (User, error) {
-	if err := s.policy.authorize(actor); err != nil {
+func (service *UserService) target(ctx context.Context, actor Actor, userID string) (User, error) {
+	if err := service.policy.authorize(actor); err != nil {
 		return User{}, err
 	}
-	d, err := s.dir.GetUserDetail(ctx, userID)
-	return d.User, err
+	detail, err := service.dir.GetUserDetail(ctx, userID)
+	return detail.User, err
 }
 
-func userEntry(action string, u User, details map[string]string) NewAuditEntry {
-	return NewAuditEntry{Action: action, TargetType: TargetUser, TargetID: u.ID, TargetLabel: u.Email, Details: details}
+func userEntry(action string, user User, details map[string]string) NewAuditEntry {
+	return NewAuditEntry{Action: action, TargetType: TargetUser, TargetID: user.ID, TargetLabel: user.Email, Details: details}
 }

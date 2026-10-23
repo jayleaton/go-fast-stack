@@ -20,9 +20,9 @@ var (
 
 const olderThan = 10 * time.Minute
 
-func newReconciler(t *testing.T) (*services.AuditReconciler, ports) {
-	p := newPorts(t)
-	return services.NewAuditReconciler(p.log, p.dir, p.accounts), p
+func newReconciler(test *testing.T) (*services.AuditReconciler, ports) {
+	ports := newPorts(test)
+	return services.NewAuditReconciler(ports.log, ports.dir, ports.accounts), ports
 }
 
 // staleCutoff matches Pending's before argument: now - olderThan, give or
@@ -44,8 +44,8 @@ func pendingEntry(id int64, action, targetID, targetLabel string, details map[st
 }
 
 // Every action is judged by the state its change should have produced.
-func TestReconcileVerdicts(t *testing.T) {
-	t.Parallel()
+func TestReconcileVerdicts(test *testing.T) {
+	test.Parallel()
 	entryAt := time.Date(2026, 10, 22, 9, 0, 0, 0, time.UTC)
 	user := func(account services.User, sessions ...services.Session) func(fakes ports) {
 		return func(fakes ports) {
@@ -117,9 +117,9 @@ func TestReconcileVerdicts(t *testing.T) {
 	labels := map[string]string{"u1": "ada@example.com", "a2": "bob@example.com", "bob@example.com": "bob@example.com"}
 
 	for _, testCase := range cases {
-		t.Run(testCase.name, func(t *testing.T) {
-			t.Parallel()
-			reconciler, fakes := newReconciler(t)
+		test.Run(testCase.name, func(test *testing.T) {
+			test.Parallel()
+			reconciler, fakes := newReconciler(test)
 			entry := pendingEntry(entryID, testCase.action, testCase.target, labels[testCase.target], testCase.detail)
 			fakes.log.EXPECT().Pending(ctx, staleCutoff(), 100).Return([]services.AuditEntry{entry}, nil)
 			if testCase.state != nil {
@@ -138,7 +138,7 @@ func TestReconcileVerdicts(t *testing.T) {
 				want.Unknown = 1
 			}
 			if err != nil || got != want {
-				t.Fatalf("Reconcile = %+v, %v; want %+v", got, err, want)
+				test.Fatalf("Reconcile = %+v, %v; want %+v", got, err, want)
 			}
 		})
 	}
@@ -146,9 +146,9 @@ func TestReconcileVerdicts(t *testing.T) {
 
 // An entry whose state cannot be read stays pending; the others are resolved
 // and the read errors are returned.
-func TestReconcileSkipsUnreadableState(t *testing.T) {
-	t.Parallel()
-	r, p := newReconciler(t)
+func TestReconcileSkipsUnreadableState(test *testing.T) {
+	test.Parallel()
+	reconciler, ports := newReconciler(test)
 	errUsers := errors.New("app database down")
 	errAdmins := errors.New("admin database down")
 	entries := []services.AuditEntry{
@@ -158,27 +158,27 @@ func TestReconcileSkipsUnreadableState(t *testing.T) {
 		pendingEntry(4, "admin.remove", "a3", "eve@example.com", nil),
 	}
 	gomock.InOrder(
-		p.log.EXPECT().Pending(ctx, staleCutoff(), 100).Return(entries, nil),
-		p.dir.EXPECT().GetUserDetail(ctx, "u1").Return(services.UserDetail{}, errUsers),
-		p.accounts.EXPECT().AdminByID(ctx, "a2").Return(services.Admin{}, errAdmins),
-		p.accounts.EXPECT().AdminByEmail(ctx, "bob@example.com").Return(services.Admin{}, errAdmins),
-		p.accounts.EXPECT().AdminByID(ctx, "a3").Return(services.Admin{}, services.ErrRecordNotFound),
-		p.log.EXPECT().Resolve(ctx, int64(4), stateMatches).Return(nil),
+		ports.log.EXPECT().Pending(ctx, staleCutoff(), 100).Return(entries, nil),
+		ports.dir.EXPECT().GetUserDetail(ctx, "u1").Return(services.UserDetail{}, errUsers),
+		ports.accounts.EXPECT().AdminByID(ctx, "a2").Return(services.Admin{}, errAdmins),
+		ports.accounts.EXPECT().AdminByEmail(ctx, "bob@example.com").Return(services.Admin{}, errAdmins),
+		ports.accounts.EXPECT().AdminByID(ctx, "a3").Return(services.Admin{}, services.ErrRecordNotFound),
+		ports.log.EXPECT().Resolve(ctx, int64(4), stateMatches).Return(nil),
 	)
 
-	got, err := r.Reconcile(ctx, olderThan)
+	got, err := reconciler.Reconcile(ctx, olderThan)
 	if want := (services.ReconcileResult{Succeeded: 1, Skipped: 3}); got != want {
-		t.Fatalf("Reconcile = %+v, want %+v", got, want)
+		test.Fatalf("Reconcile = %+v, want %+v", got, want)
 	}
 	if !errors.Is(err, errUsers) || !errors.Is(err, errAdmins) {
-		t.Fatalf("err = %v, want the read errors", err)
+		test.Fatalf("err = %v, want the read errors", err)
 	}
 }
 
 // A failed outcome write stops the pass: the store is likely down.
-func TestReconcileStopsWhenResolveFails(t *testing.T) {
-	t.Parallel()
-	r, p := newReconciler(t)
+func TestReconcileStopsWhenResolveFails(test *testing.T) {
+	test.Parallel()
+	reconciler, ports := newReconciler(test)
 	errRead := errors.New("app database down")
 	entries := []services.AuditEntry{
 		pendingEntry(1, "user.ban", "u1", "ada@example.com", nil),
@@ -186,83 +186,83 @@ func TestReconcileStopsWhenResolveFails(t *testing.T) {
 		pendingEntry(3, "admin.sign_in", "a2", "bob@example.com", nil), // never reached
 	}
 	gomock.InOrder(
-		p.log.EXPECT().Pending(ctx, staleCutoff(), 100).Return(entries, nil),
-		p.dir.EXPECT().GetUserDetail(ctx, "u1").Return(services.UserDetail{}, errRead),
-		p.log.EXPECT().Resolve(ctx, int64(2), undecidable).Return(errResolve),
+		ports.log.EXPECT().Pending(ctx, staleCutoff(), 100).Return(entries, nil),
+		ports.dir.EXPECT().GetUserDetail(ctx, "u1").Return(services.UserDetail{}, errRead),
+		ports.log.EXPECT().Resolve(ctx, int64(2), undecidable).Return(errResolve),
 	)
 
-	got, err := r.Reconcile(ctx, olderThan)
+	got, err := reconciler.Reconcile(ctx, olderThan)
 	if want := (services.ReconcileResult{Skipped: 1}); got != want {
-		t.Fatalf("Reconcile = %+v, want %+v", got, want)
+		test.Fatalf("Reconcile = %+v, want %+v", got, want)
 	}
 	if !errors.Is(err, errResolve) || !errors.Is(err, errRead) {
-		t.Fatalf("err = %v, want the resolve and read errors", err)
+		test.Fatalf("err = %v, want the resolve and read errors", err)
 	}
 }
 
-func TestReconcilePendingFails(t *testing.T) {
-	t.Parallel()
-	r, p := newReconciler(t)
-	p.log.EXPECT().Pending(ctx, staleCutoff(), 100).Return(nil, errDB)
-	got, err := r.Reconcile(ctx, olderThan)
-	wantInternal(t, err, errDB)
+func TestReconcilePendingFails(test *testing.T) {
+	test.Parallel()
+	reconciler, ports := newReconciler(test)
+	ports.log.EXPECT().Pending(ctx, staleCutoff(), 100).Return(nil, errDB)
+	got, err := reconciler.Reconcile(ctx, olderThan)
+	wantInternal(test, err, errDB)
 	if got != (services.ReconcileResult{}) {
-		t.Fatalf("Reconcile = %+v, want nothing done", got)
+		test.Fatalf("Reconcile = %+v, want nothing done", got)
 	}
 }
 
-func TestReconcileNothingPending(t *testing.T) {
-	t.Parallel()
-	r, p := newReconciler(t)
-	p.log.EXPECT().Pending(ctx, staleCutoff(), 100).Return(nil, nil)
-	if got, err := r.Reconcile(ctx, olderThan); err != nil || got != (services.ReconcileResult{}) {
-		t.Fatalf("Reconcile = %+v, %v", got, err)
+func TestReconcileNothingPending(test *testing.T) {
+	test.Parallel()
+	reconciler, ports := newReconciler(test)
+	ports.log.EXPECT().Pending(ctx, staleCutoff(), 100).Return(nil, nil)
+	if got, err := reconciler.Reconcile(ctx, olderThan); err != nil || got != (services.ReconcileResult{}) {
+		test.Fatalf("Reconcile = %+v, %v", got, err)
 	}
 }
 
 // A full batch that made progress is followed by the next one, until a
 // batch comes back short.
-func TestReconcileBatches(t *testing.T) {
-	t.Parallel()
-	r, p := newReconciler(t)
-	batch := func(from, n int) []services.AuditEntry {
-		entries := make([]services.AuditEntry, n)
-		for i := range entries {
-			entries[i] = pendingEntry(int64(from+i), "admin.sign_in", "a2", "bob@example.com", nil)
+func TestReconcileBatches(test *testing.T) {
+	test.Parallel()
+	reconciler, ports := newReconciler(test)
+	batch := func(from, count int) []services.AuditEntry {
+		entries := make([]services.AuditEntry, count)
+		for index := range entries {
+			entries[index] = pendingEntry(int64(from+index), "admin.sign_in", "a2", "bob@example.com", nil)
 		}
 		return entries
 	}
 	gomock.InOrder(
-		p.log.EXPECT().Pending(ctx, staleCutoff(), 100).Return(batch(1, 100), nil),
-		p.log.EXPECT().Resolve(ctx, gomock.Any(), undecidable).Return(nil).Times(100),
-		p.log.EXPECT().Pending(ctx, staleCutoff(), 100).Return(batch(101, 3), nil),
-		p.log.EXPECT().Resolve(ctx, gomock.Any(), undecidable).Return(nil).Times(3),
+		ports.log.EXPECT().Pending(ctx, staleCutoff(), 100).Return(batch(1, 100), nil),
+		ports.log.EXPECT().Resolve(ctx, gomock.Any(), undecidable).Return(nil).Times(100),
+		ports.log.EXPECT().Pending(ctx, staleCutoff(), 100).Return(batch(101, 3), nil),
+		ports.log.EXPECT().Resolve(ctx, gomock.Any(), undecidable).Return(nil).Times(3),
 	)
-	if got, err := r.Reconcile(ctx, olderThan); err != nil || got != (services.ReconcileResult{Unknown: 103}) {
-		t.Fatalf("Reconcile = %+v, %v", got, err)
+	if got, err := reconciler.Reconcile(ctx, olderThan); err != nil || got != (services.ReconcileResult{Unknown: 103}) {
+		test.Fatalf("Reconcile = %+v, %v", got, err)
 	}
 }
 
 // An unreadable entry in a full batch does not end the pass: the next read
 // asks for one more row (the skipped entry comes back first) and skips it.
-func TestReconcileReadsPastSkippedEntries(t *testing.T) {
-	t.Parallel()
-	r, p := newReconciler(t)
+func TestReconcileReadsPastSkippedEntries(test *testing.T) {
+	test.Parallel()
+	reconciler, ports := newReconciler(test)
 	errRead := errors.New("app database down")
 	unreadable := pendingEntry(1, "user.ban", "u1", "ada@example.com", nil)
 	first := []services.AuditEntry{unreadable}
-	for i := range 99 {
-		first = append(first, pendingEntry(int64(2+i), "admin.sign_in", "a2", "bob@example.com", nil))
+	for index := range 99 {
+		first = append(first, pendingEntry(int64(2+index), "admin.sign_in", "a2", "bob@example.com", nil))
 	}
 	gomock.InOrder(
-		p.log.EXPECT().Pending(ctx, staleCutoff(), 100).Return(first, nil),
-		p.dir.EXPECT().GetUserDetail(ctx, "u1").Return(services.UserDetail{}, errRead),
-		p.log.EXPECT().Resolve(ctx, gomock.Any(), undecidable).Return(nil).Times(99),
-		p.log.EXPECT().Pending(ctx, staleCutoff(), 101).Return([]services.AuditEntry{unreadable, pendingEntry(200, "admin.sign_in", "a2", "bob@example.com", nil)}, nil),
-		p.log.EXPECT().Resolve(ctx, int64(200), undecidable).Return(nil),
+		ports.log.EXPECT().Pending(ctx, staleCutoff(), 100).Return(first, nil),
+		ports.dir.EXPECT().GetUserDetail(ctx, "u1").Return(services.UserDetail{}, errRead),
+		ports.log.EXPECT().Resolve(ctx, gomock.Any(), undecidable).Return(nil).Times(99),
+		ports.log.EXPECT().Pending(ctx, staleCutoff(), 101).Return([]services.AuditEntry{unreadable, pendingEntry(200, "admin.sign_in", "a2", "bob@example.com", nil)}, nil),
+		ports.log.EXPECT().Resolve(ctx, int64(200), undecidable).Return(nil),
 	)
-	got, err := r.Reconcile(ctx, olderThan)
+	got, err := reconciler.Reconcile(ctx, olderThan)
 	if want := (services.ReconcileResult{Unknown: 100, Skipped: 1}); got != want || !errors.Is(err, errRead) {
-		t.Fatalf("Reconcile = %+v, %v; want %+v and the read error", got, err, want)
+		test.Fatalf("Reconcile = %+v, %v; want %+v and the read error", got, err, want)
 	}
 }

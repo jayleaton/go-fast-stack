@@ -178,7 +178,7 @@ func invite(ctx context.Context, cfg config.Config, log *slog.Logger, email stri
 		return err
 	}
 	svc := services.NewAdminService(server.NewAdminAccounts(admins, adminrepo.NewAdmins(adminPool)), adminrepo.NewAuditLog(adminPool), policy(cfg))
-	a, err := svc.InviteAdmin(ctx, services.SystemActor("cli"), in)
+	admin, err := svc.InviteAdmin(ctx, services.SystemActor("cli"), in)
 	if err != nil {
 		return err
 	}
@@ -186,7 +186,7 @@ func invite(ctx context.Context, cfg config.Config, log *slog.Logger, email stri
 	if err := admins.Shutdown(ctx); err != nil {
 		return err
 	}
-	log.Info("invite sent", "email", a.Email, "set_password_page", config.Absolute(cfg.PublicURL, config.AppRoutes.SetPassword))
+	log.Info("invite sent", "email", admin.Email, "set_password_page", config.Absolute(cfg.PublicURL, config.AppRoutes.SetPassword))
 	return nil
 }
 
@@ -316,27 +316,27 @@ const rotationTimeout = 30 * time.Second
 // the URL rotates; a new URL must pass the migrations probe or the current
 // pool stays.
 func livePool(ctx context.Context, log *slog.Logger, name string, url func() (secrets.Secret, error), onChange func(secrets.Hook), migrated map[string]fs.FS) (*database.Pool, error) {
-	u, err := url()
+	secret, err := url()
 	if err != nil {
 		return nil, err
 	}
-	pool, err := database.OpenPool(ctx, reveal.Value(u), database.PoolOptions{Probe: database.MigratedProbe(migrated), Logger: log})
+	pool, err := database.OpenPool(ctx, reveal.Value(secret), database.PoolOptions{Probe: database.MigratedProbe(migrated), Logger: log})
 	if err != nil {
 		return nil, err
 	}
-	applied := u.Fingerprint()
+	applied := secret.Fingerprint()
 	log.Info("database: pool opened", "database", name, "url", applied)
-	onChange(func(v secrets.Secret) error {
-		if v.Fingerprint() == applied {
+	onChange(func(updated secrets.Secret) error {
+		if updated.Fingerprint() == applied {
 			return nil
 		}
 		ctx, cancel := context.WithTimeout(ctx, rotationTimeout) // shutdown aborts a rotation in progress
 		defer cancel()
-		if err := pool.Swap(ctx, reveal.Value(v)); err != nil {
+		if err := pool.Swap(ctx, reveal.Value(updated)); err != nil {
 			return err // the old pool stays; retried after the next fetch
 		}
-		log.Info("database: URL rotated", "database", name, "from", applied, "to", v.Fingerprint())
-		applied = v.Fingerprint()
+		log.Info("database: URL rotated", "database", name, "from", applied, "to", updated.Fingerprint())
+		applied = updated.Fingerprint()
 		return nil
 	})
 	return pool, nil
@@ -349,15 +349,15 @@ const reconcileInterval = 5 * time.Minute
 // reconcileAudit resolves pending audit entries (admin changes whose outcome
 // was never written) from the current state, at startup and then every
 // reconcileInterval, until ctx ends.
-func reconcileAudit(ctx context.Context, r *services.AuditReconciler, after time.Duration, log *slog.Logger) {
+func reconcileAudit(ctx context.Context, reconciler *services.AuditReconciler, after time.Duration, log *slog.Logger) {
 	tick := time.NewTicker(reconcileInterval)
 	defer tick.Stop()
 	for {
-		res, err := r.Reconcile(ctx, after)
+		res, err := reconciler.Reconcile(ctx, after)
 		if err != nil && ctx.Err() == nil {
 			log.Error("admin: audit reconcile incomplete; entries stay pending", "err", err, "skipped", res.Skipped)
 		}
-		if n := res.Succeeded + res.Failed + res.Unknown; n > 0 {
+		if count := res.Succeeded + res.Failed + res.Unknown; count > 0 {
 			log.Warn("admin: resolved audit entries whose outcome was never written",
 				"succeeded", res.Succeeded, "failed", res.Failed, "unknown", res.Unknown)
 		}
@@ -415,18 +415,18 @@ func newAdminAuth(ctx context.Context, cfg config.Config, adminPool auth.DB, eve
 		return nil, err
 	}
 	applied := keys.Fingerprint()
-	cfg.Secrets.OnAuthSecrets(func(k secrets.Keyring) error {
-		if k.Fingerprint() == applied {
+	cfg.Secrets.OnAuthSecrets(func(keyring secrets.Keyring) error {
+		if keyring.Fingerprint() == applied {
 			return nil
 		}
 		ctx, cancel := context.WithTimeout(ctx, rotationTimeout)
 		defer cancel()
-		current, previous, revoked := reveal.Keyring(k)
+		current, previous, revoked := reveal.Keyring(keyring)
 		if err := admins.SetSecrets(ctx, auth.Secrets{Current: current, Previous: previous, Revoked: revoked}); err != nil {
 			return err // the old keyring stays; retried after the next fetch
 		}
-		log.Info("auth: ADMIN_AUTH_SECRET rotated", "from", applied, "to", k.Fingerprint())
-		applied = k.Fingerprint()
+		log.Info("auth: ADMIN_AUTH_SECRET rotated", "from", applied, "to", keyring.Fingerprint())
+		applied = keyring.Fingerprint()
 		return nil
 	})
 	return admins, nil

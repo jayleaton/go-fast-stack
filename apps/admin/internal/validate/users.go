@@ -38,40 +38,40 @@ type ListUsers struct {
 }
 
 // DecodeQuery reads ?search=&searchField=&role=&banned=&sortBy=&sortDirection=&limit=&offset=.
-func (l *ListUsers) DecodeQuery(q url.Values) error {
-	f := Fields{}
-	l.Search = strings.TrimSpace(q.Get("search"))
-	l.SearchField = q.Get("searchField")
-	l.Role = strings.TrimSpace(q.Get("role"))
-	l.SortBy = q.Get("sortBy")
-	l.SortDirection = q.Get("sortDirection")
-	if v := q.Get("banned"); v != "" {
-		b, err := strconv.ParseBool(v)
-		f.Add(err != nil, "banned", "must be true or false")
-		l.Banned = &b
+func (users *ListUsers) DecodeQuery(values url.Values) error {
+	fields := Fields{}
+	users.Search = strings.TrimSpace(values.Get("search"))
+	users.SearchField = values.Get("searchField")
+	users.Role = strings.TrimSpace(values.Get("role"))
+	users.SortBy = values.Get("sortBy")
+	users.SortDirection = values.Get("sortDirection")
+	if value := values.Get("banned"); value != "" {
+		flag, err := strconv.ParseBool(value)
+		fields.Add(err != nil, "banned", "must be true or false")
+		users.Banned = &flag
 	}
-	l.Limit = queryInt(q, "limit", f)
-	l.Offset = queryInt(q, "offset", f)
-	return f.Err()
+	users.Limit = queryInt(values, "limit", fields)
+	users.Offset = queryInt(values, "offset", fields)
+	return fields.Err()
 }
 
 // Validate applies the defaults and checks every field.
-func (l *ListUsers) Validate() error {
-	f := Fields{}
-	l.SearchField = orDefault(l.SearchField, "email")
-	l.SortBy = orDefault(l.SortBy, "createdAt")
-	l.SortDirection = orDefault(l.SortDirection, "desc")
-	if l.Limit == 0 {
-		l.Limit = DefaultLimit
+func (users *ListUsers) Validate() error {
+	fields := Fields{}
+	users.SearchField = orDefault(users.SearchField, "email")
+	users.SortBy = orDefault(users.SortBy, "createdAt")
+	users.SortDirection = orDefault(users.SortDirection, "desc")
+	if users.Limit == 0 {
+		users.Limit = DefaultLimit
 	}
-	f.Add(utf8.RuneCountInString(l.Search) > maxSearchLength, "search", "must be at most 255 characters")
-	f.Add(l.SearchField != "email" && l.SearchField != "name", "searchField", "must be email or name")
-	f.Add(l.Role != "" && !isRole(l.Role), "role", "must be a role name")
-	f.Add(l.SortBy != "createdAt" && l.SortBy != "email" && l.SortBy != "name", "sortBy", "must be createdAt, email or name")
-	f.Add(l.SortDirection != "asc" && l.SortDirection != "desc", "sortDirection", "must be asc or desc")
-	f.Add(l.Limit < 1 || l.Limit > MaxLimit, "limit", "must be 1-100")
-	f.Add(l.Offset < 0, "offset", "must be 0 or more")
-	return f.Err()
+	fields.Add(utf8.RuneCountInString(users.Search) > maxSearchLength, "search", "must be at most 255 characters")
+	fields.Add(users.SearchField != "email" && users.SearchField != "name", "searchField", "must be email or name")
+	fields.Add(users.Role != "" && !isRole(users.Role), "role", "must be a role name")
+	fields.Add(users.SortBy != "createdAt" && users.SortBy != "email" && users.SortBy != "name", "sortBy", "must be createdAt, email or name")
+	fields.Add(users.SortDirection != "asc" && users.SortDirection != "desc", "sortDirection", "must be asc or desc")
+	fields.Add(users.Limit < 1 || users.Limit > MaxLimit, "limit", "must be 1-100")
+	fields.Add(users.Offset < 0, "offset", "must be 0 or more")
+	return fields.Err()
 }
 
 // BanUser is the POST /users/{id}/ban body (Better Auth ban-user names).
@@ -88,15 +88,15 @@ const (
 )
 
 // Validate trims the reason and checks the expiry.
-func (b *BanUser) Validate() error {
-	f := Fields{}
-	b.BanReason = strings.TrimSpace(b.BanReason)
-	f.Add(b.BanReason == "" || utf8.RuneCountInString(b.BanReason) > maxBanReasonLength, "banReason", "must be 1-500 characters")
-	if b.BanExpiresIn != nil {
-		s := *b.BanExpiresIn
-		f.Add(s < 0 || (s > 0 && s < MinBanSeconds) || s > MaxBanSeconds, "banExpiresIn", "must be 0 (permanent) or 60 seconds to 10 years")
+func (user *BanUser) Validate() error {
+	fields := Fields{}
+	user.BanReason = strings.TrimSpace(user.BanReason)
+	fields.Add(user.BanReason == "" || utf8.RuneCountInString(user.BanReason) > maxBanReasonLength, "banReason", "must be 1-500 characters")
+	if user.BanExpiresIn != nil {
+		size := *user.BanExpiresIn
+		fields.Add(size < 0 || (size > 0 && size < MinBanSeconds) || size > MaxBanSeconds, "banExpiresIn", "must be 0 (permanent) or 60 seconds to 10 years")
 	}
-	return f.Err()
+	return fields.Err()
 }
 
 // SetUserRole is the PUT /users/{id}/role body (Better Auth set-role names).
@@ -106,40 +106,40 @@ type SetUserRole struct {
 }
 
 // Validate trims the role and checks its shape.
-func (s *SetUserRole) Validate() error {
-	s.Role = strings.TrimSpace(s.Role)
-	f := Fields{}
-	f.Add(!isRole(s.Role), "role", "must be a role name")
-	return f.Err()
+func (role *SetUserRole) Validate() error {
+	role.Role = strings.TrimSpace(role.Role)
+	fields := Fields{}
+	fields.Add(!isRole(role.Role), "role", "must be a role name")
+	return fields.Err()
 }
 
 // isRole: lower-case letters, digits, "-" and "_", 1-32 characters.
-func isRole(s string) bool {
-	if s == "" || len(s) > maxRoleLength {
+func isRole(text string) bool {
+	if text == "" || len(text) > maxRoleLength {
 		return false
 	}
-	for _, r := range s {
-		if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '-' && r != '_' {
+	for _, char := range text {
+		if (char < 'a' || char > 'z') && (char < '0' || char > '9') && char != '-' && char != '_' {
 			return false
 		}
 	}
 	return true
 }
 
-func orDefault(v, fallback string) string {
-	if v == "" {
+func orDefault(value, fallback string) string {
+	if value == "" {
 		return fallback
 	}
-	return v
+	return value
 }
 
 // queryInt parses q[key] as a base-10 int (0 when absent).
-func queryInt(q url.Values, key string, f Fields) int {
-	v := q.Get(key)
-	if v == "" {
+func queryInt(values url.Values, key string, fields Fields) int {
+	value := values.Get(key)
+	if value == "" {
 		return 0
 	}
-	n, err := strconv.Atoi(v)
-	f.Add(err != nil, key, "must be a whole number")
-	return n
+	count, err := strconv.Atoi(value)
+	fields.Add(err != nil, key, "must be a whole number")
+	return count
 }
