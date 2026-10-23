@@ -222,7 +222,7 @@
     "audit": {
       "title": "Audit log",
       "subtitle": "Every admin action, newest first.",
-      "howRecorded": "Admin changes (bans, roles, sessions, invites, admins) are recorded before they run: if the audit log cannot record one, it is refused and nothing changes. Sign-ins, sign-outs and refused two-factor codes are recorded just after they happen and never block them, so one can be missing if the log was unavailable at that moment.",
+      "howRecorded": "Admin changes (bans, roles, sessions, invites, admins) are recorded before they run: if the audit log cannot record one, it is refused and nothing changes. Sign-ins, sign-outs, refused two-factor codes and used backup codes are recorded just after they happen and never block them, so one can be missing if the log was unavailable at that moment.",
       "action": "Action",
       "allActions": "All actions",
       "time": "Time",

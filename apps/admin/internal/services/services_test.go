@@ -440,7 +440,7 @@ func mutations() []mutation {
 			call: func(p ports) error {
 				sent, err := admins(p).InviteBootstrapAdmin(ctx, cli, pending)
 				if sent != (err == nil) {
-					return fmt.Errorf("sent = %v with err %v", sent, err)
+					return fmt.Errorf("sent = %v with err %w", sent, err)
 				}
 				return err
 			},

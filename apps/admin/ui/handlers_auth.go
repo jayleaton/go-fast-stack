@@ -102,6 +102,10 @@ func (u *UI) choosePassword(w http.ResponseWriter, r *http.Request, m passwordMo
 		if u.challenge(w, r, err) {
 			return
 		}
+		if errors.Is(err, ErrInvalidToken) {
+			fail(i18n.T(ctx, m.key("invalidLink"))) // the mode says where a new link comes from
+			return
+		}
 		fail(u.errorMessage(ctx, err))
 		return
 	}
