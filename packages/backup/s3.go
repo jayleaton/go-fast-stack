@@ -45,23 +45,23 @@ const (
 
 // Put uploads size bytes from body. sha256hex is the body's SHA-256: S3
 // verifies it, so a truncated upload fails instead of landing.
-func (s *S3) Put(ctx context.Context, key string, body io.Reader, size int64, sha256hex string) error {
-	req, err := s.request(ctx, http.MethodPut, key, nil, body, sha256hex)
+func (bucket *S3) Put(ctx context.Context, key string, body io.Reader, size int64, sha256hex string) error {
+	req, err := bucket.request(ctx, http.MethodPut, key, nil, body, sha256hex)
 	if err != nil {
 		return err
 	}
 	req.ContentLength = size
 	req.Header.Set("Content-Type", "application/octet-stream")
-	return s.do(req, nil)
+	return bucket.do(req, nil)
 }
 
 // Get opens key for reading.
-func (s *S3) Get(ctx context.Context, key string) (io.ReadCloser, error) {
-	req, err := s.request(ctx, http.MethodGet, key, nil, nil, emptySHA256)
+func (bucket *S3) Get(ctx context.Context, key string) (io.ReadCloser, error) {
+	req, err := bucket.request(ctx, http.MethodGet, key, nil, nil, emptySHA256)
 	if err != nil {
 		return nil, err
 	}
-	resp, err := s.client().Do(req)
+	resp, err := bucket.client().Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("backup: s3 get: %w", redactURL(err))
 	}
@@ -73,24 +73,24 @@ func (s *S3) Get(ctx context.Context, key string) (io.ReadCloser, error) {
 }
 
 // Delete removes key (no error when it is already gone).
-func (s *S3) Delete(ctx context.Context, key string) error {
-	req, err := s.request(ctx, http.MethodDelete, key, nil, nil, emptySHA256)
+func (bucket *S3) Delete(ctx context.Context, key string) error {
+	req, err := bucket.request(ctx, http.MethodDelete, key, nil, nil, emptySHA256)
 	if err != nil {
 		return err
 	}
-	return s.do(req, nil)
+	return bucket.do(req, nil)
 }
 
 // List returns every object under prefix (ListObjectsV2, all pages).
-func (s *S3) List(ctx context.Context, prefix string) ([]Object, error) {
+func (bucket *S3) List(ctx context.Context, prefix string) ([]Object, error) {
 	var out []Object
 	token := ""
 	for {
-		q := url.Values{"list-type": {"2"}, "prefix": {prefix}}
+		values := url.Values{"list-type": {"2"}, "prefix": {prefix}}
 		if token != "" {
-			q.Set("continuation-token", token)
+			values.Set("continuation-token", token)
 		}
-		req, err := s.request(ctx, http.MethodGet, "", q, nil, emptySHA256)
+		req, err := bucket.request(ctx, http.MethodGet, "", values, nil, emptySHA256)
 		if err != nil {
 			return nil, err
 		}
@@ -103,11 +103,11 @@ func (s *S3) List(ctx context.Context, prefix string) ([]Object, error) {
 			IsTruncated           bool   `xml:"IsTruncated"`
 			NextContinuationToken string `xml:"NextContinuationToken"`
 		}
-		if err := s.do(req, &page); err != nil {
+		if err := bucket.do(req, &page); err != nil {
 			return nil, err
 		}
-		for _, c := range page.Contents {
-			out = append(out, Object{Key: c.Key, Size: c.Size, Modified: c.LastModified})
+		for _, content := range page.Contents {
+			out = append(out, Object{Key: content.Key, Size: content.Size, Modified: content.LastModified})
 		}
 		if !page.IsTruncated || page.NextContinuationToken == "" {
 			return out, nil
@@ -116,18 +116,18 @@ func (s *S3) List(ctx context.Context, prefix string) ([]Object, error) {
 	}
 }
 
-func (s *S3) client() *http.Client {
-	if s.HTTPClient != nil {
-		return s.HTTPClient
+func (bucket *S3) client() *http.Client {
+	if bucket.HTTPClient != nil {
+		return bucket.HTTPClient
 	}
-	t := http.DefaultTransport.(*http.Transport).Clone()
-	t.ResponseHeaderTimeout = time.Minute
-	t.TLSHandshakeTimeout = s3TLSHandshakeTimeout
-	return &http.Client{Transport: t}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.ResponseHeaderTimeout = time.Minute
+	transport.TLSHandshakeTimeout = s3TLSHandshakeTimeout
+	return &http.Client{Transport: transport}
 }
 
-func (s *S3) do(req *http.Request, into any) error {
-	resp, err := s.client().Do(req)
+func (bucket *S3) do(req *http.Request, into any) error {
+	resp, err := bucket.client().Do(req)
 	if err != nil {
 		return fmt.Errorf("backup: s3 %s: %w", strings.ToLower(req.Method), redactURL(err))
 	}
@@ -148,13 +148,13 @@ func (s *S3) do(req *http.Request, into any) error {
 // s3Error reports the status and S3 error code; the message can echo the
 // request but never credentials, which are not in it (only the signature).
 func s3Error(resp *http.Response) error {
-	var e struct {
+	var item struct {
 		Code string `xml:"Code"`
 	}
-	_ = xml.NewDecoder(io.LimitReader(resp.Body, maxS3ErrorBody)).Decode(&e)
+	_ = xml.NewDecoder(io.LimitReader(resp.Body, maxS3ErrorBody)).Decode(&item)
 	err := fmt.Errorf("backup: s3 %s %s", strings.ToLower(resp.Request.Method), resp.Status)
-	if e.Code != "" {
-		err = fmt.Errorf("%w (%s)", err, e.Code)
+	if item.Code != "" {
+		err = fmt.Errorf("%w (%s)", err, item.Code)
 	}
 	if resp.StatusCode == http.StatusNotFound {
 		return fmt.Errorf("%w: %w", ErrNotFound, err)
@@ -170,119 +170,119 @@ func redactURL(err error) error {
 }
 
 // request builds a signed request for key (or the bucket when key is "").
-func (s *S3) request(ctx context.Context, method, key string, query url.Values, body io.Reader, payloadHash string) (*http.Request, error) {
-	base, err := url.Parse(strings.TrimRight(s.Endpoint, "/"))
+func (bucket *S3) request(ctx context.Context, method, key string, query url.Values, body io.Reader, payloadHash string) (*http.Request, error) {
+	base, err := url.Parse(strings.TrimRight(bucket.Endpoint, "/"))
 	if err != nil || base.Host == "" || (base.Scheme != "https" && base.Scheme != "http") {
 		return nil, errors.New("backup: S3 endpoint must be an http(s) URL")
 	}
-	if s.Bucket == "" || s.AccessKeyID == "" || s.SecretAccessKey == "" {
+	if bucket.Bucket == "" || bucket.AccessKeyID == "" || bucket.SecretAccessKey == "" {
 		return nil, errors.New("backup: S3 bucket and credentials are required")
 	}
-	u := *base
+	link := *base
 	path := "/" + key
-	if s.PathStyle {
-		path = "/" + s.Bucket + "/" + key
+	if bucket.PathStyle {
+		path = "/" + bucket.Bucket + "/" + key
 	} else {
-		u.Host = s.Bucket + "." + base.Host
+		link.Host = bucket.Bucket + "." + base.Host
 	}
-	if key == "" && !s.PathStyle {
+	if key == "" && !bucket.PathStyle {
 		path = "/"
 	}
-	u.Path, u.RawPath = path, encodePath(path)
-	u.RawQuery = canonicalQuery(query)
-	req, err := http.NewRequestWithContext(ctx, method, u.String(), body)
+	link.Path, link.RawPath = path, encodePath(path)
+	link.RawQuery = canonicalQuery(query)
+	req, err := http.NewRequestWithContext(ctx, method, link.String(), body)
 	if err != nil {
 		return nil, fmt.Errorf("backup: s3 request: %w", err)
 	}
 	now := time.Now
-	if s.now != nil {
-		now = s.now
+	if bucket.now != nil {
+		now = bucket.now
 	}
-	s.sign(req, payloadHash, now().UTC())
+	bucket.sign(req, payloadHash, now().UTC())
 	return req, nil
 }
 
 // sign adds AWS Signature V4 headers (header-based auth). Every header set
 // on req before the call is signed, plus host, x-amz-date and
 // x-amz-content-sha256.
-func (s *S3) sign(req *http.Request, payloadHash string, t time.Time) {
-	region := s.Region
+func (bucket *S3) sign(req *http.Request, payloadHash string, moment time.Time) {
+	region := bucket.Region
 	if region == "" {
 		region = "auto"
 	}
-	amzDate := t.Format("20060102T150405Z")
-	day := t.Format("20060102")
+	amzDate := moment.Format("20060102T150405Z")
+	day := moment.Format("20060102")
 	req.Header.Set("X-Amz-Date", amzDate)
 	req.Header.Set("X-Amz-Content-Sha256", payloadHash)
 
 	names := []string{"host"}
 	canon := map[string]string{"host": req.URL.Host}
-	for k, v := range req.Header {
-		lk := strings.ToLower(k)
+	for key, values := range req.Header {
+		lk := strings.ToLower(key)
 		names = append(names, lk)
-		canon[lk] = strings.Join(trimAll(v), ",")
+		canon[lk] = strings.Join(trimAll(values), ",")
 	}
 	slices.Sort(names)
 	var ch strings.Builder
-	for _, n := range names {
-		ch.WriteString(n + ":" + canon[n] + "\n")
+	for _, name := range names {
+		ch.WriteString(name + ":" + canon[name] + "\n")
 	}
 	signed := strings.Join(names, ";")
 	creq := strings.Join([]string{req.Method, req.URL.EscapedPath(), req.URL.RawQuery, ch.String(), signed, payloadHash}, "\n")
 	scope := day + "/" + region + "/s3/aws4_request"
 	sts := "AWS4-HMAC-SHA256\n" + amzDate + "\n" + scope + "\n" + hexSHA256([]byte(creq))
 
-	k := hmacSHA256([]byte("AWS4"+s.SecretAccessKey), day)
-	k = hmacSHA256(k, region)
-	k = hmacSHA256(k, "s3")
-	k = hmacSHA256(k, "aws4_request")
-	sig := hex.EncodeToString(hmacSHA256(k, sts))
-	req.Header.Set("Authorization", "AWS4-HMAC-SHA256 Credential="+s.AccessKeyID+"/"+scope+", SignedHeaders="+signed+", Signature="+sig)
+	signingKey := hmacSHA256([]byte("AWS4"+bucket.SecretAccessKey), day)
+	signingKey = hmacSHA256(signingKey, region)
+	signingKey = hmacSHA256(signingKey, "s3")
+	signingKey = hmacSHA256(signingKey, "aws4_request")
+	sig := hex.EncodeToString(hmacSHA256(signingKey, sts))
+	req.Header.Set("Authorization", "AWS4-HMAC-SHA256 Credential="+bucket.AccessKeyID+"/"+scope+", SignedHeaders="+signed+", Signature="+sig)
 }
 
-func trimAll(v []string) []string {
-	out := make([]string, len(v))
-	for i, s := range v {
-		out[i] = strings.Join(strings.Fields(s), " ")
+func trimAll(values []string) []string {
+	out := make([]string, len(values))
+	for index, text := range values {
+		out[index] = strings.Join(strings.Fields(text), " ")
 	}
 	return out
 }
 
 func hmacSHA256(key []byte, data string) []byte {
-	m := hmac.New(sha256.New, key)
-	m.Write([]byte(data))
-	return m.Sum(nil)
+	mac := hmac.New(sha256.New, key)
+	mac.Write([]byte(data))
+	return mac.Sum(nil)
 }
 
-func hexSHA256(b []byte) string {
-	sum := sha256.Sum256(b)
+func hexSHA256(data []byte) string {
+	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])
 }
 
 // encodePath URI-encodes each segment the way SigV4 expects (S3: once).
-func encodePath(p string) string {
-	segs := strings.Split(p, "/")
-	for i, s := range segs {
-		segs[i] = uriEncode(s)
+func encodePath(path string) string {
+	segs := strings.Split(path, "/")
+	for index, segment := range segs {
+		segs[index] = uriEncode(segment)
 	}
 	return strings.Join(segs, "/")
 }
 
-func canonicalQuery(q url.Values) string {
-	if len(q) == 0 {
+func canonicalQuery(values url.Values) string {
+	if len(values) == 0 {
 		return ""
 	}
-	keys := make([]string, 0, len(q))
-	for k := range q {
-		keys = append(keys, k)
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
 	}
 	slices.Sort(keys)
 	var parts []string
-	for _, k := range keys {
-		vs := slices.Clone(q[k])
+	for _, key := range keys {
+		vs := slices.Clone(values[key])
 		slices.Sort(vs)
-		for _, v := range vs {
-			parts = append(parts, uriEncode(k)+"="+uriEncode(v))
+		for _, value := range vs {
+			parts = append(parts, uriEncode(key)+"="+uriEncode(value))
 		}
 	}
 	return strings.Join(parts, "&")
@@ -290,15 +290,15 @@ func canonicalQuery(q url.Values) string {
 
 // uriEncode is SigV4's UriEncode: unreserved characters stay, everything
 // else is %XX with uppercase hex.
-func uriEncode(s string) string {
-	var b strings.Builder
-	for i := range len(s) {
-		c := s[i]
-		if ('A' <= c && c <= 'Z') || ('a' <= c && c <= 'z') || ('0' <= c && c <= '9') || c == '-' || c == '_' || c == '.' || c == '~' {
-			b.WriteByte(c)
+func uriEncode(text string) string {
+	var builder strings.Builder
+	for index := range len(text) {
+		char := text[index]
+		if ('A' <= char && char <= 'Z') || ('a' <= char && char <= 'z') || ('0' <= char && char <= '9') || char == '-' || char == '_' || char == '.' || char == '~' {
+			builder.WriteByte(char)
 		} else {
-			fmt.Fprintf(&b, "%%%02X", c)
+			fmt.Fprintf(&builder, "%%%02X", char)
 		}
 	}
-	return b.String()
+	return builder.String()
 }

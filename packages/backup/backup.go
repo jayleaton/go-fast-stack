@@ -36,10 +36,10 @@ var ErrNotFound = errors.New("backup: not found")
 // Postgres runs the database side: pg_dump / pg_restore and a table count.
 // PgTools is the real one.
 type Postgres interface {
-	Dump(ctx context.Context, url string, w io.Writer) error
+	Dump(ctx context.Context, url string, writer io.Writer) error
 	// Restore loads a custom-format dump from r; clean drops existing
 	// objects first (pg_restore --clean --if-exists).
-	Restore(ctx context.Context, url string, r io.Reader, clean bool) error
+	Restore(ctx context.Context, url string, reader io.Reader, clean bool) error
 	// Tables counts user tables (outside pg_catalog/information_schema).
 	Tables(ctx context.Context, url string) (int, error)
 }
@@ -73,11 +73,11 @@ type Result struct {
 
 // Backup dumps db (a name: "app", "admin") from url, encrypts it, stores it
 // and logs its id, size and fingerprint.
-func (s *Service) Backup(ctx context.Context, db, url string) (Result, error) {
-	if len(s.Keys.Current) < MinKeyLength {
+func (service *Service) Backup(ctx context.Context, db, url string) (Result, error) {
+	if len(service.Keys.Current) < MinKeyLength {
 		return Result{}, errors.New("backup: BACKUP_ENCRYPTION_KEY must be at least 32 characters")
 	}
-	start := s.now()
+	start := service.now()
 	key := Key(db, start)
 	tmp, err := os.CreateTemp("", "backup-*.age")
 	if err != nil {
@@ -88,18 +88,18 @@ func (s *Service) Backup(ctx context.Context, db, url string) (Result, error) {
 	hash := sha256.New()
 	counter := &countWriter{}
 	sink := io.MultiWriter(tmp, hash, counter)
-	rcp, err := age.NewScryptRecipient(s.Keys.Current)
+	rcp, err := age.NewScryptRecipient(service.Keys.Current)
 	if err != nil {
 		return Result{}, fmt.Errorf("backup: encryption key: %w", err)
 	}
-	if s.WorkFactor > 0 {
-		rcp.SetWorkFactor(s.WorkFactor)
+	if service.WorkFactor > 0 {
+		rcp.SetWorkFactor(service.WorkFactor)
 	}
 	enc, err := age.Encrypt(sink, rcp)
 	if err != nil {
 		return Result{}, fmt.Errorf("backup: encrypt: %w", err)
 	}
-	if err := s.Postgres.Dump(ctx, url, enc); err != nil {
+	if err := service.Postgres.Dump(ctx, url, enc); err != nil {
 		return Result{}, fmt.Errorf("backup: dump %s: %w", db, err)
 	}
 	if err := enc.Close(); err != nil {
@@ -109,45 +109,45 @@ func (s *Service) Backup(ctx context.Context, db, url string) (Result, error) {
 		return Result{}, fmt.Errorf("backup: %w", err)
 	}
 	sum := hex.EncodeToString(hash.Sum(nil))
-	if err := s.Store.Put(ctx, key, tmp, counter.n, sum); err != nil {
+	if err := service.Store.Put(ctx, key, tmp, counter.count, sum); err != nil {
 		return Result{}, err
 	}
-	res := Result{Key: key, Size: counter.n, Fingerprint: sum[:16]}
-	s.log().Info("backup: stored", "id", res.Key, "bytes", res.Size, "sha256", res.Fingerprint, "took", s.now().Sub(start).Round(time.Millisecond))
+	res := Result{Key: key, Size: counter.count, Fingerprint: sum[:16]}
+	service.log().Info("backup: stored", "id", res.Key, "bytes", res.Size, "sha256", res.Fingerprint, "took", service.now().Sub(start).Round(time.Millisecond))
 	return res, nil
 }
 
 // List returns db's backups, newest first ("" lists every database).
-func (s *Service) List(ctx context.Context, db string) ([]Object, error) {
+func (service *Service) List(ctx context.Context, db string) ([]Object, error) {
 	prefix := ""
 	if db != "" {
 		prefix = db + "/"
 	}
-	objs, err := s.Store.List(ctx, prefix)
+	objs, err := service.Store.List(ctx, prefix)
 	if err != nil {
 		return nil, err
 	}
-	objs = slices.DeleteFunc(objs, func(o Object) bool { _, _, err := ParseKey(o.Key); return err != nil })
-	slices.SortFunc(objs, func(a, b Object) int {
-		_, ta, _ := ParseKey(a.Key)
-		_, tb, _ := ParseKey(b.Key)
+	objs = slices.DeleteFunc(objs, func(object Object) bool { _, _, err := ParseKey(object.Key); return err != nil })
+	slices.SortFunc(objs, func(left, right Object) int {
+		_, ta, _ := ParseKey(left.Key)
+		_, tb, _ := ParseKey(right.Key)
 		return tb.Compare(ta)
 	})
 	return objs, nil
 }
 
 // Prune deletes db's backups outside Retention and returns them.
-func (s *Service) Prune(ctx context.Context, db string) ([]Object, error) {
-	objs, err := s.Store.List(ctx, db+"/")
+func (service *Service) Prune(ctx context.Context, db string) ([]Object, error) {
+	objs, err := service.Store.List(ctx, db+"/")
 	if err != nil {
 		return nil, err
 	}
-	expired := s.retention().Expired(objs, s.now())
-	for _, o := range expired {
-		if err := s.Store.Delete(ctx, o.Key); err != nil {
+	expired := service.retention().Expired(objs, service.now())
+	for _, object := range expired {
+		if err := service.Store.Delete(ctx, object.Key); err != nil {
 			return nil, err
 		}
-		s.log().Info("backup: pruned", "id", o.Key, "bytes", o.Size)
+		service.log().Info("backup: pruned", "id", object.Key, "bytes", object.Size)
 	}
 	return expired, nil
 }
@@ -166,31 +166,31 @@ var ErrNotEmpty = errors.New("backup: the target database is not empty: pass --f
 
 // Restore loads backup id into the database at url. With Force, a target
 // that has objects is replaced entirely by the backup.
-func (s *Service) Restore(ctx context.Context, id, url string, o RestoreOptions) error {
-	if !o.Yes {
+func (service *Service) Restore(ctx context.Context, id, url string, options RestoreOptions) error {
+	if !options.Yes {
 		return ErrNotConfirmed
 	}
 	if _, _, err := ParseKey(id); err != nil {
 		return err
 	}
-	n, err := s.Postgres.Tables(ctx, url)
+	tables, err := service.Postgres.Tables(ctx, url)
 	if err != nil {
 		return fmt.Errorf("backup: inspect target: %w", err)
 	}
-	if n > 0 && !o.Force {
-		return fmt.Errorf("%w (%d objects)", ErrNotEmpty, n)
+	if tables > 0 && !options.Force {
+		return fmt.Errorf("%w (%d objects)", ErrNotEmpty, tables)
 	}
-	body, err := s.Store.Get(ctx, id)
+	body, err := service.Store.Get(ctx, id)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = body.Close() }()
 	var ids []age.Identity
-	for _, k := range append([]string{s.Keys.Current}, s.Keys.Previous...) {
-		if k == "" {
+	for _, key := range append([]string{service.Keys.Current}, service.Keys.Previous...) {
+		if key == "" {
 			continue
 		}
-		ident, err := age.NewScryptIdentity(k)
+		ident, err := age.NewScryptIdentity(key)
 		if err != nil {
 			return fmt.Errorf("backup: encryption key: %w", err)
 		}
@@ -203,35 +203,38 @@ func (s *Service) Restore(ctx context.Context, id, url string, o RestoreOptions)
 	if err != nil {
 		return fmt.Errorf("backup: decrypt %s (wrong BACKUP_ENCRYPTION_KEY? list the old one in BACKUP_ENCRYPTION_KEY_PREVIOUS): %w", id, err)
 	}
-	start := s.now()
-	if err := s.Postgres.Restore(ctx, url, plain, n > 0); err != nil {
+	start := service.now()
+	if err := service.Postgres.Restore(ctx, url, plain, tables > 0); err != nil {
 		return fmt.Errorf("backup: restore %s: %w", id, err)
 	}
-	s.log().Info("backup: restored", "id", id, "replaced_objects", n, "took", s.now().Sub(start).Round(time.Millisecond))
+	service.log().Info("backup: restored", "id", id, "replaced_objects", tables, "took", service.now().Sub(start).Round(time.Millisecond))
 	return nil
 }
 
-func (s *Service) now() time.Time {
-	if s.Now != nil {
-		return s.Now()
+func (service *Service) now() time.Time {
+	if service.Now != nil {
+		return service.Now()
 	}
 	return time.Now()
 }
 
-func (s *Service) retention() Retention {
-	if s.Retention.Daily <= 0 && s.Retention.Weekly <= 0 {
+func (service *Service) retention() Retention {
+	if service.Retention.Daily <= 0 && service.Retention.Weekly <= 0 {
 		return DefaultRetention
 	}
-	return s.Retention
+	return service.Retention
 }
 
-func (s *Service) log() *slog.Logger {
-	if s.Logger != nil {
-		return s.Logger
+func (service *Service) log() *slog.Logger {
+	if service.Logger != nil {
+		return service.Logger
 	}
 	return slog.Default()
 }
 
-type countWriter struct{ n int64 }
+type countWriter struct{ count int64 }
 
-func (c *countWriter) Write(p []byte) (int, error) { c.n += int64(len(p)); return len(p), nil }
+func (writer *countWriter) Write(data []byte) (int, error) {
+	writer.count += int64(len(data))
+	return len(data), nil
+}

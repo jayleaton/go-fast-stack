@@ -131,12 +131,12 @@ func run(ctx context.Context, cmd string, args []string, cfg config.Config, log 
 		if err != nil {
 			return err
 		}
-		w := tabwriter.NewWriter(os.Stdout, 0, listTabWidth, listPadding, ' ', 0)
-		_, _ = fmt.Fprintln(w, "ID\tBYTES")
-		for _, o := range objs {
-			_, _ = fmt.Fprintf(w, "%s\t%d\n", o.Key, o.Size)
+		table := tabwriter.NewWriter(os.Stdout, 0, listTabWidth, listPadding, ' ', 0)
+		_, _ = fmt.Fprintln(table, "ID\tBYTES")
+		for _, object := range objs {
+			_, _ = fmt.Fprintf(table, "%s\t%d\n", object.Key, object.Size)
 		}
-		return w.Flush()
+		return table.Flush()
 	default: // restore
 		fs := flag.NewFlagSet("restore", flag.ContinueOnError)
 		yes := fs.Bool("yes", false, "confirm: the restore replaces data in RESTORE_DATABASE_URL")
@@ -165,11 +165,11 @@ func run(ctx context.Context, cmd string, args []string, cfg config.Config, log 
 			if db, _, err := backup.ParseKey(id); err == nil && db != *into {
 				return fmt.Errorf("%s is a backup of the %s database: refusing to restore it --into %s", id, db, *into)
 			}
-			u, ok := dbs[*into]
+			secret, ok := dbs[*into]
 			if !ok {
 				return fmt.Errorf("--into %q: this job has no %s database (app, or admin when ADMIN_DATABASE_URL is set)", *into, *into)
 			}
-			target = u
+			target = secret
 		case target.IsZero():
 			return errors.New("name the target: --into app|admin, or RESTORE_DATABASE_URL (never defaulted)")
 		}
@@ -189,12 +189,12 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 			return fmt.Errorf("BACKUP_SCHEDULE %q never matches", cfg.Schedule)
 		}
 		log.Info("backup: next run", "at", next.Format(time.RFC3339), "schedule", cfg.Schedule.String())
-		t := time.NewTimer(time.Until(next))
+		timer := time.NewTimer(time.Until(next))
 		select {
 		case <-ctx.Done():
-			t.Stop()
+			timer.Stop()
 			return nil
-		case <-t.C:
+		case <-timer.C:
 		}
 		if err := run(ctx, "run", nil, cfg, log); err != nil {
 			log.Error("backup: scheduled run failed; retrying at the next scheduled time", "err", err)
@@ -202,24 +202,24 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	}
 }
 
-func or(v, fallback string) string {
-	if v == "" {
+func or(value, fallback string) string {
+	if value == "" {
 		return fallback
 	}
-	return v
+	return value
 }
 
-func newService(cfg config.Config, v config.Values, log *slog.Logger) *backup.Service {
+func newService(cfg config.Config, values config.Values, log *slog.Logger) *backup.Service {
 	var store backup.Store
 	if cfg.Store.Dir != "" {
 		store = backup.Dir(cfg.Store.Dir)
 	} else {
 		store = &backup.S3{
 			Endpoint: cfg.Store.Endpoint, Bucket: cfg.Store.Bucket, Region: cfg.Store.Region, PathStyle: cfg.Store.PathStyle,
-			AccessKeyID: reveal.Value(v.AccessKeyID), SecretAccessKey: reveal.Value(v.SecretAccessKey),
+			AccessKeyID: reveal.Value(values.AccessKeyID), SecretAccessKey: reveal.Value(values.SecretAccessKey),
 		}
 	}
-	current, previous, _ := reveal.Keyring(v.Encryption)
+	current, previous, _ := reveal.Keyring(values.Encryption)
 	return &backup.Service{
 		Store: store, Postgres: backup.PgTools{}, Retention: cfg.Retention, Logger: log,
 		Keys: backup.Keys{Current: current, Previous: previous},

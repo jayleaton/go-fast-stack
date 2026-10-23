@@ -30,74 +30,74 @@ const timeLayout = "20060102T150405Z"
 const suffix = ".dump.age"
 
 // Key is the backup id for db taken at t: <db>/<time>.dump.age.
-func Key(db string, t time.Time) string {
-	return db + "/" + t.UTC().Format(timeLayout) + suffix
+func Key(db string, moment time.Time) string {
+	return db + "/" + moment.UTC().Format(timeLayout) + suffix
 }
 
 // ParseKey returns the database and time of a backup id.
-func ParseKey(key string) (db string, t time.Time, err error) {
+func ParseKey(key string) (db string, moment time.Time, err error) {
 	db, name, ok := strings.Cut(key, "/")
 	if !ok || db == "" || !strings.HasSuffix(name, suffix) {
 		return "", time.Time{}, fmt.Errorf("backup: %q is not a backup id (want <db>/<time>%s)", key, suffix)
 	}
-	t, err = time.Parse(timeLayout, strings.TrimSuffix(name, suffix))
+	moment, err = time.Parse(timeLayout, strings.TrimSuffix(name, suffix))
 	if err != nil {
 		return "", time.Time{}, fmt.Errorf("backup: %q is not a backup id: %w", key, err)
 	}
-	return db, t, nil
+	return db, moment, nil
 }
 
 // Expired returns the objects of one database prune may delete at now,
 // oldest first.
-func (r Retention) Expired(objs []Object, now time.Time) []Object {
+func (retention Retention) Expired(objs []Object, now time.Time) []Object {
 	type backup struct {
 		Object
-		t time.Time
+		moment time.Time
 	}
 	var bs []backup
-	for _, o := range objs {
-		if _, t, err := ParseKey(o.Key); err == nil {
-			bs = append(bs, backup{o, t})
+	for _, object := range objs {
+		if _, moment, err := ParseKey(object.Key); err == nil {
+			bs = append(bs, backup{object, moment})
 		}
 	}
 	if len(bs) == 0 {
 		return nil
 	}
-	slices.SortFunc(bs, func(a, b backup) int { return b.t.Compare(a.t) }) // newest first
+	slices.SortFunc(bs, func(left, right backup) int { return right.moment.Compare(left.moment) }) // newest first
 
 	keep := map[string]bool{bs[0].Key: true}
 	now = now.UTC()
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
 	days := map[time.Time]bool{}
-	for i := range r.Daily {
-		days[today.AddDate(0, 0, -i)] = true
+	for index := range retention.Daily {
+		days[today.AddDate(0, 0, -index)] = true
 	}
 	weeks := map[[2]int]bool{}
-	for i := range r.Weekly {
-		y, w := today.AddDate(0, 0, -7*i).ISOWeek()
-		weeks[[2]int{y, w}] = true
+	for index := range retention.Weekly {
+		week, width := today.AddDate(0, 0, -7*index).ISOWeek()
+		weeks[[2]int{week, width}] = true
 	}
 	seenDay, seenWeek := map[time.Time]bool{}, map[[2]int]bool{}
-	for _, b := range bs { // newest first: the first backup of a day/week is its newest
-		t := b.t.UTC()
-		if now.Sub(t) < 24*time.Hour {
-			keep[b.Key] = true
+	for _, backup := range bs { // newest first: the first backup of a day/week is its newest
+		moment := backup.moment.UTC()
+		if now.Sub(moment) < 24*time.Hour {
+			keep[backup.Key] = true
 		}
-		day := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
+		day := time.Date(moment.Year(), moment.Month(), moment.Day(), 0, 0, 0, 0, time.UTC)
 		if days[day] && !seenDay[day] {
 			seenDay[day] = true
-			keep[b.Key] = true
+			keep[backup.Key] = true
 		}
-		y, w := t.ISOWeek()
-		if wk := [2]int{y, w}; weeks[wk] && !seenWeek[wk] {
+		week, width := moment.ISOWeek()
+		if wk := [2]int{week, width}; weeks[wk] && !seenWeek[wk] {
 			seenWeek[wk] = true
-			keep[b.Key] = true
+			keep[backup.Key] = true
 		}
 	}
 	var out []Object
-	for i := len(bs) - 1; i >= 0; i-- {
-		if !keep[bs[i].Key] {
-			out = append(out, bs[i].Object)
+	for index := len(bs) - 1; index >= 0; index-- {
+		if !keep[bs[index].Key] {
+			out = append(out, bs[index].Object)
 		}
 	}
 	return out
