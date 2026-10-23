@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"sync/atomic"
 	"time"
+
+	"github.com/jayleaton/go-fast-stack/packages/database"
 )
 
 // The web service migrates the app database in its pre-deploy and the admin
@@ -27,7 +29,7 @@ const (
 // waitForDatabase calls open until it succeeds, backing off from
 // databaseRetryMin to databaseRetryMax and logging each wait. It gives up
 // with the last error after databaseWait, or when ctx ends.
-func waitForDatabase[T any](ctx context.Context, log *slog.Logger, name string, open func(context.Context) (T, error)) (T, error) {
+func waitForDatabase(ctx context.Context, log *slog.Logger, name string, open func(context.Context) (*database.Pool, error)) (*database.Pool, error) {
 	deadline := time.Now().Add(databaseWait)
 	delay := databaseRetryMin
 	for attempt := 1; ; attempt++ {
