@@ -25,6 +25,11 @@ cd "$(dirname "$0")/.."
 readonly pg_server=postgres://postgres:postgres@127.0.0.1:5432
 readonly pg_wait_seconds=0.25
 readonly pg_wait_attempts=180
+# Every task but the timed test run runs at the lowest CPU priority, so the
+# tests get the CPUs whenever they want them and the others use what is left
+# (see test_build).
+readonly background_niceness=19
+readonly build_poll_seconds=0.2 # how often the test binaries' build is checked
 
 tmp=${RUNNER_TEMP:-$(mktemp -d)}/ci-check
 rm -rf "$tmp" && mkdir -p "$tmp" .cache
@@ -34,8 +39,14 @@ lint=false
 names=() pids=() starts=()
 start() { # start <name> <function>: run it in the background, log to $tmp/<name>.log
   names+=("$1") starts+=("$(date +%s.%N)")
-  # The inner subshell is the task (its set -e exits it, not the bookkeeping).
-  ( ("$2") >"$tmp/$1.log" 2>&1; echo $? >"$tmp/$1.rc"; date +%s.%N >"$tmp/$1.end") &
+  # The inner subshell is the task (its set -e exits it, not the bookkeeping);
+  # its children inherit the outer subshell's priority.
+  (
+    [ "$1" = test ] || renice -n "$background_niceness" -p "$BASHPID" >/dev/null
+    ("$2") >"$tmp/$1.log" 2>&1
+    echo $? >"$tmp/$1.rc"
+    date +%s.%N >"$tmp/$1.end"
+  ) &
   pids+=($!)
 }
 failed=0
@@ -83,8 +94,20 @@ generated() {
   [ -z "$status" ] || { git diff; echo "$status"; echo 'generated code is stale: run make generate and commit'; exit 1; }
 }
 
+# The time budgets (AGENTS.md "Fast tests") must measure tests, not
+# compilation on a 2-vCPU runner. So test_build first builds and links every
+# test binary, untimed and at background priority like the other tasks, with
+# the timed run's -race -cover instrumentation (each "runs" as `true`, so no
+# test, TestMain or database is touched). Only then does test_go start, at
+# normal priority: it just links and runs, and the other tasks (lint,
+# generators, smoke, deploy/, mobile) get only the CPU time it leaves.
+test_build() {
+  set -e
+  go test -race -cover -exec true $TESTS >/dev/null
+}
+
 # DB-backed test binaries wait for Postgres through an -exec wrapper, so
-# compiling overlaps its boot. Readiness is checked inside the container over
+# their own binary's link overlaps its boot. Readiness is checked inside the container over
 # TCP: docker's port proxy accepts connections before Postgres listens, and
 # the image's first-boot init server answers on the unix socket only.
 test_go() {
@@ -107,7 +130,7 @@ SH
     exec_flag=(-exec "$tmp/wait-db")
   fi
   # testbudget prints plain go test output, the slowest tests, and fails a
-  # package or test over its time budget (AGENTS.md "Fast tests").
+  # package or test over its time budget.
   go test -race -json "${exec_flag[@]}" -coverprofile=.cache/coverage.out $TESTS | go run ./scripts/testbudget
   TESTED="$TESTS" ./scripts/check-coverage.sh .cache/coverage.out
 }
@@ -174,10 +197,15 @@ mobile() {
 [ "$lint" = true ] && start lint lint_go
 [ "$MODE" != other ] && [ -n "${EVENT:-}" ] && start migrations migration_order
 [ "$MODE" != other ] && { [ "${SQLC:-}" = true ] || [ "${TEMPL:-}" = true ] || [ -n "${GENERATE:-}" ]; } && start generated generated
-[ -n "${TESTS:-}" ] && start test test_go
+[ -n "${TESTS:-}" ] && start test-build test_build
 [ "$MODE" != db ] && [ "${SMOKE:-}" = true ] && start smoke smoke
 [ "${DEPLOY:-}" = true ] && start deploy deploy_mod
 [ "${MOBILE:-}" = true ] && start mobile mobile
+# The timed tests start once their binaries are built (see test_build).
+if [ -n "${TESTS:-}" ]; then
+  while [ ! -e "$tmp/test-build.rc" ]; do sleep "$build_poll_seconds"; done
+  [ "$(cat "$tmp/test-build.rc")" != 0 ] || start test test_go
+fi
 wait "${pids[@]}" 2>/dev/null
 report
 [ -d "$tmp/gen" ] && git worktree remove --force "$tmp/gen"
