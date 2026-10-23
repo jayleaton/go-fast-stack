@@ -29,6 +29,7 @@ const (
 	EventEmailChanged         EventKind = "email_changed"          // the link was opened; Details["oldEmail"], Details["newEmail"]
 	EventUserBanned           EventKind = "user_banned"            // Details["reason"], Details["expiresAt"] (RFC 3339; absent: permanent)
 	EventUserUnbanned         EventKind = "user_unbanned"
+	EventAccountLinked        EventKind = "account_linked" // a social account was linked to an existing user by verified email; Details["provider"]
 )
 
 // How a session was created (Event.Method of EventSignIn).
@@ -39,6 +40,7 @@ const (
 	SignInMethodSignUp        = "sign_up"            // sign-up signed the user straight in
 	SignInMethodEmailVerified = "email_verification" // the verification link signed the user in
 	SignInMethodEmailChanged  = "email_change"       // the change-email link signed the user in
+	SignInMethodSocial        = "social"             // Google or Apple (Details["provider"])
 )
 
 // Event delivery limits (see EventHandler).

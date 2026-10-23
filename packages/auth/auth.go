@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"net/url"
 	"strings"
 	"sync"
@@ -86,6 +87,15 @@ type Config struct {
 	// included, so browsers never touch the JSON API and nothing spends a
 	// token on GET; GET /verify-email then only forwards old links there.
 	VerifyEmailPath string
+
+	// Social sign-in (social.go). Each provider is off while nil; the
+	// callback to register with it is <BaseURL>/api/auth/callback/<provider>.
+	Google *GoogleConfig
+	Apple  *AppleConfig
+	// SocialErrorPath is the app page (root-relative) browser sign-ins land
+	// on with ?error=<code> when they fail (default LoginPath).
+	SocialErrorPath string
+	HTTPClient      *http.Client // for provider calls (default: 15 s timeout)
 }
 
 // MobileTrustedOrigins returns the deep-link origins of the Expo app: its
@@ -152,6 +162,7 @@ type Auth struct {
 	mail       sync.WaitGroup
 	mailMu     sync.RWMutex // sendMail holds it shared so Wait never races an Add
 	events     *eventSink   // nil without Config.Events
+	social     *socialProviders
 }
 
 // New validates cfg and returns an Auth backed by pool. Run Migrate first.
@@ -212,6 +223,12 @@ func New(cfg Config, pool DB, mailer Mailer) (*Auth, error) {
 	if cfg.InviteTTL <= 0 {
 		cfg.InviteTTL = DefaultInviteTTL
 	}
+	if cfg.SocialErrorPath == "" {
+		cfg.SocialErrorPath = cfg.LoginPath
+	}
+	if !isSafeRelativeURL(cfg.SocialErrorPath) {
+		return nil, fmt.Errorf("auth: SocialErrorPath must be a root-relative path, got %q", cfg.SocialErrorPath)
+	}
 	if p := cfg.VerifyEmailPath; p != "" && (!isSafeRelativeURL(p) || strings.ContainsAny(p, "?#")) {
 		return nil, fmt.Errorf("auth: VerifyEmailPath must be a root-relative path without query, got %q", p)
 	}
@@ -241,6 +258,9 @@ func New(cfg Config, pool DB, mailer Mailer) (*Auth, error) {
 		now:        time.Now,
 	}
 	a.trusted = append([]string{a.baseOrigin}, cfg.TrustedOrigins...)
+	if a.social, err = newSocialProviders(cfg.Google, cfg.Apple, cfg.HTTPClient, func() time.Time { return a.now() }); err != nil {
+		return nil, err
+	}
 	a.events = newEventSink(cfg.Events, cfg.Logger, a.store.userEmail)
 	if a.dummyHash, err = hashPassword("dummy-password-for-timing", a.argon); err != nil {
 		return nil, err
