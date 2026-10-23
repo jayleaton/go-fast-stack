@@ -25,6 +25,8 @@ cd "$(dirname "$0")/.."
 readonly pg_server=postgres://postgres:postgres@127.0.0.1:5432
 readonly pg_wait_seconds=0.25
 readonly pg_wait_attempts=180
+# How often the timed test run checks whether the other tasks are done.
+readonly sibling_poll_seconds=0.5
 
 tmp=${RUNNER_TEMP:-$(mktemp -d)}/ci-check
 rm -rf "$tmp" && mkdir -p "$tmp" .cache
@@ -106,8 +108,24 @@ SH
     chmod +x "$tmp/wait-db"
     exec_flag=(-exec "$tmp/wait-db")
   fi
+  # The time budgets (AGENTS.md "Fast tests") must measure tests, not
+  # compilation on a 2-vCPU runner. So: build and link every test binary
+  # first, untimed, with the timed run's -race -cover instrumentation (each
+  # "runs" as `true`, so no test, TestMain or database is touched), then wait
+  # for the other tasks (lint, generators, smoke, deploy/, mobile: all
+  # compilers) to finish, so the timed run has the CPUs to itself.
+  local phase_start=$SECONDS
+  go test -race -cover -exec true $TESTS >"$tmp/test-build.log" 2>&1 || { cat "$tmp/test-build.log"; return 1; }
+  echo "test binaries built in $((SECONDS - phase_start))s"
+  phase_start=$SECONDS
+  local sibling
+  for sibling in "${names[@]}"; do
+    [ "$sibling" != test ] || continue
+    while [ ! -e "$tmp/$sibling.rc" ]; do sleep "$sibling_poll_seconds"; done
+  done
+  echo "waited $((SECONDS - phase_start))s for the other tasks"
   # testbudget prints plain go test output, the slowest tests, and fails a
-  # package or test over its time budget (AGENTS.md "Fast tests").
+  # package or test over its time budget.
   go test -race -json "${exec_flag[@]}" -coverprofile=.cache/coverage.out $TESTS | go run ./scripts/testbudget
   TESTED="$TESTS" ./scripts/check-coverage.sh .cache/coverage.out
 }
@@ -174,10 +192,11 @@ mobile() {
 [ "$lint" = true ] && start lint lint_go
 [ "$MODE" != other ] && [ -n "${EVENT:-}" ] && start migrations migration_order
 [ "$MODE" != other ] && { [ "${SQLC:-}" = true ] || [ "${TEMPL:-}" = true ] || [ -n "${GENERATE:-}" ]; } && start generated generated
-[ -n "${TESTS:-}" ] && start test test_go
 [ "$MODE" != db ] && [ "${SMOKE:-}" = true ] && start smoke smoke
 [ "${DEPLOY:-}" = true ] && start deploy deploy_mod
 [ "${MOBILE:-}" = true ] && start mobile mobile
+# Last: its timed run waits for every task started above (see test_go).
+[ -n "${TESTS:-}" ] && start test test_go
 wait "${pids[@]}" 2>/dev/null
 report
 [ -d "$tmp/gen" ] && git worktree remove --force "$tmp/gen"
