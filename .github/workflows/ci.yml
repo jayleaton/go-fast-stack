@@ -77,6 +77,7 @@ jobs:
       sqlc: ${{ steps.affected.outputs.sqlc }}
       templ: ${{ steps.affected.outputs.templ }}
       generate: ${{ steps.affected.outputs.generate }}
+      smoke: ${{ steps.affected.outputs.smoke }}
       mobile: ${{ steps.scope.outputs.mobile }}
       deploy: ${{ steps.scope.outputs.deploy }}
     steps:
@@ -284,6 +285,7 @@ jobs:
           sqlc: ${{ steps.affected.outputs.sqlc }}
           templ: ${{ steps.affected.outputs.templ }}
           generate: ${{ steps.affected.outputs.generate }}
+          smoke: ${{ steps.affected.outputs.smoke }}
           mobile: ${{ steps.scope.outputs.mobile }}
           deploy: ${{ steps.scope.outputs.deploy }}
           save: ${{ steps.scope.outputs.save }}
@@ -380,6 +382,7 @@ jobs:
           sqlc: ${{ needs.ci.outputs.sqlc }}
           templ: ${{ needs.ci.outputs.templ }}
           generate: ${{ needs.ci.outputs.generate }}
+          smoke: ${{ matrix.mode == 'other' && needs.ci.outputs.smoke || 'false' }}
           mobile: ${{ matrix.mode == 'other' && needs.ci.outputs.mobile || 'false' }}
           deploy: ${{ matrix.mode == 'other' && needs.ci.outputs.deploy || 'false' }}
           save: 'false'

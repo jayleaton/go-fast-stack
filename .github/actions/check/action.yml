@@ -3,7 +3,8 @@
 # Expects: checkout, module cache, Go toolchain and the affected outputs
 # (scripts/affected.sh) to be done by the caller. The steps here only set up
 # tools and caches; scripts/ci-check.sh runs the checks themselves as parallel
-# tasks (lint, migration order, generated code, tests, deploy/, mobile), then
+# tasks (lint, migration order, generated code, tests, release smoke, deploy/,
+# mobile), then
 # the probes.
 name: check
 description: Lint, test and (optionally) mobile checks for the affected packages
@@ -17,6 +18,7 @@ inputs:
   generate: { description: "packages to go generate", required: true }
   mobile: { description: "run the mobile app checks", required: true }
   deploy: { description: "run the deploy/ module checks", required: true }
+  smoke: { description: "run the release smoke (scripts/release-smoke.sh)", required: true }
   save: { description: "save the build cache", required: true }
 runs:
   using: composite
@@ -33,7 +35,7 @@ runs:
     # wait for it (see scripts/ci-check.sh). tmpfs and no fsync: test data is
     # throwaway. The fan-out "db" job starts it itself, first thing (ci.yml).
     - name: Start Postgres
-      if: steps.shard.outputs.db == 'true' && inputs.mode != 'db'
+      if: (steps.shard.outputs.db == 'true' || inputs.smoke == 'true') && inputs.mode != 'db'
       shell: bash
       run: |
         nohup docker run -d --name pg -p 5432:5432 -e POSTGRES_PASSWORD=postgres \
@@ -44,7 +46,7 @@ runs:
     # Build + lint cache, keyed by commit: saved by the single CI job on pushes
     # to dev or main and restored by prefix everywhere else (incl. opt-in fan-out).
     - uses: actions/cache/restore@v6
-      if: inputs.packages != '' || inputs.deploy == 'true'
+      if: inputs.packages != '' || inputs.deploy == 'true' || inputs.smoke == 'true'
       with:
         path: |
           ~/.cache/go-build
@@ -99,6 +101,7 @@ runs:
         GENERATE: ${{ inputs.generate }}
         MOBILE: ${{ inputs.mobile }}
         DEPLOY: ${{ inputs.deploy }}
+        SMOKE: ${{ inputs.smoke }}
         EVENT: ${{ github.event_name }}
         TARGET: ${{ github.base_ref || github.ref_name }}
         COREPACK_ENABLE_DOWNLOAD_PROMPT: '0'

@@ -107,6 +107,13 @@ ci: ## Run the same checks as CI
 check-fast: ## Before every push: gofmt, vet, golangci-lint, plain tests for only what your changes vs origin/dev (else origin/main) affect (seconds)
 	./scripts/check-fast.sh
 
+.PHONY: release-smoke
+release-smoke: db-up ## Build every Dockerfile's binary as its image does (fail if dynamic), migrate, boot web + admin in production mode (CI runs it too)
+	@$(COMPOSE) exec -T postgres sh -c 'for d in smoke_app smoke_admin; do dropdb -U postgres --if-exists --force $$d && createdb -U postgres $$d; done'
+	SMOKE_DATABASE_URL=postgres://postgres:postgres@127.0.0.1:$(POSTGRES_PORT)/smoke_app?sslmode=disable \
+	  SMOKE_ADMIN_DATABASE_URL=postgres://postgres:postgres@127.0.0.1:$(POSTGRES_PORT)/smoke_admin?sslmode=disable \
+	  ./scripts/release-smoke.sh
+
 .PHONY: hooks
 hooks: ## Install a git pre-push hook that runs make check-fast (all worktrees; make hooks-remove to undo)
 	./scripts/install-hooks.sh
