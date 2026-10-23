@@ -161,7 +161,7 @@ func authSubmit(label, loading string) templ.Component {
 	})
 }
 
-func LoginPage(f AuthForm) templ.Component {
+func LoginPage(form AuthForm) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -224,11 +224,11 @@ func LoginPage(f AuthForm) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = FormError(f.Error).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = FormError(form.Error).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = uikit.Input(uikit.Field{ID: "email", Type: "email", Label: i18n.T(ctx, "common.email"), Placeholder: i18n.T(ctx, "pages.login.emailPlaceholder"), Autocomplete: "email", Value: f.Email}).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = uikit.Input(uikit.Field{ID: "email", Type: "email", Label: i18n.Translate(ctx, "common.email"), Placeholder: i18n.Translate(ctx, "pages.login.emailPlaceholder"), Autocomplete: "email", Value: form.Email}).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -236,7 +236,7 @@ func LoginPage(f AuthForm) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = uikit.Input(uikit.Field{ID: "password", Type: "password", Label: i18n.T(ctx, "common.password"), Placeholder: i18n.T(ctx, "pages.login.passwordPlaceholder"), Autocomplete: "current-password"}).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = uikit.Input(uikit.Field{ID: "password", Type: "password", Label: i18n.Translate(ctx, "common.password"), Placeholder: i18n.Translate(ctx, "pages.login.passwordPlaceholder"), Autocomplete: "current-password"}).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -280,9 +280,9 @@ func LoginPage(f AuthForm) templ.Component {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var13 string
-			templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "pages.login.forgotPassword"))
+			templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.Translate(ctx, "pages.login.forgotPassword"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 57, Col: 133}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 57, Col: 141}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 			if templ_7745c5c3_Err != nil {
@@ -292,7 +292,7 @@ func LoginPage(f AuthForm) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = authSubmit(i18n.T(ctx, "pages.login.loginButton"), i18n.T(ctx, "common.loading")).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = authSubmit(i18n.Translate(ctx, "pages.login.loginButton"), i18n.Translate(ctx, "common.loading")).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -300,7 +300,7 @@ func LoginPage(f AuthForm) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = socialButtons(f.Providers).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = socialButtons(form.Providers).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -308,7 +308,7 @@ func LoginPage(f AuthForm) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = view.AltLink(i18n.T(ctx, "pages.login.dontHaveAccount"), i18n.T(ctx, "pages.login.signUpInstead"), config.AppRoutes.Signup).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = view.AltLink(i18n.Translate(ctx, "pages.login.dontHaveAccount"), i18n.Translate(ctx, "pages.login.signUpInstead"), config.AppRoutes.Signup).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -318,7 +318,7 @@ func LoginPage(f AuthForm) templ.Component {
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = authPage(i18n.T(ctx, "pages.login.title"), i18n.T(ctx, "pages.login.description")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var7), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = authPage(i18n.Translate(ctx, "pages.login.title"), i18n.Translate(ctx, "pages.login.description")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var7), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -326,7 +326,7 @@ func LoginPage(f AuthForm) templ.Component {
 	})
 }
 
-func SignupPage(f AuthForm) templ.Component {
+func SignupPage(form AuthForm) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -389,23 +389,23 @@ func SignupPage(f AuthForm) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = FormError(f.Error).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = FormError(form.Error).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = uikit.Input(uikit.Field{ID: "name", Label: i18n.T(ctx, "common.name"), Placeholder: i18n.T(ctx, "pages.signup.namePlaceholder"), Autocomplete: "name", Value: f.Name}).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = uikit.Input(uikit.Field{ID: "name", Label: i18n.Translate(ctx, "common.name"), Placeholder: i18n.Translate(ctx, "pages.signup.namePlaceholder"), Autocomplete: "name", Value: form.Name}).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = uikit.Input(uikit.Field{ID: "email", Type: "email", Label: i18n.T(ctx, "common.email"), Placeholder: i18n.T(ctx, "pages.signup.emailPlaceholder"), Autocomplete: "email", Value: f.Email}).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = uikit.Input(uikit.Field{ID: "email", Type: "email", Label: i18n.Translate(ctx, "common.email"), Placeholder: i18n.Translate(ctx, "pages.signup.emailPlaceholder"), Autocomplete: "email", Value: form.Email}).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = uikit.Input(uikit.Field{ID: "password", Type: "password", Label: i18n.T(ctx, "common.password"), Placeholder: i18n.T(ctx, "pages.signup.passwordPlaceholder"), Autocomplete: "new-password", MinLength: 8, Hint: i18n.T(ctx, "pages.resetPassword.passwordRequirement")}).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = uikit.Input(uikit.Field{ID: "password", Type: "password", Label: i18n.Translate(ctx, "common.password"), Placeholder: i18n.Translate(ctx, "pages.signup.passwordPlaceholder"), Autocomplete: "new-password", MinLength: 8, Hint: i18n.Translate(ctx, "pages.resetPassword.passwordRequirement")}).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = authSubmit(i18n.T(ctx, "pages.signup.signupButton"), i18n.T(ctx, "common.loading")).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = authSubmit(i18n.Translate(ctx, "pages.signup.signupButton"), i18n.Translate(ctx, "common.loading")).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -413,7 +413,7 @@ func SignupPage(f AuthForm) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = socialButtons(f.Providers).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = socialButtons(form.Providers).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -421,7 +421,7 @@ func SignupPage(f AuthForm) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = view.AltLink(i18n.T(ctx, "pages.signup.alreadyHaveAccount"), i18n.T(ctx, "pages.signup.signInInstead"), config.AppRoutes.Login).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = view.AltLink(i18n.Translate(ctx, "pages.signup.alreadyHaveAccount"), i18n.Translate(ctx, "pages.signup.signInInstead"), config.AppRoutes.Login).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -431,7 +431,7 @@ func SignupPage(f AuthForm) templ.Component {
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = authPage(i18n.T(ctx, "pages.signup.title"), i18n.T(ctx, "pages.signup.description")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var15), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = authPage(i18n.Translate(ctx, "pages.signup.title"), i18n.Translate(ctx, "pages.signup.description")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var15), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -470,9 +470,9 @@ func socialButtons(providers []string) templ.Component {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var19 string
-			templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "pages.login.social.or"))
+			templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.Translate(ctx, "pages.login.social.or"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 92, Col: 94}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 92, Col: 102}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
 			if templ_7745c5c3_Err != nil {
@@ -526,9 +526,9 @@ func socialButtons(providers []string) templ.Component {
 					}
 					ctx = templ.InitializeContext(ctx)
 					var templ_7745c5c3_Var23 string
-					templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "pages.login.social."+provider))
+					templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.Translate(ctx, "pages.login.social."+provider))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 96, Col: 53}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 96, Col: 61}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var23))
 					if templ_7745c5c3_Err != nil {
@@ -555,7 +555,7 @@ func socialButtons(providers []string) templ.Component {
 }
 
 // ForgotPasswordPage shows the request form, or the "email sent" state when sent.
-func ForgotPasswordPage(f AuthForm, sent bool) templ.Component {
+func ForgotPasswordPage(form AuthForm, sent bool) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -637,19 +637,19 @@ func ForgotPasswordPage(f AuthForm, sent bool) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = FormError(f.Error).Render(ctx, templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = FormError(form.Error).Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = uikit.Input(uikit.Field{ID: "email", Type: "email", Label: i18n.T(ctx, "pages.forgotPassword.emailLabel"), Placeholder: i18n.T(ctx, "pages.forgotPassword.emailPlaceholder"), Autocomplete: "email", Value: f.Email}).Render(ctx, templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = uikit.Input(uikit.Field{ID: "email", Type: "email", Label: i18n.Translate(ctx, "pages.forgotPassword.emailLabel"), Placeholder: i18n.Translate(ctx, "pages.forgotPassword.emailPlaceholder"), Autocomplete: "email", Value: form.Email}).Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = authSubmit(i18n.T(ctx, "pages.forgotPassword.sendResetLink"), i18n.T(ctx, "common.loading")).Render(ctx, templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = authSubmit(i18n.Translate(ctx, "pages.forgotPassword.sendResetLink"), i18n.Translate(ctx, "common.loading")).Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = view.AltLink("", i18n.T(ctx, "pages.forgotPassword.backToLogin"), config.AppRoutes.Login).Render(ctx, templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = view.AltLink("", i18n.Translate(ctx, "pages.forgotPassword.backToLogin"), config.AppRoutes.Login).Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -660,7 +660,7 @@ func ForgotPasswordPage(f AuthForm, sent bool) templ.Component {
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = authPage(i18n.T(ctx, "pages.forgotPassword.title"), i18n.T(ctx, "pages.forgotPassword.description")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var25), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = authPage(i18n.Translate(ctx, "pages.forgotPassword.title"), i18n.Translate(ctx, "pages.forgotPassword.description")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var25), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -707,11 +707,11 @@ func ForgotPasswordSent() templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = uikit.Alert("forgot-password-sent", uikit.Success, i18n.T(ctx, "pages.forgotPassword.emailSent")).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = uikit.Alert("forgot-password-sent", uikit.Success, i18n.Translate(ctx, "pages.forgotPassword.emailSent")).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = uikit.Callout(uikit.Info, "", i18n.T(ctx, "pages.forgotPassword.checkEmail")).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = uikit.Callout(uikit.Info, "", i18n.Translate(ctx, "pages.forgotPassword.checkEmail")).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -728,9 +728,9 @@ func ForgotPasswordSent() templ.Component {
 			}
 			ctx = templ.InitializeContext(ctx)
 			var templ_7745c5c3_Var32 string
-			templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "pages.forgotPassword.backToLogin"))
+			templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.Translate(ctx, "pages.forgotPassword.backToLogin"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 128, Col: 52}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 128, Col: 60}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var32))
 			if templ_7745c5c3_Err != nil {
@@ -751,7 +751,7 @@ func ForgotPasswordSent() templ.Component {
 }
 
 // ResetPasswordPage renders the new-password form for a reset token.
-func ResetPasswordPage(token string, f AuthForm, done bool) templ.Component {
+func ResetPasswordPage(token string, form AuthForm, done bool) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -807,7 +807,7 @@ func ResetPasswordPage(token string, f AuthForm, done bool) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = uikit.Alert("reset-password-invalid", uikit.Error, i18n.T(ctx, "pages.resetPassword.invalidResetLink")).Render(ctx, templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = uikit.Alert("reset-password-invalid", uikit.Error, i18n.Translate(ctx, "pages.resetPassword.invalidResetLink")).Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -824,9 +824,9 @@ func ResetPasswordPage(token string, f AuthForm, done bool) templ.Component {
 					}
 					ctx = templ.InitializeContext(ctx)
 					var templ_7745c5c3_Var37 string
-					templ_7745c5c3_Var37, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "pages.resetPassword.requestNewResetLink"))
+					templ_7745c5c3_Var37, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.Translate(ctx, "pages.resetPassword.requestNewResetLink"))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 142, Col: 61}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 142, Col: 69}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var37))
 					if templ_7745c5c3_Err != nil {
@@ -838,7 +838,7 @@ func ResetPasswordPage(token string, f AuthForm, done bool) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = view.AltLink("", i18n.T(ctx, "pages.resetPassword.backToLogin"), config.AppRoutes.Login).Render(ctx, templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = view.AltLink("", i18n.Translate(ctx, "pages.resetPassword.backToLogin"), config.AppRoutes.Login).Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -903,23 +903,23 @@ func ResetPasswordPage(token string, f AuthForm, done bool) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = FormError(f.Error).Render(ctx, templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = FormError(form.Error).Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = uikit.Input(uikit.Field{ID: "password", Type: "password", Label: i18n.T(ctx, "pages.resetPassword.newPassword"), Placeholder: i18n.T(ctx, "pages.resetPassword.newPasswordPlaceholder"), Autocomplete: "new-password", MinLength: 8, Hint: i18n.T(ctx, "pages.resetPassword.passwordRequirement")}).Render(ctx, templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = uikit.Input(uikit.Field{ID: "password", Type: "password", Label: i18n.Translate(ctx, "pages.resetPassword.newPassword"), Placeholder: i18n.Translate(ctx, "pages.resetPassword.newPasswordPlaceholder"), Autocomplete: "new-password", MinLength: 8, Hint: i18n.Translate(ctx, "pages.resetPassword.passwordRequirement")}).Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = uikit.Input(uikit.Field{ID: "confirmPassword", Type: "password", Label: i18n.T(ctx, "pages.resetPassword.confirmPassword"), Placeholder: i18n.T(ctx, "pages.resetPassword.confirmPasswordPlaceholder"), Autocomplete: "new-password", MinLength: 8}).Render(ctx, templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = uikit.Input(uikit.Field{ID: "confirmPassword", Type: "password", Label: i18n.Translate(ctx, "pages.resetPassword.confirmPassword"), Placeholder: i18n.Translate(ctx, "pages.resetPassword.confirmPasswordPlaceholder"), Autocomplete: "new-password", MinLength: 8}).Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = authSubmit(i18n.T(ctx, "pages.resetPassword.resetButton"), i18n.T(ctx, "pages.resetPassword.resettingPassword")).Render(ctx, templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = authSubmit(i18n.Translate(ctx, "pages.resetPassword.resetButton"), i18n.Translate(ctx, "pages.resetPassword.resettingPassword")).Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = view.AltLink("", i18n.T(ctx, "pages.resetPassword.backToLogin"), config.AppRoutes.Login).Render(ctx, templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = view.AltLink("", i18n.Translate(ctx, "pages.resetPassword.backToLogin"), config.AppRoutes.Login).Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -930,7 +930,7 @@ func ResetPasswordPage(token string, f AuthForm, done bool) templ.Component {
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = authPage(i18n.T(ctx, "pages.resetPassword.title"), i18n.T(ctx, "pages.resetPassword.description")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var34), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = authPage(i18n.Translate(ctx, "pages.resetPassword.title"), i18n.Translate(ctx, "pages.resetPassword.description")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var34), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1075,9 +1075,9 @@ func ResetPasswordDone() templ.Component {
 				}
 				ctx = templ.InitializeContext(ctx)
 				var templ_7745c5c3_Var49 string
-				templ_7745c5c3_Var49, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "pages.resetPassword.signInWithNewPassword"))
+				templ_7745c5c3_Var49, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.Translate(ctx, "pages.resetPassword.signInWithNewPassword"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 179, Col: 62}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 179, Col: 70}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var49))
 				if templ_7745c5c3_Err != nil {
@@ -1091,7 +1091,7 @@ func ResetPasswordDone() templ.Component {
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = resultBlock(uikit.Success, i18n.T(ctx, "pages.resetPassword.passwordResetSuccess"), i18n.T(ctx, "pages.resetPassword.passwordUpdated")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var47), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = resultBlock(uikit.Success, i18n.Translate(ctx, "pages.resetPassword.passwordResetSuccess"), i18n.Translate(ctx, "pages.resetPassword.passwordUpdated")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var47), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1142,9 +1142,9 @@ func VerifyEmailPage(email string, resend ResendState) templ.Component {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var52 string
-			templ_7745c5c3_Var52, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "pages.verifyEmail.emailSentTo"))
+			templ_7745c5c3_Var52, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.Translate(ctx, "pages.verifyEmail.emailSentTo"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 194, Col: 84}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 194, Col: 92}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var52))
 			if templ_7745c5c3_Err != nil {
@@ -1167,7 +1167,7 @@ func VerifyEmailPage(email string, resend ResendState) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = uikit.Callout(uikit.Info, "", i18n.T(ctx, "pages.verifyEmail.clickLinkInstructions")).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = uikit.Callout(uikit.Info, "", i18n.Translate(ctx, "pages.verifyEmail.clickLinkInstructions")).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1181,7 +1181,7 @@ func VerifyEmailPage(email string, resend ResendState) templ.Component {
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = authPage(i18n.T(ctx, "pages.verifyEmail.checkEmailTitle"), "").Render(templ.WithChildren(ctx, templ_7745c5c3_Var51), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = authPage(i18n.Translate(ctx, "pages.verifyEmail.checkEmailTitle"), "").Render(templ.WithChildren(ctx, templ_7745c5c3_Var51), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1199,7 +1199,7 @@ type ResendState struct {
 
 // ResendBlock is the patch target for the resend button. The cooldown runs in
 // Datastar signals: an interval decrements it and the label follows.
-func ResendBlock(email string, s ResendState) templ.Component {
+func ResendBlock(email string, state ResendState) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -1238,9 +1238,9 @@ func ResendBlock(email string, s ResendState) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var56 string
-		templ_7745c5c3_Var56, templ_7745c5c3_Err = templ.ResolveAttributeValue(cooldownSignals(s.CooldownSeconds))
+		templ_7745c5c3_Var56, templ_7745c5c3_Err = templ.ResolveAttributeValue(cooldownSignals(state.CooldownSeconds))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 215, Col: 89}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 215, Col: 93}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var56)
 		if templ_7745c5c3_Err != nil {
@@ -1250,15 +1250,15 @@ func ResendBlock(email string, s ResendState) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = uikit.Alert("resend-error", uikit.Error, s.Error).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = uikit.Alert("resend-error", uikit.Error, state.Error).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = uikit.Alert("resend-status", uikit.Success, s.Message).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = uikit.Alert("resend-status", uikit.Success, state.Message).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		if s.CooldownSeconds > 0 {
+		if state.CooldownSeconds > 0 {
 			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 58, "<div class=\"hidden\" data-on-interval__duration.1s=\"$_cooldown > 0 && ($_cooldown = $_cooldown - 1)\"></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
@@ -1329,7 +1329,7 @@ func ResendBlock(email string, s ResendState) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		if s.CooldownSeconds > 0 {
+		if state.CooldownSeconds > 0 {
 			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 65, " disabled")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
@@ -1348,9 +1348,9 @@ func ResendBlock(email string, s ResendState) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var62 string
-		templ_7745c5c3_Var62, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "pages.verifyEmail.sending"))
+		templ_7745c5c3_Var62, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.Translate(ctx, "pages.verifyEmail.sending"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 233, Col: 47}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 233, Col: 55}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var62))
 		if templ_7745c5c3_Err != nil {
@@ -1361,9 +1361,9 @@ func ResendBlock(email string, s ResendState) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var63 string
-		templ_7745c5c3_Var63, templ_7745c5c3_Err = templ.ResolveAttributeValue(cooldownLabel(i18n.T(ctx, "pages.verifyEmail.resendIn"), i18n.T(ctx, "pages.verifyEmail.resendVerificationEmail")))
+		templ_7745c5c3_Var63, templ_7745c5c3_Err = templ.ResolveAttributeValue(cooldownLabel(i18n.Translate(ctx, "pages.verifyEmail.resendIn"), i18n.Translate(ctx, "pages.verifyEmail.resendVerificationEmail")))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 238, Col: 131}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 238, Col: 147}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var63)
 		if templ_7745c5c3_Err != nil {
@@ -1374,9 +1374,9 @@ func ResendBlock(email string, s ResendState) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var64 string
-		templ_7745c5c3_Var64, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "pages.verifyEmail.resendVerificationEmail"))
+		templ_7745c5c3_Var64, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.Translate(ctx, "pages.verifyEmail.resendVerificationEmail"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 239, Col: 63}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 239, Col: 71}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var64))
 		if templ_7745c5c3_Err != nil {
@@ -1386,7 +1386,7 @@ func ResendBlock(email string, s ResendState) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = view.AltLink("", i18n.T(ctx, "pages.verifyEmail.backToLogin"), config.AppRoutes.Login).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = view.AltLink("", i18n.Translate(ctx, "pages.verifyEmail.backToLogin"), config.AppRoutes.Login).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1441,7 +1441,7 @@ func VerifyEmailSuccessPage(token, next string, result templ.Component) templ.Co
 					return templ_7745c5c3_Err
 				}
 			} else if token == "" {
-				templ_7745c5c3_Err = VerifyEmailFailed(i18n.T(ctx, "pages.verifyEmail.invalidToken")).Render(ctx, templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = VerifyEmailFailed(i18n.Translate(ctx, "pages.verifyEmail.invalidToken")).Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -1464,9 +1464,9 @@ func VerifyEmailSuccessPage(token, next string, result templ.Component) templ.Co
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var68 string
-				templ_7745c5c3_Var68, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "pages.verifyEmail.confirmDescription"))
+				templ_7745c5c3_Var68, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.Translate(ctx, "pages.verifyEmail.confirmDescription"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 258, Col: 122}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 258, Col: 130}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var68))
 				if templ_7745c5c3_Err != nil {
@@ -1528,7 +1528,7 @@ func VerifyEmailSuccessPage(token, next string, result templ.Component) templ.Co
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = uikit.SubmitButton(uikit.Submit{Label: i18n.T(ctx, "pages.verifyEmail.confirmButton"), Loading: i18n.T(ctx, "pages.verifyEmail.verifyingEmail"), Signal: "_verifying", ButtonProps: uikit.ButtonProps{Full: true}}).Render(ctx, templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = uikit.SubmitButton(uikit.Submit{Label: i18n.Translate(ctx, "pages.verifyEmail.confirmButton"), Loading: i18n.Translate(ctx, "pages.verifyEmail.verifyingEmail"), Signal: "_verifying", ButtonProps: uikit.ButtonProps{Full: true}}).Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -1539,7 +1539,7 @@ func VerifyEmailSuccessPage(token, next string, result templ.Component) templ.Co
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = authPage(i18n.T(ctx, "pages.verifyEmail.title"), "").Render(templ.WithChildren(ctx, templ_7745c5c3_Var66), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = authPage(i18n.Translate(ctx, "pages.verifyEmail.title"), "").Render(templ.WithChildren(ctx, templ_7745c5c3_Var66), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1625,9 +1625,9 @@ func VerifyEmailSucceeded(next string) templ.Component {
 				}
 				ctx = templ.InitializeContext(ctx)
 				var templ_7745c5c3_Var78 string
-				templ_7745c5c3_Var78, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "pages.verifyEmail.continueToDashboard"))
+				templ_7745c5c3_Var78, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.Translate(ctx, "pages.verifyEmail.continueToDashboard"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 275, Col: 58}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 275, Col: 66}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var78))
 				if templ_7745c5c3_Err != nil {
@@ -1641,7 +1641,7 @@ func VerifyEmailSucceeded(next string) templ.Component {
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = resultBlock(uikit.Success, i18n.T(ctx, "pages.verifyEmail.emailVerifiedSuccessfully"), i18n.T(ctx, "pages.verifyEmail.accountVerifiedRedirect")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var76), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = resultBlock(uikit.Success, i18n.Translate(ctx, "pages.verifyEmail.emailVerifiedSuccessfully"), i18n.Translate(ctx, "pages.verifyEmail.accountVerifiedRedirect")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var76), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1716,9 +1716,9 @@ func VerifyEmailFailed(message string) templ.Component {
 				}
 				ctx = templ.InitializeContext(ctx)
 				var templ_7745c5c3_Var83 string
-				templ_7745c5c3_Var83, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "pages.verifyEmail.backToLogin"))
+				templ_7745c5c3_Var83, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.Translate(ctx, "pages.verifyEmail.backToLogin"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 285, Col: 50}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_auth.templ`, Line: 285, Col: 58}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var83))
 				if templ_7745c5c3_Err != nil {
@@ -1732,7 +1732,7 @@ func VerifyEmailFailed(message string) templ.Component {
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = resultBlock(uikit.Error, i18n.T(ctx, "pages.verifyEmail.verificationFailed"), message).Render(templ.WithChildren(ctx, templ_7745c5c3_Var81), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = resultBlock(uikit.Error, i18n.Translate(ctx, "pages.verifyEmail.verificationFailed"), message).Render(templ.WithChildren(ctx, templ_7745c5c3_Var81), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

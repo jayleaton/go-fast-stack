@@ -49,42 +49,42 @@ type Deps struct {
 // get the same bare 404 as an unknown path (apiOnly), so the web UI's pages
 // and network log never touch them. The UI calls services in-process and
 // guards its own actions against cross-origin posts.
-func New(d Deps) http.Handler {
+func New(deps Deps) http.Handler {
 	apiMux := http.NewServeMux()
-	apiMux.Handle(config.APIRoutes.Auth, d.Auth.Handler())
-	d.Users.Routes(apiMux)
-	if d.Social != nil {
-		d.Social.Routes(apiMux)
+	apiMux.Handle(config.APIRoutes.Auth, deps.Auth.Handler())
+	deps.Users.Routes(apiMux)
+	if deps.Social != nil {
+		deps.Social.Routes(apiMux)
 	}
-	if d.Images != nil {
-		d.Images.Routes(apiMux)
+	if deps.Images != nil {
+		deps.Images.Routes(apiMux)
 	}
 
 	var public string
-	if d.Config.PublicURL != nil {
-		public = d.Config.PublicURL.Scheme + "://" + d.Config.PublicURL.Host
+	if deps.Config.PublicURL != nil {
+		public = deps.Config.PublicURL.Scheme + "://" + deps.Config.PublicURL.Host
 	}
 	mux := http.NewServeMux()
-	mux.Handle("GET "+config.APIRoutes.Healthz, apiOnly(healthz(d.DB, d.Secrets), public))
+	mux.Handle("GET "+config.APIRoutes.Healthz, apiOnly(healthz(deps.DB, deps.Secrets), public))
 	mux.Handle(apiPrefix, apiOnly(hideMethods(apiMux), public))
 	// Without this, ServeMux would answer /api with a 307 to /api/ for anyone,
 	// telling a browser the subtree exists.
 	mux.Handle(strings.TrimSuffix(apiPrefix, "/"), http.NotFoundHandler())
-	if d.UI != nil {
-		mux.Handle("/", d.UI)
+	if deps.UI != nil {
+		mux.Handle("/", deps.UI)
 	}
-	return securityHeaders(logRequests(d.Log, recoverPanics(d.Log, d.Auth.Middleware(mux))))
+	return securityHeaders(logRequests(deps.Log, recoverPanics(deps.Log, deps.Auth.Middleware(mux))))
 }
 
 // securityHeaders covers what the UI does not answer (the API, /healthz,
 // bare 404s): never sniffed, framed or stored. The UI sets its own, fuller set.
 func securityHeaders(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		h := w.Header()
-		h.Set("Cache-Control", "no-store")
-		h.Set("X-Content-Type-Options", "nosniff")
-		h.Set("X-Frame-Options", "DENY")
-		next.ServeHTTP(w, r)
+	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		header := writer.Header()
+		header.Set("Cache-Control", "no-store")
+		header.Set("X-Content-Type-Options", "nosniff")
+		header.Set("X-Frame-Options", "DENY")
+		next.ServeHTTP(writer, request)
 	})
 }
 
@@ -97,17 +97,17 @@ const healthzTimeout = 2 * time.Second
 // too long). Don't use it as a liveness probe that restarts the process: a
 // fresh process cannot load its secrets during a provider outage either.
 func healthz(db Pinger, sec SecretsHealth) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		ctx, cancel := context.WithTimeout(r.Context(), healthzTimeout)
+	return func(writer http.ResponseWriter, request *http.Request) {
+		ctx, cancel := context.WithTimeout(request.Context(), healthzTimeout)
 		defer cancel()
 		if err := db.Ping(ctx); err != nil {
-			api.WriteError(w, http.StatusServiceUnavailable, "database unavailable", nil)
+			api.WriteError(writer, http.StatusServiceUnavailable, "database unavailable", nil)
 			return
 		}
 		if sec != nil && sec.Healthy() != nil {
-			api.WriteError(w, http.StatusServiceUnavailable, "secrets stale", nil)
+			api.WriteError(writer, http.StatusServiceUnavailable, "secrets stale", nil)
 			return
 		}
-		api.WriteData(w, http.StatusOK, map[string]string{"status": "ok"})
+		api.WriteData(writer, http.StatusOK, map[string]string{"status": "ok"})
 	}
 }

@@ -48,7 +48,7 @@ type Status struct {
 	Error   string
 }
 
-func AccountPage(d AccountData) templ.Component {
+func AccountPage(data AccountData) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -103,22 +103,22 @@ func AccountPage(d AccountData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = uikit.PageHeader(i18n.T(ctx, "pages.account.title"), i18n.T(ctx, "pages.account.subtitle")).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = uikit.PageHeader(i18n.Translate(ctx, "pages.account.title"), i18n.Translate(ctx, "pages.account.subtitle")).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			if d.EmailChanged || d.LoadError != "" {
+			if data.EmailChanged || data.LoadError != "" {
 				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<div class=\"mb-6 space-y-3\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				if d.EmailChanged {
-					templ_7745c5c3_Err = uikit.Alert("account-notice", uikit.Success, i18n.Tf(ctx, "pages.account.emailChanged", "email", d.User.Email)).Render(ctx, templ_7745c5c3_Buffer)
+				if data.EmailChanged {
+					templ_7745c5c3_Err = uikit.Alert("account-notice", uikit.Success, i18n.Tf(ctx, "pages.account.emailChanged", "email", data.User.Email)).Render(ctx, templ_7745c5c3_Buffer)
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 				}
-				templ_7745c5c3_Err = uikit.Alert("account-error", uikit.Error, d.LoadError).Render(ctx, templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = uikit.Alert("account-error", uikit.Error, data.LoadError).Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -131,23 +131,23 @@ func AccountPage(d AccountData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = ProfileCard(d.User, Status{}).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = ProfileCard(data.User, Status{}).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = EmailCard(d.User.Email, "", Status{}).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = EmailCard(data.User.Email, "", Status{}).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = PasswordCard(d.User.Email, Status{}).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = PasswordCard(data.User.Email, Status{}).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = SessionsCard(d.Sessions, Status{}).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = SessionsCard(data.Sessions, Status{}).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = DangerCard(d.Summary).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = DangerCard(data.Summary).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -157,7 +157,7 @@ func AccountPage(d AccountData) templ.Component {
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = view.SectionLayout(i18n.T(ctx, "pages.account.title"), view.SectionAccount).Render(templ.WithChildren(ctx, templ_7745c5c3_Var2), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = view.SectionLayout(i18n.Translate(ctx, "pages.account.title"), view.SectionAccount).Render(templ.WithChildren(ctx, templ_7745c5c3_Var2), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -204,7 +204,7 @@ func accountCard(id, titleKey, descriptionKey string) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = uikit.CardHeader(i18n.T(ctx, titleKey), i18n.T(ctx, descriptionKey)).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = uikit.CardHeader(i18n.Translate(ctx, titleKey), i18n.Translate(ctx, descriptionKey)).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -227,7 +227,7 @@ func accountCard(id, titleKey, descriptionKey string) templ.Component {
 }
 
 // StatusAlert renders a form's outcome into its patch slot.
-func StatusAlert(id string, s Status) templ.Component {
+func StatusAlert(id string, status Status) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -248,13 +248,13 @@ func StatusAlert(id string, s Status) templ.Component {
 			templ_7745c5c3_Var7 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		if s.Error != "" {
-			templ_7745c5c3_Err = uikit.Alert(id, uikit.Error, s.Error).Render(ctx, templ_7745c5c3_Buffer)
+		if status.Error != "" {
+			templ_7745c5c3_Err = uikit.Alert(id, uikit.Error, status.Error).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = uikit.Alert(id, uikit.Success, s.Message).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = uikit.Alert(id, uikit.Success, status.Message).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -266,7 +266,7 @@ func StatusAlert(id string, s Status) templ.Component {
 // cardBody is the padded field area of an account card.
 const cardBody = "space-y-5 px-5 py-5 sm:px-6"
 
-func ProfileCard(u User, s Status) templ.Component {
+func ProfileCard(user User, status Status) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -351,7 +351,7 @@ func ProfileCard(u User, s Status) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = StatusAlert(profileStatusID, s).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = StatusAlert(profileStatusID, status).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -359,7 +359,7 @@ func ProfileCard(u User, s Status) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = view.Avatar(u.Name, deref(u.Image), "size-14 text-lg").Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = view.Avatar(user.Name, deref(user.Image), "size-14 text-lg").Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -367,7 +367,7 @@ func ProfileCard(u User, s Status) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = uikit.Input(uikit.Field{ID: "name", Label: i18n.T(ctx, "common.name"), Autocomplete: "name", Value: u.Name}).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = uikit.Input(uikit.Field{ID: "name", Label: i18n.Translate(ctx, "common.name"), Autocomplete: "name", Value: user.Name}).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -375,7 +375,7 @@ func ProfileCard(u User, s Status) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = uikit.Input(uikit.Field{ID: "image", Type: "url", Label: i18n.T(ctx, "pages.account.profile.image"), Placeholder: "https://", Value: deref(u.Image), Optional: true, Hint: i18n.T(ctx, "pages.account.profile.imageHint")}).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = uikit.Input(uikit.Field{ID: "image", Type: "url", Label: i18n.Translate(ctx, "pages.account.profile.image"), Placeholder: "https://", Value: deref(user.Image), Optional: true, Hint: i18n.Translate(ctx, "pages.account.profile.imageHint")}).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -395,7 +395,7 @@ func ProfileCard(u User, s Status) templ.Component {
 					}()
 				}
 				ctx = templ.InitializeContext(ctx)
-				templ_7745c5c3_Err = uikit.SubmitButton(uikit.Submit{Label: i18n.T(ctx, "common.save"), Loading: i18n.T(ctx, "pages.account.profile.saving"), Signal: "_savingProfile"}).Render(ctx, templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = uikit.SubmitButton(uikit.Submit{Label: i18n.Translate(ctx, "common.save"), Loading: i18n.Translate(ctx, "pages.account.profile.saving"), Signal: "_savingProfile"}).Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -421,7 +421,7 @@ func ProfileCard(u User, s Status) templ.Component {
 
 // EmailCard shows the request form, or the "check your new inbox" state once
 // a link went to sentTo.
-func EmailCard(current, sentTo string, s Status) templ.Component {
+func EmailCard(current, sentTo string, status Status) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -459,9 +459,9 @@ func EmailCard(current, sentTo string, s Status) templ.Component {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var17 string
-			templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "pages.account.email.current"))
+			templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.Translate(ctx, "pages.account.email.current"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_account.templ`, Line: 117, Col: 82}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_account.templ`, Line: 117, Col: 90}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 			if templ_7745c5c3_Err != nil {
@@ -507,7 +507,7 @@ func EmailCard(current, sentTo string, s Status) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = uikit.Callout(uikit.Info, i18n.T(ctx, "pages.account.email.checkInbox"), i18n.Tf(ctx, "pages.account.email.sentTo", "email", sentTo)).Render(ctx, templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = uikit.Callout(uikit.Info, i18n.Translate(ctx, "pages.account.email.checkInbox"), i18n.Tf(ctx, "pages.account.email.sentTo", "email", sentTo)).Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -551,9 +551,9 @@ func EmailCard(current, sentTo string, s Status) templ.Component {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var24 string
-				templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "pages.account.email.useDifferent"))
+				templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.Translate(ctx, "pages.account.email.useDifferent"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_account.templ`, Line: 125, Col: 132}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_account.templ`, Line: 125, Col: 140}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var24))
 				if templ_7745c5c3_Err != nil {
@@ -616,11 +616,11 @@ func EmailCard(current, sentTo string, s Status) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = StatusAlert(emailStatusID, s).Render(ctx, templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = StatusAlert(emailStatusID, status).Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = uikit.Input(uikit.Field{ID: "newEmail", Type: "email", Label: i18n.T(ctx, "pages.account.email.new"), Placeholder: i18n.T(ctx, "pages.account.email.newPlaceholder"), Autocomplete: "email"}).Render(ctx, templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = uikit.Input(uikit.Field{ID: "newEmail", Type: "email", Label: i18n.Translate(ctx, "pages.account.email.new"), Placeholder: i18n.Translate(ctx, "pages.account.email.newPlaceholder"), Autocomplete: "email"}).Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -640,7 +640,7 @@ func EmailCard(current, sentTo string, s Status) templ.Component {
 						}()
 					}
 					ctx = templ.InitializeContext(ctx)
-					templ_7745c5c3_Err = uikit.SubmitButton(uikit.Submit{Label: i18n.T(ctx, "pages.account.email.submit"), Loading: i18n.T(ctx, "pages.account.email.sending"), Signal: "_sendingEmail"}).Render(ctx, templ_7745c5c3_Buffer)
+					templ_7745c5c3_Err = uikit.SubmitButton(uikit.Submit{Label: i18n.Translate(ctx, "pages.account.email.submit"), Loading: i18n.Translate(ctx, "pages.account.email.sending"), Signal: "_sendingEmail"}).Render(ctx, templ_7745c5c3_Buffer)
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -666,7 +666,7 @@ func EmailCard(current, sentTo string, s Status) templ.Component {
 }
 
 // PasswordCard carries the email as a hidden username for password managers.
-func PasswordCard(email string, s Status) templ.Component {
+func PasswordCard(email string, status Status) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -751,7 +751,7 @@ func PasswordCard(email string, s Status) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = StatusAlert(passwordStatusID, s).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = StatusAlert(passwordStatusID, status).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -772,7 +772,7 @@ func PasswordCard(email string, s Status) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = uikit.Input(uikit.Field{ID: "currentPassword", Type: "password", Label: i18n.T(ctx, "pages.account.password.current"), Autocomplete: "current-password"}).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = uikit.Input(uikit.Field{ID: "currentPassword", Type: "password", Label: i18n.Translate(ctx, "pages.account.password.current"), Autocomplete: "current-password"}).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -780,11 +780,11 @@ func PasswordCard(email string, s Status) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = uikit.Input(uikit.Field{ID: "newPassword", Type: "password", Label: i18n.T(ctx, "pages.account.password.new"), Autocomplete: "new-password", MinLength: apiclient.MinPasswordLength, MaxLength: apiclient.MaxPasswordLength}).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = uikit.Input(uikit.Field{ID: "newPassword", Type: "password", Label: i18n.Translate(ctx, "pages.account.password.new"), Autocomplete: "new-password", MinLength: apiclient.MinPasswordLength, MaxLength: apiclient.MaxPasswordLength}).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = uikit.Input(uikit.Field{ID: "confirmPassword", Type: "password", Label: i18n.T(ctx, "pages.account.password.confirm"), Autocomplete: "new-password", MinLength: apiclient.MinPasswordLength, MaxLength: apiclient.MaxPasswordLength}).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = uikit.Input(uikit.Field{ID: "confirmPassword", Type: "password", Label: i18n.Translate(ctx, "pages.account.password.confirm"), Autocomplete: "new-password", MinLength: apiclient.MinPasswordLength, MaxLength: apiclient.MaxPasswordLength}).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -792,7 +792,7 @@ func PasswordCard(email string, s Status) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = uikit.CheckboxField(uikit.Checkbox{ID: "revokeOtherSessions", Name: "revokeOtherSessions", Value: "on", Label: i18n.T(ctx, "pages.account.password.revokeOthers")}).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = uikit.CheckboxField(uikit.Checkbox{ID: "revokeOtherSessions", Name: "revokeOtherSessions", Value: "on", Label: i18n.Translate(ctx, "pages.account.password.revokeOthers")}).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -812,7 +812,7 @@ func PasswordCard(email string, s Status) templ.Component {
 					}()
 				}
 				ctx = templ.InitializeContext(ctx)
-				templ_7745c5c3_Err = uikit.SubmitButton(uikit.Submit{Label: i18n.T(ctx, "pages.account.password.submit"), Loading: i18n.T(ctx, "pages.account.password.changing"), Signal: "_changingPassword"}).Render(ctx, templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = uikit.SubmitButton(uikit.Submit{Label: i18n.Translate(ctx, "pages.account.password.submit"), Loading: i18n.Translate(ctx, "pages.account.password.changing"), Signal: "_changingPassword"}).Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -837,7 +837,7 @@ func PasswordCard(email string, s Status) templ.Component {
 }
 
 // SessionsCard lists the user's sessions; every action re-renders it.
-func SessionsCard(sessions []apiclient.Session, s Status) templ.Component {
+func SessionsCard(sessions []apiclient.Session, status Status) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -874,7 +874,7 @@ func SessionsCard(sessions []apiclient.Session, s Status) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = StatusAlert(sessionsStatusID, s).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = StatusAlert(sessionsStatusID, status).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -922,7 +922,7 @@ func SessionsCard(sessions []apiclient.Session, s Status) templ.Component {
 					return templ_7745c5c3_Err
 				}
 				if sess.Current {
-					templ_7745c5c3_Err = uikit.Badge(uikit.Success, i18n.T(ctx, "pages.account.sessions.thisDevice"), true).Render(ctx, templ_7745c5c3_Buffer)
+					templ_7745c5c3_Err = uikit.Badge(uikit.Success, i18n.Translate(ctx, "pages.account.sessions.thisDevice"), true).Render(ctx, templ_7745c5c3_Buffer)
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -1033,9 +1033,9 @@ func SessionsCard(sessions []apiclient.Session, s Status) templ.Component {
 						}
 						ctx = templ.InitializeContext(ctx)
 						var templ_7745c5c3_Var49 string
-						templ_7745c5c3_Var49, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "pages.account.sessions.revoke"))
+						templ_7745c5c3_Var49, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.Translate(ctx, "pages.account.sessions.revoke"))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_account.templ`, Line: 192, Col: 54}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_account.templ`, Line: 192, Col: 62}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var49))
 						if templ_7745c5c3_Err != nil {
@@ -1104,7 +1104,7 @@ func SessionsCard(sessions []apiclient.Session, s Status) templ.Component {
 						}()
 					}
 					ctx = templ.InitializeContext(ctx)
-					templ_7745c5c3_Err = uikit.SubmitButton(uikit.Submit{Label: i18n.T(ctx, "pages.account.sessions.revokeOthers"), Loading: i18n.T(ctx, "pages.account.sessions.working"), Signal: "_revokingOthers", ButtonProps: uikit.ButtonProps{Variant: uikit.DangerOutline}}).Render(ctx, templ_7745c5c3_Buffer)
+					templ_7745c5c3_Err = uikit.SubmitButton(uikit.Submit{Label: i18n.Translate(ctx, "pages.account.sessions.revokeOthers"), Loading: i18n.Translate(ctx, "pages.account.sessions.working"), Signal: "_revokingOthers", ButtonProps: uikit.ButtonProps{Variant: uikit.DangerOutline}}).Render(ctx, templ_7745c5c3_Buffer)
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -1124,9 +1124,9 @@ func SessionsCard(sessions []apiclient.Session, s Status) templ.Component {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var53 string
-				templ_7745c5c3_Var53, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "pages.account.sessions.none"))
+				templ_7745c5c3_Var53, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.Translate(ctx, "pages.account.sessions.none"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_account.templ`, Line: 206, Col: 129}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_account.templ`, Line: 206, Col: 137}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var53))
 				if templ_7745c5c3_Err != nil {
@@ -1220,9 +1220,9 @@ func DangerCard(sum apiclient.UserDataSummary) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var56 string
-		templ_7745c5c3_Var56, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "pages.account.danger.title"))
+		templ_7745c5c3_Var56, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.Translate(ctx, "pages.account.danger.title"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_account.templ`, Line: 232, Col: 111}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_account.templ`, Line: 232, Col: 119}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var56))
 		if templ_7745c5c3_Err != nil {
@@ -1233,9 +1233,9 @@ func DangerCard(sum apiclient.UserDataSummary) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var57 string
-		templ_7745c5c3_Var57, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "pages.account.danger.description"))
+		templ_7745c5c3_Var57, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.Translate(ctx, "pages.account.danger.description"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_account.templ`, Line: 233, Col: 99}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_account.templ`, Line: 233, Col: 107}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var57))
 		if templ_7745c5c3_Err != nil {
@@ -1275,9 +1275,9 @@ func DangerCard(sum apiclient.UserDataSummary) templ.Component {
 			}
 			ctx = templ.InitializeContext(ctx)
 			var templ_7745c5c3_Var60 string
-			templ_7745c5c3_Var60, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "pages.account.danger.button"))
+			templ_7745c5c3_Var60, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.Translate(ctx, "pages.account.danger.button"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_account.templ`, Line: 238, Col: 48}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_account.templ`, Line: 238, Col: 56}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var60))
 			if templ_7745c5c3_Err != nil {
@@ -1320,9 +1320,9 @@ func DangerCard(sum apiclient.UserDataSummary) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var63 string
-		templ_7745c5c3_Var63, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "pages.account.danger.confirm"))
+		templ_7745c5c3_Var63, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.Translate(ctx, "pages.account.danger.confirm"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_account.templ`, Line: 241, Col: 108}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_account.templ`, Line: 241, Col: 116}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var63))
 		if templ_7745c5c3_Err != nil {
@@ -1345,9 +1345,9 @@ func DangerCard(sum apiclient.UserDataSummary) templ.Component {
 			}
 			ctx = templ.InitializeContext(ctx)
 			var templ_7745c5c3_Var65 string
-			templ_7745c5c3_Var65, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "common.cancel"))
+			templ_7745c5c3_Var65, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.Translate(ctx, "common.cancel"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_account.templ`, Line: 244, Col: 36}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_account.templ`, Line: 244, Col: 44}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var65))
 			if templ_7745c5c3_Err != nil {
@@ -1359,7 +1359,7 @@ func DangerCard(sum apiclient.UserDataSummary) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = uikit.SubmitButton(uikit.Submit{Label: i18n.T(ctx, "pages.account.danger.confirmButton"), Loading: i18n.T(ctx, "pages.account.danger.deleting"), Signal: "_deleting", ButtonProps: uikit.ButtonProps{Variant: uikit.Danger}}).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = uikit.SubmitButton(uikit.Submit{Label: i18n.Translate(ctx, "pages.account.danger.confirmButton"), Loading: i18n.Translate(ctx, "pages.account.danger.deleting"), Signal: "_deleting", ButtonProps: uikit.ButtonProps{Variant: uikit.Danger}}).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

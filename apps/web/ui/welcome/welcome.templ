@@ -46,76 +46,76 @@ const (
 
 // LandingPage is template-welcome/LandingPage.tsx.
 templ LandingPage() {
-	{{ t := CopyFor(ctx) }}
+	{{ content := CopyFor(ctx) }}
 	@view.Layout("") {
 		@shell() {
 			<header class="space-y-6">
-				@uikit.Badge(uikit.Brand, t.Hero.Badge, true)
-				<h1 class={ heroH1Class }>{ t.Hero.Title }</h1>
-				<p class="max-w-2xl text-base leading-relaxed text-muted-foreground text-pretty sm:text-lg">{ t.Hero.Subtitle }</p>
+				@uikit.Badge(uikit.Brand, content.Hero.Badge, true)
+				<h1 class={ heroH1Class }>{ content.Hero.Title }</h1>
+				<p class="max-w-2xl text-base leading-relaxed text-muted-foreground text-pretty sm:text-lg">{ content.Hero.Subtitle }</p>
 				<div class="flex flex-col gap-3 sm:flex-row sm:items-center">
 					@uikit.LinkButton(config.AppRoutes.Signup, uikit.ButtonProps{}) {
-						{ t.Hero.Primary }
+						{ content.Hero.Primary }
 					}
 					@uikit.LinkButton(config.AppRoutes.Login, uikit.ButtonProps{Variant: uikit.Secondary}) {
-						{ t.Hero.Secondary }
+						{ content.Hero.Secondary }
 					}
 					@uikit.LinkButton("#start", uikit.ButtonProps{Variant: uikit.Ghost}) {
-						{ t.Hero.Skip }
+						{ content.Hero.Skip }
 					}
 				</div>
 			</header>
 			@section("") {
-				@eyebrow(t.What.Eyebrow)
-				<h2 class={ h2Class }>{ t.What.Title }</h2>
-				<p class={ leadClass }>{ t.What.Body }</p>
+				@eyebrow(content.What.Eyebrow)
+				<h2 class={ h2Class }>{ content.What.Title }</h2>
+				<p class={ leadClass }>{ content.What.Body }</p>
 				<ul class="mt-8 grid gap-4 sm:grid-cols-3">
-					for _, c := range t.What.Cards {
+					for _, card := range content.What.Cards {
 						<li class={ cardClass }>
-							<h3 class={ h3Class }>{ c.Title }</h3>
-							<p class={ "mt-2", bodyClass }>{ c.Body }</p>
+							<h3 class={ h3Class }>{ card.Title }</h3>
+							<p class={ "mt-2", bodyClass }>{ card.Body }</p>
 						</li>
 					}
 				</ul>
 			}
 			@section("start") {
-				@eyebrow(t.Start.Eyebrow)
-				<h2 class={ h2Class }>{ t.Start.Title }</h2>
-				<p class={ leadClass }>{ t.Start.Subtitle }</p>
+				@eyebrow(content.Start.Eyebrow)
+				<h2 class={ h2Class }>{ content.Start.Title }</h2>
+				<p class={ leadClass }>{ content.Start.Subtitle }</p>
 				<ol class="mt-8 space-y-3">
-					for i, s := range t.Start.Steps {
+					for index, step := range content.Start.Steps {
 						<li class={ "flex gap-4", cardClass }>
-							<span class={ numberClass } aria-hidden="true">{ strconv.Itoa(i + 1) }</span>
+							<span class={ numberClass } aria-hidden="true">{ strconv.Itoa(index + 1) }</span>
 							<div class="min-w-0">
-								<h3 class={ h3Class }>{ s.Title }</h3>
-								<p class={ "mt-1", bodyClass }>{ s.Body }</p>
+								<h3 class={ h3Class }>{ step.Title }</h3>
+								<p class={ "mt-1", bodyClass }>{ step.Body }</p>
 							</div>
 						</li>
 					}
 				</ol>
 			}
 			@section("patterns") {
-				@eyebrow(t.Patterns.Eyebrow)
-				<h2 class={ h2Class }>{ t.Patterns.Title }</h2>
-				<p class={ leadClass }>{ t.Patterns.Subtitle }</p>
+				@eyebrow(content.Patterns.Eyebrow)
+				<h2 class={ h2Class }>{ content.Patterns.Title }</h2>
+				<p class={ leadClass }>{ content.Patterns.Subtitle }</p>
 				<ul class="mt-8 grid gap-4 sm:grid-cols-2">
-					for _, p := range t.Patterns.Items {
+					for _, item := range content.Patterns.Items {
 						<li class={ "flex flex-col", cardClass }>
-							<h3 class={ h3Class }>{ p.Title }</h3>
-							<p class={ "mt-2 flex-1", bodyClass }>{ p.Body }</p>
-							<p class={ "mt-4 rounded-control bg-muted px-2.5 py-1.5", pathClass }>{ p.Path }</p>
+							<h3 class={ h3Class }>{ item.Title }</h3>
+							<p class={ "mt-2 flex-1", bodyClass }>{ item.Body }</p>
+							<p class={ "mt-4 rounded-control bg-muted px-2.5 py-1.5", pathClass }>{ item.Path }</p>
 						</li>
 					}
 				</ul>
 				<p class="mt-6 text-sm">
-					<a href={ templ.SafeURL(config.AppRoutes.Why) } class={ uikit.LinkClass }>{ t.Patterns.More } <span aria-hidden="true">→</span></a>
+					<a href={ templ.SafeURL(config.AppRoutes.Why) } class={ uikit.LinkClass }>{ content.Patterns.More } <span aria-hidden="true">→</span></a>
 				</p>
 			}
 			@section("") {
-				@eyebrow(t.Later.Eyebrow)
-				<h2 class={ h2Class }>{ t.Later.Title }</h2>
+				@eyebrow(content.Later.Eyebrow)
+				<h2 class={ h2Class }>{ content.Later.Title }</h2>
 				<ul class="mt-8 divide-y divide-border">
-					for _, it := range t.Later.Items {
+					for _, it := range content.Later.Items {
 						<li class="py-4 first:pt-0">
 							<h3 class={ h3Class }>{ it.Title }</h3>
 							<p class={ "mt-1", bodyClass }>{ it.Body }</p>
@@ -125,26 +125,26 @@ templ LandingPage() {
 			}
 			@section("remove") {
 				<div class="rounded-card border border-dashed border-input bg-surface p-6">
-					@eyebrow(t.Remove.Eyebrow)
-					<h2 class="mt-3 text-2xl font-semibold tracking-tight text-balance">{ t.Remove.Title }</h2>
-					<p class="mt-3 leading-relaxed text-muted-foreground">{ t.Remove.Body }</p>
+					@eyebrow(content.Remove.Eyebrow)
+					<h2 class="mt-3 text-2xl font-semibold tracking-tight text-balance">{ content.Remove.Title }</h2>
+					<p class="mt-3 leading-relaxed text-muted-foreground">{ content.Remove.Body }</p>
 					<ol class="mt-6 space-y-3">
-						for i, s := range t.Remove.Steps {
+						for index, step := range content.Remove.Steps {
 							<li class="flex gap-3 text-sm leading-relaxed">
-								<span class="font-semibold">{ strconv.Itoa(i + 1) }.</span>
-								<span>{ s }</span>
+								<span class="font-semibold">{ strconv.Itoa(index + 1) }.</span>
+								<span>{ step }</span>
 							</li>
 						}
 					</ol>
-					<p class="mt-5 text-sm text-muted-foreground">{ t.Remove.Note }</p>
+					<p class="mt-5 text-sm text-muted-foreground">{ content.Remove.Note }</p>
 				</div>
 			}
 			<footer class="mt-14 flex flex-col gap-3 border-t border-border pt-6 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
 				<span class="font-medium text-foreground">{ view.AppName(view.StateFrom(ctx)) }</span>
-				<nav aria-label={ t.Footer.Label } class="flex flex-wrap gap-4">
-					<a href={ templ.SafeURL(config.AppRoutes.Why) } class={ footerLink }>{ t.Footer.Why }</a>
-					<a href={ templ.SafeURL(config.AppRoutes.Login) } class={ footerLink }>{ t.Footer.Login }</a>
-					<a href={ templ.SafeURL(config.AppRoutes.Signup) } class={ footerLink }>{ t.Footer.Signup }</a>
+				<nav aria-label={ content.Footer.Label } class="flex flex-wrap gap-4">
+					<a href={ templ.SafeURL(config.AppRoutes.Why) } class={ footerLink }>{ content.Footer.Why }</a>
+					<a href={ templ.SafeURL(config.AppRoutes.Login) } class={ footerLink }>{ content.Footer.Login }</a>
+					<a href={ templ.SafeURL(config.AppRoutes.Signup) } class={ footerLink }>{ content.Footer.Signup }</a>
 				</nav>
 			</footer>
 		}
@@ -153,22 +153,22 @@ templ LandingPage() {
 
 // WhyPage is template-welcome/WhyPatternsPage.tsx.
 templ WhyPage() {
-	{{ t := CopyFor(ctx) }}
-	@view.Layout(t.Footer.Why) {
+	{{ content := CopyFor(ctx) }}
+	@view.Layout(content.Footer.Why) {
 		@shell() {
 			<header class="space-y-5">
-				@eyebrow(t.Why.Eyebrow)
-				<h1 class={ heroH1Class }>{ t.Why.Title }</h1>
-				<p class="max-w-2xl text-lg leading-relaxed text-muted-foreground text-pretty">{ t.Why.Subtitle }</p>
+				@eyebrow(content.Why.Eyebrow)
+				<h1 class={ heroH1Class }>{ content.Why.Title }</h1>
+				<p class="max-w-2xl text-lg leading-relaxed text-muted-foreground text-pretty">{ content.Why.Subtitle }</p>
 			</header>
 			<section class="mt-12 rounded-card border border-warning-border bg-warning-soft p-6 text-warning-soft-foreground">
-				<h2 class="text-lg font-semibold">{ t.Why.IntroTitle }</h2>
-				<p class="mt-2 leading-relaxed">{ t.Why.IntroBody }</p>
+				<h2 class="text-lg font-semibold">{ content.Why.IntroTitle }</h2>
+				<p class="mt-2 leading-relaxed">{ content.Why.IntroBody }</p>
 			</section>
 			<ol class="mt-10 space-y-6">
-				for i, it := range t.Why.Items {
+				for index, it := range content.Why.Items {
 					<li class={ uikit.CardClass, "p-6" }>
-						<p class="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">{ strconv.Itoa(i + 1) } / { strconv.Itoa(len(t.Why.Items)) }</p>
+						<p class="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">{ strconv.Itoa(index + 1) } / { strconv.Itoa(len(content.Why.Items)) }</p>
 						<h2 class="mt-2 text-xl font-semibold">{ it.Title }</h2>
 						<p class="mt-3 leading-relaxed text-muted-foreground">{ it.Analogy }</p>
 						<p class="mt-4 border-l-2 border-primary pl-3 text-sm leading-relaxed">{ it.LookHere }</p>
@@ -178,10 +178,10 @@ templ WhyPage() {
 			</ol>
 			<div class="mt-12 flex flex-col gap-3 sm:flex-row">
 				@uikit.LinkButton(config.AppRoutes.Home, uikit.ButtonProps{Variant: uikit.Secondary}) {
-					{ t.Why.Back }
+					{ content.Why.Back }
 				}
 				@uikit.LinkButton(config.AppRoutes.Signup, uikit.ButtonProps{}) {
-					{ t.Why.Start }
+					{ content.Why.Start }
 				}
 			</div>
 		}

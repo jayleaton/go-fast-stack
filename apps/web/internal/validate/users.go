@@ -24,22 +24,22 @@ type UpdateUserSettings struct {
 }
 
 // Validate trims the name and checks lengths and the image URL.
-func (u *UpdateUserSettings) Validate() error {
-	f := Fields{}
-	if u.Name != nil {
-		name := strings.TrimSpace(*u.Name)
-		u.Name = &name
-		f.Add(name == "" || utf8.RuneCountInString(name) > maxNameLength, "name", "must be 1-255 characters")
+func (settings *UpdateUserSettings) Validate() error {
+	fields := Fields{}
+	if settings.Name != nil {
+		name := strings.TrimSpace(*settings.Name)
+		settings.Name = &name
+		fields.Add(name == "" || utf8.RuneCountInString(name) > maxNameLength, "name", "must be 1-255 characters")
 	}
-	if u.Image.Value != nil {
-		f.Add(!isHTTPURL(*u.Image.Value), "image", "must be an http(s) URL")
+	if settings.Image.Value != nil {
+		fields.Add(!isHTTPURL(*settings.Image.Value), "image", "must be an http(s) URL")
 	}
-	return f.Err()
+	return fields.Err()
 }
 
 func isHTTPURL(raw string) bool {
-	u, err := url.Parse(raw)
-	return err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != "" && len(raw) <= maxURLLength
+	link, err := url.Parse(raw)
+	return err == nil && (link.Scheme == "http" || link.Scheme == "https") && link.Host != "" && len(raw) <= maxURLLength
 }
 
 // UpdateUserEmail is the POST /me/email body (Better Auth change-email names).
@@ -52,15 +52,15 @@ type UpdateUserEmail struct {
 
 // Validate normalises the address and checks its shape. Whether it differs
 // from the current address is a business rule (services.UserService).
-func (u *UpdateUserEmail) Validate() error {
-	u.NewEmail = strings.ToLower(strings.TrimSpace(u.NewEmail))
-	if u.CallbackURL == "" {
-		u.CallbackURL = config.AppRoutes.EmailChanged
+func (email *UpdateUserEmail) Validate() error {
+	email.NewEmail = strings.ToLower(strings.TrimSpace(email.NewEmail))
+	if email.CallbackURL == "" {
+		email.CallbackURL = config.AppRoutes.EmailChanged
 	}
-	f := Fields{}
-	f.Add(!isEmail(u.NewEmail), "newEmail", "must be a valid email address")
-	f.Add(len(u.CallbackURL) > maxURLLength, "callbackURL", "must be at most 2048 characters")
-	return f.Err()
+	fields := Fields{}
+	fields.Add(!isEmail(email.NewEmail), "newEmail", "must be a valid email address")
+	fields.Add(len(email.CallbackURL) > maxURLLength, "callbackURL", "must be at most 2048 characters")
+	return fields.Err()
 }
 
 // UpdateUserPassword is the POST /me/password body (Better Auth
@@ -73,14 +73,14 @@ type UpdateUserPassword struct {
 }
 
 // Validate checks that both passwords are present.
-func (u *UpdateUserPassword) Validate() error {
-	f := Fields{}
-	f.Add(u.CurrentPassword == "", "currentPassword", "is required")
-	f.Add(u.NewPassword == "", "newPassword", "is required")
-	return f.Err()
+func (password *UpdateUserPassword) Validate() error {
+	fields := Fields{}
+	fields.Add(password.CurrentPassword == "", "currentPassword", "is required")
+	fields.Add(password.NewPassword == "", "newPassword", "is required")
+	return fields.Err()
 }
 
-func isEmail(s string) bool {
-	a, err := mail.ParseAddress(s)
-	return err == nil && a.Address == s && len(s) <= maxEmailLength
+func isEmail(text string) bool {
+	address, err := mail.ParseAddress(text)
+	return err == nil && address.Address == text && len(text) <= maxEmailLength
 }

@@ -9,16 +9,16 @@ import (
 	"github.com/jayleaton/go-fast-stack/apps/web/ui/i18n"
 )
 
-func deref(s *string) string {
-	if s == nil {
+func deref(text *string) string {
+	if text == nil {
 		return ""
 	}
-	return *s
+	return *text
 }
 
 func hasOtherSessions(sessions []apiclient.Session) bool {
-	for _, s := range sessions {
-		if !s.Current {
+	for _, session := range sessions {
+		if !session.Current {
 			return true
 		}
 	}
@@ -54,15 +54,15 @@ func mobileDevice(ua *string) bool {
 func deviceLabel(ctx context.Context, ua *string) string {
 	agent := deref(ua)
 	browser, system := "", ""
-	for _, b := range browsers {
-		if strings.Contains(agent, b.token) {
-			browser = b.name
+	for _, item := range browsers {
+		if strings.Contains(agent, item.token) {
+			browser = item.name
 			break
 		}
 	}
-	for _, s := range systems {
-		if strings.Contains(agent, s.token) {
-			system = s.name
+	for _, item := range systems {
+		if strings.Contains(agent, item.token) {
+			system = item.name
 			break
 		}
 	}
@@ -74,5 +74,5 @@ func deviceLabel(ctx context.Context, ua *string) string {
 	case system != "":
 		return system
 	}
-	return i18n.T(ctx, "pages.account.sessions.unknownDevice")
+	return i18n.Translate(ctx, "pages.account.sessions.unknownDevice")
 }

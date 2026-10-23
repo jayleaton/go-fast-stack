@@ -34,8 +34,8 @@ func TestSocialRoutes(test *testing.T) {
 	test.Parallel()
 	started := services.SocialStart{URL: "https://accounts.example/authorize?state=s", Cookies: []services.Cookie{{Name: "better-auth.oauth_state", Value: "signed", MaxAge: 300}}}
 	outcome := services.SocialOutcome{Redirect: "/dashboard", Cookies: []services.Cookie{{Name: "better-auth.session_token", Value: "token", MaxAge: 604800}}}
-	start := socialPath(r.SocialStart, "google")
-	finish := socialPath(r.SocialFinish, "google")
+	start := socialPath(apiRoutes.SocialStart, "google")
+	finish := socialPath(apiRoutes.SocialFinish, "google")
 	cases := map[string]struct {
 		as           apitest.Session
 		method, path string
@@ -45,7 +45,7 @@ func TestSocialRoutes(test *testing.T) {
 		check        func(test *testing.T, response apitest.Response)
 	}{
 		"providers signed out": {
-			as: apitest.Anonymous, method: "GET", path: r.SocialProviders, status: http.StatusOK,
+			as: apitest.Anonymous, method: "GET", path: apiRoutes.SocialProviders, status: http.StatusOK,
 			expect: func(service *mocks.MockSocialServiceMockRecorder) {
 				service.Providers(anyCtx).Return([]string{"google"})
 			},
@@ -56,7 +56,7 @@ func TestSocialRoutes(test *testing.T) {
 			},
 		},
 		"providers signed in": {
-			as: apitest.AsUser(ada), method: "GET", path: r.SocialProviders, status: http.StatusOK,
+			as: apitest.AsUser(ada), method: "GET", path: apiRoutes.SocialProviders, status: http.StatusOK,
 			expect: func(service *mocks.MockSocialServiceMockRecorder) { service.Providers(anyCtx).Return([]string{}) },
 		},
 		"start": {
@@ -75,7 +75,7 @@ func TestSocialRoutes(test *testing.T) {
 			expect: func(*mocks.MockSocialServiceMockRecorder) {},
 		},
 		"start unknown provider": {
-			as: apitest.Anonymous, method: "POST", path: socialPath(r.SocialStart, "github"), body: `{}`, status: http.StatusNotFound,
+			as: apitest.Anonymous, method: "POST", path: socialPath(apiRoutes.SocialStart, "github"), body: `{}`, status: http.StatusNotFound,
 			expect: func(service *mocks.MockSocialServiceMockRecorder) {
 				service.Start(anyCtx, "github", gomock.Any()).Return(services.SocialStart{}, services.ErrProviderNotFound)
 			},

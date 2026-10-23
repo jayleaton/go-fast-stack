@@ -43,54 +43,54 @@ var catalogs = mustLoad()
 
 func mustLoad() map[Locale]map[string]string {
 	out := make(map[Locale]map[string]string, len(Locales))
-	for _, l := range Locales {
-		raw, err := messagesFS.ReadFile("messages/" + string(l) + ".json")
+	for _, locale := range Locales {
+		raw, err := messagesFS.ReadFile("messages/" + string(locale) + ".json")
 		if err != nil {
-			panic(fmt.Sprintf("i18n: read %s: %v", l, err))
+			panic(fmt.Sprintf("i18n: read %s: %v", locale, err))
 		}
 		var tree map[string]any
 		if err := json.Unmarshal(raw, &tree); err != nil {
-			panic(fmt.Sprintf("i18n: parse %s: %v", l, err))
+			panic(fmt.Sprintf("i18n: parse %s: %v", locale, err))
 		}
 		flat := map[string]string{}
 		flatten("", tree, flat)
-		out[l] = flat
+		out[locale] = flat
 	}
 	return out
 }
 
 func flatten(prefix string, node map[string]any, out map[string]string) {
-	for k, v := range node {
-		key := k
+	for name, value := range node {
+		key := name
 		if prefix != "" {
-			key = prefix + "." + k
+			key = prefix + "." + name
 		}
-		switch v := v.(type) {
+		switch value := value.(type) {
 		case string:
-			out[key] = v
+			out[key] = value
 		case map[string]any:
-			flatten(key, v, out)
+			flatten(key, value, out)
 		default:
-			panic(fmt.Sprintf("i18n: key %q has unsupported type %T", key, v))
+			panic(fmt.Sprintf("i18n: key %q has unsupported type %T", key, value))
 		}
 	}
 }
 
 // Keys returns the sorted message keys of a locale.
-func Keys(l Locale) []string {
-	keys := make([]string, 0, len(catalogs[l]))
-	for k := range catalogs[l] {
-		keys = append(keys, k)
+func Keys(locale Locale) []string {
+	keys := make([]string, 0, len(catalogs[locale]))
+	for key := range catalogs[locale] {
+		keys = append(keys, key)
 	}
 	sort.Strings(keys)
 	return keys
 }
 
 // Supported reports whether s names a supported locale.
-func Supported(s string) (Locale, bool) {
-	for _, l := range Locales {
-		if string(l) == s {
-			return l, true
+func Supported(text string) (Locale, bool) {
+	for _, locale := range Locales {
+		if string(locale) == text {
+			return locale, true
 		}
 	}
 	return "", false
@@ -103,73 +103,73 @@ type Translator struct {
 
 // T returns the message for key. A missing key renders as the key itself, which
 // the render tests treat as a failure.
-func (t Translator) T(key string) string {
-	if v, ok := catalogs[t.Locale][key]; ok {
-		return v
+func (translator Translator) Translate(key string) string {
+	if value, ok := catalogs[translator.Locale][key]; ok {
+		return value
 	}
 	return key
 }
 
 // Tf is T with named placeholders: Tf("k", "email", e) fills "{email}".
-func (t Translator) Tf(key string, pairs ...string) string {
-	msg := t.T(key)
-	for i := 0; i+1 < len(pairs); i += 2 {
-		msg = strings.ReplaceAll(msg, "{"+pairs[i]+"}", pairs[i+1])
+func (translator Translator) Tf(key string, pairs ...string) string {
+	msg := translator.Translate(key)
+	for index := 0; index+1 < len(pairs); index += 2 {
+		msg = strings.ReplaceAll(msg, "{"+pairs[index]+"}", pairs[index+1])
 	}
 	return msg
 }
 
 // Has reports whether key exists in the translator's locale.
-func (t Translator) Has(key string) bool {
-	_, ok := catalogs[t.Locale][key]
+func (translator Translator) Has(key string) bool {
+	_, ok := catalogs[translator.Locale][key]
 	return ok
 }
 
 // Label returns the display name of a locale in the translator's language.
-func (t Translator) Label(l Locale) string {
-	switch l {
+func (translator Translator) Label(locale Locale) string {
+	switch locale {
 	case En:
-		return t.T("common.english")
+		return translator.Translate("common.english")
 	case Ja:
-		return t.T("common.japanese")
+		return translator.Translate("common.japanese")
 	}
-	return string(l)
+	return string(locale)
 }
 
 // Date formats a calendar date the way each locale writes it.
-func (t Translator) Date(d time.Time) string {
-	if t.Locale == Ja {
-		return d.Format("2006年1月2日")
+func (translator Translator) Date(moment time.Time) string {
+	if translator.Locale == Ja {
+		return moment.Format("2006年1月2日")
 	}
-	return d.Format("Jan 2, 2006")
+	return moment.Format("Jan 2, 2006")
 }
 
 // DateTime formats a date with a 24h time.
-func (t Translator) DateTime(d time.Time) string {
-	if t.Locale == Ja {
-		return d.Format("2006年1月2日 15:04 MST")
+func (translator Translator) DateTime(moment time.Time) string {
+	if translator.Locale == Ja {
+		return moment.Format("2006年1月2日 15:04 MST")
 	}
-	return d.Format("Jan 2, 2006 15:04 MST")
+	return moment.Format("Jan 2, 2006 15:04 MST")
 }
 
 type ctxKey struct{}
 
 // WithTranslator stores the translator for templates rendered with ctx.
-func WithTranslator(ctx context.Context, t Translator) context.Context {
-	return context.WithValue(ctx, ctxKey{}, t)
+func WithTranslator(ctx context.Context, translator Translator) context.Context {
+	return context.WithValue(ctx, ctxKey{}, translator)
 }
 
 // From returns the request translator, falling back to the default locale.
 func From(ctx context.Context) Translator {
-	if t, ok := ctx.Value(ctxKey{}).(Translator); ok {
-		return t
+	if translator, ok := ctx.Value(ctxKey{}).(Translator); ok {
+		return translator
 	}
 	return Translator{Locale: DefaultLocale}
 }
 
 // T is the shorthand templates use: { i18n.T(ctx, "pages.login.title") }.
-func T(ctx context.Context, key string) string {
-	return From(ctx).T(key)
+func Translate(ctx context.Context, key string) string {
+	return From(ctx).Translate(key)
 }
 
 // Tf is the template shorthand for Translator.Tf.
@@ -179,19 +179,19 @@ func Tf(ctx context.Context, key string, pairs ...string) string {
 
 // Negotiate picks the locale for a request: the switcher cookie first, then the
 // highest-weighted supported Accept-Language entry, then DefaultLocale.
-func Negotiate(r *http.Request) Locale {
-	if c, err := r.Cookie(CookieName); err == nil {
-		if l, ok := Supported(c.Value); ok {
-			return l
+func Negotiate(request *http.Request) Locale {
+	if cookie, err := request.Cookie(CookieName); err == nil {
+		if locale, ok := Supported(cookie.Value); ok {
+			return locale
 		}
 	}
-	return fromAcceptLanguage(r.Header.Get("Accept-Language"))
+	return fromAcceptLanguage(request.Header.Get("Accept-Language"))
 }
 
 func fromAcceptLanguage(header string) Locale {
 	type candidate struct {
-		lang string
-		q    float64
+		lang    string
+		quality float64
 	}
 	var cands []candidate
 	for part := range strings.SplitSeq(header, ",") {
@@ -199,22 +199,22 @@ func fromAcceptLanguage(header string) Locale {
 		if tag == "" {
 			continue
 		}
-		q := 1.0
-		if v, ok := strings.CutPrefix(strings.TrimSpace(params), "q="); ok {
-			if f, err := strconv.ParseFloat(v, 64); err == nil {
-				q = f
+		quality := 1.0
+		if value, ok := strings.CutPrefix(strings.TrimSpace(params), "q="); ok {
+			if parsed, err := strconv.ParseFloat(value, 64); err == nil {
+				quality = parsed
 			}
 		}
 		base, _, _ := strings.Cut(strings.ToLower(tag), "-")
-		cands = append(cands, candidate{base, q})
+		cands = append(cands, candidate{base, quality})
 	}
-	sort.SliceStable(cands, func(i, j int) bool { return cands[i].q > cands[j].q })
-	for _, c := range cands {
-		if c.q <= 0 {
+	sort.SliceStable(cands, func(index, inner int) bool { return cands[index].quality > cands[inner].quality })
+	for _, candidate := range cands {
+		if candidate.quality <= 0 {
 			continue
 		}
-		if l, ok := Supported(c.lang); ok {
-			return l
+		if locale, ok := Supported(candidate.lang); ok {
+			return locale
 		}
 	}
 	return DefaultLocale
@@ -224,10 +224,10 @@ func fromAcceptLanguage(header string) Locale {
 const cookieMaxAge = 60 * 60 * 24 * 365
 
 // SetCookie persists the switcher choice for a year.
-func SetCookie(w http.ResponseWriter, l Locale, secure bool) {
-	http.SetCookie(w, &http.Cookie{
+func SetCookie(writer http.ResponseWriter, locale Locale, secure bool) {
+	http.SetCookie(writer, &http.Cookie{
 		Name:     CookieName,
-		Value:    string(l),
+		Value:    string(locale),
 		Path:     "/",
 		MaxAge:   cookieMaxAge,
 		HttpOnly: true, // only the server reads it

@@ -42,7 +42,7 @@ type Error struct {
 	Message string
 }
 
-func (e *Error) Error() string { return e.Message }
+func (err *Error) Error() string { return err.Message }
 
 // Kind sentinels: errors.Is(err, ErrNotFound) holds for every not-found
 // error, so callers can branch on a kind without knowing the specific error.
@@ -58,10 +58,10 @@ var (
 
 // Is makes the kind sentinels match every error of their kind. Specific
 // errors (ErrEmailTaken...) match only themselves.
-func (e *Error) Is(target error) bool {
+func (err *Error) Is(target error) bool {
 	switch target {
 	case ErrValidation, ErrForbidden, ErrNotFound, ErrConflict:
-		return e.Kind == target.(*Error).Kind
+		return err.Kind == target.(*Error).Kind
 	}
 	return false
 }

@@ -43,20 +43,20 @@ var fieldKeys = []struct{ field, key string }{
 
 // serviceMessage translates a validation or user-service error for display.
 // Internal errors are logged and shown as errors.somethingWentWrong.
-func (u *UI) serviceMessage(ctx context.Context, err error) string {
+func (ui *UI) serviceMessage(ctx context.Context, err error) string {
 	if verr, ok := errors.AsType[*apiclient.ValidationError](err); ok {
-		for _, f := range fieldKeys {
-			if _, bad := verr.Fields[f.field]; bad {
-				return i18n.T(ctx, f.key)
+		for _, fieldKey := range fieldKeys {
+			if _, bad := verr.Fields[fieldKey.field]; bad {
+				return i18n.Translate(ctx, fieldKey.key)
 			}
 		}
-		return i18n.T(ctx, "errors.invalidInput")
+		return i18n.Translate(ctx, "errors.invalidInput")
 	}
-	for _, e := range serviceErrorKeys {
-		if errors.Is(err, e.err) {
-			return i18n.T(ctx, e.key)
+	for _, serviceErrorKey := range serviceErrorKeys {
+		if errors.Is(err, serviceErrorKey.err) {
+			return i18n.Translate(ctx, serviceErrorKey.key)
 		}
 	}
-	u.log.ErrorContext(ctx, "ui: user service", "err", err)
-	return i18n.T(ctx, "errors.somethingWentWrong")
+	ui.log.ErrorContext(ctx, "ui: user service", "err", err)
+	return i18n.Translate(ctx, "errors.somethingWentWrong")
 }

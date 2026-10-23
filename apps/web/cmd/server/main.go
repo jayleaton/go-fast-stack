@@ -95,8 +95,8 @@ func migrate(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		return err
 	}
 	defer pool.Close()
-	for _, m := range migrations {
-		if err := m(ctx, pool); err != nil {
+	for _, migration := range migrations {
+		if err := migration(ctx, pool); err != nil {
 			return err
 		}
 	}
@@ -198,17 +198,17 @@ func newPool(ctx context.Context, cfg config.Config, log *slog.Logger) (*databas
 	}
 	applied := url.Fingerprint()
 	log.Info("database: pool opened", "database_url", applied)
-	cfg.Secrets.OnDatabaseURL(func(v secrets.Secret) error {
-		if v.Fingerprint() == applied {
+	cfg.Secrets.OnDatabaseURL(func(secret secrets.Secret) error {
+		if secret.Fingerprint() == applied {
 			return nil
 		}
 		ctx, cancel := context.WithTimeout(ctx, rotationTimeout) // shutdown aborts a rotation in progress
 		defer cancel()
-		if err := pool.Swap(ctx, reveal.Value(v)); err != nil {
+		if err := pool.Swap(ctx, reveal.Value(secret)); err != nil {
 			return err // the old pool stays; retried after the next fetch
 		}
-		log.Info("database: DATABASE_URL rotated", "from", applied, "to", v.Fingerprint())
-		applied = v.Fingerprint()
+		log.Info("database: DATABASE_URL rotated", "from", applied, "to", secret.Fingerprint())
+		applied = secret.Fingerprint()
 		return nil
 	})
 	return pool, nil
@@ -276,18 +276,18 @@ func newAuth(ctx context.Context, cfg config.Config, pool *database.Pool, log *s
 	}
 	applied := keys.Fingerprint()
 	log.Info("auth: keyring loaded", "keyring", applied)
-	cfg.Secrets.OnAuthSecrets(func(k secrets.Keyring) error {
-		if k.Fingerprint() == applied {
+	cfg.Secrets.OnAuthSecrets(func(keyring secrets.Keyring) error {
+		if keyring.Fingerprint() == applied {
 			return nil
 		}
 		ctx, cancel := context.WithTimeout(ctx, rotationTimeout) // shutdown aborts a rotation in progress
 		defer cancel()
-		current, previous, revoked := reveal.Keyring(k)
+		current, previous, revoked := reveal.Keyring(keyring)
 		if err := authn.SetSecrets(ctx, auth.Secrets{Current: current, Previous: previous, Revoked: revoked}); err != nil {
 			return err // the old keyring stays; retried after the next fetch
 		}
-		log.Info("auth: AUTH_SECRET rotated", "from", applied, "to", k.Fingerprint())
-		applied = k.Fingerprint()
+		log.Info("auth: AUTH_SECRET rotated", "from", applied, "to", keyring.Fingerprint())
+		applied = keyring.Fingerprint()
 		return nil
 	})
 	return authn, nil

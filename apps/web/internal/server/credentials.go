@@ -19,36 +19,36 @@ type AccountCredentials struct {
 var _ services.AccountCredentials = AccountCredentials{}
 
 // NewAccountCredentials returns the adapter over a.
-func NewAccountCredentials(a *auth.Auth) AccountCredentials {
-	return AccountCredentials{auth: a}
+func NewAccountCredentials(auth *auth.Auth) AccountCredentials {
+	return AccountCredentials{auth: auth}
 }
 
-func (c AccountCredentials) ChangePassword(ctx context.Context, userID, current, next string, revokeOthers bool, currentSessionID string) error {
-	return credentialErr(c.auth.ChangePassword(ctx, userID, current, next, revokeOthers, currentSessionID))
+func (credentials AccountCredentials) ChangePassword(ctx context.Context, userID, current, next string, revokeOthers bool, currentSessionID string) error {
+	return credentialErr(credentials.auth.ChangePassword(ctx, userID, current, next, revokeOthers, currentSessionID))
 }
 
-func (c AccountCredentials) ChangeEmail(ctx context.Context, userID, newEmail, callbackURL string) error {
-	return credentialErr(c.auth.ChangeEmail(ctx, userID, newEmail, callbackURL))
+func (credentials AccountCredentials) ChangeEmail(ctx context.Context, userID, newEmail, callbackURL string) error {
+	return credentialErr(credentials.auth.ChangeEmail(ctx, userID, newEmail, callbackURL))
 }
 
-func (c AccountCredentials) ListSessions(ctx context.Context, userID string) ([]services.Session, error) {
-	in, err := c.auth.ListSessions(ctx, userID)
+func (credentials AccountCredentials) ListSessions(ctx context.Context, userID string) ([]services.Session, error) {
+	in, err := credentials.auth.ListSessions(ctx, userID)
 	if err != nil {
 		return nil, credentialErr(err)
 	}
 	out := make([]services.Session, len(in))
-	for i, s := range in { // never the token
-		out[i] = services.Session{ID: s.ID, CreatedAt: s.CreatedAt, ExpiresAt: s.ExpiresAt, IPAddress: s.IPAddress, UserAgent: s.UserAgent}
+	for index, session := range in { // never the token
+		out[index] = services.Session{ID: session.ID, CreatedAt: session.CreatedAt, ExpiresAt: session.ExpiresAt, IPAddress: session.IPAddress, UserAgent: session.UserAgent}
 	}
 	return out, nil
 }
 
-func (c AccountCredentials) RevokeSession(ctx context.Context, userID, sessionID string) error {
-	return credentialErr(c.auth.RevokeSession(ctx, userID, sessionID))
+func (credentials AccountCredentials) RevokeSession(ctx context.Context, userID, sessionID string) error {
+	return credentialErr(credentials.auth.RevokeSession(ctx, userID, sessionID))
 }
 
-func (c AccountCredentials) RevokeOtherSessions(ctx context.Context, userID, currentSessionID string) error {
-	return credentialErr(c.auth.RevokeOtherSessions(ctx, userID, currentSessionID))
+func (credentials AccountCredentials) RevokeOtherSessions(ctx context.Context, userID, currentSessionID string) error {
+	return credentialErr(credentials.auth.RevokeOtherSessions(ctx, userID, currentSessionID))
 }
 
 // credentialErrors translates auth errors into the port's.
@@ -74,9 +74,9 @@ var credentialErrors = []struct {
 // credentialErr wraps a known auth error in its port error (keeping the
 // original in the chain) and passes everything else through.
 func credentialErr(err error) error {
-	for _, e := range credentialErrors {
-		if errors.Is(err, e.auth) {
-			return fmt.Errorf("%w: %w", e.port, err)
+	for _, credentialError := range credentialErrors {
+		if errors.Is(err, credentialError.auth) {
+			return fmt.Errorf("%w: %w", credentialError.port, err)
 		}
 	}
 	return err

@@ -37,13 +37,13 @@ type imageRoute struct {
 
 var imageRoutes = map[string]imageRoute{
 	"POST images (upload)": {
-		method: "POST", path: r.Images, body: "\x89PNG\r\n\x1a\nrest",
+		method: "POST", path: apiRoutes.Images, body: "\x89PNG\r\n\x1a\nrest",
 		expect: func(recorder *mocks.MockImageServiceMockRecorder, err error) {
 			recorder.Upload(anyCtx, actor, []byte("\x89PNG\r\n\x1a\nrest")).Return(stored, err)
 		},
 	},
 	"POST images/import": {
-		method: "POST", path: r.ImageImport, body: `{"url":" https://example.com/a.png "}`, invalid: `{"url":"javascript:alert(1)"}`,
+		method: "POST", path: apiRoutes.ImageImport, body: `{"url":" https://example.com/a.png "}`, invalid: `{"url":"javascript:alert(1)"}`,
 		expect: func(recorder *mocks.MockImageServiceMockRecorder, err error) {
 			recorder.Import(anyCtx, actor, validate.CreateImageFromURL{URL: "https://example.com/a.png"}).Return(stored, err)
 		},
@@ -133,7 +133,7 @@ func wantFile(test *testing.T, handler http.Handler, method, path string) {
 func TestImageUploadOverTheLimitIs400(test *testing.T) {
 	test.Parallel()
 	_, handler := newImageRouter(test)
-	res := apitest.Do(test, handler, apitest.AsUser(ada), "POST", r.Images, strings.Repeat("x", services.MaxImageBytes+1))
+	res := apitest.Do(test, handler, apitest.AsUser(ada), "POST", apiRoutes.Images, strings.Repeat("x", services.MaxImageBytes+1))
 	wantError(test, res, 400, services.ErrImageTooLarge.Message)
 }
 
@@ -142,7 +142,7 @@ func TestImageImportDecode(test *testing.T) {
 	test.Parallel()
 	for _, body := range []string{`{"url":""}`, `{"url":"ftp://example.com/a.png"}`, `{"url":"/relative.png"}`, `{"url":"https://example.com/` + strings.Repeat("a", 2048) + `"}`} {
 		_, handler := newImageRouter(test)
-		res := apitest.Do(test, handler, apitest.AsUser(ada), "POST", r.ImageImport, body)
+		res := apitest.Do(test, handler, apitest.AsUser(ada), "POST", apiRoutes.ImageImport, body)
 		if res.Status != 400 || res.Details["url"] == "" {
 			test.Errorf("%.40q: %d %v", body, res.Status, res.Details)
 		}

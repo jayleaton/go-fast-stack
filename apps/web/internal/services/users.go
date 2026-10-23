@@ -36,7 +36,7 @@ type Session struct {
 // Implementations return model.ErrNotFound for a missing user.
 type UserRepository interface {
 	GetByID(ctx context.Context, id string) (User, error)
-	UpdateProfile(ctx context.Context, id string, p UserProfileUpdate) (User, error)
+	UpdateProfile(ctx context.Context, id string, update UserProfileUpdate) (User, error)
 	Delete(ctx context.Context, id string) error
 	DataSummary(ctx context.Context, id string) (UserDataSummary, error)
 }
@@ -108,101 +108,101 @@ func NewUserService(repo UserRepository, creds AccountCredentials) *UserService 
 }
 
 // GetProfile returns the user.
-func (s *UserService) GetProfile(ctx context.Context, actor Actor, userID string) (User, error) {
+func (service *UserService) GetProfile(ctx context.Context, actor Actor, userID string) (User, error) {
 	if err := self(actor, userID); err != nil {
 		return User{}, err
 	}
-	u, err := s.repo.GetByID(ctx, userID)
-	return u, notFound(err, ErrUserNotFound)
+	user, err := service.repo.GetByID(ctx, userID)
+	return user, notFound(err, ErrUserNotFound)
 }
 
 // UpdateProfile changes the name and image.
-func (s *UserService) UpdateProfile(ctx context.Context, actor Actor, userID string, in validate.UpdateUserSettings) (User, error) {
+func (service *UserService) UpdateProfile(ctx context.Context, actor Actor, userID string, in validate.UpdateUserSettings) (User, error) {
 	if err := self(actor, userID); err != nil {
 		return User{}, err
 	}
-	u, err := s.repo.UpdateProfile(ctx, userID, UserProfileUpdate{
+	user, err := service.repo.UpdateProfile(ctx, userID, UserProfileUpdate{
 		Name: in.Name, SetImage: in.Image.Set, Image: in.Image.Value,
 	})
-	return u, notFound(err, ErrUserNotFound)
+	return user, notFound(err, ErrUserNotFound)
 }
 
 // RequestEmailChange sends a verification link to the new address.
-func (s *UserService) RequestEmailChange(ctx context.Context, actor Actor, userID string, in validate.UpdateUserEmail) error {
+func (service *UserService) RequestEmailChange(ctx context.Context, actor Actor, userID string, in validate.UpdateUserEmail) error {
 	if err := self(actor, userID); err != nil {
 		return err
 	}
 	if strings.EqualFold(in.NewEmail, actor.Email) {
 		return ErrSameEmail
 	}
-	return s.creds.ChangeEmail(ctx, userID, in.NewEmail, in.CallbackURL)
+	return service.creds.ChangeEmail(ctx, userID, in.NewEmail, in.CallbackURL)
 }
 
 // ChangePassword replaces the password after checking the current one, and
 // optionally signs out every other session.
-func (s *UserService) ChangePassword(ctx context.Context, actor Actor, userID string, in validate.UpdateUserPassword) error {
+func (service *UserService) ChangePassword(ctx context.Context, actor Actor, userID string, in validate.UpdateUserPassword) error {
 	if err := self(actor, userID); err != nil {
 		return err
 	}
-	if n := utf8.RuneCountInString(in.NewPassword); n < MinPasswordLength || n > MaxPasswordLength {
+	if count := utf8.RuneCountInString(in.NewPassword); count < MinPasswordLength || count > MaxPasswordLength {
 		return ErrPasswordPolicy
 	}
 	if in.NewPassword == in.CurrentPassword {
 		return ErrSamePassword
 	}
-	return s.creds.ChangePassword(ctx, userID, in.CurrentPassword, in.NewPassword, in.RevokeOtherSessions, actor.SessionID)
+	return service.creds.ChangePassword(ctx, userID, in.CurrentPassword, in.NewPassword, in.RevokeOtherSessions, actor.SessionID)
 }
 
 // ListSessions returns the user's sessions, marking the actor's own.
-func (s *UserService) ListSessions(ctx context.Context, actor Actor, userID string) ([]Session, error) {
+func (service *UserService) ListSessions(ctx context.Context, actor Actor, userID string) ([]Session, error) {
 	if err := self(actor, userID); err != nil {
 		return nil, err
 	}
-	sessions, err := s.creds.ListSessions(ctx, userID)
+	sessions, err := service.creds.ListSessions(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
 	out := make([]Session, len(sessions)) // never nil: an empty list is [], not null
-	for i, sess := range sessions {
+	for index, sess := range sessions {
 		sess.Current = sess.ID == actor.SessionID
-		out[i] = sess
+		out[index] = sess
 	}
 	return out, nil
 }
 
 // RevokeSession signs out one of the user's other sessions. The current
 // session ends through sign-out, so a request cannot cut itself off.
-func (s *UserService) RevokeSession(ctx context.Context, actor Actor, userID, sessionID string) error {
+func (service *UserService) RevokeSession(ctx context.Context, actor Actor, userID, sessionID string) error {
 	if err := self(actor, userID); err != nil {
 		return err
 	}
 	if sessionID == actor.SessionID {
 		return ErrCurrentSession
 	}
-	return s.creds.RevokeSession(ctx, userID, sessionID)
+	return service.creds.RevokeSession(ctx, userID, sessionID)
 }
 
 // RevokeOtherSessions signs out every session but the actor's.
-func (s *UserService) RevokeOtherSessions(ctx context.Context, actor Actor, userID string) error {
+func (service *UserService) RevokeOtherSessions(ctx context.Context, actor Actor, userID string) error {
 	if err := self(actor, userID); err != nil {
 		return err
 	}
-	return s.creds.RevokeOtherSessions(ctx, userID, actor.SessionID)
+	return service.creds.RevokeOtherSessions(ctx, userID, actor.SessionID)
 }
 
 // DeleteAccount deletes the user; sessions and app rows cascade.
-func (s *UserService) DeleteAccount(ctx context.Context, actor Actor, userID string) error {
+func (service *UserService) DeleteAccount(ctx context.Context, actor Actor, userID string) error {
 	if err := self(actor, userID); err != nil {
 		return err
 	}
-	return notFound(s.repo.Delete(ctx, userID), ErrUserNotFound)
+	return notFound(service.repo.Delete(ctx, userID), ErrUserNotFound)
 }
 
 // DataSummary lists what the app stores for the user (shown before deletion).
-func (s *UserService) DataSummary(ctx context.Context, actor Actor, userID string) (UserDataSummary, error) {
+func (service *UserService) DataSummary(ctx context.Context, actor Actor, userID string) (UserDataSummary, error) {
 	if err := self(actor, userID); err != nil {
 		return UserDataSummary{}, err
 	}
-	sum, err := s.repo.DataSummary(ctx, userID)
+	sum, err := service.repo.DataSummary(ctx, userID)
 	return sum, notFound(err, ErrUserNotFound)
 }

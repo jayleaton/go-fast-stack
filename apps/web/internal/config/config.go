@@ -49,8 +49,8 @@ type Config struct {
 func Load(getenv func(string) string) (Config, error) {
 	var errs []error
 	get := func(key, fallback string) string {
-		if v := strings.TrimSpace(getenv(key)); v != "" {
-			return v
+		if value := strings.TrimSpace(getenv(key)); value != "" {
+			return value
 		}
 		return fallback
 	}
@@ -83,9 +83,9 @@ func Load(getenv func(string) string) (Config, error) {
 	if cfg.PublicURL != nil {
 		cfg.TrustedOrigins = append(cfg.TrustedOrigins, cfg.PublicURL.String())
 	}
-	for o := range strings.SplitSeq(get("TRUSTED_ORIGINS", ""), ",") {
-		if o = strings.TrimSpace(o); o != "" {
-			cfg.TrustedOrigins = append(cfg.TrustedOrigins, o)
+	for key := range strings.SplitSeq(get("TRUSTED_ORIGINS", ""), ",") {
+		if key = strings.TrimSpace(key); key != "" {
+			cfg.TrustedOrigins = append(cfg.TrustedOrigins, key)
 		}
 	}
 
@@ -107,9 +107,9 @@ func parseOrigin(key, raw string) (*url.URL, error) {
 	if raw == "" {
 		return nil, fmt.Errorf("%s is required (e.g. http://<host>:3000)", key)
 	}
-	u, err := url.Parse(strings.TrimRight(raw, "/"))
-	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.Path != "" {
+	link, err := url.Parse(strings.TrimRight(raw, "/"))
+	if err != nil || (link.Scheme != "http" && link.Scheme != "https") || link.Host == "" || link.Path != "" {
 		return nil, fmt.Errorf("%s must be an http(s) origin without a path, got %q", key, raw)
 	}
-	return u, nil
+	return link, nil
 }

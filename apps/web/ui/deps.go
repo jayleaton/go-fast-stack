@@ -49,11 +49,11 @@ func (ui *UI) authCodeMessage(ctx context.Context, code string) string {
 	if err := ui.api.AuthErrorForCode(code); err != nil {
 		for _, known := range AuthErrors {
 			if errors.Is(err, known.Err) {
-				return i18n.T(ctx, known.Key)
+				return i18n.Translate(ctx, known.Key)
 			}
 		}
 	}
-	return i18n.T(ctx, "pages.verifyEmail.unexpectedErrorDuringVerification")
+	return i18n.Translate(ctx, "pages.verifyEmail.unexpectedErrorDuringVerification")
 }
 
 // socialErrors are the ?error= codes a failed Google / Apple sign-in lands
@@ -75,9 +75,9 @@ func socialErrorMessage(ctx context.Context, code string) string {
 		return ""
 	}
 	if key, ok := socialErrors[code]; ok {
-		return i18n.T(ctx, key)
+		return i18n.Translate(ctx, key)
 	}
-	return i18n.T(ctx, "pages.login.social.failed")
+	return i18n.Translate(ctx, "pages.login.social.failed")
 }
 
 // Deps are the in-process dependencies of the UI.
