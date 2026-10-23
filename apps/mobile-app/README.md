@@ -111,6 +111,29 @@ contract/         contract test against the Go server
 (`auth.MobileTrustedOrigins`). If you change `scheme` in `app.json`, change it
 in `src/lib/auth/authClient.ts` and in `MobileTrustedOrigins` too.
 
+## Google and Apple sign-in
+
+The sign-in and sign-up screens show "Continue with Google" / "Continue with
+Apple" only for providers the server has configured
+(`GET /api/auth/social-providers`); with none, the buttons are hidden and
+email sign-in is unchanged. The flow is in `src/lib/auth/socialSignIn.ts`:
+
+1. `POST /api/auth/sign-in/social` with the app's deep link
+   (`Linking.createURL('auth/callback')`: `betterstack://auth/callback`, or
+   `exp://.../--/auth/callback` in Expo Go) returns the provider URL and a
+   handoff secret.
+2. `WebBrowser.openAuthSessionAsync` opens the provider; the server sends
+   the browser back to the deep link with `?code=` (or `?error=`).
+3. `POST /api/auth/sign-in/handoff` with the code and the secret returns the
+   session cookie, which the Expo client stores in SecureStore like email
+   sign-in.
+
+No session token ever appears in a URL: the code is single use and expires
+after 60 seconds, and it only works with the handoff secret, which stays in
+memory for the length of the flow and is never stored or logged.
+`src/app/auth/callback.tsx` only redirects, for when the OS also opens the
+link in the app.
+
 ## Notes
 
 - Expo majors change quickly. Check the versioned docs for the SDK pinned in
