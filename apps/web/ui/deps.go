@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/jayleaton/go-fast-stack/apps/web/internal/access"
 	"github.com/jayleaton/go-fast-stack/apps/web/internal/config"
 	"github.com/jayleaton/go-fast-stack/apps/web/internal/services"
 	"github.com/jayleaton/go-fast-stack/apps/web/internal/validate"
@@ -28,7 +29,7 @@ type (
 )
 
 // Auth is the slice of *auth.Auth the HTML transport calls; *auth.Auth
-// satisfies it. The session of a request is read with Deps.UserFrom.
+// satisfies it. The caller of a request comes from Deps.Gate.
 type Auth interface {
 	// SignUpEmail returns a zero Session when email verification is required.
 	SignUpEmail(ctx context.Context, in SignUpInput) (User, Session, error)
@@ -109,9 +110,9 @@ func authCodeMessage(ctx context.Context, code string) string {
 type Deps struct {
 	Auth  Auth
 	Users Users
-	// UserFrom reads the session auth.Middleware stored on the request;
-	// defaults to auth.UserFrom.
-	UserFrom func(ctx context.Context) (User, Session, bool)
+	// Gate decides route access (access.NewGate(server.Callers)); the API
+	// gets the same one.
+	Gate     *access.Gate
 	Features config.Features
 	// AppName is the product name in the header and <title>; defaults to
 	// config.DefaultAppName.

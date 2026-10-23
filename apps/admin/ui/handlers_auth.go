@@ -5,89 +5,90 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/jayleaton/go-fast-stack/apps/admin/internal/access"
 	"github.com/jayleaton/go-fast-stack/apps/admin/internal/config"
 	"github.com/jayleaton/go-fast-stack/apps/admin/ui/i18n"
 	"github.com/jayleaton/go-fast-stack/packages/uikit"
 )
 
-func (u *UI) home(w http.ResponseWriter, r *http.Request) {
-	if _, _, ok := u.userFrom(r.Context()); ok {
+func (ui *UI) home(w http.ResponseWriter, r *http.Request, caller access.Caller) {
+	if caller.SignedIn() {
 		http.Redirect(w, r, config.AppRoutes.Users, http.StatusSeeOther)
 		return
 	}
 	http.Redirect(w, r, config.AppRoutes.Login, http.StatusSeeOther)
 }
 
-func (u *UI) loginPage(w http.ResponseWriter, r *http.Request) {
-	if _, _, ok := u.userFrom(r.Context()); ok {
+func (ui *UI) loginPage(w http.ResponseWriter, r *http.Request, caller access.Caller) {
+	if caller.SignedIn() {
 		http.Redirect(w, r, config.AppRoutes.Users, http.StatusSeeOther)
 		return
 	}
-	u.render(w, r, http.StatusOK, LoginPage(AuthForm{}))
+	ui.render(w, r, http.StatusOK, LoginPage(AuthForm{}))
 }
 
-func (u *UI) login(w http.ResponseWriter, r *http.Request) {
+func (ui *UI) login(w http.ResponseWriter, r *http.Request, _ access.Caller) {
 	ctx := r.Context()
 	email := strings.TrimSpace(r.PostFormValue("email"))
-	s, err := u.auth.SignIn(ctx, email, r.PostFormValue("password"))
+	s, err := ui.auth.SignIn(ctx, email, r.PostFormValue("password"))
 	if err != nil {
-		if u.challenge(w, r, err) {
+		if ui.challenge(w, r, err) {
 			return
 		}
-		msg := u.errorMessage(ctx, err)
-		u.patch(w, r, http.StatusUnprocessableEntity, LoginPage(AuthForm{Email: email, Error: msg}), uikit.Alert(formErrorID, uikit.Error, msg))
+		msg := ui.errorMessage(ctx, err)
+		ui.patch(w, r, http.StatusUnprocessableEntity, LoginPage(AuthForm{Email: email, Error: msg}), uikit.Alert(formErrorID, uikit.Error, msg))
 		return
 	}
-	u.auth.SetSessionCookie(w, s)
-	u.redirect(w, r, config.AppRoutes.Users)
+	ui.auth.SetSessionCookie(w, s)
+	ui.redirect(w, r, config.AppRoutes.Users)
 }
 
 // challenge handles a *TwoFactorChallenge returned as the error of a
 // sign-in: it stores the challenge and sends the browser to the second step
 // (or to TOTP enrolment), and reports whether err was one.
-func (u *UI) challenge(w http.ResponseWriter, r *http.Request, err error) bool {
+func (ui *UI) challenge(w http.ResponseWriter, r *http.Request, err error) bool {
 	var c *TwoFactorChallenge
 	if !errors.As(err, &c) {
 		return false
 	}
-	u.auth.SetTwoFactorCookie(w, c)
+	ui.auth.SetTwoFactorCookie(w, c)
 	if c.SetupRequired {
-		u.redirect(w, r, config.AppRoutes.TwoFactorSetup)
+		ui.redirect(w, r, config.AppRoutes.TwoFactorSetup)
 	} else {
-		u.redirect(w, r, config.AppRoutes.TwoFactor)
+		ui.redirect(w, r, config.AppRoutes.TwoFactor)
 	}
 	return true
 }
 
-func (u *UI) setPasswordPage(writer http.ResponseWriter, request *http.Request) {
-	u.tokenPage(writer)
-	u.render(writer, request, http.StatusOK, SetPasswordPage(inviteMode, request.URL.Query().Get("token"), AuthForm{}))
+func (ui *UI) setPasswordPage(writer http.ResponseWriter, request *http.Request, _ access.Caller) {
+	ui.tokenPage(writer)
+	ui.render(writer, request, http.StatusOK, SetPasswordPage(inviteMode, request.URL.Query().Get("token"), AuthForm{}))
 }
 
-func (u *UI) resetPasswordPage(writer http.ResponseWriter, request *http.Request) {
-	u.tokenPage(writer)
-	u.render(writer, request, http.StatusOK, SetPasswordPage(resetMode, request.URL.Query().Get("token"), AuthForm{}))
+func (ui *UI) resetPasswordPage(writer http.ResponseWriter, request *http.Request, _ access.Caller) {
+	ui.tokenPage(writer)
+	ui.render(writer, request, http.StatusOK, SetPasswordPage(resetMode, request.URL.Query().Get("token"), AuthForm{}))
 }
 
 // setPassword finishes an invite: the admin picks a password and is signed
 // in, or continues into 2FA.
-func (u *UI) setPassword(writer http.ResponseWriter, request *http.Request) {
-	u.choosePassword(writer, request, inviteMode)
+func (ui *UI) setPassword(writer http.ResponseWriter, request *http.Request, _ access.Caller) {
+	ui.choosePassword(writer, request, inviteMode)
 }
 
 // resetPassword spends a reset link the same way (invite and reset links are
 // the same kind of token): every other session ends, and sign-in still goes
 // through 2FA.
-func (u *UI) resetPassword(writer http.ResponseWriter, request *http.Request) {
-	u.choosePassword(writer, request, resetMode)
+func (ui *UI) resetPassword(writer http.ResponseWriter, request *http.Request, _ access.Caller) {
+	ui.choosePassword(writer, request, resetMode)
 }
 
-func (u *UI) choosePassword(writer http.ResponseWriter, request *http.Request, mode passwordMode) {
+func (ui *UI) choosePassword(writer http.ResponseWriter, request *http.Request, mode passwordMode) {
 	ctx := request.Context()
 	token := request.PostFormValue("token")
 	password := request.PostFormValue("password")
 	fail := func(msg string) {
-		u.patch(writer, request, http.StatusUnprocessableEntity, SetPasswordPage(mode, token, AuthForm{Error: msg}), uikit.Alert(formErrorID, uikit.Error, msg))
+		ui.patch(writer, request, http.StatusUnprocessableEntity, SetPasswordPage(mode, token, AuthForm{Error: msg}), uikit.Alert(formErrorID, uikit.Error, msg))
 	}
 	if token == "" {
 		fail(i18n.T(ctx, mode.key("invalidLink")))
@@ -97,50 +98,50 @@ func (u *UI) choosePassword(writer http.ResponseWriter, request *http.Request, m
 		fail(i18n.T(ctx, "pages.setPassword.passwordMismatch"))
 		return
 	}
-	session, err := u.auth.CompleteSetPassword(ctx, token, password)
+	session, err := ui.auth.CompleteSetPassword(ctx, token, password)
 	if err != nil {
-		if u.challenge(writer, request, err) {
+		if ui.challenge(writer, request, err) {
 			return
 		}
 		if errors.Is(err, ErrInvalidToken) {
 			fail(i18n.T(ctx, mode.key("invalidLink"))) // the mode says where a new link comes from
 			return
 		}
-		fail(u.errorMessage(ctx, err))
+		fail(ui.errorMessage(ctx, err))
 		return
 	}
-	u.auth.SetSessionCookie(writer, session)
-	u.redirect(writer, request, config.AppRoutes.Users)
+	ui.auth.SetSessionCookie(writer, session)
+	ui.redirect(writer, request, config.AppRoutes.Users)
 }
 
-func (u *UI) forgotPasswordPage(writer http.ResponseWriter, request *http.Request) {
-	if _, _, ok := u.userFrom(request.Context()); ok {
+func (ui *UI) forgotPasswordPage(writer http.ResponseWriter, request *http.Request, caller access.Caller) {
+	if caller.SignedIn() {
 		http.Redirect(writer, request, config.AppRoutes.Users, http.StatusSeeOther)
 		return
 	}
-	u.render(writer, request, http.StatusOK, ForgotPasswordPage(AuthForm{}, ""))
+	ui.render(writer, request, http.StatusOK, ForgotPasswordPage(AuthForm{}, ""))
 }
 
 // forgotPassword asks for a reset link. The answer is the same whether or
 // not the email belongs to an admin; only rate limiting is reported.
-func (u *UI) forgotPassword(writer http.ResponseWriter, request *http.Request) {
+func (ui *UI) forgotPassword(writer http.ResponseWriter, request *http.Request, _ access.Caller) {
 	ctx := request.Context()
 	email := strings.TrimSpace(request.PostFormValue("email"))
-	if err := u.auth.RequestPasswordReset(ctx, email); err != nil {
-		msg := u.errorMessage(ctx, err)
-		u.patch(writer, request, http.StatusUnprocessableEntity, ForgotPasswordPage(AuthForm{Email: email, Error: msg}, ""), uikit.Alert(formErrorID, uikit.Error, msg))
+	if err := ui.auth.RequestPasswordReset(ctx, email); err != nil {
+		msg := ui.errorMessage(ctx, err)
+		ui.patch(writer, request, http.StatusUnprocessableEntity, ForgotPasswordPage(AuthForm{Email: email, Error: msg}, ""), uikit.Alert(formErrorID, uikit.Error, msg))
 		return
 	}
 	sent := i18n.T(ctx, "pages.forgotPassword.sent")
-	u.patch(writer, request, http.StatusOK, ForgotPasswordPage(AuthForm{}, sent), ForgotPasswordBody(AuthForm{}, sent))
+	ui.patch(writer, request, http.StatusOK, ForgotPasswordPage(AuthForm{}, sent), ForgotPasswordBody(AuthForm{}, sent))
 }
 
-func (u *UI) twoFactorPage(w http.ResponseWriter, r *http.Request) {
-	u.render(w, r, http.StatusOK, TwoFactorPage(TwoFactorForm{}))
+func (ui *UI) twoFactorPage(w http.ResponseWriter, r *http.Request, _ access.Caller) {
+	ui.render(w, r, http.StatusOK, TwoFactorPage(TwoFactorForm{}))
 }
 
 // twoFactor is the second sign-in step, with a TOTP or a backup code.
-func (u *UI) twoFactor(w http.ResponseWriter, r *http.Request) {
+func (ui *UI) twoFactor(w http.ResponseWriter, r *http.Request, _ access.Caller) {
 	ctx := r.Context()
 	in := VerifyTwoFactorInput{
 		Code:        strings.TrimSpace(r.PostFormValue("code")),
@@ -150,123 +151,118 @@ func (u *UI) twoFactor(w http.ResponseWriter, r *http.Request) {
 	if r.PostFormValue("method") == MethodBackupCode {
 		in.Method = MethodBackupCode
 	}
-	s, trust, err := u.auth.VerifyTwoFactor(ctx, in)
+	s, trust, err := ui.auth.VerifyTwoFactor(ctx, in)
 	if err != nil {
-		f := TwoFactorForm{Backup: in.Method == MethodBackupCode, Trust: in.TrustDevice, Error: u.errorMessage(ctx, err), Expired: errors.Is(err, ErrChallengeExpired)}
-		u.patch(w, r, http.StatusUnprocessableEntity, TwoFactorPage(f), TwoFactorError(f))
+		f := TwoFactorForm{Backup: in.Method == MethodBackupCode, Trust: in.TrustDevice, Error: ui.errorMessage(ctx, err), Expired: errors.Is(err, ErrChallengeExpired)}
+		ui.patch(w, r, http.StatusUnprocessableEntity, TwoFactorPage(f), TwoFactorError(f))
 		return
 	}
-	u.signIn(w, r, s, trust)
+	ui.signIn(w, r, s, trust)
 }
 
 // signIn issues the session (and the trusted-device cookie) and goes to the
 // dashboard.
-func (u *UI) signIn(w http.ResponseWriter, r *http.Request, s Session, trustToken string) {
-	u.auth.SetSessionCookie(w, s)
+func (ui *UI) signIn(w http.ResponseWriter, r *http.Request, s Session, trustToken string) {
+	ui.auth.SetSessionCookie(w, s)
 	if trustToken != "" {
-		u.auth.SetTrustDeviceCookie(w, trustToken)
+		ui.auth.SetTrustDeviceCookie(w, trustToken)
 	}
-	u.redirect(w, r, config.AppRoutes.Users)
+	ui.redirect(w, r, config.AppRoutes.Users)
 }
 
 // twoFactorSetupPage has three states: signed out with a SetupRequired
 // challenge (enrol now, then sign in), signed in without 2FA (password
 // first), signed in with 2FA (nothing to do).
-func (u *UI) twoFactorSetupPage(w http.ResponseWriter, r *http.Request) {
+func (ui *UI) twoFactorSetupPage(w http.ResponseWriter, r *http.Request, caller access.Caller) {
 	ctx := r.Context()
-	if a, _, ok := u.userFrom(ctx); ok {
+	if caller.SignedIn() {
 		w.Header().Set("Cache-Control", "no-store")
-		u.render(w, r, http.StatusOK, TwoFactorSetupPage(SetupState{SignedIn: true, Enabled: a.TwoFactorEnabled, Required: u.requireTwoFactor}))
+		ui.render(w, r, http.StatusOK, TwoFactorSetupPage(SetupState{SignedIn: true, Enabled: caller.Admin.TwoFactorEnabled, Required: ui.requireTwoFactor}))
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store") // the page shows the secret
-	setup, err := u.auth.StartTwoFactorSetup(ctx)
+	setup, err := ui.auth.StartTwoFactorSetup(ctx)
 	switch {
 	case errors.Is(err, ErrChallengeExpired):
-		u.render(w, r, http.StatusOK, TwoFactorSetupPage(SetupState{Expired: true}))
+		ui.render(w, r, http.StatusOK, TwoFactorSetupPage(SetupState{Expired: true}))
 	case err != nil:
-		u.render(w, r, http.StatusInternalServerError, TwoFactorSetupPage(SetupState{Expired: true, Error: u.errorMessage(ctx, err)}))
+		ui.render(w, r, http.StatusInternalServerError, TwoFactorSetupPage(SetupState{Expired: true, Error: ui.errorMessage(ctx, err)}))
 	default:
-		u.render(w, r, http.StatusOK, TwoFactorSetupPage(SetupState{Required: true, Setup: &setup}))
+		ui.render(w, r, http.StatusOK, TwoFactorSetupPage(SetupState{Required: true, Setup: &setup}))
 	}
 }
 
 // enableTwoFactor is optional enrolment for a signed-in admin: check the
 // password, then show the secret and the code form.
-func (u *UI) enableTwoFactor(w http.ResponseWriter, r *http.Request) {
+func (ui *UI) enableTwoFactor(w http.ResponseWriter, r *http.Request, caller access.Caller) {
 	ctx := r.Context()
-	a, _, ok := u.userFrom(ctx)
-	if !ok {
-		u.redirect(w, r, config.AppRoutes.Login)
-		return
-	}
-	st := SetupState{SignedIn: true, Required: u.requireTwoFactor}
-	setup, err := u.auth.EnableTwoFactor(ctx, a.ID, r.PostFormValue("password"))
+	st := SetupState{SignedIn: true, Required: ui.requireTwoFactor}
+	setup, err := ui.auth.EnableTwoFactor(ctx, caller.Admin.ID, r.PostFormValue("password"))
 	if err != nil {
-		st.Error = u.errorMessage(ctx, err)
-		u.patch(w, r, http.StatusUnprocessableEntity, TwoFactorSetupPage(st), uikit.Alert(formErrorID, uikit.Error, st.Error))
+		st.Error = ui.errorMessage(ctx, err)
+		ui.patch(w, r, http.StatusUnprocessableEntity, TwoFactorSetupPage(st), uikit.Alert(formErrorID, uikit.Error, st.Error))
 		return
 	}
 	st.Setup = &setup
-	u.patch(w, r, http.StatusOK, TwoFactorSetupPage(st), SetupBody(st))
+	ui.patch(w, r, http.StatusOK, TwoFactorSetupPage(st), SetupBody(st))
 }
 
 // twoFactorSetup checks the first code from the authenticator app. Signed
 // in, it confirms optional enrolment; signed out, it finishes the
 // SetupRequired challenge and signs in.
-func (u *UI) twoFactorSetup(w http.ResponseWriter, r *http.Request) {
+func (ui *UI) twoFactorSetup(w http.ResponseWriter, r *http.Request, caller access.Caller) {
 	ctx := r.Context()
 	code := strings.TrimSpace(r.PostFormValue("code"))
 	// A plain post re-renders the page, so the form carries the secret back
 	// (the backup codes were shown once and are not).
 	shown := &TOTPSetup{Secret: r.PostFormValue("secret"), URI: r.PostFormValue("uri")}
-	a, _, signedIn := u.userFrom(ctx)
-	st := SetupState{SignedIn: signedIn, Required: u.requireTwoFactor || !signedIn, Setup: shown}
+	signedIn := caller.SignedIn()
+	st := SetupState{SignedIn: signedIn, Required: ui.requireTwoFactor || !signedIn, Setup: shown}
 
 	var err error
 	if signedIn {
-		err = u.auth.ConfirmTwoFactor(ctx, a.ID, code)
+		err = ui.auth.ConfirmTwoFactor(ctx, caller.Admin.ID, code)
 	} else {
 		var s Session
 		var trust string
-		s, trust, err = u.auth.VerifyTwoFactor(ctx, VerifyTwoFactorInput{Code: code, Method: MethodTOTP})
+		s, trust, err = ui.auth.VerifyTwoFactor(ctx, VerifyTwoFactorInput{Code: code, Method: MethodTOTP})
 		if err == nil {
-			u.signIn(w, r, s, trust)
+			ui.signIn(w, r, s, trust)
 			return
 		}
 	}
 	if err != nil {
 		if !signedIn && errors.Is(err, ErrChallengeExpired) {
 			st = SetupState{Expired: true}
-			u.patch(w, r, http.StatusUnprocessableEntity, TwoFactorSetupPage(st), SetupBody(st))
+			ui.patch(w, r, http.StatusUnprocessableEntity, TwoFactorSetupPage(st), SetupBody(st))
 			return
 		}
-		st.Error = u.errorMessage(ctx, err)
-		u.patch(w, r, http.StatusUnprocessableEntity, TwoFactorSetupPage(st), uikit.Alert(formErrorID, uikit.Error, st.Error))
+		st.Error = ui.errorMessage(ctx, err)
+		ui.patch(w, r, http.StatusUnprocessableEntity, TwoFactorSetupPage(st), uikit.Alert(formErrorID, uikit.Error, st.Error))
 		return
 	}
 	st = SetupState{SignedIn: true, Done: true}
-	u.patch(w, r, http.StatusOK, TwoFactorSetupPage(st), SetupBody(st))
+	ui.patch(w, r, http.StatusOK, TwoFactorSetupPage(st), SetupBody(st))
 }
 
-func (u *UI) logout(w http.ResponseWriter, r *http.Request) {
+func (ui *UI) logout(w http.ResponseWriter, r *http.Request, caller access.Caller) {
 	ctx := r.Context()
-	if _, s, ok := u.userFrom(ctx); ok {
-		if err := u.auth.SignOut(ctx, s.Token); err != nil {
-			u.log.WarnContext(ctx, "ui: sign out", "err", err)
+	if caller.SignedIn() {
+		if err := ui.auth.SignOut(ctx, caller.Session.Token); err != nil {
+			ui.log.WarnContext(ctx, "ui: sign out", "err", err)
 		}
 	}
-	u.auth.ClearSessionCookie(w)
-	u.redirect(w, r, config.AppRoutes.Login)
+	ui.auth.ClearSessionCookie(w)
+	ui.redirect(w, r, config.AppRoutes.Login)
 }
 
 // setLocale is the language switcher: store the choice, go back to the page.
-func (u *UI) setLocale(w http.ResponseWriter, r *http.Request) {
+func (ui *UI) setLocale(w http.ResponseWriter, r *http.Request, _ access.Caller) {
 	l, ok := i18n.Supported(r.PostFormValue("locale"))
 	if !ok {
 		l = i18n.DefaultLocale
 	}
-	i18n.SetCookie(w, l, u.secure)
+	i18n.SetCookie(w, l, ui.secure)
 	http.Redirect(w, r, safeNext(r.PostFormValue("next")), http.StatusSeeOther)
 }
 
@@ -275,8 +271,8 @@ func (u *UI) setLocale(w http.ResponseWriter, r *http.Request) {
 // POST does. (Over plain http the default strict-origin stays: a no-referrer
 // page posts with Origin: null, and without Fetch Metadata the cross-origin
 // protection could not tell it from a forged post.)
-func (u *UI) tokenPage(w http.ResponseWriter) {
-	if u.secure {
+func (ui *UI) tokenPage(w http.ResponseWriter) {
+	if ui.secure {
 		w.Header().Set("Referrer-Policy", "no-referrer")
 	}
 }

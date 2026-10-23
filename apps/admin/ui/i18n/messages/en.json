@@ -311,6 +311,7 @@
     "forbidden": "You are not allowed to do that.",
     "invalidInput": "Please check your input and try again.",
     "somethingWentWrong": "Something went wrong. Please try again.",
+    "accessDenied": "You do not have access to this page",
     "adminNotFound": "Admin not found.",
     "adminSelf": "You cannot disable or remove yourself.",
     "lastAdmin": "The last active admin cannot be disabled or removed.",

@@ -1,76 +1,49 @@
 package api
 
 import (
-	"context"
+	"errors"
+	"log/slog"
 	"net/http"
-	"time"
 
-	"github.com/jayleaton/go-fast-stack/apps/admin/internal/services"
+	"github.com/jayleaton/go-fast-stack/apps/admin/internal/access"
 )
 
-// maxBody caps JSON request bodies.
+// maxBody caps JSON request bodies at 1 MiB.
 const maxBody = 1 << 20
 
-// Admin is the signed-in admin (a user of the admin auth instance).
-type Admin struct {
-	ID               string `json:"id"`
-	Name             string `json:"name"`
-	Email            string `json:"email"`
-	TwoFactorEnabled bool   `json:"twoFactorEnabled"`
-}
+// Handler is a JSON endpoint: it gets the caller the gate admitted (the zero
+// Caller on a public route without a session) and returns the data for the
+// envelope or an error to map.
+type Handler[Result any] func(request *http.Request, caller access.Caller) (Result, error)
 
-// Session is the admin auth session a request came in on.
-type Session struct {
-	ID        string    `json:"id"`
-	ExpiresAt time.Time `json:"expiresAt"`
-}
-
-// Caller is the signed-in admin and session for a request.
-type Caller struct {
-	Admin   Admin   `json:"admin"`
-	Session Session `json:"session"`
-}
-
-// Actor is the service-layer identity of the caller.
-func (c Caller) Actor() services.Actor {
-	return services.Actor{
-		AdminID:          c.Admin.ID,
-		Email:            c.Admin.Email,
-		SessionID:        c.Session.ID,
-		TwoFactorEnabled: c.Admin.TwoFactorEnabled,
-	}
-}
-
-// CallerFrom reads the caller the admin auth middleware stored in the request
-// context (the server adapts the admin auth instance to it).
-type CallerFrom func(ctx context.Context) (Caller, bool)
-
-// Public wraps a handler that needs no session.
-func Public[T any](h func(r *http.Request) (T, error)) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		r.Body = http.MaxBytesReader(w, r.Body, maxBody)
-		respond(w, r, h)
-	})
-}
-
-// Authenticated wraps a handler that requires a session: no caller is a 401.
-func Authenticated[T any](from CallerFrom, h func(r *http.Request, c Caller) (T, error)) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		c, ok := from(r.Context())
-		if !ok {
-			WriteError(w, http.StatusUnauthorized, "Unauthorized", nil)
+// Route is the one route handler of the admin JSON API. The gate resolves
+// the caller and enforces policy (signed out: 401, denied: 403, both in the
+// envelope); then the body is capped, handler runs, and its result or error
+// becomes the envelope. Declare the access on the registration line:
+//
+//	mux.Handle("GET "+routes.Users, Route(users.gate, access.SignedIn, users.list))
+func Route[Result any](gate *access.Gate, policy access.Policy, handler Handler[Result]) http.Handler {
+	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		caller, err := gate.Admit(request, policy)
+		switch {
+		case err == nil:
+		case errors.Is(err, access.ErrSignedOut):
+			WriteError(writer, http.StatusUnauthorized, "Unauthorized", nil)
+			return
+		case errors.Is(err, access.ErrDenied):
+			slog.InfoContext(request.Context(), "access denied", "method", request.Method, "path", request.URL.Path, "err", err)
+			WriteError(writer, http.StatusForbidden, "Forbidden", nil)
+			return
+		default:
+			writeErr(writer, request, err)
 			return
 		}
-		r.Body = http.MaxBytesReader(w, r.Body, maxBody)
-		respond(w, r, func(r *http.Request) (T, error) { return h(r, c) })
+		request.Body = http.MaxBytesReader(writer, request.Body, maxBody)
+		data, err := handler(request, caller)
+		if err != nil {
+			writeErr(writer, request, err)
+			return
+		}
+		WriteData(writer, http.StatusOK, data)
 	})
-}
-
-func respond[T any](w http.ResponseWriter, r *http.Request, h func(r *http.Request) (T, error)) {
-	data, err := h(r)
-	if err != nil {
-		writeErr(w, r, err)
-		return
-	}
-	WriteData(w, http.StatusOK, data)
 }

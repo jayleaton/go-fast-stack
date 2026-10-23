@@ -14,19 +14,18 @@ import (
 	"github.com/a-h/templ"
 	"github.com/starfederation/datastar-go/datastar"
 
+	"github.com/jayleaton/go-fast-stack/apps/web/internal/access"
 	"github.com/jayleaton/go-fast-stack/apps/web/internal/config"
 	"github.com/jayleaton/go-fast-stack/apps/web/internal/services"
 	"github.com/jayleaton/go-fast-stack/apps/web/ui/i18n"
 	"github.com/jayleaton/go-fast-stack/apps/web/ui/routes"
 	"github.com/jayleaton/go-fast-stack/apps/web/ui/static"
-	"github.com/jayleaton/go-fast-stack/apps/web/ui/view"
-	"github.com/jayleaton/go-fast-stack/packages/auth"
 )
 
 // UI serves the HTML pages and their Datastar actions.
 type UI struct {
 	auth     Auth
-	userFrom func(ctx context.Context) (User, Session, bool)
+	gate     *access.Gate
 	users    Users
 	features config.Features
 	appName  string
@@ -38,40 +37,37 @@ type UI struct {
 	csrf     *http.CrossOriginProtection
 }
 
-// New builds the UI. Auth and Users are required.
-func New(d Deps) *UI {
-	if d.Auth == nil || d.Users == nil {
-		panic("ui.New: Auth and Users are required")
+// New builds the UI. Auth, Users and Gate are required.
+func New(deps Deps) *UI {
+	if deps.Auth == nil || deps.Users == nil || deps.Gate == nil {
+		panic("ui.New: Auth, Users and Gate are required")
 	}
-	u := &UI{
-		auth:     d.Auth,
-		userFrom: d.UserFrom,
-		users:    d.Users,
-		features: d.Features,
-		appName:  d.AppName,
-		secure:   d.SecureCookies,
-		log:      d.Logger,
-		now:      d.Now,
-		interval: d.LiveInterval,
+	ui := &UI{
+		auth:     deps.Auth,
+		gate:     deps.Gate,
+		users:    deps.Users,
+		features: deps.Features,
+		appName:  deps.AppName,
+		secure:   deps.SecureCookies,
+		log:      deps.Logger,
+		now:      deps.Now,
+		interval: deps.LiveInterval,
 		hub:      newHub(),
 		csrf:     http.NewCrossOriginProtection(),
 	}
-	if u.appName == "" {
-		u.appName = config.DefaultAppName
+	if ui.appName == "" {
+		ui.appName = config.DefaultAppName
 	}
-	if u.userFrom == nil {
-		u.userFrom = auth.UserFrom
+	if ui.log == nil {
+		ui.log = slog.Default()
 	}
-	if u.log == nil {
-		u.log = slog.Default()
+	if ui.now == nil {
+		ui.now = time.Now
 	}
-	if u.now == nil {
-		u.now = time.Now
+	if ui.interval <= 0 {
+		ui.interval = time.Second
 	}
-	if u.interval <= 0 {
-		u.interval = time.Second
-	}
-	return u
+	return ui
 }
 
 // Mux is what Routes registers on (*http.ServeMux).
@@ -79,101 +75,90 @@ type Mux interface {
 	Handle(pattern string, handler http.Handler)
 }
 
-// Routes mounts every page, action and static asset on mux. The auth
-// middleware must wrap mux so Deps.UserFrom sees the session. Mount Handler
+// Routes mounts every page, action and static asset on mux. Each page and
+// action declares its access policy on its line (access.Public,
+// access.SignedIn, or your own); the gate in Deps enforces it. The auth
+// middleware must wrap mux so the gate sees the session. Mount Handler
 // rather than Routes in production: it adds the security headers.
-func (u *UI) Routes(mux Mux) {
-	page := func(pattern string, h http.HandlerFunc) { mux.Handle(pattern, u.wrap(h)) }
+func (ui *UI) Routes(mux Mux) {
+	page := func(policy access.Policy, pattern string, handler handlerFunc) {
+		mux.Handle(pattern, ui.route(policy, handler))
+	}
 	// Actions also pass Go's cross-origin protection (Sec-Fetch-Site / Origin).
-	action := func(pattern string, h http.HandlerFunc) { mux.Handle(pattern, u.csrf.Handler(u.wrap(h))) }
+	action := func(policy access.Policy, pattern string, handler handlerFunc) {
+		mux.Handle(pattern, ui.csrf.Handler(ui.route(policy, handler)))
+	}
 
+	// Static assets are the same for everyone and never read the session.
 	mux.Handle("GET "+routes.Static, static.Handler())
-	mux.Handle("GET /favicon.ico", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, static.URL(static.FaviconFile), http.StatusMovedPermanently)
+	mux.Handle("GET /favicon.ico", http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		http.Redirect(writer, request, static.URL(static.FaviconFile), http.StatusMovedPermanently)
 	}))
 
-	page("GET /{$}", u.home)
-	page("GET "+config.AppRoutes.Why, u.why)
-	page("GET "+config.AppRoutes.Login, u.loginPage)
-	action("POST "+config.AppRoutes.Login, u.login)
-	page("GET "+config.AppRoutes.Signup, u.signupPage)
-	action("POST "+config.AppRoutes.Signup, u.signup)
-	page("GET "+config.AppRoutes.ForgotPassword, u.forgotPasswordPage)
-	action("POST "+config.AppRoutes.ForgotPassword, u.forgotPassword)
-	page("GET "+config.AppRoutes.ResetPassword, u.resetPasswordPage)
-	action("POST "+config.AppRoutes.ResetPassword, u.resetPassword)
-	page("GET "+config.AppRoutes.VerifyEmail, u.verifyEmailPage)
-	action("POST "+config.AppRoutes.VerifyEmail, u.resendVerification)
-	page("GET "+config.AppRoutes.VerifyEmailSuccess, u.verifyEmailSuccessPage)
-	action("POST "+config.AppRoutes.VerifyEmailSuccess, u.verifyEmail)
-	page("GET "+config.AppRoutes.Dashboard, u.dashboard)
-	page("GET "+routes.DashboardLive, u.dashboardLive)
-	page("GET "+config.AppRoutes.Account, u.accountPage)
-	action("POST "+routes.AccountProfile, u.updateProfile)
-	action("POST "+routes.AccountEmail, u.requestEmailChange)
-	action("POST "+routes.AccountPassword, u.changePassword)
-	action("POST "+routes.AccountRevokeSession, u.revokeSession)
-	action("POST "+routes.AccountRevokeOthers, u.revokeOtherSessions)
-	action("POST "+routes.AccountDelete, u.deleteAccount)
-	action("POST "+routes.Logout, u.logout)
-	action("POST "+routes.Locale, u.setLocale)
+	page(access.Public, "GET /{$}", ui.home)
+	page(access.Public, "GET "+config.AppRoutes.Why, ui.why)
+	page(access.Public, "GET "+config.AppRoutes.Login, ui.loginPage)
+	action(access.Public, "POST "+config.AppRoutes.Login, ui.login)
+	page(access.Public, "GET "+config.AppRoutes.Signup, ui.signupPage)
+	action(access.Public, "POST "+config.AppRoutes.Signup, ui.signup)
+	page(access.Public, "GET "+config.AppRoutes.ForgotPassword, ui.forgotPasswordPage)
+	action(access.Public, "POST "+config.AppRoutes.ForgotPassword, ui.forgotPassword)
+	page(access.Public, "GET "+config.AppRoutes.ResetPassword, ui.resetPasswordPage)
+	action(access.Public, "POST "+config.AppRoutes.ResetPassword, ui.resetPassword)
+	page(access.Public, "GET "+config.AppRoutes.VerifyEmail, ui.verifyEmailPage)
+	action(access.Public, "POST "+config.AppRoutes.VerifyEmail, ui.resendVerification)
+	page(access.Public, "GET "+config.AppRoutes.VerifyEmailSuccess, ui.verifyEmailSuccessPage)
+	action(access.Public, "POST "+config.AppRoutes.VerifyEmailSuccess, ui.verifyEmail)
+	page(access.SignedIn, "GET "+config.AppRoutes.Dashboard, ui.dashboard)
+	page(access.SignedIn, "GET "+routes.DashboardLive, ui.dashboardLive)
+	page(access.SignedIn, "GET "+config.AppRoutes.Account, ui.accountPage)
+	action(access.SignedIn, "POST "+routes.AccountProfile, ui.updateProfile)
+	action(access.SignedIn, "POST "+routes.AccountEmail, ui.requestEmailChange)
+	action(access.SignedIn, "POST "+routes.AccountPassword, ui.changePassword)
+	action(access.SignedIn, "POST "+routes.AccountRevokeSession, ui.revokeSession)
+	action(access.SignedIn, "POST "+routes.AccountRevokeOthers, ui.revokeOtherSessions)
+	action(access.SignedIn, "POST "+routes.AccountDelete, ui.deleteAccount)
+	action(access.Public, "POST "+routes.Logout, ui.logout)
+	action(access.Public, "POST "+routes.Locale, ui.setLocale)
 }
 
 // Handler returns the UI for server.Deps.UI: Routes behind the browser
 // security headers (secure), with a bare 404 for anything unrouted.
-func (u *UI) Handler() http.Handler {
+func (ui *UI) Handler() http.Handler {
 	mux := http.NewServeMux()
-	u.Routes(mux)
-	return secure(strict(mux), u.secure)
-}
-
-// wrap puts the translator and layout state on the request context.
-func (u *UI) wrap(h http.HandlerFunc) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		loc := i18n.Negotiate(r)
-		_, _, authed := u.userFrom(r.Context())
-		ctx := i18n.WithTranslator(r.Context(), i18n.Translator{Locale: loc})
-		ctx = view.WithState(ctx, view.State{
-			AppName:       u.appName,
-			Authenticated: authed,
-			Theme:         view.ThemeFrom(r),
-			Path:          pathWithoutToken(r.URL),
-		})
-		w.Header().Set("Content-Language", string(loc))
-		w.Header().Add("Vary", "Cookie, Accept-Language")
-		h(w, r.WithContext(ctx))
-	})
+	ui.Routes(mux)
+	return secure(strict(mux), ui.secure)
 }
 
 // isDatastar reports whether a Datastar action sent the request; otherwise
 // it is a plain form post and gets a full page or a redirect back.
-func isDatastar(r *http.Request) bool {
-	return r.Header.Get("Datastar-Request") == "true"
+func isDatastar(request *http.Request) bool {
+	return request.Header.Get("Datastar-Request") == "true"
 }
 
-func (u *UI) render(w http.ResponseWriter, r *http.Request, status int, c templ.Component) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(status)
-	if err := c.Render(r.Context(), w); err != nil {
-		u.log.ErrorContext(r.Context(), "ui: render", "path", r.URL.Path, "err", err)
+func (ui *UI) render(writer http.ResponseWriter, request *http.Request, status int, component templ.Component) {
+	writer.Header().Set("Content-Type", "text/html; charset=utf-8")
+	writer.WriteHeader(status)
+	if err := component.Render(request.Context(), writer); err != nil {
+		ui.log.ErrorContext(request.Context(), "ui: render", "path", request.URL.Path, "err", err)
 	}
 }
 
 // patch answers a Datastar action with fragments patched by id, or a plain
 // form post with the full page.
-func (u *UI) patch(w http.ResponseWriter, r *http.Request, status int, page templ.Component, fragments ...templ.Component) {
-	if !isDatastar(r) {
-		u.render(w, r, status, page)
+func (ui *UI) patch(writer http.ResponseWriter, request *http.Request, status int, page templ.Component, fragments ...templ.Component) {
+	if !isDatastar(request) {
+		ui.render(writer, request, status, page)
 		return
 	}
-	sse := datastar.NewSSE(w, r)
-	for _, f := range fragments {
+	sse := datastar.NewSSE(writer, request)
+	for _, component := range fragments {
 		var opts []datastar.PatchElementOption
-		if rf, ok := f.(replaced); ok {
-			f, opts = rf.Component, []datastar.PatchElementOption{datastar.WithModeReplace()}
+		if rf, ok := component.(replaced); ok {
+			component, opts = rf.Component, []datastar.PatchElementOption{datastar.WithModeReplace()}
 		}
-		if err := sse.PatchElementTempl(f, opts...); err != nil {
-			u.log.WarnContext(r.Context(), "ui: patch", "path", r.URL.Path, "err", err)
+		if err := sse.PatchElementTempl(component, opts...); err != nil {
+			ui.log.WarnContext(request.Context(), "ui: patch", "path", request.URL.Path, "err", err)
 			return
 		}
 	}
@@ -185,36 +170,31 @@ type replaced struct{ templ.Component }
 
 // redirect navigates the browser: via SSE for Datastar, 303 otherwise.
 // Set cookies before calling it.
-func (u *UI) redirect(w http.ResponseWriter, r *http.Request, to string) {
-	if !isDatastar(r) {
-		http.Redirect(w, r, to, http.StatusSeeOther)
+func (ui *UI) redirect(writer http.ResponseWriter, request *http.Request, to string) {
+	if !isDatastar(request) {
+		http.Redirect(writer, request, to, http.StatusSeeOther)
 		return
 	}
-	if err := datastar.NewSSE(w, r).Redirect(to); err != nil {
-		u.log.WarnContext(r.Context(), "ui: redirect", "to", to, "err", err)
+	if err := datastar.NewSSE(writer, request).Redirect(to); err != nil {
+		ui.log.WarnContext(request.Context(), "ui: redirect", "to", to, "err", err)
 	}
 }
 
 // errorMessage translates a service error; unknown errors are logged.
-func (u *UI) errorMessage(ctx context.Context, err error) string {
-	for _, e := range AuthErrors {
-		if errors.Is(err, e.Err) {
-			return i18n.T(ctx, e.Key)
+func (ui *UI) errorMessage(ctx context.Context, err error) string {
+	for _, authError := range AuthErrors {
+		if errors.Is(err, authError.Err) {
+			return i18n.T(ctx, authError.Key)
 		}
 	}
-	u.log.ErrorContext(ctx, "ui: service error", "err", err)
+	ui.log.ErrorContext(ctx, "ui: service error", "err", err)
 	return i18n.T(ctx, "errors.somethingWentWrong")
-}
-
-// actor is the signed-in user as the services see it.
-func actor(u User, s Session) services.Actor {
-	return services.Actor{UserID: u.ID, Email: u.Email, SessionID: s.ID}
 }
 
 // userFromService converts the service's user row; both describe the
 // auth-owned "user" table.
-func userFromService(s services.User) User {
-	return User(s)
+func userFromService(session services.User) User {
+	return User(session)
 }
 
 // safeNext keeps redirects on this site.
@@ -234,13 +214,13 @@ func newTabID() string {
 // pathWithoutToken is the request's path and query minus an emailed link's
 // token: the layout echoes the path (the language switcher's "next"), and a
 // token may only appear in its page's own hidden form field.
-func pathWithoutToken(u *url.URL) string {
-	q := u.Query()
-	if !q.Has("token") {
-		return u.RequestURI()
+func pathWithoutToken(link *url.URL) string {
+	query := link.Query()
+	if !query.Has("token") {
+		return link.RequestURI()
 	}
-	q.Del("token")
-	out := *u
-	out.RawQuery = q.Encode()
+	query.Del("token")
+	out := *link
+	out.RawQuery = query.Encode()
 	return out.RequestURI()
 }

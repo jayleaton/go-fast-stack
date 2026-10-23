@@ -6,6 +6,7 @@ import (
 	"context"
 	"net/http"
 
+	"github.com/jayleaton/go-fast-stack/apps/admin/internal/access"
 	"github.com/jayleaton/go-fast-stack/apps/admin/internal/config"
 	"github.com/jayleaton/go-fast-stack/apps/admin/internal/services"
 )
@@ -19,20 +20,20 @@ var _ AnalyticsService = (*services.AnalyticsService)(nil)
 
 // Analytics serves the headline numbers under /api/admin/v1/analytics.
 type Analytics struct {
-	svc    AnalyticsService
-	caller CallerFrom
+	svc  AnalyticsService
+	gate *access.Gate
 }
 
 // NewAnalytics returns the analytics endpoint.
-func NewAnalytics(svc AnalyticsService, caller CallerFrom) *Analytics {
-	return &Analytics{svc: svc, caller: caller}
+func NewAnalytics(svc AnalyticsService, gate *access.Gate) *Analytics {
+	return &Analytics{svc: svc, gate: gate}
 }
 
-// Routes registers the endpoint on mux.
-func (a *Analytics) Routes(mux *http.ServeMux) {
-	mux.Handle("GET "+config.APIRoutes.Analytics, Authenticated(a.caller, a.overview))
+// Routes registers the endpoint on mux with its access policy.
+func (analytics *Analytics) Routes(mux *http.ServeMux) {
+	mux.Handle("GET "+config.APIRoutes.Analytics, Route(analytics.gate, access.SignedIn, analytics.overview))
 }
 
-func (a *Analytics) overview(r *http.Request, c Caller) (services.Overview, error) {
-	return a.svc.Overview(r.Context(), c.Actor())
+func (analytics *Analytics) overview(request *http.Request, caller access.Caller) (services.Overview, error) {
+	return analytics.svc.Overview(request.Context(), caller.Actor())
 }

@@ -243,6 +243,7 @@
   },
   "errors": {
     "somethingWentWrong": "Something went wrong",
+    "accessDenied": "You do not have access to this page",
     "tryAgain": "Please try again",
     "invalidCredentials": "Invalid credentials",
     "emailRequired": "Email is required",

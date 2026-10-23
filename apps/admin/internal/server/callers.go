@@ -1,59 +1,43 @@
 package server
 
 import (
-	"context"
 	"log/slog"
+	"net/http"
 
-	"github.com/jayleaton/go-fast-stack/apps/admin/internal/api"
-	"github.com/jayleaton/go-fast-stack/apps/admin/ui"
+	"github.com/jayleaton/go-fast-stack/apps/admin/internal/access"
 	"github.com/jayleaton/go-fast-stack/packages/auth"
 )
 
 // Callers turns the admin session that the admin auth.Middleware loaded into
-// each transport's caller. It also reads whether the admin has 2FA on, for
-// services.Policy (sessions can predate ADMIN_REQUIRE_2FA).
+// the caller both transports see. It also reads whether the admin has 2FA
+// on, for services.Policy (sessions can predate ADMIN_REQUIRE_2FA). To give
+// policies more to go on (roles), add the lookup here (docs/route-access.md);
+// routes and middleware stay as they are.
 type Callers struct {
 	auth *auth.Auth
 }
 
-// NewCallers returns the caller adapters over the admin auth instance.
-func NewCallers(a *auth.Auth) Callers {
-	return Callers{auth: a}
+// NewCallers returns the caller resolver over the admin auth instance.
+func NewCallers(admins *auth.Auth) Callers {
+	return Callers{auth: admins}
 }
 
-// API is the api.CallerFrom of the admin JSON API.
-func (c Callers) API(ctx context.Context) (api.Caller, bool) {
-	u, s, twoFactor, ok := c.signedIn(ctx)
+// Resolve is the access.Resolver of the admin app.
+func (callers Callers) Resolve(request *http.Request) (access.Caller, error) {
+	ctx := request.Context()
+	user, session, ok := auth.UserFrom(ctx)
 	if !ok {
-		return api.Caller{}, false
+		return access.Caller{}, nil
 	}
-	return api.Caller{
-		Admin:   api.Admin{ID: u.ID, Name: u.Name, Email: u.Email, TwoFactorEnabled: twoFactor},
-		Session: api.Session{ID: s.ID, ExpiresAt: s.ExpiresAt},
-	}, true
-}
-
-// UI is the ui.Deps.UserFrom of the admin UI.
-func (c Callers) UI(ctx context.Context) (ui.Admin, ui.Session, bool) {
-	u, s, twoFactor, ok := c.signedIn(ctx)
-	if !ok {
-		return ui.Admin{}, ui.Session{}, false
-	}
-	return ui.Admin{ID: u.ID, Name: u.Name, Email: u.Email, TwoFactorEnabled: twoFactor},
-		ui.Session{ID: s.ID, Token: s.Token, ExpiresAt: s.ExpiresAt}, true
-}
-
-func (c Callers) signedIn(ctx context.Context) (auth.User, auth.Session, bool, bool) {
-	u, s, ok := auth.UserFrom(ctx)
-	if !ok {
-		return auth.User{}, auth.Session{}, false, false
-	}
-	twoFactor, err := c.auth.TwoFactorEnabled(ctx, u.ID)
+	twoFactor, err := callers.auth.TwoFactorEnabled(ctx, user.ID)
 	if err != nil {
 		// Fail closed: without the flag a 2FA-required dashboard refuses the
 		// admin (services.ErrTwoFactorRequired) instead of letting them in.
-		slog.WarnContext(ctx, "admin: two-factor lookup failed", "admin_id", u.ID, "err", err)
-		return u, s, false, true
+		slog.WarnContext(ctx, "admin: two-factor lookup failed", "admin_id", user.ID, "err", err)
+		twoFactor = false
 	}
-	return u, s, twoFactor, true
+	return access.Caller{
+		Admin:   access.Admin{ID: user.ID, Name: user.Name, Email: user.Email, TwoFactorEnabled: twoFactor},
+		Session: access.Session{ID: session.ID, ExpiresAt: session.ExpiresAt, Token: session.Token},
+	}, nil
 }

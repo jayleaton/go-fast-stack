@@ -64,6 +64,14 @@ cases=(
   "apps/admin/ui|$mod/apps/admin/internal/api"
   "packages/backup|$mod/packages/database"
   "apps/web/internal/server|$mod/packages/backup"
+  # Route access is the transports' coarse gate: services decide record-level
+  # authorization on their own, and policies never reach data or auth.
+  "apps/web/internal/services|$mod/apps/web/internal/access"
+  "apps/admin/internal/services|$mod/apps/admin/internal/access"
+  "apps/web/internal/access|$mod/packages/auth"
+  "apps/web/internal/access|$mod/packages/database"
+  "apps/admin/internal/access|$mod/packages/database/adminrepo"
+  "apps/web/internal/access|$mod/apps/web/internal/api"
 )
 
 # Test files. boundary dir | forbidden import
@@ -89,6 +97,14 @@ trap cleanup EXIT
 calls=(
   "apps/web/internal/server|$mod/packages/auth|auth.NewUserAdmin(nil)"
   "apps/web/ui|$mod/packages/auth|(*auth.Auth)(nil).Users()"
+  # No handler reads the session by hand or admits itself: the caller comes
+  # from the route handler (api.Route, the UI's page/action) and its policy.
+  "apps/web/ui|$mod/packages/auth|auth.UserFrom"
+  "apps/web/internal/api|$mod/packages/auth|auth.UserFrom"
+  "apps/web/internal/api|$mod/apps/web/internal/access|(*access.Gate)(nil).Admit"
+  "apps/web/ui|$mod/apps/web/internal/access|(*access.Gate)(nil).Admit"
+  "apps/admin/internal/api|$mod/apps/admin/internal/access|(*access.Gate)(nil).Admit"
+  "apps/admin/ui|$mod/apps/admin/internal/access|(*access.Gate)(nil).Admit"
 )
 
 # Code that must not compile: a lint rule can be routed around, the compiler
@@ -135,8 +151,12 @@ done
 
 # Where reveal.Value is allowed, the rule must stay quiet.
 allowed=(./apps/web/cmd/server/ ./apps/admin/cmd/admin/ ./packages/secrets/)
+# Where the session is read (the Resolver) and admitted (the route
+# handlers), the route-access rules must stay quiet.
+access_allowed=(./apps/web/internal/server/ ./apps/admin/internal/server/
+  ./apps/web/internal/api/ ./apps/web/ui/ ./apps/admin/internal/api/ ./apps/admin/ui/)
 
-pkgs=("${allowed[@]}")
+pkgs=("${allowed[@]}" "${access_allowed[@]}")
 for p in "${planted[@]}" "${called[@]}"; do pkgs+=("${p##*|}"); done
 out=$($lint run --enable-only depguard,forbidigo --max-issues-per-linter 0 --max-same-issues 0 \
   $(printf '%s\n' "${pkgs[@]}" | sort -u) 2>&1 || true)
@@ -166,6 +186,14 @@ for p in "${allowed[@]}"; do
     failed=1
   else
     echo "ok    ${p#./} may import $mod/packages/secrets/reveal"
+  fi
+done
+for p in "${access_allowed[@]}"; do
+  if grep "^${p#./}[^/:]*:.*(forbidigo)" <<<"$out" | grep -qv "$probe"; then
+    echo "FAIL  ${p#./} may resolve or admit the caller (forbidigo reported it)"
+    failed=1
+  else
+    echo "ok    ${p#./} may resolve or admit the caller"
   fi
 done
 if [ "$failed" = 1 ]; then

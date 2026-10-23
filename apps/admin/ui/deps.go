@@ -12,13 +12,9 @@ import (
 	"log/slog"
 	"net/http"
 	"time"
-)
 
-// Admin is the signed-in admin.
-type Admin struct {
-	ID, Name, Email  string
-	TwoFactorEnabled bool
-}
+	"github.com/jayleaton/go-fast-stack/apps/admin/internal/access"
+)
 
 // Session is an admin session.
 type Session struct {
@@ -80,7 +76,7 @@ var (
 )
 
 // Auth is what the HTML transport needs from the admin auth instance. The
-// session of a request is read with Deps.UserFrom; the two-factor challenge
+// caller of a request comes from Deps.Gate; the two-factor challenge
 // of a request is the adapter's to read (from its cookie).
 type Auth interface {
 	SignIn(ctx context.Context, email, password string) (Session, error)
@@ -106,17 +102,17 @@ type Auth interface {
 	SetTrustDeviceCookie(w http.ResponseWriter, token string)
 }
 
-// Deps are the in-process dependencies of the UI. Every port and UserFrom
-// are required.
+// Deps are the in-process dependencies of the UI. Every port and Gate are
+// required.
 type Deps struct {
 	Auth      Auth
 	Users     Users
 	Admins    Admins
 	Audit     Audit
 	Analytics Analytics
-	// UserFrom reads the admin session the auth middleware stored on the
-	// request context.
-	UserFrom func(ctx context.Context) (Admin, Session, bool)
+	// Gate decides route access (access.NewGate(callers.Resolve)); the API
+	// would get the same one.
+	Gate *access.Gate
 	// RequireTwoFactor is ADMIN_REQUIRE_2FA: the setup page says enrolment
 	// is mandatory.
 	RequireTwoFactor bool

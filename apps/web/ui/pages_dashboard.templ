@@ -4,6 +4,7 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/jayleaton/go-fast-stack/apps/web/internal/access"
 	"github.com/jayleaton/go-fast-stack/apps/web/internal/config"
 	"github.com/jayleaton/go-fast-stack/apps/web/ui/i18n"
 	"github.com/jayleaton/go-fast-stack/apps/web/ui/routes"
@@ -141,7 +142,7 @@ templ LiveCard(tab string) {
 }
 
 // LiveBody is the fragment the stream patches every tick.
-templ LiveBody(now time.Time, s Session) {
+templ LiveBody(now time.Time, session access.Session) {
 	<div id={ liveBodyID } class="space-y-3 text-sm">
 		<span class="inline-flex items-center gap-1.5 rounded-full border border-success-border bg-success-soft px-2 py-0.5 text-xs font-medium text-success-soft-foreground">
 			<span class="size-1.5 rounded-full bg-success motion-safe:animate-pulse" aria-hidden="true"></span>
@@ -152,10 +153,10 @@ templ LiveBody(now time.Time, s Session) {
 				<dt class="text-muted-foreground">{ i18n.T(ctx, "pages.dashboard.live.serverTime") }</dt>
 				<dd data-testid="live-clock" class="font-mono tabular-nums">{ now.UTC().Format("15:04:05") } UTC</dd>
 			</div>
-			if !s.ExpiresAt.IsZero() {
+			if !session.ExpiresAt.IsZero() {
 				<div class="flex items-center justify-between gap-4 py-2">
 					<dt class="text-muted-foreground">{ i18n.T(ctx, "pages.dashboard.live.sessionExpires") }</dt>
-					<dd class="text-right tabular-nums">{ i18n.From(ctx).DateTime(s.ExpiresAt.UTC()) }</dd>
+					<dd class="text-right tabular-nums">{ i18n.From(ctx).DateTime(session.ExpiresAt.UTC()) }</dd>
 				</div>
 			}
 		</dl>

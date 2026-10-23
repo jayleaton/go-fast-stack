@@ -12,6 +12,7 @@ import (
 	"github.com/a-h/templ"
 	"github.com/starfederation/datastar-go/datastar"
 
+	"github.com/jayleaton/go-fast-stack/apps/admin/internal/access"
 	"github.com/jayleaton/go-fast-stack/apps/admin/internal/config"
 	"github.com/jayleaton/go-fast-stack/apps/admin/internal/services"
 	"github.com/jayleaton/go-fast-stack/apps/admin/internal/validate"
@@ -28,7 +29,7 @@ type UI struct {
 	admins           Admins
 	audit            Audit
 	analytics        Analytics
-	userFrom         func(ctx context.Context) (Admin, Session, bool)
+	gate             *access.Gate
 	requireTwoFactor bool
 	appName          string
 	secure           bool
@@ -36,31 +37,31 @@ type UI struct {
 	csrf             *http.CrossOriginProtection
 }
 
-// New builds the UI. Every port and UserFrom are required.
-func New(d Deps) *UI {
-	if d.Auth == nil || d.Users == nil || d.Admins == nil || d.Audit == nil || d.Analytics == nil || d.UserFrom == nil {
-		panic("ui.New: Auth, Users, Admins, Audit, Analytics and UserFrom are required")
+// New builds the UI. Every port and Gate are required.
+func New(deps Deps) *UI {
+	if deps.Auth == nil || deps.Users == nil || deps.Admins == nil || deps.Audit == nil || deps.Analytics == nil || deps.Gate == nil {
+		panic("ui.New: Auth, Users, Admins, Audit, Analytics and Gate are required")
 	}
-	u := &UI{
-		auth:             d.Auth,
-		users:            d.Users,
-		admins:           d.Admins,
-		audit:            d.Audit,
-		analytics:        d.Analytics,
-		userFrom:         d.UserFrom,
-		requireTwoFactor: d.RequireTwoFactor,
-		appName:          d.AppName,
-		secure:           d.SecureCookies,
-		log:              d.Logger,
+	ui := &UI{
+		auth:             deps.Auth,
+		users:            deps.Users,
+		admins:           deps.Admins,
+		audit:            deps.Audit,
+		analytics:        deps.Analytics,
+		gate:             deps.Gate,
+		requireTwoFactor: deps.RequireTwoFactor,
+		appName:          deps.AppName,
+		secure:           deps.SecureCookies,
+		log:              deps.Logger,
 		csrf:             http.NewCrossOriginProtection(),
 	}
-	if u.appName == "" {
-		u.appName = view.DefaultAppName
+	if ui.appName == "" {
+		ui.appName = view.DefaultAppName
 	}
-	if u.log == nil {
-		u.log = slog.Default()
+	if ui.log == nil {
+		ui.log = slog.Default()
 	}
-	return u
+	return ui
 }
 
 // Mux is what Routes registers on (*http.ServeMux).
@@ -68,82 +69,70 @@ type Mux interface {
 	Handle(pattern string, handler http.Handler)
 }
 
-// Routes mounts every page, action and static asset on mux. The auth
-// middleware must wrap mux so Deps.UserFrom sees the session. Mount Handler
+// Routes mounts every page, action and static asset on mux. Each page and
+// action declares its access policy on its line (access.Public,
+// access.SignedIn, or your own); the gate in Deps enforces it. The auth
+// middleware must wrap mux so the gate sees the session. Mount Handler
 // rather than Routes in production: it adds the security headers.
-func (u *UI) Routes(mux Mux) {
-	page := func(pattern string, handler http.HandlerFunc) { mux.Handle(pattern, u.wrap(handler)) }
+func (ui *UI) Routes(mux Mux) {
+	page := func(policy access.Policy, pattern string, handler handlerFunc) {
+		mux.Handle(pattern, ui.route(policy, handler))
+	}
 	// Actions also pass Go's cross-origin protection (Sec-Fetch-Site / Origin).
-	action := func(pattern string, handler http.HandlerFunc) { mux.Handle(pattern, u.csrf.Handler(u.wrap(handler))) }
+	action := func(policy access.Policy, pattern string, handler handlerFunc) {
+		mux.Handle(pattern, ui.csrf.Handler(ui.route(policy, handler)))
+	}
 	pages := config.AppRoutes
 
+	// Static assets are the same for everyone and never read the session.
 	mux.Handle("GET "+routes.Static, static.Handler())
 	mux.Handle("GET /favicon.ico", http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		http.Redirect(writer, request, static.URL(static.FaviconFile), http.StatusMovedPermanently)
 	}))
 
-	page("GET /{$}", u.home)
-	page("GET "+pages.Login, u.loginPage)
-	action("POST "+pages.Login, u.login)
-	page("GET "+pages.SetPassword, u.setPasswordPage)
-	action("POST "+pages.SetPassword, u.setPassword)
-	page("GET "+pages.ForgotPassword, u.forgotPasswordPage)
-	action("POST "+pages.ForgotPassword, u.forgotPassword)
-	page("GET "+pages.ResetPassword, u.resetPasswordPage)
-	action("POST "+pages.ResetPassword, u.resetPassword)
-	page("GET "+pages.TwoFactor, u.twoFactorPage)
-	action("POST "+pages.TwoFactor, u.twoFactor)
-	page("GET "+pages.TwoFactorSetup, u.twoFactorSetupPage)
-	action("POST "+pages.TwoFactorSetup, u.twoFactorSetup)
-	action("POST "+routes.EnableTwoFactor, u.enableTwoFactor)
+	page(access.Public, "GET /{$}", ui.home)
+	page(access.Public, "GET "+pages.Login, ui.loginPage)
+	action(access.Public, "POST "+pages.Login, ui.login)
+	page(access.Public, "GET "+pages.SetPassword, ui.setPasswordPage)
+	action(access.Public, "POST "+pages.SetPassword, ui.setPassword)
+	page(access.Public, "GET "+pages.ForgotPassword, ui.forgotPasswordPage)
+	action(access.Public, "POST "+pages.ForgotPassword, ui.forgotPassword)
+	page(access.Public, "GET "+pages.ResetPassword, ui.resetPasswordPage)
+	action(access.Public, "POST "+pages.ResetPassword, ui.resetPassword)
+	page(access.Public, "GET "+pages.TwoFactor, ui.twoFactorPage)
+	action(access.Public, "POST "+pages.TwoFactor, ui.twoFactor)
+	// Signed in (optional enrolment) or with a SetupRequired challenge.
+	page(access.Public, "GET "+pages.TwoFactorSetup, ui.twoFactorSetupPage)
+	action(access.Public, "POST "+pages.TwoFactorSetup, ui.twoFactorSetup)
+	action(access.SignedIn, "POST "+routes.EnableTwoFactor, ui.enableTwoFactor)
 
-	page("GET "+pages.Users, u.usersPage)
-	page("GET "+pages.UserByID, u.userPage)
-	action("POST "+routes.UserBan, u.banUser)
-	action("POST "+routes.UserUnban, u.unbanUser)
-	action("POST "+routes.UserRole, u.setRole)
-	action("POST "+routes.UserSessions, u.revokeSessions)
-	action("POST "+routes.UserSession, u.revokeSession)
-	page("GET "+pages.Admins, u.adminsPage)
-	action("POST "+routes.AdminInvite, u.inviteAdmin)
-	action("POST "+routes.AdminDisable, u.disableAdmin)
-	action("POST "+routes.AdminEnable, u.enableAdmin)
-	action("POST "+routes.AdminRemove, u.removeAdmin)
-	action("POST "+routes.AdminPasswordReset, u.sendAdminPasswordReset)
-	action("POST "+routes.AdminResetTwoFactor, u.resetAdminTwoFactor)
-	page("GET "+pages.Audit, u.auditPage)
-	page("GET "+pages.Analytics, u.analyticsPage)
+	page(access.SignedIn, "GET "+pages.Users, ui.usersPage)
+	page(access.SignedIn, "GET "+pages.UserByID, ui.userPage)
+	action(access.SignedIn, "POST "+routes.UserBan, ui.banUser)
+	action(access.SignedIn, "POST "+routes.UserUnban, ui.unbanUser)
+	action(access.SignedIn, "POST "+routes.UserRole, ui.setRole)
+	action(access.SignedIn, "POST "+routes.UserSessions, ui.revokeSessions)
+	action(access.SignedIn, "POST "+routes.UserSession, ui.revokeSession)
+	page(access.SignedIn, "GET "+pages.Admins, ui.adminsPage)
+	action(access.SignedIn, "POST "+routes.AdminInvite, ui.inviteAdmin)
+	action(access.SignedIn, "POST "+routes.AdminDisable, ui.disableAdmin)
+	action(access.SignedIn, "POST "+routes.AdminEnable, ui.enableAdmin)
+	action(access.SignedIn, "POST "+routes.AdminRemove, ui.removeAdmin)
+	action(access.SignedIn, "POST "+routes.AdminPasswordReset, ui.sendAdminPasswordReset)
+	action(access.SignedIn, "POST "+routes.AdminResetTwoFactor, ui.resetAdminTwoFactor)
+	page(access.SignedIn, "GET "+pages.Audit, ui.auditPage)
+	page(access.SignedIn, "GET "+pages.Analytics, ui.analyticsPage)
 
-	action("POST "+routes.Logout, u.logout)
-	action("POST "+routes.Locale, u.setLocale)
+	action(access.Public, "POST "+routes.Logout, ui.logout)
+	action(access.Public, "POST "+routes.Locale, ui.setLocale)
 }
 
 // Handler returns the UI for server.Deps.UI: Routes behind the browser
 // security headers (secure), with a bare 404 for anything unrouted.
-func (u *UI) Handler() http.Handler {
+func (ui *UI) Handler() http.Handler {
 	mux := http.NewServeMux()
-	u.Routes(mux)
-	return secure(strict(mux), u.secure)
-}
-
-// wrap puts the translator and layout state on the request context.
-func (u *UI) wrap(h http.HandlerFunc) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		loc := i18n.Negotiate(r)
-		admin, _, authed := u.userFrom(r.Context())
-		ctx := i18n.WithTranslator(r.Context(), i18n.Translator{Locale: loc})
-		ctx = view.WithState(ctx, view.State{
-			AppName:       u.appName,
-			Authenticated: authed,
-			Email:         admin.Email,
-			Section:       section(r.URL.Path),
-			Theme:         view.ThemeFrom(r),
-			Path:          pathWithoutToken(r.URL),
-		})
-		w.Header().Set("Content-Language", string(loc))
-		w.Header().Add("Vary", "Cookie, Accept-Language")
-		h(w, r.WithContext(ctx))
-	})
+	ui.Routes(mux)
+	return secure(strict(mux), ui.secure)
 }
 
 // section is the nav entry a path belongs to.
@@ -164,34 +153,34 @@ func section(path string) string {
 
 // isDatastar reports whether a Datastar action sent the request; otherwise
 // it is a plain form post and gets a full page or a redirect back.
-func isDatastar(r *http.Request) bool {
-	return r.Header.Get("Datastar-Request") == "true"
+func isDatastar(request *http.Request) bool {
+	return request.Header.Get("Datastar-Request") == "true"
 }
 
-func (u *UI) render(w http.ResponseWriter, r *http.Request, status int, c templ.Component) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(status)
-	if err := c.Render(r.Context(), w); err != nil {
-		u.log.ErrorContext(r.Context(), "ui: render", "path", r.URL.Path, "err", err)
+func (ui *UI) render(writer http.ResponseWriter, request *http.Request, status int, component templ.Component) {
+	writer.Header().Set("Content-Type", "text/html; charset=utf-8")
+	writer.WriteHeader(status)
+	if err := component.Render(request.Context(), writer); err != nil {
+		ui.log.ErrorContext(request.Context(), "ui: render", "path", request.URL.Path, "err", err)
 	}
 }
 
 // patch answers a Datastar action with fragments patched by id, or a plain
 // form post with the full page.
-func (u *UI) patch(w http.ResponseWriter, r *http.Request, status int, page templ.Component, fragments ...templ.Component) {
-	if !isDatastar(r) {
-		u.render(w, r, status, page)
+func (ui *UI) patch(writer http.ResponseWriter, request *http.Request, status int, page templ.Component, fragments ...templ.Component) {
+	if !isDatastar(request) {
+		ui.render(writer, request, status, page)
 		return
 	}
-	u.patchOnly(w, r, fragments...)
+	ui.patchOnly(writer, request, fragments...)
 }
 
 // patchOnly streams fragments to a Datastar action.
-func (u *UI) patchOnly(w http.ResponseWriter, r *http.Request, fragments ...templ.Component) {
-	sse := datastar.NewSSE(w, r)
-	for _, f := range fragments {
-		if err := sse.PatchElementTempl(f); err != nil {
-			u.log.WarnContext(r.Context(), "ui: patch", "path", r.URL.Path, "err", err)
+func (ui *UI) patchOnly(writer http.ResponseWriter, request *http.Request, fragments ...templ.Component) {
+	sse := datastar.NewSSE(writer, request)
+	for _, fragment := range fragments {
+		if err := sse.PatchElementTempl(fragment); err != nil {
+			ui.log.WarnContext(request.Context(), "ui: patch", "path", request.URL.Path, "err", err)
 			return
 		}
 	}
@@ -199,46 +188,23 @@ func (u *UI) patchOnly(w http.ResponseWriter, r *http.Request, fragments ...temp
 
 // redirect navigates the browser: via SSE for Datastar, 303 otherwise.
 // Set cookies before calling it.
-func (u *UI) redirect(w http.ResponseWriter, r *http.Request, to string) {
-	if !isDatastar(r) {
-		http.Redirect(w, r, to, http.StatusSeeOther)
+func (ui *UI) redirect(writer http.ResponseWriter, request *http.Request, to string) {
+	if !isDatastar(request) {
+		http.Redirect(writer, request, to, http.StatusSeeOther)
 		return
 	}
-	if err := datastar.NewSSE(w, r).Redirect(to); err != nil {
-		u.log.WarnContext(r.Context(), "ui: redirect", "to", to, "err", err)
+	if err := datastar.NewSSE(writer, request).Redirect(to); err != nil {
+		ui.log.WarnContext(request.Context(), "ui: redirect", "to", to, "err", err)
 	}
-}
-
-// signedIn returns the admin of a page request, or redirects to the login
-// page. Signed-in pages are never cached.
-func (u *UI) signedIn(w http.ResponseWriter, r *http.Request) (services.Actor, bool) {
-	a, s, ok := u.userFrom(r.Context())
-	if !ok {
-		http.Redirect(w, r, config.AppRoutes.Login, http.StatusSeeOther)
-		return services.Actor{}, false
-	}
-	w.Header().Set("Cache-Control", "no-store")
-	return actor(a, s), true
-}
-
-// signedInAction is signedIn for actions: Datastar requests are redirected
-// over SSE.
-func (u *UI) signedInAction(w http.ResponseWriter, r *http.Request) (services.Actor, bool) {
-	a, s, ok := u.userFrom(r.Context())
-	if !ok {
-		u.redirect(w, r, config.AppRoutes.Login)
-		return services.Actor{}, false
-	}
-	return actor(a, s), true
 }
 
 // needsTwoFactor sends the admin to enrolment when a service refused them
 // for lacking 2FA, and reports whether it did.
-func (u *UI) needsTwoFactor(w http.ResponseWriter, r *http.Request, err error) bool {
+func (ui *UI) needsTwoFactor(writer http.ResponseWriter, request *http.Request, err error) bool {
 	if !errors.Is(err, services.ErrTwoFactorRequired) {
 		return false
 	}
-	u.redirect(w, r, config.AppRoutes.TwoFactorSetup)
+	ui.redirect(writer, request, config.AppRoutes.TwoFactorSetup)
 	return true
 }
 
@@ -278,20 +244,20 @@ var errorKeys = []struct {
 // errorMessage translates an auth, service or validation error; unknown
 // errors are logged, and so is a refusal for an unavailable audit log (its
 // wrapped cause is the outage).
-func (u *UI) errorMessage(ctx context.Context, err error) string {
+func (ui *UI) errorMessage(ctx context.Context, err error) string {
 	if errors.Is(err, services.ErrAuditUnavailable) {
-		u.log.ErrorContext(ctx, "ui: action refused", "err", err)
+		ui.log.ErrorContext(ctx, "ui: action refused", "err", err)
 	}
-	for _, e := range errorKeys {
-		if errors.Is(err, e.err) {
-			return i18n.T(ctx, e.key)
+	for _, entry := range errorKeys {
+		if errors.Is(err, entry.err) {
+			return i18n.T(ctx, entry.key)
 		}
 	}
 	var verr *validate.Error
 	if errors.As(err, &verr) || services.KindOf(err) == services.KindInvalid {
 		return i18n.T(ctx, "errors.invalidInput")
 	}
-	u.log.ErrorContext(ctx, "ui: error", "err", err)
+	ui.log.ErrorContext(ctx, "ui: error", "err", err)
 	return i18n.T(ctx, "errors.somethingWentWrong")
 }
 
@@ -314,11 +280,6 @@ func statusOf(err error) int {
 	return http.StatusInternalServerError
 }
 
-// actor is the signed-in admin as the services see it.
-func actor(a Admin, s Session) services.Actor {
-	return services.Actor{AdminID: a.ID, Email: a.Email, SessionID: s.ID, TwoFactorEnabled: a.TwoFactorEnabled}
-}
-
 // safeNext keeps redirects on this site.
 func safeNext(next string) string {
 	// Browsers drop tabs and newlines and treat \ as /, so "/\t/evil.com" would
@@ -332,13 +293,13 @@ func safeNext(next string) string {
 // pathWithoutToken is the request's path and query minus an emailed link's
 // token: the layout echoes the path (the language switcher's "next"), and a
 // token may only appear in its page's own hidden form field.
-func pathWithoutToken(u *url.URL) string {
-	q := u.Query()
-	if !q.Has("token") {
-		return u.RequestURI()
+func pathWithoutToken(target *url.URL) string {
+	query := target.Query()
+	if !query.Has("token") {
+		return target.RequestURI()
 	}
-	q.Del("token")
-	out := *u
-	out.RawQuery = q.Encode()
+	query.Del("token")
+	out := *target
+	out.RawQuery = query.Encode()
 	return out.RequestURI()
 }

@@ -11,6 +11,7 @@ import (
 
 	"go.uber.org/mock/gomock"
 
+	"github.com/jayleaton/go-fast-stack/apps/admin/internal/access"
 	"github.com/jayleaton/go-fast-stack/apps/admin/internal/api"
 	"github.com/jayleaton/go-fast-stack/apps/admin/internal/api/apitest"
 	"github.com/jayleaton/go-fast-stack/apps/admin/internal/api/mocks"
@@ -20,7 +21,7 @@ import (
 )
 
 var (
-	grace  = api.Admin{ID: "a1", Name: "Grace", Email: "grace@example.com", TwoFactorEnabled: true}
+	grace  = access.Admin{ID: "a1", Name: "Grace", Email: "grace@example.com", TwoFactorEnabled: true}
 	actor  = apitest.Actor(grace)
 	r      = config.APIRoutes
 	anyCtx = gomock.Any()
@@ -35,17 +36,17 @@ type svcs struct {
 }
 
 // newRouter mounts every admin endpoint on one mux, as the server does.
-func newRouter(t *testing.T) (svcs, http.Handler) {
-	ctrl := gomock.NewController(t)
-	users := mocks.NewMockUserService(ctrl)
-	admins := mocks.NewMockAdminService(ctrl)
-	audit := mocks.NewMockAuditService(ctrl)
-	analytics := mocks.NewMockAnalyticsService(ctrl)
+func newRouter(test *testing.T) (svcs, http.Handler) {
+	controller := gomock.NewController(test)
+	users := mocks.NewMockUserService(controller)
+	admins := mocks.NewMockAdminService(controller)
+	audit := mocks.NewMockAuditService(controller)
+	analytics := mocks.NewMockAnalyticsService(controller)
 	mux := http.NewServeMux()
-	api.NewUsers(users, apitest.CallerFrom).Routes(mux)
-	api.NewAdmins(admins, apitest.CallerFrom).Routes(mux)
-	api.NewAudit(audit, apitest.CallerFrom).Routes(mux)
-	api.NewAnalytics(analytics, apitest.CallerFrom).Routes(mux)
+	api.NewUsers(users, apitest.Gate()).Routes(mux)
+	api.NewAdmins(admins, apitest.Gate()).Routes(mux)
+	api.NewAudit(audit, apitest.Gate()).Routes(mux)
+	api.NewAnalytics(analytics, apitest.Gate()).Routes(mux)
 	return svcs{users.EXPECT(), admins.EXPECT(), audit.EXPECT(), analytics.EXPECT()}, mux
 }
 
@@ -190,14 +191,14 @@ func TestRoutes(t *testing.T) {
 
 // TestCallerActor: handlers act as the signed-in admin, on their session,
 // carrying their 2FA state (the services' 2FA policy reads it).
-func TestCallerActor(t *testing.T) {
-	t.Parallel()
+func TestCallerActor(test *testing.T) {
+	test.Parallel()
 	want := services.Actor{AdminID: "a1", Email: "grace@example.com", SessionID: "session-a1", TwoFactorEnabled: true}
 	if actor != want {
-		t.Fatalf("actor = %+v, want %+v", actor, want)
+		test.Fatalf("actor = %+v, want %+v", actor, want)
 	}
-	if got := apitest.Actor(api.Admin{ID: "a2"}); got.TwoFactorEnabled || got.System {
-		t.Fatalf("actor without 2FA = %+v", got)
+	if got := apitest.Actor(access.Admin{ID: "a2"}); got.TwoFactorEnabled || got.System {
+		test.Fatalf("actor without 2FA = %+v", got)
 	}
 }
 
@@ -281,19 +282,74 @@ func TestBodyLimit(t *testing.T) {
 	}
 }
 
-// TestPublic: the public wrapper needs no session and maps errors the same
-// way.
-func TestPublic(t *testing.T) {
-	t.Parallel()
-	ok := api.Public(func(*http.Request) (api.Success, error) { return api.Success{Success: true}, nil })
-	res := apitest.Do(t, ok, apitest.Anonymous, "GET", "/", "")
-	if res.Status != 200 {
-		t.Fatalf("status %d", res.Status)
+// TestRoute: the route handler admits each request by its policy before the
+// handler runs, and answers a refusal in the envelope without running it. A
+// policy declared here (no middleware involved) shows that the extension
+// point works on its own.
+func TestRoute(test *testing.T) {
+	test.Parallel()
+	errLookup := errors.New("role lookup: connection refused")
+	onlyGrace := func(_ *http.Request, caller access.Caller) error {
+		if caller.Admin.Email != grace.Email {
+			return fmt.Errorf("%w: not grace", access.ErrDenied)
+		}
+		return nil
 	}
-	wantSuccess(t, res)
+	other := access.Admin{ID: "a2", Email: "bob@example.com"}
+	failing := access.NewGate(func(*http.Request) (access.Caller, error) { return access.Caller{}, errLookup })
+	cases := []struct {
+		name    string
+		gate    *access.Gate
+		policy  access.Policy
+		session apitest.Session
+		status  int
+		message string // the error; "" for a success
+		caller  string // the admin ID the handler sees
+	}{
+		{"public, signed out", apitest.Gate(), access.Public, apitest.Anonymous, http.StatusOK, "", ""},
+		{"public, signed in", apitest.Gate(), access.Public, apitest.AsAdmin(grace), http.StatusOK, "", grace.ID},
+		{"signed in, signed out", apitest.Gate(), access.SignedIn, apitest.Anonymous, http.StatusUnauthorized, "Unauthorized", ""},
+		{"signed in", apitest.Gate(), access.SignedIn, apitest.AsAdmin(grace), http.StatusOK, "", grace.ID},
+		{"custom policy, allowed", apitest.Gate(), onlyGrace, apitest.AsAdmin(grace), http.StatusOK, "", grace.ID},
+		{"custom policy, denied", apitest.Gate(), onlyGrace, apitest.AsAdmin(other), http.StatusForbidden, "Forbidden", ""},
+		{"resolver fails", failing, access.Public, apitest.AsAdmin(grace), http.StatusInternalServerError, "Internal server error", ""},
+	}
+	for _, testCase := range cases {
+		test.Run(testCase.name, func(test *testing.T) {
+			test.Parallel()
+			ran := false
+			var seen string
+			handler := api.Route(testCase.gate, testCase.policy, func(_ *http.Request, caller access.Caller) (api.Success, error) {
+				ran, seen = true, caller.Admin.ID
+				return api.Success{Success: true}, nil
+			})
+			res := apitest.Do(test, handler, testCase.session, "GET", "/", "")
+			if testCase.message != "" {
+				wantError(test, res, testCase.status, testCase.message)
+				if ran {
+					test.Fatal("handler ran on a refused request")
+				}
+				return
+			}
+			if res.Status != testCase.status {
+				test.Fatalf("status %d, want %d", res.Status, testCase.status)
+			}
+			wantSuccess(test, res)
+			if seen != testCase.caller {
+				test.Fatalf("handler saw caller %q, want %q", seen, testCase.caller)
+			}
+		})
+	}
+}
 
-	fail := api.Public(func(*http.Request) (api.Success, error) { return api.Success{}, services.ErrUserNotFound })
-	wantError(t, apitest.Do(t, fail, apitest.Anonymous, "GET", "/", ""), 404, "User not found")
+// TestRouteMapsHandlerErrors: an admitted handler's error maps like any
+// service error, on a public route too.
+func TestRouteMapsHandlerErrors(test *testing.T) {
+	test.Parallel()
+	handler := api.Route(apitest.Gate(), access.Public, func(*http.Request, access.Caller) (api.Success, error) {
+		return api.Success{}, services.ErrUserNotFound
+	})
+	wantError(test, apitest.Do(test, handler, apitest.Anonymous, "GET", "/", ""), http.StatusNotFound, "User not found")
 }
 
 // TestValidationErrorString: a validation error reads the same every time
