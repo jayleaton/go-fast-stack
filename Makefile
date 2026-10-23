@@ -109,7 +109,7 @@ check-fast: ## Before every push: gofmt, vet, golangci-lint, plain tests for onl
 
 .PHONY: release-smoke
 release-smoke: db-up ## Build every Dockerfile's binary as its image does (fail if dynamic), migrate, boot web + admin in production mode (CI runs it too)
-	@$(COMPOSE) exec -T postgres sh -c 'for d in smoke_app smoke_admin; do dropdb -U postgres --if-exists --force $$d && createdb -U postgres $$d; done'
+	@$(COMPOSE) exec -T postgres sh -c 'for database in smoke_app smoke_admin; do dropdb -U postgres --if-exists --force $$database && createdb -U postgres $$database; done'
 	SMOKE_DATABASE_URL=postgres://postgres:postgres@127.0.0.1:$(POSTGRES_PORT)/smoke_app?sslmode=disable \
 	  SMOKE_ADMIN_DATABASE_URL=postgres://postgres:postgres@127.0.0.1:$(POSTGRES_PORT)/smoke_admin?sslmode=disable \
 	  ./scripts/release-smoke.sh
