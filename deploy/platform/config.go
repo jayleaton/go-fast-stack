@@ -123,6 +123,9 @@ type EnvSettings struct {
 	// SECRETS_PROVIDER and the Railway secrets as they are: an environment
 	// not switched yet (production until a release switches it).
 	Secrets string `yaml:"secrets"`
+	// VolumeSnapshots overrides backups.volume_snapshots for this
+	// environment (e.g. [daily] on staging); [] turns them off.
+	VolumeSnapshots []string `yaml:"volume_snapshots"`
 }
 
 // Per-environment secrets modes (EnvSettings.Secrets).
@@ -198,6 +201,35 @@ type Backups struct {
 	// off Railway: survives losing the project). External: set BACKUP_S3_*
 	// on the backup service yourself; IaC leaves them alone.
 	Storage string `yaml:"storage"`
+	// VolumeSnapshots are Railway's own snapshots of every Postgres volume
+	// (Pro plan), independent of enabled: daily (Railway keeps them 6 days),
+	// weekly (27 days), monthly (89 days). Setup sets the schedule through
+	// Railway's API, without a redeploy. Absent: left as it is (the
+	// dashboard's); []: none. per_environment.<env>.volume_snapshots
+	// overrides it.
+	VolumeSnapshots []string `yaml:"volume_snapshots"`
+}
+
+// SnapshotKinds are the Railway volume snapshot schedules.
+var SnapshotKinds = []string{"daily", "weekly", "monthly"}
+
+// VolumeSnapshots is env's Railway volume snapshot schedule as the API
+// takes it (DAILY, WEEKLY, MONTHLY; sorted, unique), and whether
+// platform.yaml manages it at all.
+func (c Config) VolumeSnapshots(env string) (kinds []string, managed bool) {
+	want := c.Backups.VolumeSnapshots
+	if override := c.PerEnvironment[env].VolumeSnapshots; override != nil {
+		want = override
+	}
+	if want == nil {
+		return nil, false
+	}
+	kinds = []string{}
+	for _, kind := range want {
+		kinds = append(kinds, strings.ToUpper(kind))
+	}
+	slices.Sort(kinds)
+	return slices.Compact(kinds), true
 }
 
 // Backup storage kinds (backups.storage).
@@ -394,6 +426,17 @@ func (c Config) Validate() error {
 		}
 		if c.Backups.KeepWeekly < 0 || c.Backups.KeepWeekly > 520 {
 			add("backups.keep_weekly must be between 0 and 520, got %d", c.Backups.KeepWeekly)
+		}
+	}
+	snapshotLists := map[string][]string{"backups.volume_snapshots": c.Backups.VolumeSnapshots}
+	for env, settings := range c.PerEnvironment {
+		snapshotLists["per_environment."+env+".volume_snapshots"] = settings.VolumeSnapshots
+	}
+	for key, kinds := range snapshotLists {
+		for _, kind := range kinds {
+			if !slices.Contains(SnapshotKinds, kind) {
+				add("%s: %q must be one of %v", key, kind, SnapshotKinds)
+			}
 		}
 	}
 	for _, p := range c.Unmanaged {

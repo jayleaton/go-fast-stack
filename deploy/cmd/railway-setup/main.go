@@ -283,6 +283,9 @@ func (s *setup) reconcileEnv(ctx context.Context, env string) error {
 	if err := s.repairDatabases(ctx, env); err != nil {
 		return err
 	}
+	if err := s.volumeSnapshots(ctx, env); err != nil {
+		return err
+	}
 	if err := s.ensureDomains(ctx, env); err != nil {
 		return err
 	}
