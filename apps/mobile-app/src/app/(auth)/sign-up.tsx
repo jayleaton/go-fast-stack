@@ -5,6 +5,7 @@ import { Link } from 'expo-router'
 import { AppButton } from '@/components/app-button'
 import { AppTextInput } from '@/components/app-text-input'
 import { Screen } from '@/components/screen'
+import { SocialSignIn } from '@/components/social-sign-in'
 import { ThemedText } from '@/components/themed-text'
 import { Spacing } from '@/constants/theme'
 import { signUp } from '@/lib/auth/authClient'
@@ -94,6 +95,8 @@ export default function SignUpScreen() {
 
             <AppButton label="Create account" loading={loading} onPress={handleSubmit} />
           </View>
+
+          <SocialSignIn />
 
           <View style={styles.footer}>
             <ThemedText themeColor="textSecondary">Already have an account? </ThemedText>

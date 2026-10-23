@@ -6,6 +6,19 @@ export const AppRoutes = {
   signIn: '/sign-in',
   signUp: '/sign-up',
   dashboard: '/dashboard',
+  /** Where Google/Apple sign-in returns (as a deep link built with Linking.createURL). */
+  authCallback: '/auth/callback',
+} as const
+
+/**
+ * Better Auth endpoints (packages/auth) the app calls with authClient.$fetch,
+ * relative to the client's /api/auth base. The client's own methods
+ * (signIn.email, getSession, ...) carry their paths themselves.
+ */
+export const AuthRoutes = {
+  socialProviders: '/social-providers',
+  signInSocial: '/sign-in/social',
+  signInHandoff: '/sign-in/handoff',
 } as const
 
 /**
