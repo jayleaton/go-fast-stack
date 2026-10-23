@@ -36,7 +36,7 @@ func logRequests(log *slog.Logger, next http.Handler) http.Handler {
 		}
 		log.Log(r.Context(), level, "request",
 			"method", r.Method, "path", logPath(r.URL.Path), "status", rec.status,
-			"ms", float64(time.Since(start).Microseconds())/1000)
+			"ms", float64(time.Since(start).Microseconds())/float64(time.Millisecond/time.Microsecond))
 	})
 }
 

@@ -21,6 +21,15 @@ import (
 	"github.com/jayleaton/go-fast-stack/apps/web/ui"
 )
 
+const (
+	// How long ago the demo user's two other devices signed in, so the
+	// Account page lists sessions of different ages.
+	phoneSessionAge   = 26 * time.Hour
+	desktopSessionAge = 72 * time.Hour
+	// readHeaderTimeout bounds how long a client may take to send headers.
+	readHeaderTimeout = 10 * time.Second
+)
+
 func main() {
 	addr := flag.String("addr", "0.0.0.0:3001", "listen address")
 	verify := flag.Bool("verify", false, "require email verification (production behavior)")
@@ -35,8 +44,8 @@ func main() {
 	}
 	demo := store.AddUser("Demo User", "demo@example.com", "password123", true)
 	// Two other devices so the Account page has sessions to revoke.
-	store.NewSession(demo.ID, "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1", "192.0.2.24", 26*time.Hour)
-	store.NewSession(demo.ID, "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36 Edg/141.0.0.0", "198.51.100.7", 72*time.Hour)
+	store.NewSession(demo.ID, "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1", "192.0.2.24", phoneSessionAge)
+	store.NewSession(demo.ID, "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36 Edg/141.0.0.0", "198.51.100.7", desktopSessionAge)
 
 	fakeAuth := Auth{S: store}
 	// The real API endpoints over the fake service, behind a real gate.
@@ -53,7 +62,7 @@ func main() {
 	srv := &http.Server{
 		Addr:              *addr,
 		Handler:           fakeAuth.Middleware(mux),
-		ReadHeaderTimeout: 10 * time.Second,
+		ReadHeaderTimeout: readHeaderTimeout,
 	}
 	log.Info("ui preview listening", "addr", *addr, "login", "demo@example.com / password123")
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {

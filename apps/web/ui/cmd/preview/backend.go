@@ -495,9 +495,9 @@ func (s *Store) ConfirmEmail(w http.ResponseWriter, r *http.Request) {
 // checkPassword applies auth's default length rules (8-128 characters).
 func checkPassword(p string) error {
 	switch n := len([]rune(p)); {
-	case n < 8:
+	case n < auth.DefaultMinPasswordLength:
 		return auth.ErrPasswordTooShort
-	case n > 128:
+	case n > auth.DefaultMaxPasswordLength:
 		return auth.ErrPasswordTooLong
 	}
 	return nil

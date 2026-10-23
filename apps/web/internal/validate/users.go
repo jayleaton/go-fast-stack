@@ -9,6 +9,13 @@ import (
 	"github.com/jayleaton/go-fast-stack/apps/web/internal/config"
 )
 
+// Length limits; each error message states the same number.
+const (
+	maxNameLength  = 255  // a display name, in characters
+	maxEmailLength = 255  // an email address, in bytes
+	maxURLLength   = 2048 // an image or callback URL, in bytes
+)
+
 // UpdateUserSettings is the PATCH body for a user. Email and password changes
 // belong to the auth flows (they need verification), not this schema.
 type UpdateUserSettings struct {
@@ -22,7 +29,7 @@ func (u *UpdateUserSettings) Validate() error {
 	if u.Name != nil {
 		name := strings.TrimSpace(*u.Name)
 		u.Name = &name
-		f.Add(name == "" || utf8.RuneCountInString(name) > 255, "name", "must be 1-255 characters")
+		f.Add(name == "" || utf8.RuneCountInString(name) > maxNameLength, "name", "must be 1-255 characters")
 	}
 	if u.Image.Value != nil {
 		f.Add(!isHTTPURL(*u.Image.Value), "image", "must be an http(s) URL")
@@ -32,7 +39,7 @@ func (u *UpdateUserSettings) Validate() error {
 
 func isHTTPURL(raw string) bool {
 	u, err := url.Parse(raw)
-	return err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != "" && len(raw) <= 2048
+	return err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != "" && len(raw) <= maxURLLength
 }
 
 // UpdateUserEmail is the POST /me/email body (Better Auth change-email names).
@@ -52,7 +59,7 @@ func (u *UpdateUserEmail) Validate() error {
 	}
 	f := Fields{}
 	f.Add(!isEmail(u.NewEmail), "newEmail", "must be a valid email address")
-	f.Add(len(u.CallbackURL) > 2048, "callbackURL", "must be at most 2048 characters")
+	f.Add(len(u.CallbackURL) > maxURLLength, "callbackURL", "must be at most 2048 characters")
 	return f.Err()
 }
 
@@ -75,5 +82,5 @@ func (u *UpdateUserPassword) Validate() error {
 
 func isEmail(s string) bool {
 	a, err := mail.ParseAddress(s)
-	return err == nil && a.Address == s && len(s) <= 255
+	return err == nil && a.Address == s && len(s) <= maxEmailLength
 }

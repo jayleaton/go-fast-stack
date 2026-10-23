@@ -30,9 +30,13 @@ func newHub() *hub {
 	return &hub{subs: map[string]map[chan userEvent]struct{}{}}
 }
 
+// subscriberBuffer is how many events a slow stream may fall behind before
+// publish starts skipping them for it.
+const subscriberBuffer = 4
+
 // subscribe returns a channel of events for userID and its cancel func.
 func (h *hub) subscribe(userID string) (<-chan userEvent, func()) {
-	ch := make(chan userEvent, 4)
+	ch := make(chan userEvent, subscriberBuffer)
 	h.mu.Lock()
 	if h.subs[userID] == nil {
 		h.subs[userID] = map[chan userEvent]struct{}{}

@@ -37,7 +37,15 @@ var migrations = []func(context.Context, *pgxpool.Pool) error{
 	database.Migrate,
 }
 
-const shutdownTimeout = 15 * time.Second
+const (
+	shutdownTimeout = 15 * time.Second
+	// readHeaderTimeout bounds how long a client may take to send headers
+	// (slowloris); idleTimeout closes keep-alive connections nobody uses.
+	readHeaderTimeout = 10 * time.Second
+	idleTimeout       = 2 * time.Minute
+	// exitUsage is the conventional exit status for a command-line misuse.
+	exitUsage = 2
+)
 
 func main() {
 	cmd := "serve"
@@ -46,7 +54,7 @@ func main() {
 	}
 	if cmd != "serve" && cmd != "migrate" {
 		fmt.Fprintf(os.Stderr, "usage: server [serve|migrate]\n")
-		os.Exit(2)
+		os.Exit(exitUsage)
 	}
 
 	cfg, err := config.Load(os.Getenv)
@@ -141,8 +149,8 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	srv := &http.Server{
 		Addr:              cfg.Addr,
 		Handler:           handler,
-		ReadHeaderTimeout: 10 * time.Second,
-		IdleTimeout:       2 * time.Minute,
+		ReadHeaderTimeout: readHeaderTimeout,
+		IdleTimeout:       idleTimeout,
 		// No WriteTimeout: Datastar SSE streams stay open.
 		ErrorLog: slog.NewLogLogger(log.Handler(), slog.LevelWarn),
 	}
