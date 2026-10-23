@@ -84,6 +84,16 @@ func Load(getenv func(string) string) (Config, error) {
 	default:
 		errs = append(errs, fmt.Errorf("APP_ENV must be development, test or production, got %q", cfg.Env))
 	}
+	// Unset, FROM_EMAIL falls back to the example sender, which no mail
+	// provider will send from: every invite would fail, only in the log.
+	if cfg.Env == Production {
+		switch {
+		case get("FROM_EMAIL", "") == "":
+			errs = append(errs, errors.New("FROM_EMAIL is required in production (a sender on your verified email domain)"))
+		case !realSender(cfg.FromEmail):
+			errs = append(errs, fmt.Errorf("FROM_EMAIL must be a sender on your verified email domain in production, got %q", cfg.FromEmail))
+		}
+	}
 
 	// ADMIN_PORT first: locally .env sets PORT for the web app. Railway sets
 	// PORT per service.
@@ -117,6 +127,23 @@ func Load(getenv func(string) string) (Config, error) {
 		return Config{}, fmt.Errorf("invalid admin config: %w", errors.Join(errs...))
 	}
 	return cfg, nil
+}
+
+// realSender reports whether addr ("a@b.c" or "Name <a@b.c>") is an email
+// address off the reserved example and test domains (RFC 2606, RFC 6761).
+func realSender(addr string) bool {
+	addr = strings.TrimSuffix(strings.TrimSpace(addr), ">")
+	at := strings.LastIndex(addr, "@")
+	if at <= 0 || at == len(addr)-1 {
+		return false
+	}
+	domain := strings.TrimSuffix(strings.ToLower(addr[at+1:]), ".")
+	for _, reserved := range []string{"example.com", "example.net", "example.org", "example", "test", "invalid", "localhost"} {
+		if domain == reserved || strings.HasSuffix(domain, "."+reserved) {
+			return false
+		}
+	}
+	return true
 }
 
 func parseOrigin(key, raw string) (*url.URL, error) {
