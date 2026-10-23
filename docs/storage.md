@@ -67,7 +67,17 @@ The codecs are pure Go: `github.com/gen2brain/webp` (libwebp transpiled to Go) a
 
 ## Rotate keys
 
-Change the values in Doppler (or the env and restart, with `SECRETS_PROVIDER=env`). With this version the server reads them at boot, so restart it after a change.
+With `SECRETS_PROVIDER=doppler`, change the values in Doppler; no restart, no redeploy. On its next poll (`SECRETS_REFRESH_INTERVAL`) the server builds a client for the new set and makes one real signed call with it (`HEAD` on the bucket). Only if that works does it switch, atomically: uploads already running finish on the old client, new ones use the new bucket and keys. The log shows `storage: bucket/keys rotated from=… to=…` with fingerprints, never values.
+
+If the probe fails (a typo, a key without access, a bucket that is not there yet), the server keeps the old client, logs `consumer rejected change, keeping its previous client` with the fingerprints and the reason (`access denied: head 403 Forbidden`), and tries again after every later fetch, so fixing the value in Doppler is enough. A partial set (some of the four names missing) is refused before it is published. Removing all four upstream keeps the current client until a restart; turning storage on upstream while it was off at boot needs a restart to mount the routes (it is logged).
+
+Rotate a key without downtime:
+
+1. Create a second key for the bucket (Railway, R2 and S3 allow two at once).
+2. Put it in `STORAGE_S3_ACCESS_KEY_ID` and `STORAGE_S3_SECRET_ACCESS_KEY` in Doppler, and wait for the `rotated` log line on every instance.
+3. Revoke the old key.
+
+Moving to another bucket works the same way (copy the objects first: the server does not migrate them). With `SECRETS_PROVIDER=env`, change the env and restart.
 
 ## Delete it
 

@@ -11,13 +11,14 @@ import (
 	"github.com/jayleaton/go-fast-stack/packages/storage/safefetch"
 )
 
-// ObjectStore adapts a *storage.Client to services.ObjectStore.
-type ObjectStore struct{ bucket *storage.Client }
+// ObjectStore adapts a *storage.Live (the bucket client that follows
+// rotations) to services.ObjectStore.
+type ObjectStore struct{ bucket *storage.Live }
 
 var _ services.ObjectStore = ObjectStore{}
 
 // NewObjectStore returns the adapter over bucket.
-func NewObjectStore(bucket *storage.Client) ObjectStore { return ObjectStore{bucket: bucket} }
+func NewObjectStore(bucket *storage.Live) ObjectStore { return ObjectStore{bucket: bucket} }
 
 func (store ObjectStore) Put(ctx context.Context, key string, data []byte, contentType string) error {
 	return store.bucket.Put(ctx, key, data, contentType)
