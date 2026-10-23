@@ -24,7 +24,8 @@ else
   if [ -z "${1:-}" ]; then
     . scripts/branches.sh
     landing=$(landing_ref)
-    [ -n "$landing" ] || { echo "affected: none of $(deployed_names) fetched (git fetch origin, or pass a base)" >&2; exit 2; }
+    exit_usage=2 # no base to compare with
+    [ -n "$landing" ] || { echo "affected: none of $(deployed_names) fetched (git fetch origin, or pass a base)" >&2; exit "$exit_usage"; }
   fi
   base=${1:-$(git merge-base "$landing" HEAD)}
   mapfile -t changed < <(git diff --name-only --no-renames "$base" HEAD --)
