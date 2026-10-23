@@ -82,7 +82,13 @@ func (a *Auth) cookieName() string { return a.cookie("session_token") }
 // setSignedCookie writes an HttpOnly, SameSite=Lax cookie holding a signed
 // value; maxAge <= 0 expires it.
 func (a *Auth) setSignedCookie(w http.ResponseWriter, name, value string, maxAge int) {
-	c := &http.Cookie{ //nolint:gosec // Secure follows the BaseURL scheme so http dev servers work
+	http.SetCookie(w, a.newSignedCookie(name, value, maxAge))
+}
+
+// newSignedCookie is the cookie setSignedCookie writes, for callers that
+// hand cookies on as data (CompleteSocialSignIn).
+func (a *Auth) newSignedCookie(name, value string, maxAge int) *http.Cookie {
+	cookie := &http.Cookie{ //nolint:gosec // Secure follows the BaseURL scheme so http dev servers work
 		Name:     name,
 		Path:     "/",
 		MaxAge:   maxAge,
@@ -91,11 +97,11 @@ func (a *Auth) setSignedCookie(w http.ResponseWriter, name, value string, maxAge
 		SameSite: http.SameSiteLaxMode,
 	}
 	if maxAge > 0 {
-		c.Value = encodeCookieValue(a.signValue(value))
+		cookie.Value = encodeCookieValue(a.signValue(value))
 	} else {
-		c.MaxAge = -1
+		cookie.MaxAge = -1
 	}
-	http.SetCookie(w, c)
+	return cookie
 }
 
 // signedCookie returns the verified value of a signed cookie, or "", and
@@ -115,7 +121,12 @@ func (a *Auth) signedCookie(r *http.Request, name string) (value string, resign 
 // SetSessionCookie writes the signed session cookie for s (HttpOnly,
 // SameSite=Lax, Secure on https, expiring with the session).
 func (a *Auth) SetSessionCookie(w http.ResponseWriter, s Session) {
-	a.setSignedCookie(w, a.cookieName(), s.Token, int(s.ExpiresAt.Sub(a.now()).Seconds()))
+	http.SetCookie(w, a.sessionCookie(s))
+}
+
+// sessionCookie is the cookie SetSessionCookie writes for session.
+func (a *Auth) sessionCookie(session Session) *http.Cookie {
+	return a.newSignedCookie(a.cookieName(), session.Token, int(session.ExpiresAt.Sub(a.now()).Seconds()))
 }
 
 // ClearSessionCookie expires the session cookie.

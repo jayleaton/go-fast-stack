@@ -423,7 +423,7 @@ func TestSocialAccountLinking(t *testing.T) {
 	}
 
 	// Production: no account and no session for an unproven address.
-	prod, prodIdP := newSocialHarness(t, func(claims *Config) { claims.RequireEmailVerification = true })
+	prod, prodIdP := newSocialHarness(t, func(settings *Config) { settings.RequireEmailVerification = true })
 	email = uniqueEmail(t)
 	authURL, cookie := prod.startBrowser(ProviderGoogle, "/")
 	_, query := landed(t, prod.callback(ProviderGoogle, prodIdP.authorize(authURL, map[string]any{"email": email, "email_verified": false}), cookie))
@@ -435,7 +435,7 @@ func TestSocialAccountLinking(t *testing.T) {
 	}
 
 	// Sign-up disabled, and 2FA never skipped.
-	closed, closedIdP := newSocialHarness(t, func(claims *Config) { claims.DisableSignUp = true })
+	closed, closedIdP := newSocialHarness(t, func(settings *Config) { settings.DisableSignUp = true })
 	authURL, cookie = closed.startBrowser(ProviderGoogle, "/")
 	if _, query := landed(t, closed.callback(ProviderGoogle, closedIdP.authorize(authURL, map[string]any{"email": uniqueEmail(t)}), cookie)); query.Get("error") != "signup_disabled" {
 		t.Errorf("sign-up disabled: %v", query)
@@ -578,17 +578,67 @@ func TestSocialConfigValidation(t *testing.T) {
 	t.Parallel()
 	needDB(t)
 	for name, mutate := range map[string]func(*Config){
-		"google without secret": func(claims *Config) { claims.Google = &GoogleConfig{ClientID: "x"} },
-		"apple without key":     func(claims *Config) { claims.Apple = &AppleConfig{ClientID: "x", TeamID: "t", KeyID: "k"} },
+		"google without secret": func(settings *Config) { settings.Google = &GoogleConfig{ClientID: "x"} },
+		"apple without key":     func(settings *Config) { settings.Apple = &AppleConfig{ClientID: "x", TeamID: "t", KeyID: "k"} },
 		"apple bad key": func(claims *Config) {
 			claims.Apple = &AppleConfig{ClientID: "x", TeamID: "t", KeyID: "k", PrivateKey: "nope"}
 		},
-		"error path absolute": func(claims *Config) { claims.SocialErrorPath = "https://evil.example/" },
+		"error path absolute":    func(settings *Config) { settings.SocialErrorPath = "https://evil.example/" },
+		"callback path no slash": func(settings *Config) { settings.SocialCallbackPath = "/auth/callback" },
+		"callback path absolute": func(settings *Config) { settings.SocialCallbackPath = "https://evil.example/cb/" },
 	} {
 		cfg := Config{Secret: testSecret, BaseURL: testBase}
 		mutate(&cfg)
 		if _, err := New(cfg, testPool, &captureMailer{}); err == nil {
 			t.Errorf("%s: accepted", name)
 		}
+	}
+}
+
+// With SocialCallbackPath the app serves the callback on its own page, the
+// redirect URI points there, and the JSON API has no callback route at all.
+func TestSocialCallbackOnAppPage(t *testing.T) {
+	t.Parallel()
+	const callbackPath = "/auth/callback/"
+	fixture, idp := newSocialHarness(t, func(settings *Config) { settings.SocialCallbackPath = callbackPath })
+	serve := func(method, provider, target string, body url.Values, cookie string) *httptest.ResponseRecorder {
+		var reader *strings.Reader
+		if body != nil {
+			reader = strings.NewReader(body.Encode())
+		} else {
+			reader = strings.NewReader("")
+		}
+		request := httptest.NewRequestWithContext(context.Background(), method, target, reader)
+		if body != nil {
+			request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		}
+		if cookie != "" {
+			request.Header.Set("Cookie", cookie)
+		}
+		recorder := httptest.NewRecorder()
+		fixture.a.SocialCallback(recorder, request, provider)
+		return recorder
+	}
+
+	authURL, cookie := fixture.startBrowser(ProviderGoogle, "/dashboard")
+	parsed, _ := url.Parse(authURL)
+	if got := parsed.Query().Get("redirect_uri"); got != testBase+callbackPath+"google" {
+		t.Fatalf("redirect_uri = %q", got)
+	}
+	query := idp.authorize(authURL, map[string]any{"email": uniqueEmail(t)})
+	if apiCallback := fixture.callback(ProviderGoogle, query, cookie); apiCallback.Code != http.StatusNotFound {
+		t.Fatalf("JSON API still serves the callback: %d", apiCallback.Code)
+	}
+	recorder := serve(http.MethodGet, ProviderGoogle, callbackPath+"google?"+query.Encode(), nil, cookie)
+	if location, _ := landed(t, recorder); location != "/dashboard" || sessionCookie(recorder) == nil {
+		t.Fatalf("landed on %q, cookie %v", location, sessionCookie(recorder))
+	}
+
+	// Apple's form_post is bounced to the app page's GET.
+	authURL, _ = fixture.startBrowser(ProviderApple, "/")
+	query = idp.authorize(authURL, map[string]any{"email": uniqueEmail(t)})
+	recorder = serve(http.MethodPost, ProviderApple, callbackPath+"apple", query, "")
+	if location, _ := landed(t, recorder); !strings.HasPrefix(location, testBase+callbackPath+"apple?") {
+		t.Fatalf("form_post bounced to %q", location)
 	}
 }

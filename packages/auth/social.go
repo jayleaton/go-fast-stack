@@ -172,31 +172,145 @@ func (authn *Auth) provider(id string) (*socialProvider, error) {
 }
 
 // callbackURL is the redirect URI to register with the provider:
-// <BaseURL>/api/auth/callback/<provider>. It is always on BaseURL (PUBLIC_URL),
-// never on the request's host.
-func (authn *Auth) callbackURL(provider string) string { return authn.authURL("/callback/" + provider) }
+// <BaseURL><SocialCallbackPath><provider>, or Better Auth's
+// <BaseURL>/api/auth/callback/<provider>. It is always on BaseURL
+// (PUBLIC_URL), never on the request's host.
+func (authn *Auth) callbackURL(provider string) string {
+	if authn.cfg.SocialCallbackPath != "" {
+		return authn.baseOrigin + authn.cfg.SocialCallbackPath + url.PathEscape(provider)
+	}
+	return authn.authURL("/callback/" + url.PathEscape(provider))
+}
+
+// SocialCallbackInput is the provider's redirect as the app received it.
+type SocialCallbackInput struct {
+	Provider string
+	// FormPost is Apple's form_post (a cross-site POST): it is bounced to
+	// the GET callback, which carries the SameSite=Lax state cookie.
+	FormPost bool
+	// Params are the callback parameters: the query, or the form of a
+	// FormPost. Only code, state, error and user are read.
+	Params url.Values
+	// Cookies are the browser's cookies by name (raw values); only this
+	// instance's state cookie is read.
+	Cookies map[string]string
+}
+
+// SocialOutcome is where to send the browser, and the cookies to set first
+// (the session, or clearing the state cookie).
+type SocialOutcome struct {
+	Redirect string
+	Cookies  []*http.Cookie
+}
+
+// CompleteSocialSignIn finishes a flow from the provider's redirect: state
+// (stored row, single use; the signed state cookie for a browser flow),
+// provider error, code exchange with the PKCE verifier, ID token (signature,
+// issuer, audience, expiry, nonce), account linking, then a session cookie
+// (browser) or a handoff code on the app's deep link. Failures redirect to
+// the error page (or the app's deep link) with ?error=<code>.
+func (authn *Auth) CompleteSocialSignIn(ctx context.Context, in SocialCallbackInput) SocialOutcome {
+	if in.FormPost {
+		return SocialOutcome{Redirect: authn.callbackURL(in.Provider) + "?" + callbackParams(in.Params).Encode()}
+	}
+	var outcome SocialOutcome
+	flow, failure := authn.consumeOAuthState(ctx, in.Cookies[authn.cookie(oauthStateCookie)], in.Params.Get("state"))
+	if failure != "" {
+		authn.emitFailure(ctx, EventSignInFailed, "", SignInMethodSocial, &Error{Code: strings.ToUpper(failure)})
+		return SocialOutcome{Redirect: authn.withQuery(authn.errorPage(), "error", failure)}
+	}
+	if flow.HandoffHash == "" {
+		outcome.Cookies = append(outcome.Cookies, authn.newSignedCookie(authn.cookie(oauthStateCookie), "", 0))
+	}
+	target, session, err := authn.finishSocial(ctx, in.Provider, in.Params, flow)
+	if err != nil {
+		code := string(internalFailure)
+		if refusal, ok := errors.AsType[oauthFailure](err); ok {
+			code = string(refusal)
+		} else {
+			authn.log.ErrorContext(ctx, "auth: social sign-in failed", "provider", flow.Provider, "err", err)
+		}
+		authn.emitFailure(ctx, EventSignInFailed, "", SignInMethodSocial, &Error{Code: strings.ToUpper(code)})
+		errorURL := authn.errorPage()
+		if flow.HandoffHash != "" {
+			errorURL = flow.CallbackURL
+		}
+		outcome.Redirect = authn.withQuery(errorURL, "error", code)
+		return outcome
+	}
+	if session != nil {
+		outcome.Cookies = append(outcome.Cookies, authn.sessionCookie(*session))
+	}
+	outcome.Redirect = target
+	return outcome
+}
+
+// SocialCallback is CompleteSocialSignIn for a handler that serves the
+// provider's redirect itself (GET, or Apple's form_post): it only ever
+// redirects. Mount it at Config.SocialCallbackPath without cross-origin
+// form protection (Apple's POST is cross-site; the state check is what
+// authenticates it); Handler mounts it itself when that is unset.
+func (authn *Auth) SocialCallback(writer http.ResponseWriter, request *http.Request, provider string) {
+	in := SocialCallbackInput{Provider: provider, Params: request.URL.Query(), Cookies: map[string]string{}}
+	if request.Method == http.MethodPost {
+		request.Body = http.MaxBytesReader(writer, request.Body, maxCallbackForm)
+		if err := request.ParseForm(); err != nil {
+			http.Redirect(writer, request, authn.withQuery(authn.errorPage(), "error", "invalid_callback_request"), http.StatusFound)
+			return
+		}
+		in.FormPost, in.Params = true, request.Form
+	}
+	for _, cookie := range request.Cookies() {
+		in.Cookies[cookie.Name] = cookie.Value
+	}
+	outcome := authn.CompleteSocialSignIn(request.Context(), in)
+	for _, cookie := range outcome.Cookies {
+		http.SetCookie(writer, cookie)
+	}
+	http.Redirect(writer, request, outcome.Redirect, http.StatusFound) //nolint:gosec // G710: targets passed checkCallbackURL when the flow started, or are ours
+}
 
 // errorPage is where browser-flow failures land with ?error=<code>.
 func (authn *Auth) errorPage() string { return authn.baseOrigin + authn.cfg.SocialErrorPath }
 
-// StartSocialSignIn begins the browser flow: it stores the state (10 min),
-// sets the signed state cookie on w (5 min) and returns the provider's
-// authorization URL to redirect the browser to. callbackURL is where the
+// SocialBegin is a started browser sign-in: set Cookies, then send the
+// browser to URL.
+type SocialBegin struct {
+	URL     string
+	Cookies []*http.Cookie
+}
+
+// BeginSocialSignIn begins the browser flow: it stores the state (10 min)
+// and returns the provider's authorization URL with the signed state cookie
+// (5 min) that binds the flow to this browser. callbackURL is where the
 // signed-in browser lands: a root-relative path or a URL on a trusted web
-// origin (default "/"). UI handlers call it.
-func (authn *Auth) StartSocialSignIn(ctx context.Context, writer http.ResponseWriter, provider, callbackURL string) (string, error) {
+// origin (default "/").
+func (authn *Auth) BeginSocialSignIn(ctx context.Context, provider, callbackURL string) (SocialBegin, error) {
 	if callbackURL == "" {
 		callbackURL = "/"
 	}
 	if !isSafeRelativeURL(callbackURL) && !isWebURL(callbackURL) {
-		return "", ErrInvalidCallbackURL
+		return SocialBegin{}, ErrInvalidCallbackURL
 	}
 	authURL, state, err := authn.startSocial(ctx, provider, callbackURL, "")
 	if err != nil {
+		return SocialBegin{}, err
+	}
+	return SocialBegin{URL: authURL, Cookies: []*http.Cookie{authn.newSignedCookie(authn.cookie(oauthStateCookie), state, oauthStateCookieTTL)}}, nil
+}
+
+// StartSocialSignIn is BeginSocialSignIn for a handler that writes the
+// response itself: it sets the state cookie on writer and returns the URL to
+// redirect to.
+func (authn *Auth) StartSocialSignIn(ctx context.Context, writer http.ResponseWriter, provider, callbackURL string) (string, error) {
+	begin, err := authn.BeginSocialSignIn(ctx, provider, callbackURL)
+	if err != nil {
 		return "", err
 	}
-	authn.setSignedCookie(writer, authn.cookie(oauthStateCookie), state, oauthStateCookieTTL)
-	return authURL, nil
+	for _, cookie := range begin.Cookies {
+		http.SetCookie(writer, cookie)
+	}
+	return begin.URL, nil
 }
 
 // StartSocialHandoff begins the app flow (POST /sign-in/social). callbackURL
@@ -274,106 +388,65 @@ func (authn *Auth) handleSocialProviders(writer http.ResponseWriter, _ *http.Req
 // it never lands in a URL, history or log.
 var callbackFields = []string{"code", "error", "state", "user"}
 
-// handleCallbackPost turns Apple's form_post into the GET callback, as Better
-// Auth does: the SameSite=Lax state cookie is not sent on a cross-site POST,
-// but is on the top-level GET it redirects to.
-func (authn *Auth) handleCallbackPost(writer http.ResponseWriter, request *http.Request) {
-	request.Body = http.MaxBytesReader(writer, request.Body, maxCallbackForm)
-	if err := request.ParseForm(); err != nil {
-		http.Redirect(writer, request, authn.withQuery(authn.errorPage(), "error", "invalid_callback_request"), http.StatusFound)
-		return
-	}
-	merged := url.Values{}
+// callbackParams keeps only the callback fields of a form_post, for the
+// GET it is bounced to.
+func callbackParams(params url.Values) url.Values {
+	kept := url.Values{}
 	for _, field := range callbackFields {
-		if value := request.PostForm.Get(field); value != "" {
-			merged.Set(field, value)
-		} else if value := request.URL.Query().Get(field); value != "" {
-			merged.Set(field, value)
+		if value := params.Get(field); value != "" {
+			kept.Set(field, value)
 		}
 	}
-	http.Redirect(writer, request, authn.callbackURL(request.PathValue("provider"))+"?"+merged.Encode(), http.StatusFound)
-}
-
-// handleCallback finishes a flow: state (stored row, single use; the signed
-// cookie for a browser flow), provider error, code exchange with the PKCE
-// verifier, ID token (signature, issuer, audience, expiry, nonce), account
-// linking, then a session cookie (browser) or a handoff code (app).
-func (authn *Auth) handleCallback(writer http.ResponseWriter, request *http.Request) {
-	ctx := request.Context()
-	query := request.URL.Query()
-	flow, failure := authn.consumeOAuthState(ctx, writer, request, query.Get("state"))
-	if failure != "" {
-		authn.emitFailure(ctx, EventSignInFailed, "", SignInMethodSocial, &Error{Code: strings.ToUpper(failure)})
-		http.Redirect(writer, request, authn.withQuery(authn.errorPage(), "error", failure), http.StatusFound)
-		return
-	}
-	target, err := authn.finishSocial(ctx, writer, request, flow)
-	if err != nil {
-		code := string(internalFailure)
-		if refusal, ok := errors.AsType[oauthFailure](err); ok {
-			code = string(refusal)
-		} else {
-			authn.log.ErrorContext(ctx, "auth: social sign-in failed", "provider", flow.Provider, "err", err)
-		}
-		authn.emitFailure(ctx, EventSignInFailed, "", SignInMethodSocial, &Error{Code: strings.ToUpper(code)})
-		errorURL := authn.errorPage()
-		if flow.HandoffHash != "" {
-			errorURL = flow.CallbackURL
-		}
-		target = authn.withQuery(errorURL, "error", code)
-	}
-	http.Redirect(writer, request, target, http.StatusFound) //nolint:gosec // G710: targets passed checkCallbackURL when the flow started, or are ours
+	return kept
 }
 
 const internalFailure oauthFailure = "internal_server_error"
 
-func (authn *Auth) finishSocial(ctx context.Context, writer http.ResponseWriter, request *http.Request, flow oauthState) (string, error) {
-	query := request.URL.Query()
+func (authn *Auth) finishSocial(ctx context.Context, providerID string, query url.Values, flow oauthState) (string, *Session, error) {
 	if provErr := query.Get("error"); provErr != "" {
 		if !isErrorCode(provErr) {
 			provErr = "oauth_error"
 		}
-		return "", oauthFailure(provErr) // e.g. access_denied when the person cancels
+		return "", nil, oauthFailure(provErr) // e.g. access_denied when the person cancels
 	}
-	provider, err := authn.provider(request.PathValue("provider"))
+	provider, err := authn.provider(providerID)
 	if err != nil || provider.id != flow.Provider {
-		return "", oauthFailure("state_mismatch")
+		return "", nil, oauthFailure("state_mismatch")
 	}
 	code := query.Get("code")
 	if code == "" {
-		return "", oauthFailure("no_code")
+		return "", nil, oauthFailure("no_code")
 	}
 	now := authn.now()
 	tokens, err := provider.exchange(ctx, code, flow.CodeVerifier, authn.callbackURL(provider.id), now)
 	if err != nil {
 		authn.log.WarnContext(ctx, "auth: OAuth code exchange failed", "provider", provider.id, "err", err)
-		return "", oauthFailure("invalid_code")
+		return "", nil, oauthFailure("invalid_code")
 	}
 	info, err := provider.userFromIDToken(ctx, tokens.IDToken, flow.Nonce, query.Get("user"), now)
 	if err != nil {
 		authn.log.WarnContext(ctx, "auth: provider ID token rejected", "provider", provider.id, "err", err)
-		return "", oauthFailure("unable_to_get_user_info")
+		return "", nil, oauthFailure("unable_to_get_user_info")
 	}
 	if info.Email == "" {
-		return "", oauthFailure("email_not_found")
+		return "", nil, oauthFailure("email_not_found")
 	}
 	user, err := authn.socialUser(ctx, provider, info, tokens)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	if flow.HandoffHash != "" {
 		code, err := authn.issueHandoff(ctx, user.ID, provider.id, flow.HandoffHash)
 		if err != nil {
-			return "", err
+			return "", nil, err
 		}
-		return authn.withQuery(flow.CallbackURL, "code", code), nil
+		return authn.withQuery(flow.CallbackURL, "code", code), nil, nil
 	}
-	sess, err := authn.socialSession(ctx, user, provider.id)
+	session, err := authn.socialSession(ctx, user, provider.id)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
-	authn.SetSessionCookie(writer, sess)
-	return flow.CallbackURL, nil
+	return flow.CallbackURL, &session, nil
 }
 
 // isErrorCode accepts a provider's error code (RFC 6749 §4.1.2.1 uses
@@ -382,8 +455,8 @@ func isErrorCode(value string) bool {
 	if value == "" || len(value) > maxErrorCodeLength {
 		return false
 	}
-	for _, claims := range value {
-		if (claims < 'a' || claims > 'z') && claims != '_' {
+	for _, char := range value {
+		if (char < 'a' || char > 'z') && char != '_' {
 			return false
 		}
 	}
@@ -392,9 +465,9 @@ func isErrorCode(value string) bool {
 
 // consumeOAuthState checks state against its row (and, for a browser flow,
 // the signed state cookie) and spends it, returning an error code on
-// failure. A cookie mismatch leaves the row, so the real flow can still
-// finish; success clears the cookie.
-func (authn *Auth) consumeOAuthState(ctx context.Context, writer http.ResponseWriter, request *http.Request, state string) (oauthState, string) {
+// failure. stateCookie is the raw signed cookie the browser sent. A cookie
+// mismatch leaves the row, so the real flow can still finish.
+func (authn *Auth) consumeOAuthState(ctx context.Context, stateCookie, state string) (oauthState, string) {
 	if state == "" {
 		return oauthState{}, "state_not_found"
 	}
@@ -411,8 +484,8 @@ func (authn *Auth) consumeOAuthState(ctx context.Context, writer http.ResponseWr
 		return oauthState{}, "please_restart_the_process"
 	}
 	if flow.HandoffHash == "" {
-		cookie, _ := authn.signedCookie(request, authn.cookie(oauthStateCookie))
-		if subtle.ConstantTimeCompare([]byte(cookie), []byte(state)) != 1 {
+		cookie, ok, _ := authn.verifySignedKey(stateCookie)
+		if !ok || subtle.ConstantTimeCompare([]byte(cookie), []byte(state)) != 1 {
 			return oauthState{}, "state_mismatch"
 		}
 	}
@@ -424,9 +497,6 @@ func (authn *Auth) consumeOAuthState(ctx context.Context, writer http.ResponseWr
 	})
 	if err != nil || spent == "" { // a concurrent callback with the same state won
 		return oauthState{}, "please_restart_the_process"
-	}
-	if flow.HandoffHash == "" {
-		authn.setSignedCookie(writer, authn.cookie(oauthStateCookie), "", 0)
 	}
 	return flow, ""
 }

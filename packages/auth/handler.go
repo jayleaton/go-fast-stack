@@ -40,8 +40,13 @@ func (a *Auth) Handler() http.Handler {
 	mux.HandleFunc("GET "+BasePath+"/social-providers", a.handleSocialProviders)
 	mux.HandleFunc("POST "+BasePath+"/sign-in/social", a.handleSignInSocial)
 	mux.HandleFunc("POST "+BasePath+"/sign-in/handoff", a.handleSignInHandoff)
-	mux.HandleFunc("GET "+BasePath+"/callback/{provider}", a.handleCallback)
-	mux.HandleFunc("POST "+BasePath+"/callback/{provider}", a.handleCallbackPost)
+	if a.cfg.SocialCallbackPath == "" {
+		callback := func(writer http.ResponseWriter, request *http.Request) {
+			a.SocialCallback(writer, request, request.PathValue("provider"))
+		}
+		mux.HandleFunc("GET "+BasePath+"/callback/{provider}", callback)
+		mux.HandleFunc("POST "+BasePath+"/callback/{provider}", callback)
+	}
 	mux.HandleFunc("GET "+BasePath+"/ok", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	})

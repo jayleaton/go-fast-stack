@@ -48,7 +48,7 @@ Security notes for this part: TOTP secrets are AES-256-GCM encrypted (user id as
 
 ## Social sign-in (Google, Apple)
 
-Better Auth's `google` and `apple` providers, off until configured (`Config.Google`, `Config.Apple`). Callback paths are Better Auth's, always on `BaseURL`: register `<BaseURL>/api/auth/callback/google` and `<BaseURL>/api/auth/callback/apple` with the provider. The credentials that rotate (`GoogleConfig.ClientSecret`, Apple's `PrivateKey` with its `KeyID`) are swapped live with `SetSocialSecrets`; Apple's client secret JWT is signed from the `.p8` key and renewed by itself.
+Better Auth's `google` and `apple` providers, off until configured (`Config.Google`, `Config.Apple`). Callback paths are Better Auth's, always on `BaseURL`: register `<BaseURL>/api/auth/callback/google` and `<BaseURL>/api/auth/callback/apple` with the provider. An app whose browsers must never reach the JSON API (the web app) sets `Config.SocialCallbackPath` (e.g. `/auth/callback/`) and serves `SocialCallback(writer, request, provider)` there for GET and POST; the callback to register is then `<BaseURL><SocialCallbackPath><provider>` and `Handler` has no callback routes. The credentials that rotate (`GoogleConfig.ClientSecret`, Apple's `PrivateKey` with its `KeyID`) are swapped live with `SetSocialSecrets`; Apple's client secret JWT is signed from the `.p8` key and renewed by itself.
 
 | Area | Behaviour |
 |---|---|

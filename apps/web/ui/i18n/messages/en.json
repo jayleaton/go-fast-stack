@@ -91,7 +91,18 @@
       "dontHaveAccount": "Don't have an account?",
       "signUpInstead": "Sign up instead",
       "emailPlaceholder": "Enter your email",
-      "passwordPlaceholder": "Enter your password"
+      "passwordPlaceholder": "Enter your password",
+      "social": {
+        "or": "or",
+        "google": "Continue with Google",
+        "apple": "Continue with Apple",
+        "cancelled": "Sign-in was cancelled.",
+        "accountNotLinked": "An account with this email already exists. Sign in with your password, verify your email, then try again.",
+        "emailNotVerified": "Your email address is not verified with that provider.",
+        "signupDisabled": "Sign-up is closed. Ask for an invite.",
+        "twoFactorRequired": "This account uses two-factor authentication. Sign in with your password.",
+        "failed": "Sign-in did not work. Please try again."
+      }
     },
     "signup": {
       "title": "Create your account",

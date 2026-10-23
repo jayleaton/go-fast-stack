@@ -111,6 +111,7 @@ To deploy, run `make railway-setup`. It creates the whole Railway project from [
 - [Secrets](docs/secrets.md): Doppler, live rotation, what to do after a provider incident
 - [Backups and restore](docs/backups.md): nightly encrypted backups and the restore runbook
 - [Security](docs/security.md): what the browser can and can't reach, headers, cookies
+- [Google and Apple sign-in (optional)](docs/sign-in.md): provider credentials, turning it on, deleting it
 - [Admin dashboard (optional)](docs/admin.md): user management and the audit log
 - [Mobile app](apps/mobile-app/README.md) · [Auth](packages/auth/README.md) · [UI kit](packages/uikit/README.md)
 - [AGENTS.md](AGENTS.md) (rules for contributors and agents) · [CONTEXT.md](CONTEXT.md) (vocabulary)

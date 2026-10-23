@@ -100,6 +100,12 @@ func (ui *UI) Routes(mux Mux) {
 	action(apiclient.Public, "POST "+config.AppRoutes.Login, ui.login)
 	page(apiclient.Public, "GET "+config.AppRoutes.Signup, ui.signupPage)
 	action(apiclient.Public, "POST "+config.AppRoutes.Signup, ui.signup)
+	action(apiclient.Public, "POST "+config.AppRoutes.SocialSignIn, ui.socialSignIn)
+	// Pages, not actions: Apple's form POST is cross-site by design; the
+	// OAuth state (single use, bound to this browser or the app) is what
+	// authenticates the callback.
+	page(apiclient.Public, "GET "+config.AppRoutes.SocialCallback, ui.socialCallback)
+	page(apiclient.Public, "POST "+config.AppRoutes.SocialCallback, ui.socialCallback)
 	page(apiclient.Public, "GET "+config.AppRoutes.ForgotPassword, ui.forgotPasswordPage)
 	action(apiclient.Public, "POST "+config.AppRoutes.ForgotPassword, ui.forgotPassword)
 	page(apiclient.Public, "GET "+config.AppRoutes.ResetPassword, ui.resetPasswordPage)

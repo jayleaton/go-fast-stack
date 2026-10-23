@@ -9,6 +9,10 @@ var AppRoutes = struct {
 	// Account is the account section of the dashboard; EmailChanged is where
 	// a change-email verification link lands (the default callbackURL).
 	Account, EmailChanged string
+	// SocialSignIn starts Google / Apple sign-in (POST, {provider}).
+	// SocialCallback is where the provider sends the browser back (GET, and
+	// Apple's form POST); its prefix is the callback to register.
+	SocialSignIn, SocialCallback string
 }{
 	Home:               "/",
 	Why:                "/why",
@@ -21,7 +25,13 @@ var AppRoutes = struct {
 	Dashboard:          "/dashboard",
 	Account:            "/dashboard/account",
 	EmailChanged:       "/dashboard/account?email-changed=1",
+	SocialSignIn:       "/auth/social/{provider}",
+	SocialCallback:     SocialCallbackPrefix + "{provider}",
 }
+
+// SocialCallbackPrefix is AppRoutes.SocialCallback without {provider}: the
+// providers redirect to <PUBLIC_URL>/auth/callback/google (or apple).
+const SocialCallbackPrefix = "/auth/callback/"
 
 // APIRoutes are the JSON endpoints. Patterns (with {id}) are for ServeMux;
 // build concrete paths with the helper funcs.
@@ -33,6 +43,8 @@ var APIRoutes = struct {
 	MeSessions, MeSessionByID, MeOtherSessions string
 	// Another user by id (the service answers 403 unless it is the caller).
 	UserByID string
+	// Google and Apple sign-in, the web UI's browser flow (public).
+	SocialProviders, SocialStart, SocialFinish string
 
 	Healthz string
 }{
@@ -45,6 +57,9 @@ var APIRoutes = struct {
 	MeSessionByID:   "/api/core/v1/users/me/sessions/{id}",
 	MeOtherSessions: "/api/core/v1/users/me/sessions/others",
 	UserByID:        "/api/core/v1/users/{id}",
+	SocialProviders: "/api/core/v1/auth/social/providers",
+	SocialStart:     "/api/core/v1/auth/social/{provider}/start",
+	SocialFinish:    "/api/core/v1/auth/social/{provider}/finish",
 	Healthz:         "/healthz",
 }
 
@@ -56,6 +71,11 @@ func UserPath(id string) string {
 // MeSessionPath is the concrete path for APIRoutes.MeSessionByID.
 func MeSessionPath(id string) string {
 	return APIRoutes.MeSessions + "/" + url.PathEscape(id)
+}
+
+// SocialSignInPath is the concrete path for AppRoutes.SocialSignIn.
+func SocialSignInPath(provider string) string {
+	return "/auth/social/" + url.PathEscape(provider)
 }
 
 // Absolute joins a route onto an origin (config.PublicURL for email links).

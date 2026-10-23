@@ -91,7 +91,18 @@
       "dontHaveAccount": "アカウントをお持ちでない方",
       "signUpInstead": "サインアップ",
       "emailPlaceholder": "メールアドレスを入力",
-      "passwordPlaceholder": "パスワードを入力"
+      "passwordPlaceholder": "パスワードを入力",
+      "social": {
+        "or": "または",
+        "google": "Googleで続ける",
+        "apple": "Appleで続ける",
+        "cancelled": "サインインがキャンセルされました。",
+        "accountNotLinked": "このメールアドレスのアカウントは既に存在します。パスワードでサインインしてメールアドレスを確認してから、もう一度お試しください。",
+        "emailNotVerified": "このプロバイダーではメールアドレスが確認されていません。",
+        "signupDisabled": "新規登録は受け付けていません。招待をご依頼ください。",
+        "twoFactorRequired": "このアカウントは二要素認証を使用しています。パスワードでサインインしてください。",
+        "failed": "サインインできませんでした。もう一度お試しください。"
+      }
     },
     "signup": {
       "title": "アカウントを作成",

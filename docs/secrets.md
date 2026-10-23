@@ -119,7 +119,7 @@ Keep app secrets in **Doppler**, not in Railway variables. A Railway variable ch
 
 | Where | What |
 |---|---|
-| Doppler, one config per service and environment | `DATABASE_URL`, `AUTH_SECRET` (+ `AUTH_SECRET_PREVIOUS` / `_REVOKED` while rotating), `RESEND_API_KEY`; admin also `ADMIN_DATABASE_URL`, `ADMIN_AUTH_SECRET` |
+| Doppler, one config per service and environment | `DATABASE_URL`, `AUTH_SECRET` (+ `AUTH_SECRET_PREVIOUS` / `_REVOKED` while rotating), `RESEND_API_KEY`, and the sign-in provider credentials you use (`GOOGLE_CLIENT_SECRET`, `APPLE_PRIVATE_KEY`, `APPLE_KEY_ID`; add them yourself, [sign-in](sign-in.md)); admin also `ADMIN_DATABASE_URL`, `ADMIN_AUTH_SECRET` |
 | Railway, sealed | `DOPPLER_TOKEN`, the only secret Railway needs |
 | Railway, plain | non-secrets (`APP_ENV`, `PUBLIC_URL`, `SECRETS_PROVIDER`, ...) |
 

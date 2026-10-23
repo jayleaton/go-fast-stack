@@ -24,7 +24,7 @@ const (
 	secretAuth         = "AUTH_SECRET" // a keyring: also AUTH_SECRET_PREVIOUS and AUTH_SECRET_REVOKED
 )
 
-var liveSecrets = append([]string{secretResendAPIKey, secretDatabaseURL}, secrets.KeyringNames(secretAuth)...)
+var liveSecrets = append(append([]string{secretResendAPIKey, secretDatabaseURL}, secrets.KeyringNames(secretAuth)...), socialSecretNames...)
 
 // Secrets hands live secrets to the server through typed accessors; nothing
 // else reads them. Load builds it (no I/O); serve and migrate call Start,
@@ -70,7 +70,7 @@ func (s Secrets) OnAuthSecrets(fn func(secrets.Keyring) error) { s.m.OnKeyring(s
 
 // validateLive checks the live secrets of one snapshot (env at boot, every
 // remote fetch before it is published). Messages name keys, never values.
-func validateLive(env Env) func(get func(name string) string) []error {
+func validateLive(env Env, social Social) func(get func(name string) string) []error {
 	return func(get func(string) string) []error {
 		var errs []error
 		if get(secretDatabaseURL) == "" {
@@ -80,7 +80,7 @@ func validateLive(env Env) func(get func(name string) string) []error {
 		if env == Production && get(secretResendAPIKey) == "" {
 			errs = append(errs, errors.New("RESEND_API_KEY is required in production"))
 		}
-		return errs
+		return append(errs, social.validate(get)...)
 	}
 }
 
@@ -104,9 +104,9 @@ func validateKeyring(get func(string) string, name string) []error {
 
 // loadSecrets builds the Manager from SECRETS_PROVIDER and its bootstrap
 // vars. Every problem is appended to errs.
-func loadSecrets(env Env, get func(key, fallback string) string, errs *[]error) Secrets {
+func loadSecrets(env Env, social Social, get func(key, fallback string) string, errs *[]error) Secrets {
 	m, problems := secrets.Bootstrap(func(k string) string { return get(k, "") }, secrets.BootstrapOptions{
-		Keys: liveSecrets, Validate: validateLive(env), Production: env == Production,
+		Keys: liveSecrets, Validate: validateLive(env, social), Production: env == Production,
 	})
 	*errs = append(*errs, problems...)
 	return Secrets{m}
