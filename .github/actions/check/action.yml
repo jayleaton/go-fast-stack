@@ -42,7 +42,7 @@ runs:
           > "$RUNNER_TEMP/pg.log" 2>&1 &
 
     # Build + lint cache, keyed by commit: saved by the single CI job on pushes
-    # to main and restored by prefix everywhere else (incl. opt-in fan-out).
+    # to dev or main and restored by prefix everywhere else (incl. opt-in fan-out).
     - uses: actions/cache/restore@v6
       if: inputs.packages != '' || inputs.deploy == 'true'
       with:

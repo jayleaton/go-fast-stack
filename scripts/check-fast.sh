@@ -4,7 +4,8 @@
 # checkout's changes can affect, the generators whose inputs changed, and the
 # deploy/ module when it changed, and the migration order when a migration
 # changed. "Changes" are everything that differs from
-# the merge base with origin/main: commits, staged, unstaged and untracked
+# the merge base with origin/dev (origin/main when there is no dev; see
+# scripts/branches.sh): commits, staged, unstaged and untracked
 # files. scripts/affected.sh maps them to packages exactly as CI does, so a
 # change to a shared input (go.mod, tooling, lint config, migrations,
 # generator config) checks everything.
@@ -22,6 +23,7 @@ set -euo pipefail
 # shellcheck disable=SC2046
 unset $(git rev-parse --local-env-vars)
 cd "$(dirname "$0")/.."
+. scripts/branches.sh
 
 GO=${GO:-go}
 lint() { "$GO" tool -modfile=tools/go.mod golangci-lint "$@"; }
@@ -33,8 +35,8 @@ step() { step_start=$(now); printf '%-26s' "$1"; }
 done_() { awk -v d=$(($(now) - step_start)) 'BEGIN { printf "%.1fs\n", d / 1000 }'; }
 fail() { failed+=("$1"); }
 
-base_ref=${CHECK_BASE:-origin/main}
-if ! base=$(git merge-base "$base_ref" HEAD 2>/dev/null); then
+base_ref=${CHECK_BASE:-$(landing_ref)}
+if [ -z "$base_ref" ] || ! base=$(git merge-base "$base_ref" HEAD 2>/dev/null); then
   echo "check-fast: no merge base with $base_ref (git fetch origin, or set CHECK_BASE)" >&2
   exit 2
 fi
@@ -75,12 +77,12 @@ else
   echo "  ${#changed[@]} changed files -> ${#pkgs[@]} packages$([ "$deploy" = true ] && echo ' + deploy/')"
 fi
 
-# Migration order, when a migration changed: against the base's tip, not the
-# merge base, so a branch the base has moved past fails too (goose refuses a
-# version below one already applied).
+# Migration order, when a migration changed: against the tips of dev and main
+# (or CHECK_BASE), not the merge base, so a branch either has moved past fails
+# too (goose refuses a version below one already applied).
 if printf '%s\n' "${changed[@]}" | grep -qE '(^|/)migrations/[^/]*\.sql$'; then
   step "migration order"
-  if ! out=$(./scripts/check-migration-order.sh "$base_ref" 2>&1); then done_; echo "$out" | sed 's/^/  /'; fail migration-order; else done_; fi
+  if ! out=$(./scripts/check-migration-order.sh ${CHECK_BASE:+"$CHECK_BASE"} 2>&1); then done_; echo "$out" | sed 's/^/  /'; fail migration-order; else done_; fi
 fi
 
 # Format: the changed Go files (everything on a full run).

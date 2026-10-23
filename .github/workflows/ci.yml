@@ -2,8 +2,9 @@
 # it (pending, then success/failure) on the commit they actually tested, so a
 # skipped or cancelled job can never satisfy it and a draft (which starts no
 # jobs) never gets it. Jobs bill rounded up to whole minutes, so CI is ONE job:
-# it checks the affected packages (all of them on main, merge queue and manual
-# runs) plus the mobile app and deploy/ module when those change. Sharding is
+# it checks the affected packages (all of them on pushes to dev and main, the
+# merge queue and manual runs) plus the mobile app and deploy/ module when
+# those change. Sharding is
 # an opt-in fallback only: a "ci:fanout" label on the PR or the fanout input
 # of a manual run.
 name: CI
@@ -17,11 +18,15 @@ on:
         description: Split the checks across two parallel jobs (faster wall time, more billed minutes)
         type: boolean
         default: false
+  # The deployed branches (scripts/branches.sh): dev deploys staging, main
+  # production. A repo without dev just never pushes it. PRs run whatever
+  # branch they target.
   push:
-    branches: [main]
+    branches: [dev, main]
   merge_group:
-  # Refreshes the caches PRs restore (pushes to main that reuse a PR's result
-  # do not); skipped when main has not moved since the last saved cache.
+  # Refreshes the caches PRs restore (pushes that reuse a PR's result do not);
+  # runs on the default branch, skipped when it has not moved since the last
+  # saved cache.
   schedule:
     - cron: '17 */4 * * *'
 
@@ -29,8 +34,8 @@ on:
 # (e.g. a push landing a second before "ready for review") never cancels the
 # real run, and a newer push cancels the older real run; a cancelled run's
 # ci-ok still runs and fails, so an old SHA never keeps a green required check.
-# Everything else (pushes to main, merge queue, manual runs) gets a group of
-# its own: a shared group made main pushes queue behind each other, and GitHub
+# Everything else (pushes to dev/main, merge queue, manual runs) gets a group
+# of its own: a shared group made pushes queue behind each other, and GitHub
 # cancels a pending run when a newer one joins its group.
 concurrency:
   group: ${{ github.event_name == 'pull_request' && format('ci-{0}-{1}-{2}', github.workflow, github.ref, github.event.pull_request.draft && 'draft' || 'run') || format('ci-{0}-{1}', github.workflow, github.run_id) }}
@@ -121,11 +126,11 @@ jobs:
         with:
           fetch-depth: 2
 
-      # A push to main whose tree is identical to a PR merge commit that
+      # A push to dev or main whose tree is identical to a PR merge commit that
       # already passed CI is not tested again: ci-ok is posted from that
       # result. Safe by construction: the PR's ci-ok must be a success posted by
       # this workflow (github-actions[bot]) recording exactly this tree (see
-      # "ci-ok result"); if main moved in between (tree differs) or the result
+      # "ci-ok result"); if the branch moved in between (tree differs) or the result
       # is missing or not success, the run checks everything as usual.
       # A scheduled run is skipped when the cache for this commit already exists.
       - name: Reuse or skip
@@ -164,7 +169,8 @@ jobs:
           case $EVENT in merge_group | workflow_dispatch | schedule) mobile=true deploy=true ;; esac
           if [ "$SKIP" = true ]; then go=false mobile=false deploy=false; fi
           save=false
-          case $EVENT in workflow_dispatch | schedule) save=true ;; push) [ "$GITHUB_REF" = refs/heads/main ] && save=true ;; esac
+          # Pushes only trigger on the deployed branches (dev, main).
+          case $EVENT in workflow_dispatch | schedule | push) save=true ;; esac
           echo "go=$go" >> "$GITHUB_OUTPUT"; echo "mobile=${mobile:-false}" >> "$GITHUB_OUTPUT"
           echo "deploy=${deploy:-false}" >> "$GITHUB_OUTPUT"; echo "save=$save" >> "$GITHUB_OUTPUT"
           echo "skip=${SKIP:-false}" >> "$GITHUB_OUTPUT"
@@ -185,7 +191,7 @@ jobs:
             echo "sha=$(git rev-parse HEAD^2)" >> "$GITHUB_OUTPUT"; echo "merge=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           fi
           # The tree tested (the merge commit's), recorded in ci-ok so a push
-          # to main with exactly this tree can reuse the result.
+          # to dev or main with exactly this tree can reuse the result.
           echo "tree=$(git rev-parse HEAD^{tree})" >> "$GITHUB_OUTPUT"
 
       - name: ci-ok pending
@@ -217,7 +223,7 @@ jobs:
         run: go version
 
       # PRs check only what their changes can affect; shared inputs, pushes to
-      # main, the merge queue and manual runs check everything.
+      # dev/main, the merge queue and manual runs check everything.
       - name: Affected packages
         if: steps.scope.outputs.go == 'true'
         id: affected

@@ -5,7 +5,8 @@
 # (go.mod/go.sum, tooling, workflows, lint config, migrations, generator
 # config) mean a full run.
 #
-# Usage: scripts/affected.sh [<base>]   (default: merge-base with origin/main)
+# Usage: scripts/affected.sh [<base>]   (default: merge-base with origin/dev,
+#        or origin/main when there is no dev: scripts/branches.sh)
 #        AFFECTED_FILES="a.go b.md" scripts/affected.sh   (explicit file list)
 # Prints key=value lines (and appends them to $GITHUB_OUTPUT when set):
 #   full=true|false     run everything (./...)
@@ -20,7 +21,12 @@ cd "$(dirname "$0")/.."
 if [ -n "${AFFECTED_FILES:-}" ]; then
   read -r -a changed <<<"$AFFECTED_FILES"
 else
-  base=${1:-$(git merge-base origin/main HEAD)}
+  if [ -z "${1:-}" ]; then
+    . scripts/branches.sh
+    landing=$(landing_ref)
+    [ -n "$landing" ] || { echo "affected: none of $(deployed_names) fetched (git fetch origin, or pass a base)" >&2; exit 2; }
+  fi
+  base=${1:-$(git merge-base "$landing" HEAD)}
   mapfile -t changed < <(git diff --name-only --no-renames "$base" HEAD --)
 fi
 
@@ -30,7 +36,7 @@ out() {
 }
 
 # Shared inputs: anything here can change every package's result.
-# AFFECTED_FULL=1 forces a full run (pushes to main, merge queue, manual runs).
+# AFFECTED_FULL=1 forces a full run (pushes to dev/main, merge queue, manual runs).
 full=false
 [ -n "${AFFECTED_FULL:-}" ] && full=true && echo "full run: AFFECTED_FULL" >&2
 [ "$full" = true ] || for f in "${changed[@]}"; do

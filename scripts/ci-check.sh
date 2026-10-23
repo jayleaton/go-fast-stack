@@ -105,19 +105,21 @@ SH
 }
 
 # A new migration must sit above every migration the deployed branches have
-# (scripts/check-migration-order.sh). Bases: HEAD^1 on PRs, the merge queue
-# and pushes (the target branch: the merge commit's base, or the branch's
-# previous commit, which catches two PRs that raced for one number), plus the
-# tip of each deployed branch other than the target itself.
+# (scripts/check-migration-order.sh): staging (dev) and production (main).
+# Bases: HEAD^1 on PRs, the merge queue and pushes (the target branch: the
+# merge commit's base, or the branch's previous commit, which catches two PRs
+# that raced for one number), plus the tip of each deployed branch other than
+# the target itself. A deployed branch the repo does not have is skipped.
 migration_order() {
   set -e
-  bases=()
+  . scripts/branches.sh
+  bases=() refspecs=()
   case $EVENT in pull_request | merge_group | push) bases+=(HEAD^1) ;; esac
-  for branch in main; do
+  for branch in $(git ls-remote --heads origin "${DEPLOY_BRANCHES[@]}" | sed 's|.*refs/heads/||'); do
     [ "$branch" = "$TARGET" ] && continue
-    git fetch -q --no-tags --depth=1 origin "+refs/heads/$branch:refs/remotes/origin/$branch"
-    bases+=("origin/$branch")
+    refspecs+=("+refs/heads/$branch:refs/remotes/origin/$branch") bases+=("origin/$branch")
   done
+  [ "${#refspecs[@]}" -eq 0 ] || git fetch -q --no-tags --depth=1 origin "${refspecs[@]}"
   if [ "${#bases[@]}" -eq 0 ]; then echo "no base to compare with ($EVENT on $TARGET)"; return; fi
   echo "bases: ${bases[*]}"
   ./scripts/check-migration-order.sh "${bases[@]}"
