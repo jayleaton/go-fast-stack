@@ -9,8 +9,8 @@
 #              exists), with the binaries' own `migrate`, as pre-deploy does.
 #   3. boot    both with APP_ENV=production and only the config production
 #              requires (no Doppler, no optional integrations; a dummy
-#              RESEND_API_KEY, which production requires) and wait for
-#              /healthz 200.
+#              RESEND_API_KEY and a FROM_EMAIL off the example domains, which
+#              production requires; nothing is sent) and wait for /healthz 200.
 #
 # Env: SMOKE_DATABASE_URL, SMOKE_ADMIN_DATABASE_URL   empty databases to use
 #      (`make release-smoke` and CI create them); SMOKE_BOOT_SECONDS,
@@ -25,6 +25,9 @@ readonly default_admin_port=3391
 readonly poll_seconds=0.2 # between /healthz attempts
 readonly http_ok=200
 readonly log_tail_lines=40 # of a failed app's log
+# Production refuses an unset or example.com sender; nothing is ever sent
+# (the Resend key is a dummy), so any unreserved domain will do.
+readonly smoke_from_email=release-smoke@go-fast-stack.dev
 
 app_db=${SMOKE_DATABASE_URL:?SMOKE_DATABASE_URL: an empty database for the web app}
 admin_db=${SMOKE_ADMIN_DATABASE_URL:-}
@@ -75,10 +78,11 @@ done
 admin=false
 [ -x "$work/admin" ] && [ -n "$admin_db" ] && admin=true
 web_env=(APP_ENV=production PORT="$web_port" PUBLIC_URL="http://127.0.0.1:$web_port"
-  DATABASE_URL="$app_db" AUTH_SECRET=release-smoke-web-auth-secret-0123456789 RESEND_API_KEY=re_release_smoke_unused)
+  DATABASE_URL="$app_db" AUTH_SECRET=release-smoke-web-auth-secret-0123456789 RESEND_API_KEY=re_release_smoke_unused
+  FROM_EMAIL="$smoke_from_email")
 admin_env=(APP_ENV=production ADMIN_PORT="$admin_port" ADMIN_PUBLIC_URL="http://127.0.0.1:$admin_port"
   DATABASE_URL="$app_db" ADMIN_DATABASE_URL="$admin_db" ADMIN_AUTH_SECRET=release-smoke-admin-auth-secret-0123456789
-  RESEND_API_KEY=re_release_smoke_unused)
+  RESEND_API_KEY=re_release_smoke_unused FROM_EMAIL="$smoke_from_email")
 run() { env -i PATH="$PATH" HOME="$HOME" "$@"; }
 step migrate
 run "${web_env[@]}" "$work/server" migrate >"$work/web-migrate.log" 2>&1 ||
