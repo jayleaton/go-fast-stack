@@ -448,7 +448,7 @@ func (s *setup) rotateDatabases(ctx context.Context, env string) error {
 			return err
 		}
 		if s.usesDoppler(vars) {
-			s.say("  ! %s/%s reads DATABASE_URL from Doppler: if it uses the superuser, update it there (README: rotate the database password)", env, svc)
+			s.say("  ! %s/%s reads DATABASE_URL from Doppler: if it uses the superuser, update it there (docs/secrets.md: rotate the database password)", env, svc)
 			continue
 		}
 		if _, err := s.rw.output(ctx, nil, "redeploy", "--service", svc, "--environment", env, "--yes"); err != nil {

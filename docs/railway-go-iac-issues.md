@@ -187,7 +187,7 @@ A template that only talks to Postgres over the private network still gets a pub
 
 **Expected.** `railway.Postgres(name, railway.DatabaseOptions{Public: false, Limits: ...})`, with the compiler honouring `deploy.limitOverride` and an explicit `tcpProxies` for databases.
 
-**Workaround here.** None. It is documented in README "Deploy to Railway". Remove the proxy in the dashboard if your policy requires it; IaC does not re-add it after creation (not verified).
+**Workaround here.** None. It is documented in [deploy.md](deploy.md#cost). Remove the proxy in the dashboard if your policy requires it; IaC does not re-add it after creation (not verified).
 
 ## 13. cli: sealed variables and generated service domains cannot be declared
 

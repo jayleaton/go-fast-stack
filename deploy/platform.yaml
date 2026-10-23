@@ -3,7 +3,7 @@
 #   make railway-apply   # create or update the project to match
 # Re-running converges; changing a value here updates every environment.
 # Removing things (admin: false after true, an environment) never deletes
-# anything unless you pass CONFIRM_DESTRUCTIVE=1. See README "Deploy to Railway".
+# anything unless you pass CONFIRM_DESTRUCTIVE=1. See docs/deploy.md.
 version: 1
 
 # Railway project name: created on the first apply if it does not exist,
@@ -60,7 +60,7 @@ email:
 
 # admin_bootstrap_email: you@example.com   # first admin, seeded by `admin migrate`
 
-# Nightly database backups (README "Backups and restore"): a small cron
+# Nightly database backups (docs/backups.md): a small cron
 # service, backup, dumps the app database (pg_dump, compressed), encrypts it
 # with BACKUP_ENCRYPTION_KEY (generated; keep a copy outside Railway) and
 # stores it in a Railway storage bucket, then prunes. Restore: make
@@ -74,7 +74,7 @@ backups:
   region: ""              # bucket region: sjc, iad, ams, sin ("": nearest region:, else sjc)
   # railway: a Railway storage bucket (no other account). external: your own
   # S3-compatible bucket off Railway (Cloudflare R2, Backblaze B2, AWS S3);
-  # set backup/BACKUP_S3_* yourself (README "Backups and restore").
+  # set backup/BACKUP_S3_* yourself (docs/backups.md).
   storage: railway
 
 # Per-service caps (per replica). Railway bills actual usage, so caps only
