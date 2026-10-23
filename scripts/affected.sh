@@ -15,6 +15,8 @@
 #   sqlc=true|false     sqlc inputs or output changed
 #   templ=true|false    .templ files or their output changed
 #   generate=<dirs>     packages whose //go:generate inputs or outputs changed
+#   smoke=true|false    the release smoke must run (scripts/release-smoke.sh):
+#                       a Dockerfile changed, or a package one builds is affected
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -58,6 +60,7 @@ if [ "$full" = true ]; then
   out sqlc true
   out templ true
   out generate ./...
+  out smoke true
   exit 0
 fi
 
@@ -143,3 +146,17 @@ out dirs "$(tr '\n' ' ' <<<"$dirs" | sed 's/ *$//')"
 out sqlc "$sqlc"
 out templ "$templ"
 out generate "$(sed 's/ *$//' <<<"$generate")"
+
+# Release smoke: a Dockerfile changed, or a binary one builds is affected
+# (affected already holds every package that compiles against a change).
+# Test files and testdata never reach a binary, so they alone do not count.
+smoke=false build_inputs=false
+for file in "${changed[@]}"; do
+  case $file in *_test.go | */testdata/*) ;; *) build_inputs=true ;; esac
+done
+[ "$build_inputs" = true ] && while IFS=$'\x1f' read -r dockerfile _ _ _ build_package; do
+  [ -n "$dockerfile" ] || continue
+  for file in "${changed[@]}"; do [ "$file" != "$dockerfile" ] || smoke=true; done
+  [ -z "${affected[$mod/${build_package#./}]:-}" ] || smoke=true
+done < <(./scripts/dockerfile-builds.sh)
+out smoke "$smoke"

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The CI checks, run as parallel tasks inside one job (.github/actions/check):
-# lint, migration order, generated code, tests, the deploy/ module and the
-# mobile app each run in the background with their own log, then the probes
+# lint, migration order, generated code, tests, the release smoke, the deploy/
+# module and the mobile app each run in the background with their own log, then the probes
 # (which plant files in the tree, so nothing else may be reading it) run once
 # all of them are done.
 # Each task's log is printed as one collapsed group, failures expanded.
@@ -14,10 +14,17 @@
 #   FULL      true: shared inputs changed, also run the probes
 #   SQLC TEMPL GENERATE   generators to rerun (scripts/affected.sh)
 #   MOBILE DEPLOY         true: check apps/mobile-app / the deploy/ module
+#   SMOKE                 true: the release smoke (scripts/release-smoke.sh)
 #   EVENT TARGET          the GitHub event and the branch it targets (the PR's
 #                         base, else the pushed or dispatched ref): migration order
 set -uo pipefail
 cd "$(dirname "$0")/.."
+
+# The job's Postgres (started by the check action) and how long to wait for
+# it: 2x its measured boot (12-22 s), at most 45 s.
+readonly pg_server=postgres://postgres:postgres@127.0.0.1:5432
+readonly pg_wait_seconds=0.25
+readonly pg_wait_attempts=180
 
 tmp=${RUNNER_TEMP:-$(mktemp -d)}/ci-check
 rm -rf "$tmp" && mkdir -p "$tmp" .cache
@@ -125,6 +132,24 @@ migration_order() {
   ./scripts/check-migration-order.sh "${bases[@]}"
 }
 
+# Builds every Dockerfile's binary as its image does, migrates fresh
+# databases on this job's Postgres and boots web + admin in production mode.
+# Waits for Postgres like the DB tests do (it boots while the build runs).
+smoke() {
+  set -e
+  local attempt
+  for attempt in $(seq 1 "$pg_wait_attempts"); do
+    docker exec pg pg_isready -q -h 127.0.0.1 -U postgres 2>/dev/null && break
+    sleep "$pg_wait_seconds"
+  done
+  echo "postgres ready after $attempt checks"
+  local database
+  for database in smoke_app smoke_admin; do docker exec pg createdb -U postgres "$database"; done
+  SMOKE_DATABASE_URL="$pg_server/smoke_app?sslmode=disable" \
+    SMOKE_ADMIN_DATABASE_URL="$pg_server/smoke_admin?sslmode=disable" \
+    ./scripts/release-smoke.sh
+}
+
 deploy_mod() {
   set -e
   cd deploy
@@ -149,6 +174,7 @@ mobile() {
 [ "$MODE" != other ] && [ -n "${EVENT:-}" ] && start migrations migration_order
 [ "$MODE" != other ] && { [ "${SQLC:-}" = true ] || [ "${TEMPL:-}" = true ] || [ -n "${GENERATE:-}" ]; } && start generated generated
 [ -n "${TESTS:-}" ] && start test test_go
+[ "$MODE" != db ] && [ "${SMOKE:-}" = true ] && start smoke smoke
 [ "${DEPLOY:-}" = true ] && start deploy deploy_mod
 [ "${MOBILE:-}" = true ] && start mobile mobile
 wait "${pids[@]}" 2>/dev/null
