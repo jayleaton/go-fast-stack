@@ -65,7 +65,7 @@ while IFS='=' read -r k v; do
 done <<<"$aff"
 deploy=false
 for f in "${changed[@]}"; do
-  case $f in deploy/* | .golangci.yml | tools/*) deploy=true ;; esac
+  case $f in deploy/* | .golangci.yml | tools/* | .env.example | Makefile) deploy=true ;; esac # deploy-vars reads .env.example and the Makefile
 done
 [ "$full" = true ] && deploy=true
 done_
@@ -149,9 +149,9 @@ if [ "${#pkgs[@]}" -gt 0 ]; then
 fi
 
 if [ "$deploy" = true ] && [ -d deploy ]; then
-  step "deploy/ vet, lint, names"
+  step "deploy/ vet, lint, names, vars"
   if ! out=$(mkdir -p .cache && "$GO" build -o .cache/namelint ./scripts/namelint 2>&1 &&
-    cd deploy && { "$GO" vet ./... && "$GO" tool -modfile=../tools/go.mod golangci-lint run -c ../.golangci.yml ./... && ../.cache/namelint ./...; } 2>&1); then
+    cd deploy && { "$GO" vet ./... && "$GO" tool -modfile=../tools/go.mod golangci-lint run -c ../.golangci.yml ./... && ../.cache/namelint ./... && cd .. && make --no-print-directory deploy-vars >/dev/null; } 2>&1); then
     done_
     echo "$out" | grep -vE '^(ok|\?) ' | sed 's/^/  /'
     fail deploy

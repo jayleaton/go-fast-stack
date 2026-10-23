@@ -183,6 +183,7 @@ deploy_mod() {
   (cd .railway && go vet railway.go)
   golangci-lint run --allow-parallel-runners -c ../.golangci.yml ./...
   "$tmp/namelint" ./...
+  cd .. && make --no-print-directory deploy-vars
 }
 
 # node_modules comes from the cache keyed by the lockfile (see the action);

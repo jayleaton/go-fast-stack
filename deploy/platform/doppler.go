@@ -69,6 +69,14 @@ var (
 		{"AUTH_SECRET_PREVIOUS", IfOnRailway},
 		{"AUTH_SECRET_REVOKED", IfOnRailway},
 		{"RESEND_API_KEY", RailwayOrResend},
+		// Optional features: seeded only when set on Railway.
+		{"GOOGLE_CLIENT_SECRET", IfOnRailway},
+		{"APPLE_PRIVATE_KEY", IfOnRailway},
+		{"APPLE_KEY_ID", IfOnRailway}, // not secret, but rotates with the key
+		{"STORAGE_S3_ENDPOINT", IfOnRailway},
+		{"STORAGE_S3_BUCKET", IfOnRailway}, // the scoped keys work for one bucket, so it rotates with them
+		{"STORAGE_S3_ACCESS_KEY_ID", IfOnRailway},
+		{"STORAGE_S3_SECRET_ACCESS_KEY", IfOnRailway},
 	}
 	// adminDoppler lives in the admin branch config, which the web token
 	// cannot read.

@@ -205,6 +205,16 @@ func (config Config) Build(env string) (Project, error) {
 	for _, secretVar := range config.SecretVars() {
 		ignore = append(ignore, secretVar.Service+"/"+secretVar.Name)
 	}
+	// Doppler-owned secrets are setup's, never IaC's: kept while a service
+	// still reads Railway, removed by setup once it reads Doppler (never by
+	// an apply that could run before the switch).
+	for _, service := range config.PublicServices() {
+		for _, name := range RailwayCopies(service) {
+			if pattern := service + "/" + name; !slices.Contains(ignore, pattern) {
+				ignore = append(ignore, pattern)
+			}
+		}
+	}
 	// A pattern scoped to a service this environment does not have is an
 	// error to Railway, not a no-op (docs/railway-go-iac-issues.md #18):
 	// keep only the ones whose service is in the graph.
