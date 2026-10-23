@@ -108,12 +108,29 @@ func policyCalls(p ports, policy services.Policy) map[string]func(services.Actor
 			_, _, err := admins.Bootstrap(ctx, a, invite)
 			return err
 		},
+		"AdminService.SendPasswordReset": func(a services.Actor) error { return admins.SendPasswordReset(ctx, a, "a2") },
+		"AdminService.ResetTwoFactor":    func(a services.Actor) error { return admins.ResetTwoFactor(ctx, a, "a2") },
+		"AdminService.ResetTwoFactorByEmail": func(a services.Actor) error {
+			_, err := admins.ResetTwoFactorByEmail(ctx, a, validate.ResetAdminTwoFactor{Email: "bob@example.com"})
+			return err
+		},
+		"AdminService.InviteBootstrapAdmin": func(a services.Actor) error {
+			_, err := admins.InviteBootstrapAdmin(ctx, a, pending)
+			return err
+		},
 		"AuditService.List": func(a services.Actor) error {
 			_, err := auditSvc.List(ctx, a, validate.ListAuditLog{Limit: 25})
 			return err
 		},
 		"AnalyticsService.Overview": func(a services.Actor) error { _, err := analytics.Overview(ctx, a); return err },
 	}
+}
+
+// operatorOnly are the methods only services.SystemActor (the CLI) may call.
+var operatorOnly = map[string]bool{
+	"AdminService.Bootstrap":             true,
+	"AdminService.InviteBootstrapAdmin":  true,
+	"AdminService.ResetTwoFactorByEmail": true,
 }
 
 // Every method refuses before touching a port: the mocks have no
@@ -129,8 +146,8 @@ func TestServicesRefuseUnauthorizedActors(t *testing.T) {
 			noTwoFactor := grace
 			noTwoFactor.TwoFactorEnabled = false
 			err := call(noTwoFactor)
-			if name == "AdminService.Bootstrap" {
-				wantErr(t, err, services.ErrForbidden) // only the operator bootstraps
+			if operatorOnly[name] {
+				wantErr(t, err, services.ErrForbidden) // only the operator calls these
 				wantErr(t, call(grace), services.ErrForbidden)
 				return
 			}
@@ -365,6 +382,69 @@ func mutations() []mutation {
 			},
 			call:    func(p ports) error { return admins(p).RemoveAdmin(ctx, grace, "a2") },
 			refusal: fmt.Errorf("delete: %w", services.ErrRecordNotFound), want: services.ErrAdminNotFound,
+		},
+		{
+			name:   "SendPasswordReset",
+			intent: adminAudit(grace, "admin.password_reset", nil),
+			reads: func(p ports) []any {
+				return []any{p.accounts.EXPECT().AdminByID(ctx, "a2").Return(bob, nil)}
+			},
+			change: func(p ports, err error) []any {
+				return []any{p.accounts.EXPECT().SendSetPasswordLink(ctx, "a2").Return(err)}
+			},
+			call:    func(p ports) error { return admins(p).SendPasswordReset(ctx, grace, "a2") },
+			refusal: services.ErrRecordNotFound, want: services.ErrAdminNotFound, // removed meanwhile
+		},
+		{
+			name:   "ResetTwoFactor",
+			intent: adminAudit(grace, "admin.reset_two_factor", nil),
+			reads: func(p ports) []any {
+				return []any{p.accounts.EXPECT().AdminByID(ctx, "a2").Return(bob2fa, nil)}
+			},
+			change: func(p ports, err error) []any {
+				return []any{p.accounts.EXPECT().ResetTwoFactor(ctx, "a2").Return(err)}
+			},
+			call:    func(p ports) error { return admins(p).ResetTwoFactor(ctx, grace, "a2") },
+			refusal: fmt.Errorf("reset: %w", services.ErrRecordNotFound), want: services.ErrAdminNotFound,
+		},
+		{
+			name:   "ResetTwoFactorByEmail",
+			intent: adminAudit(cli, "admin.reset_two_factor", nil),
+			reads: func(p ports) []any {
+				return []any{
+					p.accounts.EXPECT().AdminByEmail(ctx, "bob@example.com").Return(bob2fa, nil),
+					p.accounts.EXPECT().AdminByID(ctx, "a2").Return(bob2fa, nil),
+				}
+			},
+			change: func(p ports, err error) []any {
+				return []any{p.accounts.EXPECT().ResetTwoFactor(ctx, "a2").Return(err)}
+			},
+			call: func(p ports) error {
+				_, err := admins(p).ResetTwoFactorByEmail(ctx, cli, validate.ResetAdminTwoFactor{Email: "bob@example.com"})
+				return err
+			},
+			refusal: services.ErrRecordNotFound, want: services.ErrAdminNotFound,
+		},
+		{
+			name:   "InviteBootstrapAdmin",
+			intent: adminAudit(cli, "admin.invite", map[string]string{}),
+			reads: func(p ports) []any {
+				return []any{
+					p.log.EXPECT().List(ctx, priorInvite).Return(services.AuditPage{}, nil),
+					p.log.EXPECT().List(ctx, priorEmailInvite).Return(services.AuditPage{}, nil),
+				}
+			},
+			change: func(p ports, err error) []any {
+				return []any{p.accounts.EXPECT().SendSetPasswordLink(ctx, "a2").Return(err)}
+			},
+			call: func(p ports) error {
+				sent, err := admins(p).InviteBootstrapAdmin(ctx, cli, pending)
+				if sent != (err == nil) {
+					return fmt.Errorf("sent = %v with err %v", sent, err)
+				}
+				return err
+			},
+			refusal: services.ErrRecordNotFound, want: services.ErrAdminNotFound,
 		},
 		{
 			// Bootstrap targets the email, acting as the operator.

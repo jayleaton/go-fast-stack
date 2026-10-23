@@ -83,6 +83,14 @@ func (u *UI) removeAdmin(w http.ResponseWriter, r *http.Request) {
 	u.adminAction(w, r, "pages.admins.status.removed", u.admins.RemoveAdmin)
 }
 
+func (u *UI) sendAdminPasswordReset(w http.ResponseWriter, r *http.Request) {
+	u.adminAction(w, r, "pages.admins.status.passwordReset", u.admins.SendPasswordReset)
+}
+
+func (u *UI) resetAdminTwoFactor(w http.ResponseWriter, r *http.Request) {
+	u.adminAction(w, r, "pages.admins.status.twoFactorReset", u.admins.ResetTwoFactor)
+}
+
 // adminAction runs one mutation on the admin in the path. A Datastar request
 // gets the refreshed admins table plus a status alert (or just an error
 // alert); a plain post gets a 303 back to the admins page, or the full page

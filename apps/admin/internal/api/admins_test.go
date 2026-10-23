@@ -62,6 +62,22 @@ var adminRoutes = map[string]route{
 		},
 		check: wantSuccess,
 	},
+	"POST admin password reset": {
+		method: "POST", path: config.AdminPath("a2", "/password-reset"),
+		errs: []svcErr{adminNotFound, {services.ErrAdminPending, 400, services.ErrAdminPending.Message}, {services.ErrAdminSelfReset, 400, services.ErrAdminSelfReset.Message}, unavailable},
+		expect: func(m svcs, err error) {
+			m.admins.SendPasswordReset(anyCtx, actor, "a2").Return(err)
+		},
+		check: wantSuccess,
+	},
+	"POST admin two-factor reset": {
+		method: "POST", path: config.AdminPath("a2", "/two-factor/reset"),
+		errs: []svcErr{adminNotFound, {services.ErrAdminNoTwoFactor, 400, services.ErrAdminNoTwoFactor.Message}, {services.ErrAdminSelfReset, 400, services.ErrAdminSelfReset.Message}, unavailable},
+		expect: func(m svcs, err error) {
+			m.admins.ResetTwoFactor(anyCtx, actor, "a2").Return(err)
+		},
+		check: wantSuccess,
+	},
 	"DELETE admin": {
 		method: "DELETE", path: config.AdminPath("a2", ""), errs: []svcErr{adminNotFound, adminSelf, lastAdmin, unavailable},
 		expect: func(m svcs, err error) {

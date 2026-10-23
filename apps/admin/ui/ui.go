@@ -87,6 +87,10 @@ func (u *UI) Routes(mux Mux) {
 	action("POST "+p.Login, u.login)
 	page("GET "+p.SetPassword, u.setPasswordPage)
 	action("POST "+p.SetPassword, u.setPassword)
+	page("GET "+p.ForgotPassword, u.forgotPasswordPage)
+	action("POST "+p.ForgotPassword, u.forgotPassword)
+	page("GET "+p.ResetPassword, u.resetPasswordPage)
+	action("POST "+p.ResetPassword, u.resetPassword)
 	page("GET "+p.TwoFactor, u.twoFactorPage)
 	action("POST "+p.TwoFactor, u.twoFactor)
 	page("GET "+p.TwoFactorSetup, u.twoFactorSetupPage)
@@ -105,6 +109,8 @@ func (u *UI) Routes(mux Mux) {
 	action("POST "+routes.AdminDisable, u.disableAdmin)
 	action("POST "+routes.AdminEnable, u.enableAdmin)
 	action("POST "+routes.AdminRemove, u.removeAdmin)
+	action("POST "+routes.AdminPasswordReset, u.sendAdminPasswordReset)
+	action("POST "+routes.AdminResetTwoFactor, u.resetAdminTwoFactor)
 	page("GET "+p.Audit, u.auditPage)
 	page("GET "+p.Analytics, u.analyticsPage)
 
@@ -261,6 +267,9 @@ var errorKeys = []struct {
 	{services.ErrLastAdmin, "errors.lastAdmin"},
 	{services.ErrAdminDisabled, "errors.adminDisabled"},
 	{services.ErrAdminNotDisabled, "errors.adminNotDisabled"},
+	{services.ErrAdminPending, "errors.adminPending"},
+	{services.ErrAdminNoTwoFactor, "errors.adminNoTwoFactor"},
+	{services.ErrAdminSelfReset, "errors.adminSelfReset"},
 	{services.ErrTwoFactorRequired, "errors.twoFactorRequired"},
 	{services.ErrAuditUnavailable, "errors.auditUnavailable"},
 	{services.ErrForbidden, "errors.forbidden"},

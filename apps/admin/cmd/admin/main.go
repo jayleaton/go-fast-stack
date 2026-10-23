@@ -4,6 +4,11 @@
 //	admin serve           run the HTTP server (default)
 //	admin migrate         migrate the admin database (auth, then audit log) and seed ADMIN_BOOTSTRAP_EMAIL
 //	admin invite <email>  email a set-password link to a new or pending admin
+//	admin reset-2fa <email>  remove an admin's 2FA (the last admin lost the authenticator and backup codes)
+//
+// Each subcommand is this static binary alone: nothing runs a shell, so the
+// same commands work in the distroless image (as the pre-deploy command) or
+// copied next to a shell (README "Locked out of the admin app").
 package main
 
 import (
@@ -32,7 +37,7 @@ import (
 
 const shutdownTimeout = 15 * time.Second
 
-const usage = "usage: admin [serve | migrate | invite <email>]"
+const usage = "usage: admin [serve | migrate | invite <email> | reset-2fa <email>]"
 
 func main() {
 	args := os.Args[1:]
@@ -42,7 +47,7 @@ func main() {
 	}
 	switch {
 	case cmd == "serve" || cmd == "migrate":
-	case cmd == "invite" && len(args) == 2:
+	case (cmd == "invite" || cmd == "reset-2fa") && len(args) == 2:
 	default:
 		fmt.Fprintln(os.Stderr, usage)
 		os.Exit(2)
@@ -72,6 +77,8 @@ func main() {
 		err = migrate(ctx, cfg, log)
 	case "invite":
 		err = invite(ctx, cfg, log, args[1])
+	case "reset-2fa":
+		err = resetTwoFactor(ctx, cfg, log, args[1])
 	default:
 		err = serve(ctx, cfg, log)
 	}
@@ -84,7 +91,8 @@ func main() {
 
 // migrate runs the admin database's migrations: the admin auth instance's
 // tables, then the audit log. The app database is the web service's to
-// migrate. Then it seeds ADMIN_BOOTSTRAP_EMAIL (idempotent).
+// migrate. Then it seeds ADMIN_BOOTSTRAP_EMAIL and emails its invite once
+// (idempotent), so the first admin needs no shell in the image.
 func migrate(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	url, err := cfg.Secrets.AdminDatabaseURL()
 	if err != nil {
@@ -115,14 +123,24 @@ func migrate(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		return fmt.Errorf("ADMIN_BOOTSTRAP_EMAIL: %w", err)
 	}
 	svc := services.NewAdminService(server.NewAdminAccounts(admins, adminrepo.NewAdmins(adminPool)), adminrepo.NewAuditLog(adminPool), policy(cfg))
-	a, created, err := svc.Bootstrap(ctx, services.SystemActor("bootstrap"), in)
+	actor := services.SystemActor("bootstrap")
+	a, created, err := svc.Bootstrap(ctx, actor, in)
+	sent := false
+	if err == nil {
+		sent, err = svc.InviteBootstrapAdmin(ctx, actor, a)
+	}
+	// Let a queued invite email go out before the pre-deploy command exits.
+	if serr := admins.Shutdown(ctx); err == nil {
+		err = serr
+	}
 	if err != nil {
 		return err
 	}
-	if created {
-		log.Info("bootstrap admin created; send its set-password link with `admin invite`", "email", a.Email)
+	if created || sent {
+		log.Info("bootstrap admin", "email", a.Email, "created", created, "invite_sent", sent,
+			"set_password_page", config.Absolute(cfg.PublicURL, config.AppRoutes.SetPassword))
 	}
-	return admins.Shutdown(ctx)
+	return nil
 }
 
 // invite emails a set-password link (the dev mailer logs it). The operator
@@ -156,6 +174,38 @@ func invite(ctx context.Context, cfg config.Config, log *slog.Logger, email stri
 	}
 	log.Info("invite sent", "email", a.Email, "set_password_page", config.Absolute(cfg.PublicURL, config.AppRoutes.SetPassword))
 	return nil
+}
+
+// resetTwoFactor removes an admin's 2FA (TOTP, backup codes, trusted
+// devices) as services.SystemActor("cli"), audited like the Admins page's
+// "Reset 2FA": the recovery when no other admin can sign in to do it. It
+// needs the target's exact email; the admin enrols again at the next sign-in.
+func resetTwoFactor(ctx context.Context, cfg config.Config, log *slog.Logger, email string) error {
+	in := validate.ResetAdminTwoFactor{Email: email}
+	if err := in.Validate(); err != nil {
+		return err
+	}
+	url, err := cfg.Secrets.AdminDatabaseURL()
+	if err != nil {
+		return err
+	}
+	adminPool, err := database.Open(ctx, reveal.Value(url))
+	if err != nil {
+		return err
+	}
+	defer adminPool.Close()
+	admins, err := newAdminAuth(ctx, cfg, adminPool, nil, log)
+	if err != nil {
+		return err
+	}
+	accounts := server.NewAdminAccounts(admins, adminrepo.NewAdmins(adminPool))
+	svc := services.NewAdminService(accounts, adminrepo.NewAuditLog(adminPool), policy(cfg))
+	a, err := svc.ResetTwoFactorByEmail(ctx, services.SystemActor("cli"), in)
+	if err != nil {
+		return fmt.Errorf("reset-2fa %s: %w", in.Email, err)
+	}
+	log.Info("two-factor authentication removed; the admin enrols again at the next sign-in", "email", a.Email)
+	return admins.Shutdown(ctx)
 }
 
 func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {

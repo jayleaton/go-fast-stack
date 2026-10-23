@@ -19,6 +19,10 @@ const (
 	AdminDisable    = "/admins/{id}/disable"
 	AdminEnable     = "/admins/{id}/enable"
 	AdminRemove     = "/admins/{id}/remove"
+	// AdminPasswordReset emails another admin a reset link;
+	// AdminResetTwoFactor removes their 2FA.
+	AdminPasswordReset  = "/admins/{id}/password-reset"
+	AdminResetTwoFactor = "/admins/{id}/two-factor/reset"
 )
 
 // User returns the concrete path of a user action pattern for id
@@ -33,7 +37,8 @@ func Session(userID, sessionID string) string {
 }
 
 // Admin returns the concrete path of an admin action pattern for id
-// (AdminDisable, AdminEnable, AdminRemove).
+// (AdminDisable, AdminEnable, AdminRemove, AdminPasswordReset,
+// AdminResetTwoFactor).
 func Admin(pattern, id string) string {
 	return "/admins/" + url.PathEscape(id) + pattern[len("/admins/{id}"):]
 }

@@ -86,6 +86,11 @@ type Auth interface {
 	SignIn(ctx context.Context, email, password string) (Session, error)
 	SignOut(ctx context.Context, sessionToken string) error
 	CompleteSetPassword(ctx context.Context, token, newPassword string) (Session, error)
+	// RequestPasswordReset emails a reset link (to config.AppRoutes.ResetPassword)
+	// if email belongs to an admin, pending or not, and returns nil either
+	// way, so the page cannot tell who is an admin. ErrTooManyRequests when
+	// rate limited. The link spends like an invite (CompleteSetPassword).
+	RequestPasswordReset(ctx context.Context, email string) error
 	// VerifyTwoFactor finishes sign-in (or SetupRequired enrolment) with the
 	// challenge from the request's two-factor cookie; trustToken is set when
 	// in.TrustDevice was asked for.

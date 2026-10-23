@@ -54,7 +54,8 @@
       "loginButton": "Sign in",
       "emailPlaceholder": "Enter your email",
       "passwordPlaceholder": "Enter your password",
-      "inviteOnly": "Access is by invitation. Ask an existing admin for an invite."
+      "inviteOnly": "Access is by invitation. Ask an existing admin for an invite.",
+      "forgotPassword": "Forgot password?"
     },
     "setPassword": {
       "title": "Set your password",
@@ -68,6 +69,19 @@
       "confirmPasswordPlaceholder": "Confirm your new password",
       "submit": "Set password",
       "saving": "Setting password..."
+    },
+    "resetPassword": {
+      "title": "Reset your password",
+      "description": "Choose a new password. Your other sessions end, and sign-in still asks for your second factor.",
+      "invalidLink": "This reset link is invalid or has expired. Ask for a new one.",
+      "submit": "Reset password"
+    },
+    "forgotPassword": {
+      "title": "Forgot your password?",
+      "description": "Enter your admin email and we'll send a link to choose a new password. It works for one hour.",
+      "submit": "Send reset link",
+      "sending": "Sending...",
+      "sent": "If that address belongs to an admin, a reset link is on its way."
     },
     "twoFactor": {
       "title": "Two-factor authentication",
@@ -194,10 +208,16 @@
       "status": {
         "disabled": "Admin disabled and signed out everywhere.",
         "enabled": "Admin enabled. They can sign in again.",
-        "removed": "Admin removed."
+        "removed": "Admin removed.",
+        "passwordReset": "Password reset link sent.",
+        "twoFactorReset": "2FA removed. They enrol again at their next sign-in."
       },
       "confirmRemoveTitle": "Remove this admin?",
-      "list": "Dashboard admins"
+      "list": "Dashboard admins",
+      "sendPasswordReset": "Send password reset",
+      "resetTwoFactor": "Reset 2FA",
+      "confirmResetTwoFactorTitle": "Reset this admin's 2FA?",
+      "confirmResetTwoFactor": "Remove two-factor authentication and backup codes for {0}? They enrol again at their next sign-in."
     },
     "audit": {
       "title": "Audit log",
@@ -224,7 +244,10 @@
         "adminRemove": "Removed admin",
         "adminSignIn": "Signed in",
         "adminSignOut": "Signed out",
-        "adminTwoFactorFailed": "Failed two-factor code"
+        "adminTwoFactorFailed": "Failed two-factor code",
+        "adminPasswordReset": "Sent password reset",
+        "adminResetTwoFactor": "Reset 2FA",
+        "adminBackupCodeUsed": "Used a backup code"
       },
       "signInMethod": "Method: {0}",
       "reason": "Reason: {0}",
@@ -293,6 +316,9 @@
     "lastAdmin": "The last active admin cannot be disabled or removed.",
     "adminDisabled": "This admin is already disabled.",
     "adminNotDisabled": "This admin is not disabled.",
-    "auditUnavailable": "The audit log is unavailable, so nothing was changed. Please try again later."
+    "auditUnavailable": "The audit log is unavailable, so nothing was changed. Please try again later.",
+    "adminPending": "This admin has not accepted the invite yet; send the invite again instead.",
+    "adminNoTwoFactor": "This admin has no two-factor authentication to reset.",
+    "adminSelfReset": "To recover your own account, use \"Forgot password?\" on the sign-in page or a backup code."
   }
 }

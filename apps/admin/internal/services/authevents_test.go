@@ -71,3 +71,16 @@ func TestTwoFactorFailed(t *testing.T) {
 	log.EXPECT().Append(ctx, gomock.Any()).Return(errDB)
 	wantInternal(t, svc.TwoFactorFailed(ctx, at, "a1", "grace@example.com", "INVALID_CODE"), errDB)
 }
+
+func TestBackupCodeUsed(t *testing.T) {
+	t.Parallel()
+	svc, log := newAuthEventService(t)
+
+	log.EXPECT().Append(ctx, selfAudit("a1", "grace@example.com", "admin.backup_code_used", nil)).Return(nil)
+	if err := svc.BackupCodeUsed(ctx, at, "a1", "grace@example.com"); err != nil {
+		t.Fatal(err)
+	}
+
+	log.EXPECT().Append(ctx, gomock.Any()).Return(errDB)
+	wantInternal(t, svc.BackupCodeUsed(ctx, at, "a1", "grace@example.com"), errDB)
+}

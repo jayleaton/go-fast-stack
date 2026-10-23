@@ -19,6 +19,8 @@ type AdminService interface {
 	DisableAdmin(ctx context.Context, actor services.Actor, adminID string) error
 	EnableAdmin(ctx context.Context, actor services.Actor, adminID string) error
 	RemoveAdmin(ctx context.Context, actor services.Actor, adminID string) error
+	SendPasswordReset(ctx context.Context, actor services.Actor, adminID string) error
+	ResetTwoFactor(ctx context.Context, actor services.Actor, adminID string) error
 }
 
 var _ AdminService = (*services.AdminService)(nil)
@@ -42,6 +44,8 @@ func (a *Admins) Routes(mux *http.ServeMux) {
 	mux.Handle("POST "+r.AdminDisable, Authenticated(a.caller, a.disable))
 	mux.Handle("POST "+r.AdminEnable, Authenticated(a.caller, a.enable))
 	mux.Handle("DELETE "+r.AdminByID, Authenticated(a.caller, a.remove))
+	mux.Handle("POST "+r.AdminPasswordReset, Authenticated(a.caller, a.passwordReset))
+	mux.Handle("POST "+r.AdminTwoFactorReset, Authenticated(a.caller, a.resetTwoFactor))
 }
 
 func (a *Admins) list(r *http.Request, c Caller) ([]services.Admin, error) {
@@ -68,5 +72,15 @@ func (a *Admins) enable(r *http.Request, c Caller) (Success, error) {
 
 func (a *Admins) remove(r *http.Request, c Caller) (Success, error) {
 	err := a.svc.RemoveAdmin(r.Context(), c.Actor(), r.PathValue("id"))
+	return Success{err == nil}, err
+}
+
+func (a *Admins) passwordReset(r *http.Request, c Caller) (Success, error) {
+	err := a.svc.SendPasswordReset(r.Context(), c.Actor(), r.PathValue("id"))
+	return Success{err == nil}, err
+}
+
+func (a *Admins) resetTwoFactor(r *http.Request, c Caller) (Success, error) {
+	err := a.svc.ResetTwoFactor(r.Context(), c.Actor(), r.PathValue("id"))
 	return Success{err == nil}, err
 }

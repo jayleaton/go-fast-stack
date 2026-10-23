@@ -98,6 +98,10 @@ func TestReconcileVerdicts(t *testing.T) {
 		{"user gone", "user.ban", "u1", nil, userGone, undecidable},
 		{"disable applied", "admin.disable", "a2", nil, adminByID(disBob), stateMatches},
 		{"disable not applied", "admin.disable", "a2", nil, adminByID(bob), stateDiffers},
+		{"reset 2fa applied", "admin.reset_two_factor", "a2", nil, adminByID(bob), stateMatches},
+		{"reset 2fa not applied", "admin.reset_two_factor", "a2", nil, adminByID(bob2fa), stateDiffers},
+		{"reset 2fa admin gone", "admin.reset_two_factor", "a2", nil, adminGone, undecidable},
+		{"password reset", "admin.password_reset", "a2", nil, nil, undecidable}, // an email cannot be read back
 		{"enable applied", "admin.enable", "a2", nil, adminByID(bob), stateMatches},
 		{"enable not applied", "admin.enable", "a2", nil, adminByID(disBob), stateDiffers},
 		{"disabled admin gone", "admin.disable", "a2", nil, adminGone, undecidable},

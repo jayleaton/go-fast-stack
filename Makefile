@@ -201,6 +201,11 @@ admin-invite: ## Send an admin set-password link: make admin-invite EMAIL=you@ex
 	@test -n "$(EMAIL)" || (echo 'usage: make admin-invite EMAIL=you@example.com' && exit 2)
 	$(GO) run ./apps/admin/cmd/admin invite $(EMAIL)
 
+.PHONY: admin-reset-2fa
+admin-reset-2fa: ## Remove an admin's 2FA when nobody else can (audited): make admin-reset-2fa EMAIL=you@example.com
+	@test -n "$(EMAIL)" || (echo 'usage: make admin-reset-2fa EMAIL=you@example.com' && exit 2)
+	$(GO) run ./apps/admin/cmd/admin reset-2fa $(EMAIL)
+
 .PHONY: admin-build
 admin-build: ## Build the admin static binary into bin/admin
 	CGO_ENABLED=0 $(GO) build -trimpath -ldflags='-s -w' -o $(ADMIN_BIN) ./apps/admin/cmd/admin

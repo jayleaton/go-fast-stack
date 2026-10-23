@@ -9,7 +9,7 @@ import (
 )
 
 // NewAuditEvents is the admin auth instance's auth.Config.Events: it audits
-// admin sign-ins, sign-outs and refused second-factor codes. Each event names
+// admin sign-ins, sign-outs, refused second-factor codes and spent backup codes. Each event names
 // its admin (for 2FA, the admin of the pending sign-in), so attribution is
 // exact however many admin instances run against the database, and it covers
 // every path (UI and JSON auth endpoints) without wrapping them.
@@ -29,6 +29,11 @@ func NewAuditEvents(svc *services.AuthEventService, log *slog.Logger) auth.Event
 				return // no valid pending sign-in: there is no admin to attribute it to
 			}
 			err = svc.TwoFactorFailed(ctx, e.At, e.UserID, e.Email, e.Reason)
+		case auth.EventTwoFactorSucceeded:
+			if e.Method != auth.TwoFactorMethodBackup {
+				return // TOTP codes are covered by the sign-in they complete
+			}
+			err = svc.BackupCodeUsed(ctx, e.At, e.UserID, e.Email)
 		default:
 			return
 		}

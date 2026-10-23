@@ -46,6 +46,9 @@ type AdminAccounts interface {
 	// SendSetPasswordLink emails a single-use set-password link; using it
 	// may continue into 2FA enrolment.
 	SendSetPasswordLink(ctx context.Context, adminID string) error
+	// ResetTwoFactor removes the admin's TOTP enrolment, backup codes and
+	// trusted devices; with 2FA required they enrol again at next sign-in.
+	ResetTwoFactor(ctx context.Context, adminID string) error
 }
 
 // Audit actions on admins.
@@ -55,6 +58,12 @@ const (
 	ActionAdminDisable   = "admin.disable"
 	ActionAdminEnable    = "admin.enable"
 	ActionAdminRemove    = "admin.remove"
+	// ActionAdminPasswordReset emails another admin a link to choose a new
+	// password (their other sessions end when it is used).
+	ActionAdminPasswordReset = "admin.password_reset"
+	// ActionAdminResetTwoFactor removes an admin's 2FA (lost authenticator
+	// and backup codes), from the Admins page or `admin reset-2fa`.
+	ActionAdminResetTwoFactor = "admin.reset_two_factor"
 )
 
 // AdminService errors.
@@ -65,6 +74,9 @@ var (
 	ErrLastAdmin        = &Error{KindConflict, "The last active admin cannot be disabled or removed"}
 	ErrAdminDisabled    = &Error{KindInvalid, "This admin is already disabled"}
 	ErrAdminNotDisabled = &Error{KindInvalid, "This admin is not disabled"}
+	ErrAdminPending     = &Error{KindInvalid, "This admin has not accepted the invite yet; send the invite again instead"}
+	ErrAdminNoTwoFactor = &Error{KindInvalid, "This admin has no two-factor authentication to reset"}
+	ErrAdminSelfReset   = &Error{KindInvalid, "Use \"Forgot password?\" on the sign-in page or a backup code to recover your own account"}
 )
 
 // AdminService manages who can use the dashboard. Only admins invite admins
@@ -192,6 +204,79 @@ func (s *AdminService) RemoveAdmin(ctx context.Context, actor Actor, adminID str
 	})
 }
 
+// SendPasswordReset emails another admin a single-use link to choose a new
+// password (they can also ask for it themselves on the sign-in page). Using
+// it ends their other sessions; sign-in still asks for the second factor. A
+// pending admin gets the invite again instead (InviteAdmin).
+func (s *AdminService) SendPasswordReset(ctx context.Context, actor Actor, adminID string) error {
+	a, err := s.recoverable(ctx, actor, adminID)
+	if err != nil {
+		return err
+	}
+	return mutate(ctx, s.log, actor, adminEntry(ActionAdminPasswordReset, a, nil), func() error {
+		return adminMissing(s.accounts.SendSetPasswordLink(ctx, a.ID))
+	})
+}
+
+// ResetTwoFactor removes another admin's 2FA, for an admin who lost both the
+// authenticator and the backup codes. They enrol again at their next sign-in
+// (ADMIN_REQUIRE_2FA) and Policy refuses them until they do. The operator
+// (SystemActor, `admin reset-2fa`) uses it when no admin is left to do it.
+func (s *AdminService) ResetTwoFactor(ctx context.Context, actor Actor, adminID string) error {
+	a, err := s.recoverable(ctx, actor, adminID)
+	if err != nil {
+		return err
+	}
+	if !a.TwoFactorEnabled {
+		return ErrAdminNoTwoFactor
+	}
+	return mutate(ctx, s.log, actor, adminEntry(ActionAdminResetTwoFactor, a, nil), func() error {
+		return adminMissing(s.accounts.ResetTwoFactor(ctx, a.ID))
+	})
+}
+
+// ResetTwoFactorByEmail is ResetTwoFactor for the operator (`admin
+// reset-2fa <email>`), who knows the admin by email: the recovery when the
+// last admin lost the authenticator and the backup codes. Only SystemActor
+// may call it.
+func (s *AdminService) ResetTwoFactorByEmail(ctx context.Context, actor Actor, in validate.ResetAdminTwoFactor) (Admin, error) {
+	if !actor.System {
+		return Admin{}, ErrForbidden
+	}
+	a, existed, err := s.find(ctx, in.Email)
+	if err != nil {
+		return Admin{}, err
+	}
+	if !existed {
+		return Admin{}, ErrAdminNotFound
+	}
+	if err := s.ResetTwoFactor(ctx, actor, a.ID); err != nil {
+		return Admin{}, err
+	}
+	a.TwoFactorEnabled = false
+	return a, nil
+}
+
+// recoverable authorizes the actor and loads another admin whose account
+// they may recover: not themselves (an admin who can act does not need it),
+// and one who has accepted the invite.
+func (s *AdminService) recoverable(ctx context.Context, actor Actor, adminID string) (Admin, error) {
+	if err := s.policy.authorize(actor); err != nil {
+		return Admin{}, err
+	}
+	if adminID == actor.AdminID {
+		return Admin{}, ErrAdminSelfReset
+	}
+	a, err := s.byID(ctx, adminID)
+	if err != nil {
+		return Admin{}, err
+	}
+	if !a.HasPassword {
+		return Admin{}, ErrAdminPending
+	}
+	return a, nil
+}
+
 // removable authorizes the actor and loads an admin they may disable or
 // remove: not themselves, and never the last active admin, so the dashboard
 // cannot lock everyone out.
@@ -240,7 +325,8 @@ func adminMissing(err error) error {
 }
 
 // Bootstrap seeds the first admin (ADMIN_BOOTSTRAP_EMAIL) without a
-// password; `admin invite` then sends the link. Idempotent: an existing
+// password; `admin migrate` then emails the invite (InviteBootstrapAdmin).
+// Idempotent: an existing
 // admin is returned with created false. Only the operator (SystemActor) may
 // call it. Creating it is an audited mutation targeting the email.
 func (s *AdminService) Bootstrap(ctx context.Context, actor Actor, in validate.CreateAdminInvite) (a Admin, created bool, err error) {
@@ -260,6 +346,28 @@ func (s *AdminService) Bootstrap(ctx context.Context, actor Actor, in validate.C
 		return Admin{}, false, err
 	}
 	return a, true, nil
+}
+
+// InviteBootstrapAdmin emails the bootstrap admin's invite from `admin
+// migrate` (the pre-deploy command, which runs inside the image), so a
+// deployment whose image has no shell to run `admin invite` in still gets its
+// first admin. It sends only while a is pending with no invite on record, so
+// later deploys send nothing (a fresh link: "Forgot password?" on the sign-in
+// page, or another admin). Only the operator may call it.
+func (s *AdminService) InviteBootstrapAdmin(ctx context.Context, actor Actor, a Admin) (sent bool, err error) {
+	if !actor.System {
+		return false, ErrForbidden
+	}
+	if a.HasPassword {
+		return false, nil
+	}
+	if invited, err := s.invitedBefore(ctx, a); err != nil || invited {
+		return false, err
+	}
+	err = mutate(ctx, s.log, actor, adminEntry(ActionAdminInvite, a, map[string]string{}), func() error {
+		return adminMissing(s.accounts.SendSetPasswordLink(ctx, a.ID))
+	})
+	return err == nil, err
 }
 
 // find returns the admin with email; existed is false when there is none.

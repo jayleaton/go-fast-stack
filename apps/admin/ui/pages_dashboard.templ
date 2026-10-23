@@ -126,8 +126,10 @@ templ AdminsTable(admins []services.Admin, selfID string) {
 	</div>
 }
 
-// adminActions are one row's buttons: disable or enable, and remove (asked
-// first in a dialog with JS; a plain post removes directly).
+// adminActions are one row's buttons: disable or enable, send a password
+// reset (accepted invites), reset 2FA (enrolled admins), and remove. Resetting
+// 2FA and removing are asked first in a dialog with JS; a plain post acts
+// directly.
 templ adminActions(a services.Admin) {
 	<div class="flex items-center justify-end gap-2">
 		if a.Disabled {
@@ -138,6 +140,24 @@ templ adminActions(a services.Admin) {
 			<form method="post" action={ templ.SafeURL(routes.Admin(routes.AdminDisable, a.ID)) } data-on:submit={ uikit.PostForm(routes.Admin(routes.AdminDisable, a.ID)) } data-indicator:_disabling>
 				@uikit.SubmitButton(uikit.Submit{Label: i18n.T(ctx, "pages.admins.disable"), Loading: i18n.T(ctx, "common.loading"), Signal: "_disabling", ButtonProps: uikit.ButtonProps{Variant: uikit.Secondary, Size: uikit.Small}})
 			</form>
+		}
+		if a.HasPassword {
+			<form method="post" action={ templ.SafeURL(routes.Admin(routes.AdminPasswordReset, a.ID)) } data-on:submit={ uikit.PostForm(routes.Admin(routes.AdminPasswordReset, a.ID)) } data-indicator:_resetting>
+				@uikit.SubmitButton(uikit.Submit{Label: i18n.T(ctx, "pages.admins.sendPasswordReset"), Loading: i18n.T(ctx, "common.loading"), Signal: "_resetting", ButtonProps: uikit.ButtonProps{Variant: uikit.Secondary, Size: uikit.Small}})
+			</form>
+		}
+		if a.TwoFactorEnabled {
+			@uikit.ConfirmForm(uikit.Confirm{
+				ID:           "reset-2fa-" + a.ID,
+				Action:       routes.Admin(routes.AdminResetTwoFactor, a.ID),
+				Signal:       "_resetting2fa",
+				Title:        i18n.T(ctx, "pages.admins.confirmResetTwoFactorTitle"),
+				Message:      i18n.Tf(ctx, "pages.admins.confirmResetTwoFactor", a.Email),
+				ConfirmLabel: i18n.T(ctx, "pages.admins.resetTwoFactor"),
+				CancelLabel:  i18n.T(ctx, "components.confirm.cancel"),
+				Trigger:      uikit.ButtonProps{Variant: uikit.DangerOutline, Size: uikit.Small},
+				Variant:      uikit.Danger,
+			}, i18n.T(ctx, "pages.admins.resetTwoFactor"))
 		}
 		@uikit.ConfirmForm(uikit.Confirm{
 			ID:           "remove-" + a.ID,

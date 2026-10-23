@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/jayleaton/go-fast-stack/apps/admin/internal/config"
 	"github.com/jayleaton/go-fast-stack/apps/admin/ui"
 	"github.com/jayleaton/go-fast-stack/packages/auth"
 )
@@ -37,6 +38,14 @@ func (a UIAuth) SignOut(ctx context.Context, sessionToken string) error {
 func (a UIAuth) CompleteSetPassword(ctx context.Context, token, newPassword string) (ui.Session, error) {
 	_, s, err := a.auth.CompleteSetPassword(ctx, token, newPassword)
 	return uiSession(s), uiAuthErr(err)
+}
+
+func (a UIAuth) RequestPasswordReset(ctx context.Context, email string) error {
+	err := a.auth.RequestPasswordReset(ctx, email, config.AppRoutes.ResetPassword)
+	if errors.Is(err, auth.ErrInvalidEmail) {
+		return nil // same answer as an unknown address
+	}
+	return uiAuthErr(err)
 }
 
 func (a UIAuth) VerifyTwoFactor(ctx context.Context, in ui.VerifyTwoFactorInput) (ui.Session, string, error) {

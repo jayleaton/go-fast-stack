@@ -16,6 +16,7 @@ var (
 	pending = services.Admin{ID: "a2", Name: "Bob", Email: "bob@example.com"}
 	bob     = services.Admin{ID: "a2", Name: "Bob", Email: "bob@example.com", HasPassword: true}
 	disBob  = services.Admin{ID: "a2", Name: "Bob", Email: "bob@example.com", HasPassword: true, Disabled: true}
+	bob2fa  = services.Admin{ID: "a2", Name: "Bob", Email: "bob@example.com", HasPassword: true, TwoFactorEnabled: true}
 	graceAd = services.Admin{ID: "a1", Name: "Grace", Email: "grace@example.com", HasPassword: true, TwoFactorEnabled: true}
 
 	// priorInvite and priorEmailInvite are the audit lookups for an earlier
@@ -323,5 +324,135 @@ func TestBootstrap(t *testing.T) {
 	wantInternal(t, err, errDB)
 	if created {
 		t.Fatal("created on error")
+	}
+}
+
+// The generic fail-closed cases are in TestMutationsFailClosed.
+func TestSendPasswordReset(t *testing.T) {
+	t.Parallel()
+	svc, accounts, log := newAdminService(t)
+
+	// A disabled admin may get one too: they still cannot sign in.
+	for _, a := range []services.Admin{bob, disBob} {
+		gomock.InOrder(
+			accounts.EXPECT().AdminByID(ctx, "a2").Return(a, nil),
+			log.EXPECT().Begin(ctx, adminAudit(grace, "admin.password_reset", nil)).Return(entryID, nil),
+			accounts.EXPECT().SendSetPasswordLink(ctx, "a2").Return(nil),
+			log.EXPECT().Resolve(ctx, entryID, succeeded).Return(nil),
+		)
+		if err := svc.SendPasswordReset(ctx, grace, "a2"); err != nil {
+			t.Fatalf("%+v: %v", a, err)
+		}
+	}
+
+	// Rules and lookups write nothing. Nobody resets themselves here.
+	wantErr(t, svc.SendPasswordReset(ctx, grace, "a1"), services.ErrAdminSelfReset)
+
+	accounts.EXPECT().AdminByID(ctx, "a2").Return(pending, nil)
+	wantErr(t, svc.SendPasswordReset(ctx, grace, "a2"), services.ErrAdminPending)
+
+	accounts.EXPECT().AdminByID(ctx, "a2").Return(services.Admin{}, services.ErrRecordNotFound)
+	wantErr(t, svc.SendPasswordReset(ctx, grace, "a2"), services.ErrAdminNotFound)
+
+	accounts.EXPECT().AdminByID(ctx, "a2").Return(services.Admin{}, errDB)
+	wantInternal(t, svc.SendPasswordReset(ctx, grace, "a2"), errDB)
+}
+
+func TestResetTwoFactor(t *testing.T) {
+	t.Parallel()
+	svc, accounts, log := newAdminService(t)
+
+	// Another admin, or the operator when nobody else can sign in.
+	for _, actor := range []services.Actor{grace, cli} {
+		gomock.InOrder(
+			accounts.EXPECT().AdminByID(ctx, "a2").Return(bob2fa, nil),
+			log.EXPECT().Begin(ctx, adminAudit(actor, "admin.reset_two_factor", nil)).Return(entryID, nil),
+			accounts.EXPECT().ResetTwoFactor(ctx, "a2").Return(nil),
+			log.EXPECT().Resolve(ctx, entryID, succeeded).Return(nil),
+		)
+		if err := svc.ResetTwoFactor(ctx, actor, "a2"); err != nil {
+			t.Fatalf("%+v: %v", actor, err)
+		}
+	}
+
+	// Rules and lookups write nothing.
+	wantErr(t, svc.ResetTwoFactor(ctx, grace, "a1"), services.ErrAdminSelfReset)
+
+	accounts.EXPECT().AdminByID(ctx, "a2").Return(bob, nil)
+	wantErr(t, svc.ResetTwoFactor(ctx, grace, "a2"), services.ErrAdminNoTwoFactor)
+
+	accounts.EXPECT().AdminByID(ctx, "a2").Return(pending, nil)
+	wantErr(t, svc.ResetTwoFactor(ctx, grace, "a2"), services.ErrAdminPending)
+
+	accounts.EXPECT().AdminByID(ctx, "a2").Return(services.Admin{}, fmt.Errorf("get: %w", services.ErrRecordNotFound))
+	wantErr(t, svc.ResetTwoFactor(ctx, grace, "a2"), services.ErrAdminNotFound)
+
+	accounts.EXPECT().AdminByID(ctx, "a2").Return(services.Admin{}, errDB)
+	wantInternal(t, svc.ResetTwoFactor(ctx, grace, "a2"), errDB)
+}
+
+func TestResetTwoFactorByEmail(t *testing.T) {
+	t.Parallel()
+	svc, accounts, log := newAdminService(t)
+	in := validate.ResetAdminTwoFactor{Email: "bob@example.com"}
+
+	gomock.InOrder(
+		accounts.EXPECT().AdminByEmail(ctx, "bob@example.com").Return(bob2fa, nil),
+		accounts.EXPECT().AdminByID(ctx, "a2").Return(bob2fa, nil),
+		log.EXPECT().Begin(ctx, adminAudit(cli, "admin.reset_two_factor", nil)).Return(entryID, nil),
+		accounts.EXPECT().ResetTwoFactor(ctx, "a2").Return(nil),
+		log.EXPECT().Resolve(ctx, entryID, succeeded).Return(nil),
+	)
+	if got, err := svc.ResetTwoFactorByEmail(ctx, cli, in); err != nil || got.ID != "a2" || got.TwoFactorEnabled {
+		t.Fatalf("ResetTwoFactorByEmail = %+v, %v", got, err)
+	}
+
+	// Lookups and rules write nothing.
+	accounts.EXPECT().AdminByEmail(ctx, "bob@example.com").Return(services.Admin{}, services.ErrRecordNotFound)
+	_, err := svc.ResetTwoFactorByEmail(ctx, cli, in)
+	wantErr(t, err, services.ErrAdminNotFound)
+
+	accounts.EXPECT().AdminByEmail(ctx, "bob@example.com").Return(services.Admin{}, errDB)
+	_, err = svc.ResetTwoFactorByEmail(ctx, cli, in)
+	wantInternal(t, err, errDB)
+
+	accounts.EXPECT().AdminByEmail(ctx, "bob@example.com").Return(bob, nil)
+	accounts.EXPECT().AdminByID(ctx, "a2").Return(bob, nil)
+	_, err = svc.ResetTwoFactorByEmail(ctx, cli, in)
+	wantErr(t, err, services.ErrAdminNoTwoFactor)
+}
+
+func TestInviteBootstrapAdmin(t *testing.T) {
+	t.Parallel()
+	svc, accounts, log := newAdminService(t)
+
+	// A pending admin with no invite on record (under the id or the email)
+	// gets the link once, by the operator.
+	bootstrap := services.SystemActor("bootstrap")
+	gomock.InOrder(
+		log.EXPECT().List(ctx, priorInvite).Return(services.AuditPage{}, nil),
+		log.EXPECT().List(ctx, priorEmailInvite).Return(services.AuditPage{}, nil),
+		log.EXPECT().Begin(ctx, adminAudit(bootstrap, "admin.invite", map[string]string{})).Return(entryID, nil),
+		accounts.EXPECT().SendSetPasswordLink(ctx, "a2").Return(nil),
+		log.EXPECT().Resolve(ctx, entryID, succeeded).Return(nil),
+	)
+	if sent, err := svc.InviteBootstrapAdmin(ctx, bootstrap, pending); err != nil || !sent {
+		t.Fatalf("InviteBootstrapAdmin = %v, %v", sent, err)
+	}
+
+	// Later deploys send nothing: an invite is on record, or it was accepted.
+	log.EXPECT().List(ctx, priorInvite).Return(services.AuditPage{Total: 1}, nil)
+	if sent, err := svc.InviteBootstrapAdmin(ctx, bootstrap, pending); err != nil || sent {
+		t.Fatalf("invited before = %v, %v", sent, err)
+	}
+	if sent, err := svc.InviteBootstrapAdmin(ctx, bootstrap, bob); err != nil || sent {
+		t.Fatalf("accepted = %v, %v", sent, err)
+	}
+
+	log.EXPECT().List(ctx, priorInvite).Return(services.AuditPage{}, errDB)
+	sent, err := svc.InviteBootstrapAdmin(ctx, bootstrap, pending)
+	wantInternal(t, err, errDB)
+	if sent {
+		t.Fatal("sent on error")
 	}
 }

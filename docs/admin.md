@@ -1,9 +1,9 @@
 # Admin dashboard (optional)
 
-`apps/admin` is a separate binary and Railway service for the people who run the app: browse, search and inspect users (sessions, verification, role, ban state), ban (reason + expiry) and unban, revoke sessions, set roles, manage admins, and read the audit log of every admin action. Admin changes fail closed: if the audit log cannot record the attempt, nothing is changed, and an attempt whose outcome was never recorded shows as "outcome unknown" until a reconciler checks the current state. Sign-ins, sign-outs and refused 2FA codes are audited best-effort after the fact (they never block authentication), so the log can miss one if it was down at that moment. An analytics page is a placeholder behind a port.
+`apps/admin` is a separate binary and Railway service for the people who run the app: browse, search and inspect users (sessions, verification, role, ban state), ban (reason + expiry) and unban, revoke sessions, set roles, manage admins, and read the audit log of every admin action. Admin changes fail closed: if the audit log cannot record the attempt, nothing is changed, and an attempt whose outcome was never recorded shows as "outcome unknown" until a reconciler checks the current state. Sign-ins, sign-outs, refused 2FA codes and spent backup codes are audited best-effort after the fact (they never block authentication), so the log can miss one if it was down at that moment. An analytics page is a placeholder behind a port.
 
 - **Isolated.** Admins are users of the admin app's own auth instance in its own database (`ADMIN_DATABASE_URL`, cookie `admin.session_token`, secret `ADMIN_AUTH_SECRET`), never rows in the app's `user` table. It reads and administers the app's users through `DATABASE_URL`. depguard keeps `apps/web` and `apps/admin` from importing each other and keeps the higher-privilege `packages/database/adminrepo` out of the web app.
-- **Invite only.** There is no sign-up. `admin migrate` seeds `ADMIN_BOOTSTRAP_EMAIL` without a password; `admin invite <email>` (or `make admin-invite EMAIL=...`, or the Admins page) emails a one-time set-password link. With `ADMIN_REQUIRE_2FA=true` (the default in production) setting the password continues into TOTP enrolment with backup codes before the first session.
+- **Invite only.** There is no sign-up. `admin migrate` seeds `ADMIN_BOOTSTRAP_EMAIL` without a password and emails its set-password link once. It is the pre-deploy command and runs inside the image, so the first admin needs no shell. `admin invite <email>` (or `make admin-invite EMAIL=...`, or the Admins page) emails a one-time set-password link. With `ADMIN_REQUIRE_2FA=true` (the default in production) setting the password continues into TOTP enrolment with ten backup codes before the first session. The codes are shown once, stored as keyed hashes, and each one works for a single sign-in.
 - **Banning** revokes every session of the user at once; the web app refuses their sign-in until the ban is lifted or expires.
 
 ```sh
@@ -11,7 +11,20 @@ make db-up                         # also creates the "admin" database on the de
 make migrate                       # the app database (web)
 make admin-dev                     # migrates the admin database, seeds ADMIN_BOOTSTRAP_EMAIL, serves 0.0.0.0:3001
 make admin-invite EMAIL=admin@example.com   # dev: the set-password link is printed in the log
+make admin-reset-2fa EMAIL=admin@example.com # remove an admin's 2FA (audited as system:cli)
 ```
+
+**Locked out of the admin app.** Each step is audited (Audit page); the first one that fits applies:
+
+| Situation | What to do |
+|---|---|
+| Forgot the password | "Forgot password?" on the sign-in page emails a reset link (1 hour, and the same answer for an unknown address). Using it ends every other session, and sign-in still asks for the second factor. Another admin can also send one: Admins page, "Send password reset" (`admin.password_reset`). A pending admin who lost the invite can use "Forgot password?" too. |
+| Lost the authenticator | Sign in with a backup code ("Use a backup code instead"). Each code works once (`admin.backup_code_used`). Then have another admin reset your 2FA, or enrol again, so you get fresh codes. |
+| Lost the authenticator and the backup codes | Another admin: Admins page, "Reset 2FA" (`admin.reset_two_factor`). It removes the TOTP secret, backup codes and trusted devices, and the admin enrols again at the next sign-in. Nobody resets their own. |
+| The last admin lost both | `admin reset-2fa <email>`, audited as `system:cli`. It needs the exact email of the admin, refuses a pending or unknown admin, and refuses an admin without 2FA. Locally: `make admin-reset-2fa EMAIL=...`. On Railway, see below. |
+| Disabled | Another admin enables them. A disabled admin can still reset the password but cannot sign in. |
+
+`admin reset-2fa` on Railway: the admin image is distroless, with no shell, and `railway ssh` needs one in the container it opens. The binary itself needs none, so run it from the environment's `admin-postgres` container, which is on the same private network and has `sh`. Build it with `GOOS=linux GOARCH=amd64 make admin-build` and copy `bin/admin` into a fresh temp directory `$bundle` (`bundle=$(mktemp -d)`). Write the admin service's variables into `$bundle/admin.env` with mode 600, without printing them (`railway variables --service admin --environment <env> --json`, minus `RAILWAY_*` and `PORT`, as `export NAME='value'` lines). Then run `tar czf - -C "$bundle" admin admin.env | railway ssh --service admin-postgres --environment <env> -- sh -c 'workdir=$(mktemp -d) && cd $workdir && tar xzf - && . ./admin.env && ./admin reset-2fa <email>; cd / && rm -rf $workdir'` and `rm -rf "$bundle"`. The admin signs in with their password and enrols a new authenticator. `admin invite <email>` works the same way.
 
 Locally the admin database is a second database on the same per-checkout Postgres: no extra container, and worktrees stay isolated. Hosted, give it its own small Postgres so its credentials and backups are separate from the app's.
 

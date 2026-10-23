@@ -123,7 +123,7 @@ func (r *AuditReconciler) verdict(ctx context.Context, e AuditEntry) (AuditOutco
 			return holds(!hasSession(d.Sessions, func(s Session) bool { return s.CreatedAt.Before(e.CreatedAt) }))
 		}
 
-	case ActionAdminDisable, ActionAdminEnable, ActionAdminRemove:
+	case ActionAdminDisable, ActionAdminEnable, ActionAdminRemove, ActionAdminResetTwoFactor:
 		a, err := r.accounts.AdminByID(ctx, e.TargetID)
 		gone := errors.Is(err, ErrRecordNotFound)
 		if err != nil && !gone {
@@ -136,6 +136,8 @@ func (r *AuditReconciler) verdict(ctx context.Context, e AuditEntry) (AuditOutco
 			return unknown, nil
 		case e.Action == ActionAdminDisable:
 			return holds(a.Disabled)
+		case e.Action == ActionAdminResetTwoFactor:
+			return holds(!a.TwoFactorEnabled)
 		default:
 			return holds(!a.Disabled)
 		}

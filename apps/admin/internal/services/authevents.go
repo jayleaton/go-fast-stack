@@ -10,6 +10,9 @@ const (
 	ActionAdminSignIn          = "admin.sign_in"
 	ActionAdminSignOut         = "admin.sign_out"
 	ActionAdminTwoFactorFailed = "admin.two_factor_failed"
+	// ActionAdminBackupCodeUsed: a backup code was accepted (and spent). An
+	// admin who signs in with one has probably lost the authenticator.
+	ActionAdminBackupCodeUsed = "admin.backup_code_used"
 )
 
 // How an admin signed in (the "method" detail of ActionAdminSignIn).
@@ -19,7 +22,8 @@ const (
 	SignInSetPassword = "set_password" // the invite / reset link
 )
 
-// AuthEventService audits admin sign-ins, sign-outs and failed 2FA codes.
+// AuthEventService audits admin sign-ins, sign-outs, failed 2FA codes and
+// spent backup codes.
 // apps/admin/internal/server feeds it the admin auth instance's events
 // (auth.Config.Events), never a transport for a caller: the events describe
 // authentication itself, so there is no actor to authorize yet.
@@ -48,6 +52,12 @@ func (s *AuthEventService) SignedOut(ctx context.Context, at time.Time, adminID,
 // pending sign-in (or enrolment) it was; reason is auth's error code.
 func (s *AuthEventService) TwoFactorFailed(ctx context.Context, at time.Time, adminID, email, reason string) error {
 	return s.record(ctx, at, ActionAdminTwoFactorFailed, adminID, email, map[string]string{"reason": reason})
+}
+
+// BackupCodeUsed records an accepted backup code for the admin whose pending
+// sign-in it completed. The code is single-use: it is gone once recorded.
+func (s *AuthEventService) BackupCodeUsed(ctx context.Context, at time.Time, adminID, email string) error {
+	return s.record(ctx, at, ActionAdminBackupCodeUsed, adminID, email, nil)
 }
 
 func (s *AuthEventService) record(ctx context.Context, at time.Time, action, adminID, email string, details map[string]string) error {

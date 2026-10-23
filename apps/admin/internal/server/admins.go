@@ -100,6 +100,14 @@ func (a AdminAccounts) SendSetPasswordLink(ctx context.Context, adminID string) 
 	return a.auth.IssueSetPasswordLink(ctx, adminID, config.AppRoutes.SetPassword)
 }
 
+func (a AdminAccounts) ResetTwoFactor(ctx context.Context, adminID string) error {
+	err := a.auth.Users().ResetTwoFactor(ctx, adminID)
+	if errors.Is(err, auth.ErrUserNotFound) {
+		return fmt.Errorf("%w: %w", services.ErrRecordNotFound, err)
+	}
+	return err
+}
+
 func adminFromAuth(u auth.AdminUser) services.Admin {
 	return services.Admin{ID: u.ID, Name: u.Name, Email: u.Email, CreatedAt: u.CreatedAt, TwoFactorEnabled: u.TwoFactorEnabled, HasPassword: u.HasPassword, Disabled: u.Banned}
 }
