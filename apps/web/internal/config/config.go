@@ -115,6 +115,8 @@ func Load(getenv func(string) string) (Config, error) {
 
 // realSender reports whether addr ("a@b.c" or "Name <a@b.c>") is an email
 // address off the reserved example and test domains (RFC 2606, RFC 6761).
+// deploy/platform's reservedSenderDomains refuses the same domains before a
+// deploy: keep the two lists the same.
 func realSender(addr string) bool {
 	addr = strings.TrimSuffix(strings.TrimSpace(addr), ">")
 	at := strings.LastIndex(addr, "@")
