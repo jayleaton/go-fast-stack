@@ -153,9 +153,12 @@ func (d *dopplerCLI) revoke(ctx context.Context, config, slug string) error {
 // dopplerPhase moves the app secrets into Doppler (secrets.provider:
 // doppler): project, environments and configs, seeded from Railway, one
 // read-only service token per service and environment sealed in Railway as
-// DOPPLER_TOKEN with SECRETS_PROVIDER=doppler, then the Railway copies of
-// the app secrets are removed once the service runs healthy on Doppler.
-// required: fail instead of leaving a next step when the CLI is missing.
+// DOPPLER_TOKEN. A switched environment (per_environment.<env>.secrets
+// doppler, the default) then gets SECRETS_PROVIDER=doppler and, once its
+// new deployment is healthy, loses the Railway copies of its secrets; a
+// staged one gets the token without a deploy and keeps reading Railway.
+// Plan prints every step apply would take. required: fail instead of
+// leaving a next step when the CLI is missing.
 func (s *setup) dopplerPhase(ctx context.Context, required bool, wait time.Duration) error {
 	if s.cfg.Secrets.Provider != platform.ProviderDoppler {
 		if required {
@@ -163,9 +166,9 @@ func (s *setup) dopplerPhase(ctx context.Context, required bool, wait time.Durat
 		}
 		return nil
 	}
-	d, err := newDoppler(s.cfg.Secrets.Project)
+	doppler, err := newDoppler(s.cfg.Secrets.Project)
 	if err == nil {
-		_, err = d.whoami(ctx)
+		_, err = doppler.whoami(ctx)
 	}
 	if err != nil {
 		if required {
@@ -177,20 +180,20 @@ func (s *setup) dopplerPhase(ctx context.Context, required bool, wait time.Durat
 	if s.project == nil {
 		return errors.New("the Railway project does not exist yet: run make railway-setup first")
 	}
-	s.say("\n== doppler (project %s)", d.project)
-	if err := s.dopplerLayout(ctx, d); err != nil {
+	s.say("\n== doppler (project %s)", doppler.project)
+	exists, err := s.dopplerLayout(ctx, doppler)
+	if err != nil {
 		return err
 	}
-	if !s.apply {
-		return nil
-	}
-	if err := s.dopplerLocal(ctx, d); err != nil {
-		return err
+	if s.apply {
+		if err := s.dopplerLocal(ctx, doppler); err != nil {
+			return err
+		}
 	}
 	var switched []switchedService
 	for _, env := range s.cfg.Environments {
 		for _, svc := range s.services() {
-			before, ok, err := s.dopplerService(ctx, d, env, svc)
+			before, ok, err := s.dopplerService(ctx, doppler, exists, env, svc)
 			if err != nil {
 				return err
 			}
@@ -199,58 +202,67 @@ func (s *setup) dopplerPhase(ctx context.Context, required bool, wait time.Durat
 			}
 		}
 	}
+	if !s.apply {
+		return s.dopplerCopies(ctx, switched)
+	}
 	return s.dopplerFinish(ctx, switched, wait)
 }
 
 // dopplerLayout ensures the project, one environment per Railway environment
-// and the admin branch configs.
-func (s *setup) dopplerLayout(ctx context.Context, d *dopplerCLI) error {
-	projects, err := d.names(ctx, "projects", "name")
+// and the admin branch configs. It reports whether the project exists (in a
+// plan it may not yet: then nothing can be read from it).
+func (s *setup) dopplerLayout(ctx context.Context, doppler *dopplerCLI) (bool, error) {
+	projects, err := doppler.names(ctx, "projects", "name")
 	if err != nil {
-		return err
+		return false, err
 	}
-	if !projects[d.project] {
-		if !s.apply {
-			s.change("doppler: create project %s", d.project)
-			return nil
+	exists := projects[doppler.project]
+	if !exists {
+		if s.apply {
+			if _, err := doppler.run(ctx, nil, "projects", "create", doppler.project, "--json"); err != nil {
+				return false, err
+			}
+			exists = true
 		}
-		if _, err := d.run(ctx, nil, "projects", "create", d.project, "--json"); err != nil {
-			return err
+		s.change("doppler: create project %s (environments dev, stg, prd)", doppler.project)
+	}
+	envs, configs := map[string]bool{}, map[string]bool{}
+	if exists {
+		if envs, err = doppler.names(ctx, "environments", "id"); err != nil {
+			return false, err
 		}
-		s.change("doppler: created project %s (environments dev, stg, prd)", d.project)
-	}
-	envs, err := d.names(ctx, "environments", "id")
-	if err != nil {
-		return err
-	}
-	configs, err := d.names(ctx, "configs", "name")
-	if err != nil {
-		return err
+		if configs, err = doppler.names(ctx, "configs", "name"); err != nil {
+			return false, err
+		}
+	} else { // a new project starts with these
+		for _, slug := range []string{platform.DopplerLocal, "stg", "prd"} {
+			envs[slug], configs[slug] = true, true
+		}
 	}
 	for _, env := range s.cfg.Environments {
 		slug := platform.DopplerEnvironment(env)
 		if !envs[slug] {
 			if s.apply {
-				if _, err := d.run(ctx, nil, "environments", "create", strings.ToUpper(slug[:1])+slug[1:], slug, "-p", d.project, "--json"); err != nil {
-					return err
+				if _, err := doppler.run(ctx, nil, "environments", "create", strings.ToUpper(slug[:1])+slug[1:], slug, "-p", doppler.project, "--json"); err != nil {
+					return false, err
 				}
 			}
 			s.change("doppler: environment %s", slug)
 		}
 		for _, svc := range s.services() {
-			cfg := platform.DopplerConfig(env, svc)
-			if configs[cfg] || cfg == slug {
+			config := platform.DopplerConfig(env, svc)
+			if configs[config] || config == slug {
 				continue
 			}
 			if s.apply {
-				if _, err := d.run(ctx, nil, "configs", "create", cfg, "-e", slug, "-p", d.project, "--json"); err != nil {
-					return err
+				if _, err := doppler.run(ctx, nil, "configs", "create", config, "-e", slug, "-p", doppler.project, "--json"); err != nil {
+					return false, err
 				}
 			}
-			s.change("doppler: config %s (branch of %s: inherits it, which cannot read it)", cfg, slug)
+			s.change("doppler: config %s (branch of %s: inherits it, which cannot read it)", config, slug)
 		}
 	}
-	return nil
+	return exists, nil
 }
 
 // dopplerLocal gives the dev config an AUTH_SECRET and points this checkout
@@ -280,103 +292,245 @@ func (s *setup) dopplerLocal(ctx context.Context, d *dopplerCLI) error {
 
 type switchedService struct{ env, svc, before string } // before: latest deployment id at the switch
 
-// dopplerService seeds one service's config and, unless it already reads
-// Doppler, seals a fresh read-only token in Railway. It reports whether the
-// service was switched, with its latest deployment id from before.
-func (s *setup) dopplerService(ctx context.Context, d *dopplerCLI, env, svc string) (before string, switched bool, err error) {
+// dopplerService seeds one service's config from its Railway variables
+// (names missing from Doppler only: a value in Doppler is never replaced),
+// seals a fresh read-only token in Railway when it has none of ours, and in
+// a switched environment sets SECRETS_PROVIDER=doppler (a redeploy). A
+// staged environment's token is sealed without a deploy. project: the
+// Doppler project exists (a plan before it does reads nothing). It reports
+// whether the service was switched, with its latest deployment id from
+// before.
+func (s *setup) dopplerService(ctx context.Context, doppler *dopplerCLI, project bool, env, svc string) (before string, switched bool, err error) {
 	if s.project.Environments[env] == "" || s.project.Services[svc] == "" {
 		return "", false, nil
 	}
-	cfg := platform.DopplerConfig(env, svc)
+	config := platform.DopplerConfig(env, svc)
 	vars, err := s.variables(ctx, svc, env)
 	if err != nil {
 		return "", false, err
 	}
-	have, err := d.secretNames(ctx, cfg)
-	if err != nil {
+	have := map[string]bool{}
+	if project {
+		if have, err = doppler.secretNames(ctx, config); err != nil {
+			if s.apply {
+				return "", false, err
+			}
+			have = map[string]bool{} // plan: apply creates the config first
+		}
+	}
+	if err := s.dopplerSeed(ctx, doppler, env, svc, config, vars, have); err != nil {
 		return "", false, err
 	}
+	if s.onDoppler(vars) {
+		return s.retrySwitch(ctx, env, svc) // switched by an earlier run
+	}
+
+	writes := map[string]secretWrite{}
+	name := platform.DopplerTokenName(s.project.Name, svc)
+	// A sealed token cannot be read back. When this config has no token of
+	// ours, the one on Railway is a placeholder, or a hand-set one (make
+	// railway-secrets) for a service not on Doppler yet: issue ours.
+	issued := false
+	if project && realToken(vars) {
+		tokens, err := doppler.tokens(ctx, config)
+		if err != nil && s.apply {
+			return "", false, err
+		}
+		issued = slices.ContainsFunc(tokens, func(token dopplerToken) bool { return token.Name == name })
+	}
+	if !issued {
+		token := ""
+		if s.apply {
+			if token, err = s.issueToken(ctx, doppler, config, name); err != nil {
+				return "", false, err
+			}
+		}
+		writes["DOPPLER_TOKEN"] = secretWrite{token, true}
+	}
+	if s.cfg.DopplerMode(env) == platform.SecretsStaged {
+		if len(writes) == 0 {
+			return "", false, nil
+		}
+		if s.apply {
+			if err := s.commitStaged(ctx, env, map[string]map[string]secretWrite{svc: writes}); err != nil {
+				return "", false, err
+			}
+		}
+		s.change("%s/%s DOPPLER_TOKEN for config %s sealed without a deploy (staged: still reads SECRETS_PROVIDER=%s and its Railway secrets)", env, svc, config, firstOr(deref(vars["SECRETS_PROVIDER"]), platform.ProviderEnv))
+		return "", false, nil
+	}
+	writes["SECRETS_PROVIDER"] = secretWrite{platform.ProviderDoppler, false}
+	if s.apply {
+		if before, _, err = s.latestBuilt(ctx, svc, env); err != nil {
+			return "", false, err
+		}
+		if err := s.commit(ctx, env, map[string]map[string]secretWrite{svc: writes}); err != nil {
+			return "", false, err
+		}
+	}
+	sealed := ""
+	if _, ok := writes["DOPPLER_TOKEN"]; ok {
+		sealed = "DOPPLER_TOKEN sealed, "
+	}
+	s.change("%s/%s reads Doppler config %s: %sSECRETS_PROVIDER=doppler (redeploys)", env, svc, config, sealed)
+	return before, true, nil
+}
+
+// retrySwitch redeploys a service an earlier run switched to Doppler whose
+// switch deployment failed (a bad value in Doppler, since fixed): its old
+// deployment still runs on the Railway copies, and nothing else would deploy
+// it again. With a GitHub source it deploys the branch's latest commit
+// (--from-source: the newest deployment may be a skipped one); in upload
+// mode the latest deployment again. It reports the retry like a switch, so
+// dopplerFinish waits for it before removing any copy.
+func (s *setup) retrySwitch(ctx context.Context, env, svc string) (before string, retried bool, err error) {
+	id, status, err := s.latestBuilt(ctx, svc, env)
+	if err != nil || (status != "FAILED" && status != "CRASHED") {
+		return "", false, err
+	}
+	if s.apply {
+		args := []string{"redeploy", "--service", svc, "--environment", env, "--yes"}
+		if !s.cfg.Upload() {
+			args = append(args, "--from-source")
+		}
+		if _, err := s.rw.output(ctx, nil, args...); err != nil {
+			return "", false, err
+		}
+	}
+	s.change("%s/%s reads Doppler but its last deployment %s: redeploy to retry", env, svc, strings.ToLower(status))
+	return id, true, nil
+}
+
+// dopplerSeed copies a service's Railway values into its Doppler config, for
+// the names the config lacks. A sealed Railway value cannot be read, so it
+// can neither be copied nor later removed as a copy without losing it: the
+// person sets it in Doppler instead.
+func (s *setup) dopplerSeed(ctx context.Context, doppler *dopplerCLI, env, svc, config string, vars map[string]*string, have map[string]bool) error {
+	var added []string
 	for _, seed := range platform.DopplerSeeds(svc) {
 		if have[seed.Name] {
 			continue
 		}
-		cur := vars[seed.Name]
-		var value string
-		from := "Railway"
+		current, onRailway := vars[seed.Name]
+		value, from := "", ""
 		switch {
-		case cur != nil && *cur != "" && *cur != platform.ResendPlaceholder:
-			value = *cur
+		case current != nil && *current != "" && *current != platform.ResendPlaceholder:
+			value = *current
+		case onRailway && current == nil:
+			return fmt.Errorf("%s/%s: %s is sealed on Railway: set it in Doppler config %s by hand, then re-run", env, svc, seed.Name, config)
+		case seed.Source == platform.IfOnRailway:
+			continue
 		case seed.Source == platform.RailwayOrRandom:
-			if value, err = randomSecret(); err != nil {
-				return "", false, err
+			if s.apply {
+				var err error
+				if value, err = randomSecret(); err != nil {
+					return err
+				}
 			}
-			from = "generated"
+			from = " (generated)"
 		case seed.Source == platform.RailwayOrResend:
-			value, from = platform.ResendPlaceholder, "placeholder"
+			value, from = platform.ResendPlaceholder, " (placeholder)"
 		default:
-			return "", false, fmt.Errorf("%s/%s: %s is not readable on Railway (sealed or missing): set it in Doppler config %s, then re-run", env, svc, seed.Name, cfg)
+			return fmt.Errorf("%s/%s: %s is missing on Railway: set it in Doppler config %s, then re-run", env, svc, seed.Name, config)
 		}
-		if err := d.setSecret(ctx, cfg, seed.Name, value); err != nil {
-			return "", false, err
-		}
-		s.change("doppler: %s %s (%s)", cfg, seed.Name, from)
-	}
-	if s.usesDoppler(vars) {
-		return "", false, nil // already sealed and switched by an earlier run
-	}
-	name := platform.DopplerTokenName(s.project.Name, svc)
-	old, err := d.tokens(ctx, cfg)
-	if err != nil {
-		return "", false, err
-	}
-	for _, t := range old { // a token from a run that never reached Railway
-		if t.Name == name {
-			if err := d.revoke(ctx, cfg, t.Slug); err != nil {
-				return "", false, err
+		if s.apply {
+			if err := doppler.setSecret(ctx, config, seed.Name, value); err != nil {
+				return err
 			}
 		}
+		added = append(added, seed.Name+from)
 	}
-	if before, _, err = s.latestDeployment(ctx, svc, env); err != nil {
-		return "", false, err
+	if len(added) > 0 {
+		s.change("doppler: %s <- %s/%s Railway values: %s", config, env, svc, strings.Join(added, ", "))
 	}
-	tok, err := d.createToken(ctx, cfg, name)
-	if err != nil {
-		return "", false, err
-	}
-	err = s.commit(ctx, env, map[string]map[string]secretWrite{svc: {
-		"DOPPLER_TOKEN":    {tok, true},
-		"SECRETS_PROVIDER": {platform.ProviderDoppler, false},
-	}})
-	if err != nil {
-		return "", false, err
-	}
-	s.change("%s/%s reads Doppler config %s: DOPPLER_TOKEN sealed, SECRETS_PROVIDER=doppler", env, svc, cfg)
-	return before, true, nil
+	return nil
 }
 
-// dopplerFinish waits for the switched services' new deployments and, for
-// every service healthy on Doppler, removes its Railway copies of the app
-// secrets (staged with skipDeploys: the running deployment keeps working).
+// issueToken revokes tokens of ours from a run that never reached Railway,
+// then creates a fresh read-only one; the value stays in memory.
+func (s *setup) issueToken(ctx context.Context, doppler *dopplerCLI, config, name string) (string, error) {
+	old, err := doppler.tokens(ctx, config)
+	if err != nil {
+		return "", err
+	}
+	for _, token := range old {
+		if token.Name == name {
+			if err := doppler.revoke(ctx, config, token.Slug); err != nil {
+				return "", err
+			}
+		}
+	}
+	return doppler.createToken(ctx, config, name)
+}
+
+// dopplerCopies (plan) lists the Railway copies apply would remove: now for
+// services already on Doppler, after a healthy switch for the others.
+func (s *setup) dopplerCopies(ctx context.Context, switching []switchedService) error {
+	for _, env := range s.cfg.Environments {
+		for _, svc := range s.services() {
+			if s.project.Environments[env] == "" || s.project.Services[svc] == "" {
+				continue
+			}
+			vars, err := s.variables(ctx, svc, env)
+			if err != nil {
+				return err
+			}
+			later := slices.ContainsFunc(switching, func(pending switchedService) bool { return pending.env == env && pending.svc == svc })
+			if left := copiesOn(vars, svc); len(left) > 0 && (s.onDoppler(vars) || later) {
+				when := "now"
+				if later {
+					when = "once its new deployment is healthy on Doppler"
+				}
+				s.change("%s/%s remove Railway copies %s, %s (Doppler holds them)", env, svc, strings.Join(left, ", "), when)
+			}
+		}
+	}
+	return nil
+}
+
+// copiesOn lists the Doppler-owned names still set on a service's Railway.
+func copiesOn(vars map[string]*string, svc string) []string {
+	var out []string
+	for _, name := range platform.RailwayCopies(svc) {
+		if _, ok := vars[name]; ok {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
+func deref(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}
+
+// dopplerFinish waits for the switched services' new deployments and, only
+// when every one of them is healthy on Doppler, removes the Railway copies
+// of the secrets from each service that reads Doppler (with skipDeploys:
+// the running deployment keeps working). A staged environment's services
+// never read Doppler, so they keep theirs.
 func (s *setup) dopplerFinish(ctx context.Context, switched []switchedService, wait time.Duration) error {
 	deadline := time.Now().Add(wait)
 	var failed []string
-	for _, sw := range switched {
-		s.say("Waiting for %s/%s to redeploy on Doppler…", sw.env, sw.svc)
-		id, status, err := s.latestDeployment(ctx, sw.svc, sw.env)
-		for err == nil && (id == sw.before || !settled(status)) && time.Now().Before(deadline) {
+	for _, pending := range switched {
+		s.say("Waiting for %s/%s to redeploy on Doppler…", pending.env, pending.svc)
+		id, status, err := s.latestBuilt(ctx, pending.svc, pending.env)
+		for err == nil && (id == pending.before || !settled(status)) && time.Now().Before(deadline) {
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
-			case <-time.After(10 * time.Second):
+			case <-time.After(deployPollInterval):
 			}
-			id, status, err = s.latestDeployment(ctx, sw.svc, sw.env)
+			id, status, err = s.latestBuilt(ctx, pending.svc, pending.env)
 		}
-		if err != nil || id == sw.before || status != "SUCCESS" {
-			failed = append(failed, fmt.Sprintf("%s/%s (%s)", sw.env, sw.svc, strings.ToLower(firstOr(status, "no new deployment"))))
+		if err != nil || id == pending.before || status != "SUCCESS" {
+			failed = append(failed, fmt.Sprintf("%s/%s (%s)", pending.env, pending.svc, strings.ToLower(firstOr(status, "no new deployment"))))
 		}
 	}
 	if len(failed) > 0 {
-		s.next("Not healthy on Doppler yet: %s. Check railway logs, fix the Doppler config, re-run make doppler-setup (Railway copies of the app secrets were kept)", strings.Join(failed, ", "))
+		s.next("Not healthy on Doppler yet: %s. Check railway logs, fix the Doppler config, re-run make doppler-setup (Railway copies of the secrets were kept)", strings.Join(failed, ", "))
 		_ = s.health(ctx, 0) // fill the summary
 		return withCode(exitUnhealthy, "not healthy on Doppler: %s", strings.Join(failed, ", "))
 	}
@@ -392,16 +546,18 @@ func (s *setup) dopplerFinish(ctx context.Context, switched []switchedService, w
 			if err != nil {
 				return err
 			}
-			if !s.usesDoppler(vars) {
+			if !s.onDoppler(vars) {
 				continue
 			}
-			var gone []string
-			for _, n := range platform.RailwayCopies(svc) {
-				if _, ok := vars[n]; ok {
-					gone = append(gone, n)
-				}
-			}
+			gone := copiesOn(vars, svc)
 			if len(gone) == 0 {
+				continue
+			}
+			// The running deployment must be one that reads Doppler: after a
+			// failed switch the old one still runs on these copies (and a
+			// restart reads them again). Its variables say doppler either way.
+			if _, status, err := s.latestBuilt(ctx, svc, env); err != nil || status != "SUCCESS" {
+				s.next("%s/%s is set to read Doppler but its latest deployment is %s: fix it (railway logs), then re-run make doppler-setup; its Railway copies %s were kept", env, svc, strings.ToLower(firstOr(status, "missing")), strings.Join(gone, ", "))
 				continue
 			}
 			if err := s.deleteVariables(ctx, env, svc, gone); err != nil {
@@ -412,6 +568,9 @@ func (s *setup) dopplerFinish(ctx context.Context, switched []switchedService, w
 	}
 	return nil
 }
+
+// deployPollInterval is how often dopplerFinish reads a deployment's status.
+const deployPollInterval = 10 * time.Second
 
 // deleteVariables removes variables without triggering a deploy.
 func (s *setup) deleteVariables(ctx context.Context, env, svc string, names []string) error {

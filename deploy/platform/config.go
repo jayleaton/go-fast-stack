@@ -115,6 +115,32 @@ type EnvSettings struct {
 	// FromEmail is FROM_EMAIL on every app service: "" for email.from, an
 	// address, or manual.
 	FromEmail string `yaml:"from_email"`
+	// Secrets is how far this environment has moved to Doppler (with
+	// secrets.provider: doppler). "" or doppler switches its services:
+	// SECRETS_PROVIDER=doppler (a redeploy), and once the new deployment is
+	// healthy the Railway copies of the secrets are removed. staged fills
+	// its Doppler configs and seals DOPPLER_TOKEN without a deploy, leaving
+	// SECRETS_PROVIDER and the Railway secrets as they are: an environment
+	// not switched yet (production until a release switches it).
+	Secrets string `yaml:"secrets"`
+}
+
+// Per-environment secrets modes (EnvSettings.Secrets).
+const (
+	SecretsSwitched = "doppler"
+	SecretsStaged   = "staged"
+)
+
+// DopplerMode is env's secrets mode: "" when the provider is not Doppler,
+// else SecretsSwitched or SecretsStaged.
+func (c Config) DopplerMode(env string) string {
+	if c.Secrets.Provider != ProviderDoppler {
+		return ""
+	}
+	if c.PerEnvironment[env].Secrets == SecretsStaged {
+		return SecretsStaged
+	}
+	return SecretsSwitched
 }
 
 // RailwayDomain is the PUBLIC_URL value for the Railway-generated domain.
@@ -332,6 +358,11 @@ func (c Config) Validate() error {
 		}
 		if from := settings.FromEmail; from != "" && from != ManualValue && !strings.Contains(from, "@") {
 			add("per_environment.%s.from_email must be an email address or %q, got %q", env, ManualValue, from)
+		}
+		switch settings.Secrets {
+		case "", SecretsSwitched, SecretsStaged:
+		default:
+			add("per_environment.%s.secrets must be %q or %q, got %q", env, SecretsSwitched, SecretsStaged, settings.Secrets)
 		}
 	}
 	if c.AdminBootstrapEmail != "" && !strings.Contains(c.AdminBootstrapEmail, "@") {

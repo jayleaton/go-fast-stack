@@ -130,32 +130,61 @@ func (s *setup) deploymentStatus(ctx context.Context, svc, env string) (string, 
 	return status, err
 }
 
-// latestDeployment reads the newest deployment. A read is retried twice:
-// Railway's API sometimes answers a body the CLI cannot decode.
-func (s *setup) latestDeployment(ctx context.Context, svc, env string) (id, status string, err error) {
-	var deps []struct {
-		ID     string `json:"id"`
-		Status string `json:"status"`
-	}
-	for attempt := range 3 {
+// deployment is one entry of railway deployment list, newest first.
+type deployment struct {
+	ID     string `json:"id"`
+	Status string `json:"status"`
+}
+
+// deploymentReadAttempts and deploymentRetryDelay: Railway's API sometimes
+// answers a body the CLI cannot decode, so a read is retried.
+const (
+	deploymentReadAttempts = 3
+	deploymentRetryDelay   = 10 * time.Second
+)
+
+// deployments lists svc's deployments in env, newest first.
+func (s *setup) deployments(ctx context.Context, svc, env string) ([]deployment, error) {
+	var list []deployment
+	var err error
+	for attempt := range deploymentReadAttempts {
 		if attempt > 0 {
 			select {
 			case <-ctx.Done():
-				return "", "", ctx.Err()
-			case <-time.After(10 * time.Second):
+				return nil, ctx.Err()
+			case <-time.After(deploymentRetryDelay):
 			}
 		}
-		if err = s.rw.json(ctx, &deps, "deployment", "list", "--service", svc, "--environment", env); err == nil {
-			break
+		if err = s.rw.json(ctx, &list, "deployment", "list", "--service", svc, "--environment", env); err == nil {
+			return list, nil
 		}
 	}
+	return nil, err
+}
+
+// latestDeployment reads the newest deployment ("" when none).
+func (s *setup) latestDeployment(ctx context.Context, svc, env string) (id, status string, err error) {
+	list, err := s.deployments(ctx, svc, env)
+	if err != nil || len(list) == 0 {
+		return "", "", err
+	}
+	return list[0].ID, list[0].Status, nil
+}
+
+// latestBuilt reads the newest deployment Railway did not skip. A SKIPPED
+// one (a push outside the watch paths) never replaces the running
+// deployment, and one can land while a variable change is still building.
+func (s *setup) latestBuilt(ctx context.Context, svc, env string) (id, status string, err error) {
+	list, err := s.deployments(ctx, svc, env)
 	if err != nil {
 		return "", "", err
 	}
-	if len(deps) == 0 {
-		return "", "", nil
+	for _, entry := range list {
+		if entry.Status != "SKIPPED" {
+			return entry.ID, entry.Status, nil
+		}
 	}
-	return deps[0].ID, deps[0].Status, nil
+	return "", "", nil
 }
 
 // settled reports whether a deployment status will not change by itself.

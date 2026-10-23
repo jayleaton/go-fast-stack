@@ -13,7 +13,11 @@
 //   - every -keep name is ignored (never set) on every service that reads
 //     it: values a project sets by hand;
 //   - a manual value in per_environment leaves its variable unset and
-//     ignored.
+//     ignored;
+//   - with secrets.provider doppler, no Doppler-owned secret
+//     (platform.DopplerNames) stays a plain Railway variable by design: the
+//     graph sets none but the database references, and no
+//     unmanaged_variables pattern keeps one on Railway.
 //
 // It reads no network and no credentials. `make deploy-vars` runs it.
 //
@@ -93,6 +97,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 
 	var problems []string
+	if cfg.Secrets.Provider == platform.ProviderDoppler {
+		problems = append(problems, dopplerOwned(cfg)...)
+	}
 	for _, env := range cfg.Environments {
 		graph, err := buildGraph(cfg, env)
 		if err != nil {
@@ -106,7 +113,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		for _, problem := range problems {
 			fmt.Fprintln(stderr, "check-vars:", problem)
 		}
-		fmt.Fprintf(stderr, "check-vars: %d problems: apply could delete or overwrite a hand-set variable (list it in platform.yaml unmanaged_variables)\n", len(problems))
+		fmt.Fprintf(stderr, "check-vars: %d problems: apply could delete or overwrite a hand-set variable (list it in platform.yaml unmanaged_variables), or a secret would stay a plain Railway variable\n", len(problems))
 		return exitProblems
 	}
 	fmt.Fprintf(stdout, "check-vars: ok: %d app variables and %d kept names are set by IaC or ignored, never both, in every environment\n", len(names), len(keep))
@@ -200,6 +207,22 @@ func buildGraph(cfg platform.Config, env string) (iacGraph, error) {
 	return graph, err
 }
 
+// dopplerOwned reports unmanaged_variables patterns that would keep a
+// Doppler-owned secret on Railway as a plain variable someone sets by hand.
+func dopplerOwned(cfg platform.Config) []string {
+	var out []string
+	for _, service := range cfg.PublicServices() {
+		for _, name := range platform.DopplerNames(service) {
+			for _, pattern := range cfg.Unmanaged {
+				if matchesPattern(pattern, service, name) {
+					out = append(out, fmt.Sprintf("%s/%s is a secret Doppler serves, but unmanaged_variables %q keeps it as a plain Railway variable: narrow the pattern to non-secret names", service, name, pattern))
+				}
+			}
+		}
+	}
+	return out
+}
+
 // matchesPattern reports whether a variables.ignore / unmanaged_variables
 // pattern ("NAME", "NAME_*" or "service/NAME") matches name on service.
 func matchesPattern(pattern, service, name string) bool {
@@ -246,6 +269,9 @@ func (graph iacGraph) check(cfg platform.Config, env string, names, keep []strin
 			}
 			if slices.Contains(keep, name) && readsName(readBy[service], name) {
 				bad("%s/%s must be kept by hand but the graph sets it", service, name)
+			}
+			if cfg.Secrets.Provider == platform.ProviderDoppler && slices.Contains(platform.DopplerNames(service), name) && !slices.Contains(platform.GraphSet(), name) {
+				bad("%s/%s is a secret Doppler serves, but the graph sets it as a plain Railway variable", service, name)
 			}
 		}
 		for _, name := range append(slices.Clone(names), keep...) {

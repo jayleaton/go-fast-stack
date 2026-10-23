@@ -68,10 +68,15 @@ email:
 # Railway-generated domain (the default), or an https origin (a custom
 # domain). from_email: FROM_EMAIL (default email.from). manual: you set it
 # by hand in Railway, and apply never sets, resets or deletes it.
+# secrets (with secrets.provider: doppler): doppler (default) switches the
+# environment's services to Doppler; staged fills Doppler and seals the
+# token without a deploy, so they keep their Railway secrets until a release
+# sets it to doppler (docs/secrets.md "Staged environments").
 # per_environment:
 #   production:
 #     public_url: https://app.example.com
 #     from_email: manual
+#     secrets: staged
 
 # admin_bootstrap_email: you@example.com   # first admin, seeded by `admin migrate`
 
