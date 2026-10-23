@@ -89,8 +89,12 @@ func (n *noStore) FlushError() error {
 
 func (n *noStore) Unwrap() http.ResponseWriter { return n.ResponseWriter }
 
+// nonceBytes is the CSP nonce's entropy: 144 bits, 24 base64 characters
+// with no padding.
+const nonceBytes = 18
+
 func newNonce() string {
-	b := make([]byte, 18)
+	b := make([]byte, nonceBytes)
 	_, _ = rand.Read(b) // never fails on supported platforms (crypto/rand docs)
 	return base64.RawStdEncoding.EncodeToString(b)
 }

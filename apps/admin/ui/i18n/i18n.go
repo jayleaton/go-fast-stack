@@ -221,13 +221,16 @@ func fromAcceptLanguage(header string) Locale {
 	return DefaultLocale
 }
 
+// cookieMaxAge keeps the switcher choice for a year, in seconds.
+const cookieMaxAge = 60 * 60 * 24 * 365
+
 // SetCookie persists the switcher choice for a year.
 func SetCookie(w http.ResponseWriter, l Locale, secure bool) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     CookieName,
 		Value:    string(l),
 		Path:     "/",
-		MaxAge:   60 * 60 * 24 * 365,
+		MaxAge:   cookieMaxAge,
 		HttpOnly: true, // only the server reads it
 		Secure:   secure,
 		SameSite: http.SameSiteLaxMode,

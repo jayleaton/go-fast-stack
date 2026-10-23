@@ -13,6 +13,17 @@ const (
 	MaxLimit     = 100
 )
 
+// Length limits; each error message states the same number.
+const (
+	maxNameLength        = 255 // a display name, in characters
+	maxEmailLength       = 255 // an email address, in bytes
+	maxSearchLength      = 255 // a user search, in characters
+	maxBanReasonLength   = 500 // a ban reason, in characters
+	maxRoleLength        = 32  // a role name, in bytes
+	maxAuditActionLength = 64  // an audit action filter, in bytes
+	maxAuditTargetLength = 255 // an audit target id filter, in bytes
+)
+
 // ListUsers is the query of GET /users (Better Auth list-users names, minus
 // the operators). Rules that need state stay in the service.
 type ListUsers struct {
@@ -53,7 +64,7 @@ func (l *ListUsers) Validate() error {
 	if l.Limit == 0 {
 		l.Limit = DefaultLimit
 	}
-	f.Add(utf8.RuneCountInString(l.Search) > 255, "search", "must be at most 255 characters")
+	f.Add(utf8.RuneCountInString(l.Search) > maxSearchLength, "search", "must be at most 255 characters")
 	f.Add(l.SearchField != "email" && l.SearchField != "name", "searchField", "must be email or name")
 	f.Add(l.Role != "" && !isRole(l.Role), "role", "must be a role name")
 	f.Add(l.SortBy != "createdAt" && l.SortBy != "email" && l.SortBy != "name", "sortBy", "must be createdAt, email or name")
@@ -70,17 +81,20 @@ type BanUser struct {
 	BanExpiresIn *int64 `json:"banExpiresIn"`
 }
 
-// MaxBanSeconds caps a timed ban at ten years; longer is permanent.
-const MaxBanSeconds = 10 * 365 * 24 * 60 * 60
+// A timed ban lasts from a minute to ten years; longer is permanent.
+const (
+	MinBanSeconds = 60
+	MaxBanSeconds = 10 * 365 * 24 * 60 * 60
+)
 
 // Validate trims the reason and checks the expiry.
 func (b *BanUser) Validate() error {
 	f := Fields{}
 	b.BanReason = strings.TrimSpace(b.BanReason)
-	f.Add(b.BanReason == "" || utf8.RuneCountInString(b.BanReason) > 500, "banReason", "must be 1-500 characters")
+	f.Add(b.BanReason == "" || utf8.RuneCountInString(b.BanReason) > maxBanReasonLength, "banReason", "must be 1-500 characters")
 	if b.BanExpiresIn != nil {
 		s := *b.BanExpiresIn
-		f.Add(s < 0 || (s > 0 && s < 60) || s > MaxBanSeconds, "banExpiresIn", "must be 0 (permanent) or 60 seconds to 10 years")
+		f.Add(s < 0 || (s > 0 && s < MinBanSeconds) || s > MaxBanSeconds, "banExpiresIn", "must be 0 (permanent) or 60 seconds to 10 years")
 	}
 	return f.Err()
 }
@@ -101,7 +115,7 @@ func (s *SetUserRole) Validate() error {
 
 // isRole: lower-case letters, digits, "-" and "_", 1-32 characters.
 func isRole(s string) bool {
-	if s == "" || len(s) > 32 {
+	if s == "" || len(s) > maxRoleLength {
 		return false
 	}
 	for _, r := range s {

@@ -28,6 +28,9 @@ func (q QRCode) ViewBox() string {
 	return "0 0 " + n + " " + n
 }
 
+// grayMidpoint splits a QR module's gray level into dark (below) and light.
+const grayMidpoint = 128
+
 // totpQR encodes an otpauth:// URI (anything else, like a value a plain post
 // sent back, is not encoded). ok is false when there is nothing to show; the
 // page keeps the manual key. The URI holds the secret: never log it.
@@ -41,7 +44,7 @@ func totpQR(uri string) (q QRCode, ok bool) {
 	}
 	b := code.Bounds()
 	dark := func(x, y int) bool {
-		return color.GrayModel.Convert(code.At(x, y)).(color.Gray).Y < 128
+		return color.GrayModel.Convert(code.At(x, y)).(color.Gray).Y < grayMidpoint
 	}
 	var p strings.Builder
 	for y := b.Min.Y; y < b.Max.Y; y++ {

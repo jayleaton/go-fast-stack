@@ -115,12 +115,16 @@ type SecretsHealth interface {
 	Healthy() error
 }
 
+// healthzTimeout bounds the database pings behind /healthz, so a hung
+// database answers 503 instead of hanging the probe.
+const healthzTimeout = 2 * time.Second
+
 // healthz is a readiness check: 503 when a database is down or live secrets
 // are past their max staleness (see the web app's healthz).
 func healthz(dbs map[string]Pinger, sec SecretsHealth) http.HandlerFunc {
 	names := slices.Sorted(maps.Keys(dbs))
 	return func(w http.ResponseWriter, r *http.Request) {
-		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+		ctx, cancel := context.WithTimeout(r.Context(), healthzTimeout)
 		defer cancel()
 		for _, name := range names {
 			if err := dbs[name].Ping(ctx); err != nil {

@@ -24,7 +24,7 @@ func (c *CreateAdminInvite) Validate() error {
 	}
 	f := Fields{}
 	f.Add(!isEmail(c.Email), "email", "must be a valid email address")
-	f.Add(utf8.RuneCountInString(c.Name) > 255, "name", "must be at most 255 characters")
+	f.Add(utf8.RuneCountInString(c.Name) > maxNameLength, "name", "must be at most 255 characters")
 	return f.Err()
 }
 
@@ -66,8 +66,8 @@ func (l *ListAuditLog) Validate() error {
 		l.Limit = DefaultLimit
 	}
 	f := Fields{}
-	f.Add(len(l.Action) > 64, "action", "must be at most 64 characters")
-	f.Add(len(l.TargetID) > 255, "targetId", "must be at most 255 characters")
+	f.Add(len(l.Action) > maxAuditActionLength, "action", "must be at most 64 characters")
+	f.Add(len(l.TargetID) > maxAuditTargetLength, "targetId", "must be at most 255 characters")
 	f.Add(l.Limit < 1 || l.Limit > MaxLimit, "limit", "must be 1-100")
 	f.Add(l.Offset < 0, "offset", "must be 0 or more")
 	return f.Err()
@@ -75,5 +75,5 @@ func (l *ListAuditLog) Validate() error {
 
 func isEmail(s string) bool {
 	a, err := mail.ParseAddress(s)
-	return err == nil && a.Address == s && len(s) <= 255
+	return err == nil && a.Address == s && len(s) <= maxEmailLength
 }
