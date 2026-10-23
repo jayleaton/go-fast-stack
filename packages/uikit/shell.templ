@@ -4,13 +4,13 @@ package uikit
 // the theme cookie (no class: follow the system), so the first paint has the
 // right colors without a pre-paint script. data-nonce lets Datastar run
 // data-* expressions under the strict nonce CSP.
-templ Page(d Document) {
+templ Page(document Document) {
 	<!DOCTYPE html>
 	<html
-		lang={ d.Lang }
+		lang={ document.Lang }
 		dir="ltr"
-		if d.Theme != "" {
-			class={ d.Theme }
+		if document.Theme != "" {
+			class={ document.Theme }
 		}
 		if templ.GetNonce(ctx) != "" {
 			data-nonce={ templ.GetNonce(ctx) }
@@ -20,16 +20,16 @@ templ Page(d Document) {
 			<meta charset="utf-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1"/>
 			<meta name="color-scheme" content="light dark"/>
-			if d.Description != "" {
-				<meta name="description" content={ d.Description }/>
+			if document.Description != "" {
+				<meta name="description" content={ document.Description }/>
 			}
-			<title>{ d.Title }</title>
-			if d.Favicon != "" {
-				<link rel="icon" href={ d.Favicon }/>
+			<title>{ document.Title }</title>
+			if document.Favicon != "" {
+				<link rel="icon" href={ document.Favicon }/>
 			}
-			<link rel="stylesheet" href={ d.CSS }/>
-			if d.Script != "" {
-				<script type="module" src={ d.Script } nonce={ templ.GetNonce(ctx) }></script>
+			<link rel="stylesheet" href={ document.CSS }/>
+			if document.Script != "" {
+				<script type="module" src={ document.Script } nonce={ templ.GetNonce(ctx) }></script>
 			}
 		</head>
 		<body class="min-h-dvh bg-background text-foreground">
@@ -41,23 +41,23 @@ templ Page(d Document) {
 // AppShell is the signed-in (or public) frame: skip link, sticky header with
 // the brand, the nav (inline from md up, a disclosure menu below) and the
 // actions, then main and an optional footer.
-templ AppShell(s Shell) {
-	<a href="#main-content" class="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-3 focus:z-[60] focus:rounded-control focus:bg-surface focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-foreground focus:shadow-popover">{ s.SkipLabel }</a>
+templ AppShell(shell Shell) {
+	<a href="#main-content" class="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-3 focus:z-[60] focus:rounded-control focus:bg-surface focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-foreground focus:shadow-popover">{ shell.SkipLabel }</a>
 	<div
 		class="flex min-h-dvh flex-col"
-		if len(s.Nav) > 0 {
+		if len(shell.Nav) > 0 {
 			data-signals="{_menuOpen: false}"
 			data-on:keydown__window="evt.key === 'Escape' && ($_menuOpen = false)"
 		}
 	>
 		<header class="sticky top-0 z-40 border-b border-border bg-surface/90 backdrop-blur supports-[backdrop-filter]:bg-surface/75">
 			<div class={ ContainerClass, "flex h-16 items-center gap-3" }>
-				if len(s.Nav) > 0 {
+				if len(shell.Nav) > 0 {
 					<button
 						type="button"
 						data-testid="mobile-menu-button"
 						class={ ButtonClass(Ghost, Icon, false), "-ml-2 md:hidden" }
-						aria-label={ s.MenuLabel }
+						aria-label={ shell.MenuLabel }
 						aria-controls="mobile-menu"
 						aria-expanded="false"
 						data-attr:aria-expanded="$_menuOpen ? 'true' : 'false'"
@@ -67,34 +67,34 @@ templ AppShell(s Shell) {
 						<svg class="hidden size-5" data-class:hidden="!$_menuOpen" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg>
 					</button>
 				}
-				<a href={ templ.SafeURL(s.BrandHref) } class="flex min-w-0 items-center gap-2.5 rounded-control" data-testid="brand">
-					<span class="grid size-8 shrink-0 place-items-center rounded-control bg-primary text-sm font-bold text-primary-foreground" aria-hidden="true">{ initial(s.Brand) }</span>
-					<span class="truncate text-base font-semibold tracking-tight">{ s.Brand }</span>
+				<a href={ templ.SafeURL(shell.BrandHref) } class="flex min-w-0 items-center gap-2.5 rounded-control" data-testid="brand">
+					<span class="grid size-8 shrink-0 place-items-center rounded-control bg-primary text-sm font-bold text-primary-foreground" aria-hidden="true">{ initial(shell.Brand) }</span>
+					<span class="truncate text-base font-semibold tracking-tight">{ shell.Brand }</span>
 				</a>
-				if len(s.Nav) > 0 {
-					<nav aria-label={ s.NavLabel } class="ml-4 hidden items-center gap-1 md:flex">
-						for _, n := range s.Nav {
-							@navLink(n, false)
+				if len(shell.Nav) > 0 {
+					<nav aria-label={ shell.NavLabel } class="ml-4 hidden items-center gap-1 md:flex">
+						for _, item := range shell.Nav {
+							@navLink(item, false)
 						}
 					</nav>
 				}
 				<div class="ml-auto flex items-center gap-1.5 sm:gap-2">
-					if s.Actions != nil {
-						@s.Actions
+					if shell.Actions != nil {
+						@shell.Actions
 					}
 				</div>
 			</div>
-			if len(s.Nav) > 0 {
+			if len(shell.Nav) > 0 {
 				<div id="mobile-menu" class="hidden border-t border-border md:hidden" data-class:hidden="!$_menuOpen">
 					<div class={ ContainerClass, "space-y-1 py-3" }>
-						if s.MenuExtra != nil {
+						if shell.MenuExtra != nil {
 							<div class="px-3 pb-2 text-sm text-muted-foreground">
-								@s.MenuExtra
+								@shell.MenuExtra
 							</div>
 						}
-						<nav aria-label={ s.NavLabel } class="flex flex-col gap-1">
-							for _, n := range s.Nav {
-								@navLink(n, true)
+						<nav aria-label={ shell.NavLabel } class="flex flex-col gap-1">
+							for _, item := range shell.Nav {
+								@navLink(item, true)
 							}
 						</nav>
 					</div>
@@ -104,27 +104,27 @@ templ AppShell(s Shell) {
 		<main id="main-content" class="flex-1 focus:outline-none" tabindex="-1">
 			{ children... }
 		</main>
-		if s.Footer != nil {
+		if shell.Footer != nil {
 			<footer class="border-t border-border">
 				<div class={ ContainerClass, "py-6 text-sm text-muted-foreground" }>
-					@s.Footer
+					@shell.Footer
 				</div>
 			</footer>
 		}
 	</div>
 }
 
-templ navLink(n NavItem, block bool) {
+templ navLink(item NavItem, block bool) {
 	<a
-		href={ templ.SafeURL(n.Href) }
-		if n.Current {
+		href={ templ.SafeURL(item.Href) }
+		if item.Current {
 			aria-current="page"
 		}
 		class={ "rounded-control px-3 text-sm font-medium motion-safe:transition-colors",
 			templ.KV("py-2", !block), templ.KV("py-2.5 text-base", block),
-			templ.KV("bg-accent text-accent-foreground", n.Current),
-			templ.KV("text-muted-foreground hover:bg-muted hover:text-foreground", !n.Current) }
-	>{ n.Label }</a>
+			templ.KV("bg-accent text-accent-foreground", item.Current),
+			templ.KV("text-muted-foreground hover:bg-muted hover:text-foreground", !item.Current) }
+	>{ item.Label }</a>
 }
 
 // ThemeToggle switches dark/light. Both icons render; CSS shows the one for
@@ -143,7 +143,7 @@ templ ThemeToggle(label string) {
 
 // LocaleMenu is the language dropdown. Each option is a submit button of a
 // plain form, so it works without JS; Datastar only opens and closes it.
-templ LocaleMenu(l Locales) {
+templ LocaleMenu(locales Locales) {
 	<div
 		class="relative"
 		data-signals="{_langOpen: false}"
@@ -161,31 +161,31 @@ templ LocaleMenu(l Locales) {
 			class={ ButtonClass(Ghost, Small, false), "h-9 gap-1.5 px-2.5" }
 		>
 			<svg class="size-4 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"></path></svg>
-			<span class="sr-only">{ l.Label }:</span>
-			<span class="uppercase">{ l.Current }</span>
+			<span class="sr-only">{ locales.Label }:</span>
+			<span class="uppercase">{ locales.Current }</span>
 		</button>
-		<form method="post" action={ templ.SafeURL(l.Action) }>
-			<input type="hidden" name="next" value={ l.Next }/>
+		<form method="post" action={ templ.SafeURL(locales.Action) }>
+			<input type="hidden" name="next" value={ locales.Next }/>
 			<div
 				id="language-menu"
 				data-class:hidden="!$_langOpen"
 				class="absolute right-0 z-50 mt-2 hidden min-w-44 overflow-hidden rounded-control border border-border bg-surface p-1 shadow-popover"
 			>
-				for _, o := range l.Options {
+				for _, option := range locales.Options {
 					<button
 						type="submit"
 						name="locale"
-						value={ o.Value }
-						lang={ o.Value }
-						if o.Selected {
+						value={ option.Value }
+						lang={ option.Value }
+						if option.Selected {
 							aria-current="true"
 						}
 						class={ "flex w-full items-center justify-between gap-3 rounded-[calc(var(--ui-radius-control)-2px)] px-3 py-2 text-left text-sm",
-							templ.KV("bg-accent font-medium text-accent-foreground", o.Selected),
-							templ.KV("text-foreground hover:bg-muted", !o.Selected) }
+							templ.KV("bg-accent font-medium text-accent-foreground", option.Selected),
+							templ.KV("text-foreground hover:bg-muted", !option.Selected) }
 					>
-						<span>{ o.Label }</span>
-						<span class="text-xs uppercase opacity-75">{ o.Value }</span>
+						<span>{ option.Label }</span>
+						<span class="text-xs uppercase opacity-75">{ option.Value }</span>
 					</button>
 				}
 			</div>

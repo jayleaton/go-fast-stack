@@ -24,9 +24,9 @@ import (
 const ThemeCookie = "theme"
 
 // ThemeFrom reads the theme cookie: "dark", "light" or "" (system).
-func ThemeFrom(r *http.Request) string {
-	if c, err := r.Cookie(ThemeCookie); err == nil && (c.Value == "dark" || c.Value == "light") {
-		return c.Value
+func ThemeFrom(request *http.Request) string {
+	if cookie, err := request.Cookie(ThemeCookie); err == nil && (cookie.Value == "dark" || cookie.Value == "light") {
+		return cookie.Value
 	}
 	return ""
 }
@@ -67,14 +67,14 @@ func Assign(path string) string {
 
 // jsString quotes s as a JS string literal. JSON is valid JS, and the
 // encoder escapes <, > and & too.
-func jsString(s string) string {
-	b, _ := json.Marshal(s) // a string always encodes
-	return string(b)
+func jsString(text string) string {
+	data, _ := json.Marshal(text) // a string always encodes
+	return string(data)
 }
 
 // jsPath keeps a server path safe inside a single-quoted JS string.
-func jsPath(p string) string {
-	return strings.NewReplacer(`\`, `\\`, `'`, `\'`, "\n", `\n`, "\r", `\r`, " ", ` `, " ", ` `).Replace(p)
+func jsPath(path string) string {
+	return strings.NewReplacer(`\`, `\\`, `'`, `\'`, "\n", `\n`, "\r", `\r`, " ", ` `, " ", ` `).Replace(path)
 }
 
 // Variant is a button style.
@@ -112,32 +112,32 @@ const (
 )
 
 // ButtonClass is the class list of a button (or a link styled as one).
-func ButtonClass(v Variant, s Size, full bool) string {
-	c := "inline-flex select-none items-center justify-center gap-2 whitespace-nowrap rounded-control text-sm font-medium motion-safe:transition-colors disabled:pointer-events-none disabled:opacity-60 aria-disabled:pointer-events-none aria-disabled:opacity-60"
-	switch s {
+func ButtonClass(variant Variant, size Size, full bool) string {
+	code := "inline-flex select-none items-center justify-center gap-2 whitespace-nowrap rounded-control text-sm font-medium motion-safe:transition-colors disabled:pointer-events-none disabled:opacity-60 aria-disabled:pointer-events-none aria-disabled:opacity-60"
+	switch size {
 	case Small:
-		c += " h-8 px-3"
+		code += " h-8 px-3"
 	case Icon:
-		c += " size-9 shrink-0"
+		code += " size-9 shrink-0"
 	default:
-		c += " h-10 px-4"
+		code += " h-10 px-4"
 	}
-	switch v {
+	switch variant {
 	case Secondary:
-		c += " border border-border bg-surface text-foreground shadow-card hover:bg-muted"
+		code += " border border-border bg-surface text-foreground shadow-card hover:bg-muted"
 	case Ghost:
-		c += " text-foreground hover:bg-muted"
+		code += " text-foreground hover:bg-muted"
 	case Danger:
-		c += " bg-danger text-danger-foreground shadow-card hover:opacity-90"
+		code += " bg-danger text-danger-foreground shadow-card hover:opacity-90"
 	case DangerOutline:
-		c += " border border-danger-border bg-surface text-danger-soft-foreground hover:bg-danger-soft"
+		code += " border border-danger-border bg-surface text-danger-soft-foreground hover:bg-danger-soft"
 	default:
-		c += " bg-primary text-primary-foreground shadow-card hover:bg-primary-hover"
+		code += " bg-primary text-primary-foreground shadow-card hover:bg-primary-hover"
 	}
 	if full {
-		c += " w-full"
+		code += " w-full"
 	}
-	return c
+	return code
 }
 
 // Shared class lists for markup that is not worth a component.
@@ -162,8 +162,8 @@ const (
 )
 
 // toneClass is the soft (background + text + border) style of a tone.
-func toneClass(t Tone) string {
-	switch t {
+func toneClass(tone Tone) string {
+	switch tone {
 	case Info:
 		return "border-info-border bg-info-soft text-info-soft-foreground"
 	case Success:
@@ -180,8 +180,8 @@ func toneClass(t Tone) string {
 }
 
 // dotClass is the solid dot color of a tone.
-func dotClass(t Tone) string {
-	switch t {
+func dotClass(tone Tone) string {
+	switch tone {
 	case Success:
 		return "bg-success"
 	case Warning:
@@ -196,8 +196,8 @@ func dotClass(t Tone) string {
 }
 
 // role is "alert" for tones that need attention now, else "status".
-func role(t Tone) string {
-	if t == Error || t == Warning {
+func role(tone Tone) string {
+	if tone == Error || tone == Warning {
 		return "alert"
 	}
 	return "status"
@@ -216,17 +216,17 @@ type ButtonProps struct {
 	Attrs templ.Attributes
 }
 
-func (p ButtonProps) class() string {
-	c := ButtonClass(p.Variant, p.Size, p.Full)
-	if p.Class != "" {
-		c += " " + p.Class
+func (props ButtonProps) class() string {
+	class := ButtonClass(props.Variant, props.Size, props.Full)
+	if props.Class != "" {
+		class += " " + props.Class
 	}
-	return c
+	return class
 }
 
-func (p ButtonProps) typ(def string) string {
-	if p.Type != "" {
-		return p.Type
+func (props ButtonProps) typ(def string) string {
+	if props.Type != "" {
+		return props.Type
 	}
 	return def
 }
@@ -256,28 +256,28 @@ type Field struct {
 	Attrs templ.Attributes
 }
 
-func (f Field) name() string {
-	if f.Name != "" {
-		return f.Name
+func (field Field) name() string {
+	if field.Name != "" {
+		return field.Name
 	}
-	return f.ID
+	return field.ID
 }
 
-func (f Field) typ() string {
-	if f.Type != "" {
-		return f.Type
+func (field Field) typ() string {
+	if field.Type != "" {
+		return field.Type
 	}
 	return "text"
 }
 
 // describedBy links the control to its hint and error.
-func (f Field) describedBy() string {
+func (field Field) describedBy() string {
 	var ids []string
-	if f.Hint != "" {
-		ids = append(ids, f.ID+"-hint")
+	if field.Hint != "" {
+		ids = append(ids, field.ID+"-hint")
 	}
-	if f.Error != "" {
-		ids = append(ids, f.ID+"-error")
+	if field.Error != "" {
+		ids = append(ids, field.ID+"-error")
 	}
 	return strings.Join(ids, " ")
 }
@@ -388,7 +388,7 @@ func indicator(signal string) templ.Attributes {
 	return templ.Attributes{"data-indicator:" + signal: true}
 }
 
-func dialogID(c Confirm) string { return c.ID + "-dialog" }
+func dialogID(confirm Confirm) string { return confirm.ID + "-dialog" }
 
 func openDialog(id string) string {
 	return "document.getElementById('" + jsPath(id) + "').showModal()"
@@ -396,8 +396,8 @@ func openDialog(id string) string {
 
 // initial is the brand mark letter.
 func initial(brand string) string {
-	for _, r := range strings.TrimSpace(brand) {
-		return strings.ToUpper(string(r))
+	for _, char := range strings.TrimSpace(brand) {
+		return strings.ToUpper(string(char))
 	}
 	return "·"
 }
