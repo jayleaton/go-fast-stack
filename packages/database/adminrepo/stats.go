@@ -11,23 +11,23 @@ import (
 // Stats answers the analytics placeholder with counts over the main app's
 // database (read-only). It implements services.Analytics (apps/admin).
 type Stats struct {
-	q   *appsql.Queries
-	now func() time.Time
+	queries *appsql.Queries
+	now     func() time.Time
 }
 
 // NewStats returns the statistics over the app database pool.
 func NewStats(appPool appsql.DBTX) *Stats {
-	return &Stats{q: appsql.New(appPool), now: time.Now}
+	return &Stats{queries: appsql.New(appPool), now: time.Now}
 }
 
 // Overview returns the headline counts.
-func (s *Stats) Overview(ctx context.Context) (model.Overview, error) {
-	r, err := s.q.UserOverview(ctx)
+func (stats *Stats) Overview(ctx context.Context) (model.Overview, error) {
+	row, err := stats.queries.UserOverview(ctx)
 	if err != nil {
 		return model.Overview{}, err
 	}
 	return model.Overview{
-		TotalUsers: r.TotalUsers, VerifiedUsers: r.VerifiedUsers, BannedUsers: r.BannedUsers, NewUsers7d: r.NewUsers7d,
-		ActiveSessions: r.ActiveSessions, GeneratedAt: s.now().UTC(),
+		TotalUsers: row.TotalUsers, VerifiedUsers: row.VerifiedUsers, BannedUsers: row.BannedUsers, NewUsers7d: row.NewUsers7d,
+		ActiveSessions: row.ActiveSessions, GeneratedAt: stats.now().UTC(),
 	}, nil
 }

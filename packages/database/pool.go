@@ -34,8 +34,8 @@ const DefaultDrainTimeout = 30 * time.Second
 // one: pgx fails such a call while acquiring a connection, before any SQL is
 // sent, so the retry never runs a statement twice. Safe for concurrent use.
 type Pool struct {
-	cur atomic.Pointer[pgxpool.Pool]
-	o   PoolOptions
+	cur     atomic.Pointer[pgxpool.Pool]
+	options PoolOptions
 
 	mu       sync.Mutex // serializes Swap and Close
 	url      string     // current connection string; never logged
@@ -54,131 +54,131 @@ type PoolOptions struct {
 }
 
 // OpenPool connects to url, pings it and runs the probe.
-func OpenPool(ctx context.Context, url string, o PoolOptions) (*Pool, error) {
-	if o.DrainTimeout <= 0 {
-		o.DrainTimeout = DefaultDrainTimeout
+func OpenPool(ctx context.Context, url string, options PoolOptions) (*Pool, error) {
+	if options.DrainTimeout <= 0 {
+		options.DrainTimeout = DefaultDrainTimeout
 	}
-	p := &Pool{o: o}
-	next, err := p.open(ctx, url)
+	pool := &Pool{options: options}
+	next, err := pool.open(ctx, url)
 	if err != nil {
 		return nil, err
 	}
-	p.cur.Store(next)
-	p.url = url
-	return p, nil
+	pool.cur.Store(next)
+	pool.url = url
+	return pool, nil
 }
 
 // Swap switches to url. It is a no-op when url is unchanged. If the new
 // database cannot be reached or fails the probe, the current pool stays in
 // use and the error is returned.
-func (p *Pool) Swap(ctx context.Context, url string) error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if p.closed {
+func (pool *Pool) Swap(ctx context.Context, url string) error {
+	pool.mu.Lock()
+	defer pool.mu.Unlock()
+	if pool.closed {
 		return errors.New("database: pool is closed")
 	}
-	if url == p.url {
+	if url == pool.url {
 		return nil
 	}
-	next, err := p.open(ctx, url)
+	next, err := pool.open(ctx, url)
 	if err != nil {
 		return err
 	}
-	old := p.cur.Swap(next)
-	p.url = url
-	p.log().Info("database: switched to a new pool, draining the old one", "to", describe(next), "from", describe(old))
-	p.drain(old)
+	old := pool.cur.Swap(next)
+	pool.url = url
+	pool.log().Info("database: switched to a new pool, draining the old one", "to", describe(next), "from", describe(old))
+	pool.drain(old)
 	return nil
 }
 
 // Current returns the pool in use now. Prefer the Pool's own methods: a
 // *pgxpool.Pool kept by a caller is closed after the next Swap.
-func (p *Pool) Current() *pgxpool.Pool { return p.cur.Load() }
+func (pool *Pool) Current() *pgxpool.Pool { return pool.cur.Load() }
 
 // Close closes the current pool and waits (up to DrainTimeout) for replaced
 // pools still draining.
-func (p *Pool) Close() {
-	p.mu.Lock()
-	if p.closed {
-		p.mu.Unlock()
+func (pool *Pool) Close() {
+	pool.mu.Lock()
+	if pool.closed {
+		pool.mu.Unlock()
 		return
 	}
-	p.closed = true
-	cur := p.cur.Load()
-	p.mu.Unlock()
+	pool.closed = true
+	cur := pool.cur.Load()
+	pool.mu.Unlock()
 	cur.Close()
 	done := make(chan struct{})
-	go func() { p.draining.Wait(); close(done) }()
+	go func() { pool.draining.Wait(); close(done) }()
 	select {
 	case <-done:
-	case <-time.After(p.o.DrainTimeout):
-		p.log().Warn("database: replaced pool still draining at shutdown", "timeout", p.o.DrainTimeout)
+	case <-time.After(pool.options.DrainTimeout):
+		pool.log().Warn("database: replaced pool still draining at shutdown", "timeout", pool.options.DrainTimeout)
 	}
 }
 
 // Exec runs sql on the current pool.
-func (p *Pool) Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
-	return retry(p, func(c *pgxpool.Pool) (pgconn.CommandTag, error) { return c.Exec(ctx, sql, args...) })
+func (pool *Pool) Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+	return retry(pool, func(pgPool *pgxpool.Pool) (pgconn.CommandTag, error) { return pgPool.Exec(ctx, sql, args...) })
 }
 
 // Query runs sql on the current pool.
-func (p *Pool) Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
-	return retry(p, func(c *pgxpool.Pool) (pgx.Rows, error) { return c.Query(ctx, sql, args...) })
+func (pool *Pool) Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+	return retry(pool, func(pgPool *pgxpool.Pool) (pgx.Rows, error) { return pgPool.Query(ctx, sql, args...) })
 }
 
 // QueryRow runs sql on the current pool. The retry happens in Scan, where
 // pgx reports a failed acquire.
-func (p *Pool) QueryRow(ctx context.Context, sql string, args ...any) pgx.Row {
-	c := p.cur.Load()
-	return &retryRow{p: p, used: c, row: c.QueryRow(ctx, sql, args...), retry: func(c *pgxpool.Pool) pgx.Row { return c.QueryRow(ctx, sql, args...) }}
+func (pool *Pool) QueryRow(ctx context.Context, sql string, args ...any) pgx.Row {
+	pgPool := pool.cur.Load()
+	return &retryRow{pool: pool, used: pgPool, row: pgPool.QueryRow(ctx, sql, args...), retry: func(pgPool *pgxpool.Pool) pgx.Row { return pgPool.QueryRow(ctx, sql, args...) }}
 }
 
 // Begin starts a transaction on the current pool. The transaction keeps its
 // connection until Commit or Rollback, even across a Swap.
-func (p *Pool) Begin(ctx context.Context) (pgx.Tx, error) {
-	return retry(p, func(c *pgxpool.Pool) (pgx.Tx, error) { return c.Begin(ctx) })
+func (pool *Pool) Begin(ctx context.Context) (pgx.Tx, error) {
+	return retry(pool, func(pgPool *pgxpool.Pool) (pgx.Tx, error) { return pgPool.Begin(ctx) })
 }
 
 // Ping checks the current pool (server /healthz).
-func (p *Pool) Ping(ctx context.Context) error {
-	_, err := retry(p, func(c *pgxpool.Pool) (struct{}, error) { return struct{}{}, c.Ping(ctx) })
+func (pool *Pool) Ping(ctx context.Context) error {
+	_, err := retry(pool, func(pgPool *pgxpool.Pool) (struct{}, error) { return struct{}{}, pgPool.Ping(ctx) })
 	return err
 }
 
-func retry[T any](p *Pool, fn func(*pgxpool.Pool) (T, error)) (T, error) {
-	c := p.cur.Load()
-	v, err := fn(c)
-	if next := p.cur.Load(); errors.Is(err, puddle.ErrClosedPool) && next != c {
+func retry[Value any](pool *Pool, fn func(*pgxpool.Pool) (Value, error)) (Value, error) {
+	pgPool := pool.cur.Load()
+	value, err := fn(pgPool)
+	if next := pool.cur.Load(); errors.Is(err, puddle.ErrClosedPool) && next != pgPool {
 		return fn(next)
 	}
-	return v, err
+	return value, err
 }
 
 type retryRow struct {
-	p     *Pool
+	pool  *Pool
 	used  *pgxpool.Pool
 	row   pgx.Row
 	retry func(*pgxpool.Pool) pgx.Row
 }
 
-func (r *retryRow) Scan(dest ...any) error {
-	err := r.row.Scan(dest...)
-	if next := r.p.cur.Load(); errors.Is(err, puddle.ErrClosedPool) && next != r.used {
-		return r.retry(next).Scan(dest...)
+func (row *retryRow) Scan(dest ...any) error {
+	err := row.row.Scan(dest...)
+	if next := row.pool.cur.Load(); errors.Is(err, puddle.ErrClosedPool) && next != row.used {
+		return row.retry(next).Scan(dest...)
 	}
 	return err
 }
 
-func (p *Pool) open(ctx context.Context, url string) (*pgxpool.Pool, error) {
+func (pool *Pool) open(ctx context.Context, url string) (*pgxpool.Pool, error) {
 	next, err := pgxpool.New(ctx, url)
 	if err != nil {
 		return nil, fmt.Errorf("database: %w", redactConnErr(err))
 	}
-	probe := p.o.Probe
+	probe := pool.options.Probe
 	if probe == nil {
-		probe = func(ctx context.Context, c *pgxpool.Pool) error {
+		probe = func(ctx context.Context, pgPool *pgxpool.Pool) error {
 			var one int
-			return c.QueryRow(ctx, "SELECT 1").Scan(&one)
+			return pgPool.QueryRow(ctx, "SELECT 1").Scan(&one)
 		}
 	}
 	if err := next.Ping(ctx); err != nil {
@@ -193,23 +193,23 @@ func (p *Pool) open(ctx context.Context, url string) (*pgxpool.Pool, error) {
 }
 
 // drain closes old in the background once its in-flight queries finish.
-func (p *Pool) drain(old *pgxpool.Pool) {
-	p.draining.Add(1)
+func (pool *Pool) drain(old *pgxpool.Pool) {
+	pool.draining.Add(1)
 	done := make(chan struct{})
-	go func() { old.Close(); close(done); p.draining.Done() }()
+	go func() { old.Close(); close(done); pool.draining.Done() }()
 	go func() {
 		select {
 		case <-done:
-			p.log().Info("database: old pool drained and closed", "pool", describe(old))
-		case <-time.After(p.o.DrainTimeout):
-			p.log().Warn("database: old pool still has queries running; it closes when they finish", "pool", describe(old), "timeout", p.o.DrainTimeout)
+			pool.log().Info("database: old pool drained and closed", "pool", describe(old))
+		case <-time.After(pool.options.DrainTimeout):
+			pool.log().Warn("database: old pool still has queries running; it closes when they finish", "pool", describe(old), "timeout", pool.options.DrainTimeout)
 		}
 	}()
 }
 
-func (p *Pool) log() *slog.Logger {
-	if p.o.Logger != nil {
-		return p.o.Logger
+func (pool *Pool) log() *slog.Logger {
+	if pool.options.Logger != nil {
+		return pool.options.Logger
 	}
 	return slog.Default()
 }
@@ -220,14 +220,14 @@ func (p *Pool) log() *slog.Logger {
 // or stale database. Newer versions pass: during a rolling deploy old
 // replicas keep working.
 func MigratedProbe(sets map[string]fs.FS) func(ctx context.Context, candidate *pgxpool.Pool) error {
-	return func(ctx context.Context, c *pgxpool.Pool) error {
+	return func(ctx context.Context, pgPool *pgxpool.Pool) error {
 		for table, fsys := range sets {
 			want, err := latestVersion(fsys)
 			if err != nil {
 				return err
 			}
 			var got int64
-			err = c.QueryRow(ctx, "SELECT COALESCE(max(version_id), 0) FROM "+pgx.Identifier{table}.Sanitize()+" WHERE is_applied").Scan(&got)
+			err = pgPool.QueryRow(ctx, "SELECT COALESCE(max(version_id), 0) FROM "+pgx.Identifier{table}.Sanitize()+" WHERE is_applied").Scan(&got)
 			if err != nil {
 				return fmt.Errorf("read %s: %w", table, err)
 			}
@@ -246,18 +246,18 @@ func latestVersion(fsys fs.FS) (int64, error) {
 		return 0, err
 	}
 	var latest int64
-	for _, f := range files {
-		prefix, _, _ := strings.Cut(f, "_")
-		if v, err := strconv.ParseInt(prefix, 10, 64); err == nil {
-			latest = max(latest, v)
+	for _, file := range files {
+		prefix, _, _ := strings.Cut(file, "_")
+		if value, err := strconv.ParseInt(prefix, 10, 64); err == nil {
+			latest = max(latest, value)
 		}
 	}
 	return latest, nil
 }
 
 // describe names a pool without its password: user@host:port/database.
-func describe(c *pgxpool.Pool) string {
-	cc := c.Config().ConnConfig
+func describe(pgPool *pgxpool.Pool) string {
+	cc := pgPool.Config().ConnConfig
 	return fmt.Sprintf("%s@%s:%d/%s", cc.User, cc.Host, cc.Port, cc.Database)
 }
 
