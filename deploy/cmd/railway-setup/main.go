@@ -197,6 +197,7 @@ func (s *setup) reconcile(ctx context.Context, wait time.Duration) error {
 			}
 		}
 	}
+	s.checkBranches(ctx)
 	if err := s.ensureEnvironments(ctx); err != nil {
 		return err
 	}

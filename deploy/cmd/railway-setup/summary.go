@@ -71,6 +71,7 @@ type projectInfo struct {
 
 type envInfo struct {
 	Name     string        `json:"name"`
+	Branch   string        `json:"branch,omitempty"` // the git branch it deploys on push (source github)
 	Services []serviceInfo `json:"services"`
 }
 
@@ -179,6 +180,9 @@ func (s *setup) health(ctx context.Context, wait time.Duration) error {
 	s.sum.Environments = nil
 	for _, env := range s.cfg.Environments {
 		info := envInfo{Name: env}
+		if !s.cfg.Upload() {
+			info.Branch = s.cfg.BranchFor(env)
+		}
 		for _, svc := range s.cfg.PublicServices() {
 			si := serviceInfo{Name: svc, Health: "unknown"}
 			if s.project.Environments[env] == "" || s.project.Services[svc] == "" {

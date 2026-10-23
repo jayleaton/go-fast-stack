@@ -243,6 +243,13 @@ func (c Config) Validate() error {
 			add("branches.%s must not be empty", env)
 		}
 	}
+	if c.Has("production") && len(c.Environments) > 1 {
+		for _, env := range c.Environments {
+			if env != "production" && c.BranchFor(env) == c.BranchFor("production") {
+				add("branches.%s: %q is production's branch too, so every push would deploy both; give %s its own branch (default %q)", env, c.BranchFor(env), env, DefaultPreviewBranch)
+			}
+		}
+	}
 	if c.Previews && !c.Has("staging") {
 		add("previews need a staging environment to copy (environments: staging,production): a preview must never start from production")
 	}
@@ -337,12 +344,23 @@ func validCron(expr string) bool {
 // with `railway up` (make railway-up) instead of Railway building on push.
 func (c Config) Upload() bool { return c.Repo == "" || c.ForceUpload }
 
-// BranchFor is the git branch env deploys.
+// DefaultPreviewBranch is the branch staging (and qa) deploy when
+// production is not the only environment and branches does not name one:
+// merges to dev reach staging, and production only takes what reaches
+// branch (main).
+const DefaultPreviewBranch = "dev"
+
+// BranchFor is the git branch env deploys: branches.<env>, else branch for
+// production (and for every environment of a production-only project), else
+// DefaultPreviewBranch.
 func (c Config) BranchFor(env string) string {
 	if b := c.Branches[env]; b != "" {
 		return b
 	}
-	return c.Branch
+	if env == "production" || len(c.Environments) == 1 {
+		return c.Branch
+	}
+	return DefaultPreviewBranch
 }
 
 // Has reports whether env is one of the configured environments.
