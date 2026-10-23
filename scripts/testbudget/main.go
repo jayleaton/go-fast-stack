@@ -42,6 +42,15 @@ const (
 	defaultTestBudget    = 10 * time.Second
 )
 
+const (
+	defaultTop    = 10      // slowest tests listed after a run
+	tableTop      = 15      // slowest tests listed under a table
+	exitUsage     = 2       // conventional exit status for a command-line misuse
+	scanInitial   = 1 << 20 // 1 MiB: initial line buffer for go test -json
+	scanMaxLine   = 1 << 26 // 64 MiB: longest -json line accepted (huge test output)
+	minPrefixPkgs = 2       // a common module prefix needs at least two packages
+)
+
 // event is one line of `go test -json` (cmd/test2json).
 type event struct {
 	Action     string
@@ -58,7 +67,7 @@ func main() {
 	}
 	pkgBudget := flag.Duration("pkg", defaultPackageBudget, "budget for one package's test binary (0: off)")
 	testBudget := flag.Duration("test", defaultTestBudget, "budget for one leaf test or subtest (0: off)")
-	top := flag.Int("top", 10, "list this many slowest tests at the end")
+	top := flag.Int("top", defaultTop, "list this many slowest tests at the end")
 	flag.Parse()
 	os.Exit(run(os.Stdin, os.Stdout, *pkgBudget, *testBudget, *top))
 }
@@ -79,7 +88,7 @@ func run(in io.Reader, out io.Writer, pkgBudget, testBudget time.Duration, top i
 	failed := false
 
 	sc := bufio.NewScanner(in)
-	sc.Buffer(make([]byte, 0, 1<<20), 1<<26)
+	sc.Buffer(make([]byte, 0, scanInitial), scanMaxLine)
 	for sc.Scan() {
 		line := sc.Bytes()
 		var e event
@@ -197,7 +206,7 @@ func table(out io.Writer, args []string) int {
 		name, files, ok := strings.Cut(a, "=")
 		if !ok {
 			fmt.Fprintln(os.Stderr, "usage: testbudget table name=file.json[,file.json...] ...")
-			return 2
+			return exitUsage
 		}
 		// Several files (repeated runs): each package's and test's median.
 		pkgRuns, testRuns := map[string][]time.Duration{}, map[string][]time.Duration{}
@@ -208,7 +217,7 @@ func table(out io.Writer, args []string) int {
 				return 1
 			}
 			sc := bufio.NewScanner(f)
-			sc.Buffer(make([]byte, 0, 1<<20), 1<<26)
+			sc.Buffer(make([]byte, 0, scanInitial), scanMaxLine)
 			for sc.Scan() {
 				var e event
 				if json.Unmarshal(sc.Bytes(), &e) != nil || (e.Action != "pass" && e.Action != "fail") {
@@ -269,7 +278,7 @@ func table(out io.Writer, args []string) int {
 	tests := leaves(cols[0].tests)
 	slices.SortFunc(tests, func(a, b result) int { return cmp.Compare(b.elapsed, a.elapsed) })
 	fmt.Fprintf(out, "\nSlowest tests (leaf tests and subtests, %s):\n\n| test | time |\n|---|--:|\n", cols[0].name)
-	for _, t := range tests[:min(15, len(tests))] {
+	for _, t := range tests[:min(tableTop, len(tests))] {
 		fmt.Fprintf(out, "| %s | %.2fs |\n", strings.TrimPrefix(t.name, mod), t.elapsed.Seconds())
 	}
 	return 0
@@ -282,7 +291,7 @@ func median(ds []time.Duration) time.Duration {
 
 // commonPrefix is the module path shared by the packages ("" if fewer than two).
 func commonPrefix(pkgs []string) string {
-	if len(pkgs) < 2 {
+	if len(pkgs) < minPrefixPkgs {
 		return ""
 	}
 	p := pkgs[0]
