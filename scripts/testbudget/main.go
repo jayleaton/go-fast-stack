@@ -79,8 +79,8 @@ type result struct {
 
 // run streams a go test -json run and returns the exit code.
 func run(in io.Reader, out io.Writer, pkgBudget, testBudget time.Duration, top int) int {
-	w := bufio.NewWriter(out)
-	defer func() { _ = w.Flush() }()
+	writer := bufio.NewWriter(out)
+	defer func() { _ = writer.Flush() }()
 
 	type key struct{ pkg, test string }
 	logs := map[key][]string{}
@@ -91,73 +91,73 @@ func run(in io.Reader, out io.Writer, pkgBudget, testBudget time.Duration, top i
 	sc.Buffer(make([]byte, 0, scanInitial), scanMaxLine)
 	for sc.Scan() {
 		line := sc.Bytes()
-		var e event
-		if len(line) == 0 || line[0] != '{' || json.Unmarshal(line, &e) != nil {
-			fmt.Fprintf(w, "%s\n", line) // not test2json: pass through
+		var parsed event
+		if len(line) == 0 || line[0] != '{' || json.Unmarshal(line, &parsed) != nil {
+			fmt.Fprintf(writer, "%s\n", line) // not test2json: pass through
 			continue
 		}
-		k := key{e.Package, e.Test}
-		switch e.Action {
+		logKey := key{parsed.Package, parsed.Test}
+		switch parsed.Action {
 		case "build-output":
-			fmt.Fprint(w, e.Output)
+			fmt.Fprint(writer, parsed.Output)
 		case "build-fail":
 			failed = true
 		case "output":
-			if !strings.HasPrefix(e.Output, "=== ") {
-				logs[k] = append(logs[k], e.Output)
+			if !strings.HasPrefix(parsed.Output, "=== ") {
+				logs[logKey] = append(logs[logKey], parsed.Output)
 			}
 		case "pass", "skip", "fail":
-			lines := logs[k]
-			delete(logs, k)
-			d := seconds(e.Elapsed)
-			if e.Action == "fail" {
+			lines := logs[logKey]
+			delete(logs, logKey)
+			duration := seconds(parsed.Elapsed)
+			if parsed.Action == "fail" {
 				failed = true
-				for _, l := range lines {
-					fmt.Fprint(w, l)
+				for _, line := range lines {
+					fmt.Fprint(writer, line)
 				}
 				break
 			}
-			if e.Test != "" {
-				if e.Action == "pass" {
-					tests = append(tests, result{e.Package + " " + e.Test, d})
+			if parsed.Test != "" {
+				if parsed.Action == "pass" {
+					tests = append(tests, result{parsed.Package + " " + parsed.Test, duration})
 				}
 				break
 			}
 			// A passing package prints only its summary, as plain go test does.
-			for _, l := range lines {
-				if strings.HasPrefix(l, "ok ") || strings.HasPrefix(l, "?") || strings.HasPrefix(l, "\t") {
-					fmt.Fprint(w, l)
+			for _, line := range lines {
+				if strings.HasPrefix(line, "ok ") || strings.HasPrefix(line, "?") || strings.HasPrefix(line, "\t") {
+					fmt.Fprint(writer, line)
 				}
 			}
-			if e.Action == "pass" {
-				pkgs = append(pkgs, result{e.Package, d})
+			if parsed.Action == "pass" {
+				pkgs = append(pkgs, result{parsed.Package, duration})
 			}
 		}
 	}
 	if err := sc.Err(); err != nil {
-		fmt.Fprintln(w, "testbudget: read:", err)
+		fmt.Fprintln(writer, "testbudget: read:", err)
 		return 1
 	}
 
-	byTime := func(a, b result) int { return cmp.Compare(b.elapsed, a.elapsed) }
+	byTime := func(left, right result) int { return cmp.Compare(right.elapsed, left.elapsed) }
 	tests = leaves(tests)
 	slices.SortFunc(tests, byTime)
 	slices.SortFunc(pkgs, byTime)
 	if top > 0 && len(tests) > 0 {
-		fmt.Fprintf(w, "\nslowest tests:\n")
-		for _, t := range tests[:min(top, len(tests))] {
-			fmt.Fprintf(w, "  %7.2fs  %s\n", t.elapsed.Seconds(), t.name)
+		fmt.Fprintf(writer, "\nslowest tests:\n")
+		for _, result := range tests[:min(top, len(tests))] {
+			fmt.Fprintf(writer, "  %7.2fs  %s\n", result.elapsed.Seconds(), result.name)
 		}
 	}
 
 	over := overBudget(pkgs, pkgBudget, "package")
 	over = append(over, overBudget(tests, testBudget, "test")...)
 	if len(over) > 0 {
-		fmt.Fprintf(w, "\nFAIL  over the test-time budget:\n")
-		for _, o := range over {
-			fmt.Fprintf(w, "  %s\n", o)
+		fmt.Fprintf(writer, "\nFAIL  over the test-time budget:\n")
+		for _, origin := range over {
+			fmt.Fprintf(writer, "  %s\n", origin)
 		}
-		fmt.Fprintf(w, "make it fast (AGENTS.md \"Fast tests\"): t.Parallel(), cloned databases, fake clocks, no sleeps\n")
+		fmt.Fprintf(writer, "make it fast (AGENTS.md \"Fast tests\"): t.Parallel(), cloned databases, fake clocks, no sleeps\n")
 		failed = true
 	}
 	if failed {
@@ -168,9 +168,9 @@ func run(in io.Reader, out io.Writer, pkgBudget, testBudget time.Duration, top i
 
 func overBudget(rs []result, budget time.Duration, kind string) []string {
 	var over []string
-	for _, r := range rs {
-		if budget > 0 && r.elapsed > budget {
-			over = append(over, fmt.Sprintf("%s %s: %.2fs (budget %s)", kind, r.name, r.elapsed.Seconds(), budget))
+	for _, result := range rs {
+		if budget > 0 && result.elapsed > budget {
+			over = append(over, fmt.Sprintf("%s %s: %.2fs (budget %s)", kind, result.name, result.elapsed.Seconds(), budget))
 		}
 	}
 	return over
@@ -179,17 +179,17 @@ func overBudget(rs []result, budget time.Duration, kind string) []string {
 // leaves drops tests that have subtests ("pkg Test" when "pkg Test/x" ran).
 func leaves(rs []result) []result {
 	parents := map[string]bool{}
-	for _, r := range rs {
-		for i := len(r.name) - 1; i > 0; i-- {
-			if r.name[i] == '/' {
-				parents[r.name[:i]] = true
+	for _, result := range rs {
+		for index := len(result.name) - 1; index > 0; index-- {
+			if result.name[index] == '/' {
+				parents[result.name[:index]] = true
 			}
 		}
 	}
-	return slices.DeleteFunc(rs, func(r result) bool { return parents[r.name] })
+	return slices.DeleteFunc(rs, func(result result) bool { return parents[result.name] })
 }
 
-func seconds(s float64) time.Duration { return time.Duration(s * float64(time.Second)) }
+func seconds(secs float64) time.Duration { return time.Duration(secs * float64(time.Second)) }
 
 // table prints a markdown table of per-package test time, one column per
 // name=file.json run, then the slowest tests of the first run.
@@ -202,8 +202,8 @@ func table(out io.Writer, args []string) int {
 	var cols []col
 	var order []string
 	seen := map[string]bool{}
-	for _, a := range args {
-		name, files, ok := strings.Cut(a, "=")
+	for _, arg := range args {
+		name, files, ok := strings.Cut(arg, "=")
 		if !ok {
 			fmt.Fprintln(os.Stderr, "usage: testbudget table name=file.json[,file.json...] ...")
 			return exitUsage
@@ -211,58 +211,58 @@ func table(out io.Writer, args []string) int {
 		// Several files (repeated runs): each package's and test's median.
 		pkgRuns, testRuns := map[string][]time.Duration{}, map[string][]time.Duration{}
 		for file := range strings.SplitSeq(files, ",") {
-			f, err := os.Open(file)
+			handle, err := os.Open(file)
 			if err != nil {
 				fmt.Fprintln(os.Stderr, err)
 				return 1
 			}
-			sc := bufio.NewScanner(f)
+			sc := bufio.NewScanner(handle)
 			sc.Buffer(make([]byte, 0, scanInitial), scanMaxLine)
 			for sc.Scan() {
-				var e event
-				if json.Unmarshal(sc.Bytes(), &e) != nil || (e.Action != "pass" && e.Action != "fail") {
+				var parsed event
+				if json.Unmarshal(sc.Bytes(), &parsed) != nil || (parsed.Action != "pass" && parsed.Action != "fail") {
 					continue
 				}
-				if e.Test == "" {
-					pkgRuns[e.Package] = append(pkgRuns[e.Package], seconds(e.Elapsed))
-					if !seen[e.Package] {
-						seen[e.Package] = true
-						order = append(order, e.Package)
+				if parsed.Test == "" {
+					pkgRuns[parsed.Package] = append(pkgRuns[parsed.Package], seconds(parsed.Elapsed))
+					if !seen[parsed.Package] {
+						seen[parsed.Package] = true
+						order = append(order, parsed.Package)
 					}
 				} else {
-					k := e.Package + " " + e.Test
-					testRuns[k] = append(testRuns[k], seconds(e.Elapsed))
+					key := parsed.Package + " " + parsed.Test
+					testRuns[key] = append(testRuns[key], seconds(parsed.Elapsed))
 				}
 			}
-			_ = f.Close()
+			_ = handle.Close()
 		}
-		c := col{name: name, pkgs: map[string]time.Duration{}}
-		for p, ds := range pkgRuns {
-			c.pkgs[p] = median(ds)
+		column := col{name: name, pkgs: map[string]time.Duration{}}
+		for key, ds := range pkgRuns {
+			column.pkgs[key] = median(ds)
 		}
-		for t, ds := range testRuns {
-			c.tests = append(c.tests, result{t, median(ds)})
+		for key, ds := range testRuns {
+			column.tests = append(column.tests, result{key, median(ds)})
 		}
-		cols = append(cols, c)
+		cols = append(cols, column)
 	}
 	if len(cols) == 0 {
 		return 0
 	}
-	slices.SortFunc(order, func(a, b string) int { return cmp.Compare(cols[0].pkgs[b], cols[0].pkgs[a]) })
+	slices.SortFunc(order, func(left, right string) int { return cmp.Compare(cols[0].pkgs[right], cols[0].pkgs[left]) })
 
 	mod := commonPrefix(order)
 	fmt.Fprintf(out, "| package |")
-	for _, c := range cols {
-		fmt.Fprintf(out, " %s |", c.name)
+	for _, col := range cols {
+		fmt.Fprintf(out, " %s |", col.name)
 	}
 	fmt.Fprintf(out, "\n|---|%s\n", strings.Repeat("--:|", len(cols)))
 	totals := make([]time.Duration, len(cols))
-	for _, p := range order {
-		fmt.Fprintf(out, "| %s |", strings.TrimPrefix(p, mod))
-		for i, c := range cols {
-			if d, ok := c.pkgs[p]; ok {
-				totals[i] += d
-				fmt.Fprintf(out, " %.2fs |", d.Seconds())
+	for _, path := range order {
+		fmt.Fprintf(out, "| %s |", strings.TrimPrefix(path, mod))
+		for index, col := range cols {
+			if duration, ok := col.pkgs[path]; ok {
+				totals[index] += duration
+				fmt.Fprintf(out, " %.2fs |", duration.Seconds())
 			} else {
 				fmt.Fprintf(out, " - |")
 			}
@@ -270,16 +270,16 @@ func table(out io.Writer, args []string) int {
 		fmt.Fprintln(out)
 	}
 	fmt.Fprintf(out, "| **sum** |")
-	for _, t := range totals {
-		fmt.Fprintf(out, " **%.2fs** |", t.Seconds())
+	for _, total := range totals {
+		fmt.Fprintf(out, " **%.2fs** |", total.Seconds())
 	}
 	fmt.Fprintln(out)
 
 	tests := leaves(cols[0].tests)
-	slices.SortFunc(tests, func(a, b result) int { return cmp.Compare(b.elapsed, a.elapsed) })
+	slices.SortFunc(tests, func(left, right result) int { return cmp.Compare(right.elapsed, left.elapsed) })
 	fmt.Fprintf(out, "\nSlowest tests (leaf tests and subtests, %s):\n\n| test | time |\n|---|--:|\n", cols[0].name)
-	for _, t := range tests[:min(tableTop, len(tests))] {
-		fmt.Fprintf(out, "| %s | %.2fs |\n", strings.TrimPrefix(t.name, mod), t.elapsed.Seconds())
+	for _, result := range tests[:min(tableTop, len(tests))] {
+		fmt.Fprintf(out, "| %s | %.2fs |\n", strings.TrimPrefix(result.name, mod), result.elapsed.Seconds())
 	}
 	return 0
 }
@@ -294,14 +294,14 @@ func commonPrefix(pkgs []string) string {
 	if len(pkgs) < minPrefixPkgs {
 		return ""
 	}
-	p := pkgs[0]
-	for _, s := range pkgs[1:] {
-		for !strings.HasPrefix(s, p) {
-			p = p[:len(p)-1]
+	path := pkgs[0]
+	for _, text := range pkgs[1:] {
+		for !strings.HasPrefix(text, path) {
+			path = path[:len(path)-1]
 		}
 	}
-	if i := strings.LastIndex(p, "/"); i >= 0 {
-		return p[:i+1]
+	if index := strings.LastIndex(path, "/"); index >= 0 {
+		return path[:index+1]
 	}
 	return ""
 }
