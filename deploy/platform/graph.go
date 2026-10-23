@@ -260,7 +260,7 @@ func (config Config) backups(env string, appURL, adminURL map[string]any) []any 
 	if adminURL != nil {
 		vars["ADMIN_DATABASE_URL"] = adminURL
 	}
-	const backupMemoryMB = 512 // pg_dump of a large table
+	const backupMemoryMB = 512 // pg_dump of a large table; apps/backup/Dockerfile GOMEMLIMIT stays below it
 	sc := railway.ServiceConfig{
 		"build": map[string]any{
 			"builder":        "DOCKERFILE",

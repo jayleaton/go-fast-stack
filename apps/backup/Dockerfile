@@ -16,6 +16,12 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /out/backup ./apps/back
 FROM postgres:18-alpine
 COPY --from=build /out/backup /usr/local/bin/backup
 ENV APP_ENV=production
+# Each database's age scrypt step (packages/backup, work factor 18) allocates
+# ~256 MiB that is garbage right after. Without a soft limit the GC lets the
+# next database's allocation stack on it, and the 512 MiB container cap
+# (deploy/platform/graph.go) kills the run on the second database. The limit
+# makes the GC reclaim first; keep it below that cap.
+ENV GOMEMLIMIT=384MiB
 USER postgres
 WORKDIR /tmp
 # The postgres image's entrypoint would start a server: reset it. People run
