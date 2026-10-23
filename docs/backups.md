@@ -1,0 +1,28 @@
+# Backups and restore
+
+Every project gets a nightly backup of the app database (and the admin one with `admin: true`), on by default (`backups:` in `deploy/platform.yaml`):
+
+- **What:** `pg_dump -Fc` (compressed), encrypted with [age](https://age-encryption.org) under `BACKUP_ENCRYPTION_KEY`, stored as `app/<UTC time>.dump.age` in a [Railway storage bucket](https://docs.railway.com/storage-buckets) (S3-compatible, no other account). Logs show the backup id, size and a SHA-256 fingerprint, never data, URLs or keys.
+- **Who:** a small always-on service, `backup` (`apps/backup`, image `postgres:18-alpine`, whose `pg_dump` always matches the server). It sleeps until `backups.schedule` (cron, UTC; default 03:00), backs up, then prunes. A failed night is logged and retried the next night. It stays up so you can `railway ssh` in; restores run inside Railway over the private network, so no database is exposed and no secret leaves Railway.
+- **Kept:** the newest backup of each of the last 7 days (`keep_daily`) and of each of the last 4 ISO weeks (`keep_weekly`), plus everything from the last 24 hours (a manual backup before a risky migration) and always the newest. Objects the job did not write are never touched.
+- **After a provider incident** (for example Railway's 2026-10-21/22 one, which invalidated tokens and rotated bucket credentials), rotate the encryption key through `_PREVIOUS` and redeploy the backup service: step 5 of "After a provider incident" in [Where secrets live](#where-secrets-live-and-rotating-after-an-incident).
+- **Key:** setup generates `BACKUP_ENCRYPTION_KEY` once per environment (`railway variable list --service backup`). **Copy it into your password manager now**: a backup without its key cannot be restored. To rotate it, put the old value in `BACKUP_ENCRYPTION_KEY_PREVIOUS` and a new one in `BACKUP_ENCRYPTION_KEY`; older backups still decrypt. Storage keys and database URLs are read afresh at every run (Railway references, or Doppler with `SECRETS_PROVIDER`), so rotating them needs no redeploy.
+
+**Restore runbook (Railway).** Needs only the Railway CLI with an SSH key (`railway ssh keys`, the same as `make railway-rotate-db`).
+
+```sh
+make railway-backups PLATFORM_ENV=production                 # ids, newest first
+make railway-backup  PLATFORM_ENV=production                 # take one now (e.g. before a risky migration)
+make railway-restore PLATFORM_ENV=production ID=app/20261022T030000Z.dump.age YES=1          # into an empty database
+make railway-restore PLATFORM_ENV=production ID=app/20261022T030000Z.dump.age YES=1 FORCE=1  # over the live one
+```
+
+A restore refuses without `YES=1` (exactly `1`), and refuses a database that is not empty unless `FORCE=1`, which **replaces everything in it**: every user schema is dropped (tables, views, functions, extensions, including ones newer migrations added) and the backup is replayed, all in one transaction, so a failure leaves the database as it was. It always targets the database the backup came from (`app/…` into the app database, `admin/…` into the admin one); the job refuses a mismatch, because both databases share auth's tables. To rehearse, restore into a scratch database: `railway ssh --service backup`, then `RESTORE_DATABASE_URL=<scratch URL> backup restore <id> --yes`. Writes made during a restore are lost: pause traffic first if that matters, and run `server migrate` afterwards (the web service's pre-deploy does it on the next deploy) if the backup predates the current schema. Practise a restore once when you set the project up. A single backup object is limited to 5 GB (one S3 PUT); bigger databases need multipart upload, not built yet.
+
+**Local.** `make db-backup` backs up this checkout's Postgres into `.backups/` (gitignored; `BACKUP_ADMIN=1` adds the admin database), `make db-backups` lists, `make db-restore ID=... YES=1 [FORCE=1]` restores. They run the job in Docker on the compose network, so no local `pg_dump` is needed. Set `BACKUP_S3_*` in `.env` to use any S3-compatible bucket instead of the directory.
+
+**Off Railway.** The Railway bucket lives in the same project as the database: deleting the project deletes both (after Railway's 48 h grace). For copies that survive that, set `backups.storage: external` and point the backup service's `BACKUP_S3_ENDPOINT`, `BACKUP_S3_BUCKET`, `BACKUP_S3_REGION`, `BACKUP_S3_ACCESS_KEY_ID`, `BACKUP_S3_SECRET_ACCESS_KEY` (and `BACKUP_S3_PATH_STYLE=true` if your provider needs it) at any S3-compatible bucket: Cloudflare R2 (10 GB free, no egress fees), Backblaze B2 ($6/TB/month) or AWS S3. In an emergency a backup restores without this repository: `age -d -o app.dump app/<time>.dump.age` (passphrase: the key), then `pg_restore --no-owner -d "$DATABASE_URL" app.dump`.
+
+**Railway's own backups.** On the Pro plan, Railway can also snapshot the Postgres volume (daily kept 6 days, weekly 27, monthly 89; restore mounts the snapshot as a new volume in the same project). It is configured in the dashboard only (the CLI and IaC cannot set it yet), is not available on Hobby, and wiping the volume deletes its snapshots, so it complements these backups rather than replacing them: turn it on too if you are on Pro.
+
+**Cost.** Railway bills the bucket at $0.015 per GB-month (no request or download fees) and uploads from a service as egress ($0.05/GB). The service idles at a few MB (≈ $0.10/month). For a 1 GB database (a dump of roughly 200 MB): 11 kept backups ≈ 2.2 GB ≈ $0.03/month storage, plus ≈ 6 GB of uploads ≈ $0.30/month. A template-sized database costs fractions of a cent.
