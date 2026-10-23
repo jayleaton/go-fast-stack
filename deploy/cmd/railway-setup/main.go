@@ -312,11 +312,18 @@ func (s *setup) secretSteps(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
-			if v := vars["RESEND_API_KEY"]; v != nil && *v == platform.ResendPlaceholder && !s.usesDoppler(vars) {
+			if v := vars["RESEND_API_KEY"]; v != nil && *v == platform.ResendPlaceholder && !s.onDoppler(vars) {
 				resend = append(resend, env+"/"+svc)
 			}
-			if s.cfg.Secrets.Provider == platform.ProviderDoppler && !s.usesDoppler(vars) {
-				doppler = append(doppler, env+"/"+svc)
+			switch s.cfg.DopplerMode(env) {
+			case platform.SecretsSwitched:
+				if !s.onDoppler(vars) {
+					doppler = append(doppler, env+"/"+svc)
+				}
+			case platform.SecretsStaged:
+				if !realToken(vars) {
+					doppler = append(doppler, env+"/"+svc)
+				}
 			}
 		}
 	}

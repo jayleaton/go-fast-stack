@@ -175,25 +175,41 @@ func (s *setup) checkDoppler(ctx context.Context) check {
 		c.Detail = "optional; services run on SECRETS_PROVIDER=env until setup moves them to Doppler (doppler login, then make railway-setup or make doppler-setup)"
 		return c
 	}
-	var missing []string
+	var missing, staged, copies []string
 	for _, env := range s.cfg.Environments {
 		for _, svc := range s.services() {
 			if s.project.Environments[env] == "" || s.project.Services[svc] == "" {
 				continue
 			}
 			vars, err := s.variables(ctx, svc, env)
-			if err == nil && !s.usesDoppler(vars) {
+			switch {
+			case err != nil:
+			case s.onDoppler(vars):
+				if left := copiesOn(vars, svc); len(left) > 0 {
+					copies = append(copies, env+"/"+svc+" ("+strings.Join(left, ", ")+")")
+				}
+			case s.cfg.DopplerMode(env) == platform.SecretsStaged && realToken(vars):
+				staged = append(staged, env+"/"+svc)
+			default:
 				missing = append(missing, env+"/"+svc)
 			}
 		}
 	}
-	if len(missing) > 0 {
+	switch {
+	case len(copies) > 0:
+		c.Status = "warn"
+		c.Detail = "secrets still set as Railway variables on services that read Doppler: " + strings.Join(copies, "; ")
+		c.Fix = "make doppler-setup (removes them once the service is healthy)"
+	case len(missing) > 0:
 		c.Status = "warn"
 		c.Detail = "optional; still on SECRETS_PROVIDER=env: " + strings.Join(missing, ", ")
 		c.Fix = "doppler login, then make doppler-setup"
-		return c
+	default:
+		c.Detail = "every service reads Doppler"
 	}
-	c.Detail = "every service reads Doppler"
+	if len(staged) > 0 {
+		c.Detail += "; staged (token sealed, still on its Railway secrets until per_environment.<env>.secrets is doppler): " + strings.Join(staged, ", ")
+	}
 	return c
 }
 

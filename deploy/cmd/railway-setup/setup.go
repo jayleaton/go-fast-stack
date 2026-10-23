@@ -447,7 +447,7 @@ func (s *setup) rotateDatabases(ctx context.Context, env string) error {
 		if err != nil {
 			return err
 		}
-		if s.usesDoppler(vars) {
+		if s.onDoppler(vars) {
 			s.say("  ! %s/%s reads DATABASE_URL from Doppler: if it uses the superuser, update it there (docs/secrets.md: rotate the database password)", env, svc)
 			continue
 		}
@@ -627,7 +627,7 @@ func (s *setup) bootstrap(ctx context.Context, env string) error {
 	}
 	for _, sec := range s.cfg.SecretVars() {
 		_, exists := current[sec.Service][sec.Name]
-		if s.usesDoppler(current[sec.Service]) && (sec.Kind == platform.Generated || sec.Kind == platform.Operator) {
+		if s.onDoppler(current[sec.Service]) && (sec.Kind == platform.Generated || sec.Kind == platform.Operator) {
 			continue // Doppler holds them; Railway copies were deleted on purpose
 		}
 		switch sec.Kind {
@@ -664,31 +664,49 @@ func (s *setup) bootstrap(ctx context.Context, env string) error {
 		if sec.Kind != platform.Provider {
 			continue
 		}
-		want := platform.ProviderEnv
-		if s.usesDoppler(current[sec.Service]) {
-			want = platform.ProviderDoppler
-		}
-		if cur := current[sec.Service][sec.Name]; cur == nil || *cur != want {
-			writes[sec.Service][sec.Name] = secretWrite{want, false}
-			s.change("%s/%s SECRETS_PROVIDER=%s", env, sec.Service, want)
+		// Only the Doppler phase switches a service to doppler: it waits for
+		// the new deployment before removing the Railway copies, and leaves a
+		// staged environment on env. Here: a missing value, and back to env
+		// when the provider is no longer doppler.
+		provider, ok := current[sec.Service][sec.Name]
+		backToEnv := s.cfg.Secrets.Provider != platform.ProviderDoppler && (provider == nil || *provider != platform.ProviderEnv)
+		if !ok || backToEnv {
+			writes[sec.Service][sec.Name] = secretWrite{platform.ProviderEnv, false}
+			s.change("%s/%s SECRETS_PROVIDER=%s", env, sec.Service, platform.ProviderEnv)
 		}
 	}
 	return s.commit(ctx, env, writes)
 }
 
-// usesDoppler: the service should read Doppler when doppler is the
-// provider and its token is real (sealed counts as real: only setup seals).
-func (s *setup) usesDoppler(vars map[string]*string) bool {
-	if s.cfg.Secrets.Provider != platform.ProviderDoppler {
-		return false
-	}
-	tok, ok := vars["DOPPLER_TOKEN"]
-	return ok && (tok == nil || (*tok != "" && *tok != platform.DopplerPlaceholder))
+// realToken: DOPPLER_TOKEN is set and is not the placeholder (sealed counts
+// as real: only setup seals).
+func realToken(vars map[string]*string) bool {
+	token, ok := vars["DOPPLER_TOKEN"]
+	return ok && (token == nil || (*token != "" && *token != platform.DopplerPlaceholder))
 }
 
-// commit writes variables through one environment patch; sealed values
-// cannot be read back by anyone, including the CLI and the dashboard.
+// onDoppler: the service reads Doppler now (SECRETS_PROVIDER=doppler with a
+// real token), so Railway no longer needs its secrets. A staged environment
+// has a real token but still reads Railway.
+func (s *setup) onDoppler(vars map[string]*string) bool {
+	provider := vars["SECRETS_PROVIDER"]
+	return s.cfg.Secrets.Provider == platform.ProviderDoppler && provider != nil && *provider == platform.ProviderDoppler && realToken(vars)
+}
+
+// commit writes variables through one environment patch (a deploy of the
+// services it touches); sealed values cannot be read back by anyone,
+// including the CLI and the dashboard.
 func (s *setup) commit(ctx context.Context, env string, writes map[string]map[string]secretWrite) error {
+	return s.commitVars(ctx, env, writes, false)
+}
+
+// commitStaged is commit without a deploy: the running deployments keep
+// their variables until the next one.
+func (s *setup) commitStaged(ctx context.Context, env string, writes map[string]map[string]secretWrite) error {
+	return s.commitVars(ctx, env, writes, true)
+}
+
+func (s *setup) commitVars(ctx context.Context, env string, writes map[string]map[string]secretWrite, skipDeploys bool) error {
 	services := map[string]any{}
 	for svc, vars := range writes {
 		if len(vars) == 0 {
@@ -707,8 +725,8 @@ func (s *setup) commit(ctx context.Context, env string, writes map[string]map[st
 	if len(services) == 0 || !s.apply {
 		return nil
 	}
-	return s.rw.gql(ctx, `mutation($env: String!, $patch: EnvironmentConfig) { environmentPatchCommit(environmentId: $env, patch: $patch, commitMessage: "railway-setup: bootstrap variables") }`,
-		map[string]any{"env": s.project.Environments[env], "patch": map[string]any{"services": services}}, nil)
+	return s.rw.gql(ctx, `mutation($env: String!, $patch: EnvironmentConfig, $skip: Boolean) { environmentPatchCommit(environmentId: $env, patch: $patch, skipDeploys: $skip, commitMessage: "railway-setup: bootstrap variables") }`,
+		map[string]any{"env": s.project.Environments[env], "patch": map[string]any{"services": services}, "skip": skipDeploys}, nil)
 }
 
 // ensureDomains gives each public service a Railway-generated domain, which
@@ -797,7 +815,7 @@ func (s *setup) secrets(ctx context.Context) error {
 		if s.project.Environments[env] == "" {
 			continue
 		}
-		writes := map[string]map[string]secretWrite{}
+		writes, staged := map[string]map[string]secretWrite{}, map[string]map[string]secretWrite{}
 		for _, svc := range s.services() {
 			if s.project.Services[svc] == "" {
 				continue
@@ -809,13 +827,19 @@ func (s *setup) secrets(ctx context.Context) error {
 			}
 			if s.cfg.Secrets.Provider == platform.ProviderDoppler {
 				if v := s.ask(ctx, in, "DOPPLER_TOKEN", svc, env); v != "" {
+					if s.cfg.DopplerMode(env) == platform.SecretsStaged {
+						staged[svc] = map[string]secretWrite{"DOPPLER_TOKEN": {v, true}}
+						s.change("%s/%s DOPPLER_TOKEN set (sealed, staged: no deploy, still reads its Railway secrets)", env, svc)
+						continue
+					}
+					// The Railway copies stay until make doppler-setup sees it healthy.
 					writes[svc]["DOPPLER_TOKEN"] = secretWrite{v, true}
 					writes[svc]["SECRETS_PROVIDER"] = secretWrite{platform.ProviderDoppler, false}
 					s.change("%s/%s DOPPLER_TOKEN set (sealed), SECRETS_PROVIDER=doppler", env, svc)
 					continue
 				}
 			}
-			if s.usesDoppler(current) {
+			if s.onDoppler(current) {
 				continue // RESEND_API_KEY comes from Doppler
 			}
 			if v := s.ask(ctx, in, "RESEND_API_KEY", svc, env); v != "" {
@@ -824,6 +848,9 @@ func (s *setup) secrets(ctx context.Context) error {
 			}
 		}
 		if err := s.commit(ctx, env, writes); err != nil {
+			return err
+		}
+		if err := s.commitStaged(ctx, env, staged); err != nil {
 			return err
 		}
 	}

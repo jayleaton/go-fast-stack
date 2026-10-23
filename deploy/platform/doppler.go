@@ -1,6 +1,9 @@
 package platform
 
-import "fmt"
+import (
+	"fmt"
+	"slices"
+)
 
 // Doppler layout: one Doppler environment per Railway environment, plus dev
 // for local work. The web service reads the environment's root config
@@ -37,43 +40,83 @@ func DopplerConfig(env, service string) string {
 type Source int
 
 const (
-	FromRailway     Source = iota // the service's current Railway value (it must exist)
+	IfOnRailway     Source = iota // the service's Railway value when it has one, else nothing (an optional secret)
+	FromRailway                   // the service's current Railway value (it must exist)
 	RailwayOrRandom               // the Railway value, else 48 random bytes
 	RailwayOrResend               // the Railway value, else ResendPlaceholder
 )
 
 // Seed is a secret setup puts into a Doppler config when it is missing.
-// Values already in Doppler are never overwritten.
+// Values already in Doppler are never overwritten: once seeded, Doppler is
+// where a value changes.
 type Seed struct {
 	Name   string
 	Source Source
 }
 
-// DopplerSeeds lists what a service's config must hold. Auth secrets are
-// copied from Railway when they exist: a new value would make the next boot
-// refuse to start (the 2FA data keys are wrapped by the old one).
-func DopplerSeeds(service string) []Seed {
-	if service == ServiceAdmin {
-		return []Seed{ // DATABASE_URL and RESEND_API_KEY come from the root config
-			{"ADMIN_DATABASE_URL", FromRailway},
-			{"ADMIN_AUTH_SECRET", RailwayOrRandom},
-		}
-	}
-	return []Seed{
+// Doppler-owned names: what each service reads from Doppler once it is
+// switched (SECRETS_PROVIDER=doppler). They must match the apps'
+// liveSecrets (apps/*/internal/config/secrets.go): the manager reads only
+// these from the provider, so a live secret missing here is empty after the
+// switch. Everything else a service reads is a non-secret setting and stays
+// a Railway variable. Auth secrets are copied from Railway when they exist:
+// a new value would make the next boot refuse to start (the 2FA data keys
+// are wrapped by the old one).
+var (
+	webDoppler = []Seed{
 		{"DATABASE_URL", FromRailway},
 		{"AUTH_SECRET", RailwayOrRandom},
+		{"AUTH_SECRET_PREVIOUS", IfOnRailway},
+		{"AUTH_SECRET_REVOKED", IfOnRailway},
 		{"RESEND_API_KEY", RailwayOrResend},
 	}
+	// adminDoppler lives in the admin branch config, which the web token
+	// cannot read.
+	adminDoppler = []Seed{
+		{"ADMIN_DATABASE_URL", FromRailway},
+		{"ADMIN_AUTH_SECRET", RailwayOrRandom},
+		{"ADMIN_AUTH_SECRET_PREVIOUS", IfOnRailway},
+		{"ADMIN_AUTH_SECRET_REVOKED", IfOnRailway},
+	}
+	// adminShared are admin names the web service has too: set once in the
+	// root config, which the admin branch inherits.
+	adminShared = []string{"DATABASE_URL", "RESEND_API_KEY"}
+)
+
+// DopplerSeeds lists what a service's own config must hold, in seeding
+// order (admin's shared names come from the root config, seeded by web).
+func DopplerSeeds(service string) []Seed {
+	if service == ServiceAdmin {
+		return adminDoppler
+	}
+	return webDoppler
 }
 
-// RailwayCopies are a service's Railway variables made redundant once it
-// reads Doppler (docs/secrets.md "Where secrets live"). DATABASE_URL stays: it is the
-// IaC reference to the Postgres service and is ignored under Doppler.
-func RailwayCopies(service string) []string {
-	if service == ServiceAdmin {
-		return []string{"ADMIN_AUTH_SECRET", "RESEND_API_KEY"}
+// DopplerNames are the Doppler-owned names a service reads.
+func DopplerNames(service string) []string {
+	var out []string
+	for _, seed := range DopplerSeeds(service) {
+		out = append(out, seed.Name)
 	}
-	return []string{"AUTH_SECRET", "RESEND_API_KEY"}
+	if service == ServiceAdmin {
+		out = append(out, adminShared...)
+	}
+	return out
+}
+
+// graphSet are Doppler-owned names the IaC graph sets as references to the
+// Postgres services: they stay on Railway (ignored once the app reads
+// Doppler) and are never removed as copies.
+var graphSet = []string{"DATABASE_URL", "ADMIN_DATABASE_URL"}
+
+// GraphSet lists the Doppler-owned names the graph sets on Railway.
+func GraphSet() []string { return slices.Clone(graphSet) }
+
+// RailwayCopies are a service's Railway variables made redundant once it
+// reads Doppler (docs/secrets.md "Where secrets live"): every Doppler-owned name but
+// the graph's database references.
+func RailwayCopies(service string) []string {
+	return slices.DeleteFunc(DopplerNames(service), func(name string) bool { return slices.Contains(graphSet, name) })
 }
 
 // DopplerTokenName names the service token setup creates, so a re-run (or a
