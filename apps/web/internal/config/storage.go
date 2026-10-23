@@ -10,7 +10,7 @@ import (
 	"github.com/jayleaton/go-fast-stack/packages/secrets"
 )
 
-// Object storage (README "Object storage") is optional: off unless
+// Object storage (docs/storage.md) is optional: off unless
 // STORAGE_S3_BUCKET is set. Which bucket and which keys are live secrets, so
 // a bucket move or a key rotation needs no redeploy; the region and
 // addressing style are plain env.
@@ -60,6 +60,31 @@ func (store Secrets) Storage() (StorageCredentials, error) {
 		AccessKeyID:     values[secretStorageAccessKey],
 		SecretAccessKey: values[secretStorageSecretKey],
 	}, nil
+}
+
+// OnStorage calls apply now (once a snapshot is published) and whenever any
+// of the four storage secrets changes, once per distinct set: a bucket move
+// changes several in one save. apply builds and probes a client for the new
+// set and swaps it in; an error keeps the old client and is retried after the
+// next fetch.
+func (store Secrets) OnStorage(apply func(StorageCredentials) error) {
+	var last string // fingerprint of the last set apply accepted; hooks run one at a time
+	hook := func(secrets.Secret) error {
+		credentials, err := store.Storage()
+		if err != nil {
+			return err
+		}
+		if fingerprint := credentials.Fingerprint(); fingerprint != last {
+			if err := apply(credentials); err != nil {
+				return err
+			}
+			last = fingerprint
+		}
+		return nil
+	}
+	for _, name := range storageSecrets {
+		store.m.OnChange(name, hook)
+	}
 }
 
 func loadStorageOptions(get func(key, fallback string) string, errs *[]error) StorageOptions {
