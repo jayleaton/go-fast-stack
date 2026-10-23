@@ -130,6 +130,9 @@ if [ "${#pkgs[@]}" -gt 0 ]; then
   step "test locations"
   if ! out=$(./scripts/check-test-boundaries.sh 2>&1); then done_; echo "$out" | sed 's/^/  /'; fail test-boundaries; else done_; fi
 
+  step "UI renders no API path"
+  if ! out=$(./scripts/check-ui-api-paths.sh 2>&1); then done_; echo "$out" | sed 's/^/  /'; fail ui-api-paths; else done_; fi
+
   # Only an explicit TEST_DATABASE_URL reaches the tests: make exports the dev
   # DATABASE_URL, which suites fall back to and would wait on when it is down.
   step "go test (no -race)"

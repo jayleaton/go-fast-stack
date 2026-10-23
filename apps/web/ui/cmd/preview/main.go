@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/jayleaton/go-fast-stack/apps/web/internal/access"
+	"github.com/jayleaton/go-fast-stack/apps/web/internal/api"
 	"github.com/jayleaton/go-fast-stack/apps/web/internal/config"
 	"github.com/jayleaton/go-fast-stack/apps/web/ui"
 )
@@ -38,12 +39,14 @@ func main() {
 	store.NewSession(demo.ID, "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36 Edg/141.0.0.0", "198.51.100.7", 72*time.Hour)
 
 	fakeAuth := Auth{S: store}
+	// The real API endpoints over the fake service, behind a real gate.
+	gate := access.NewGate(access.FromContext(fakeAuth.Caller))
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET "+confirmEmailPath, store.ConfirmEmail)
 	mux.Handle("/", ui.New(ui.Deps{
 		Auth:     fakeAuth,
-		Users:    Users{S: store},
-		Gate:     access.NewGate(access.FromContext(fakeAuth.Caller)),
+		API:      api.NewClient(api.NewUsers(Users{S: store}, gate)),
+		Gate:     gate,
 		Features: config.Features{EmailVerification: *verify, TemplateWelcome: *welcome},
 		Logger:   log,
 	}).Handler())

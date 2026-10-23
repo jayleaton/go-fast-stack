@@ -9,7 +9,7 @@ import (
 
 	"github.com/starfederation/datastar-go/datastar"
 
-	"github.com/jayleaton/go-fast-stack/apps/web/internal/access"
+	"github.com/jayleaton/go-fast-stack/apps/web/internal/apiclient"
 	"github.com/jayleaton/go-fast-stack/apps/web/internal/config"
 	"github.com/jayleaton/go-fast-stack/apps/web/ui/i18n"
 	"github.com/jayleaton/go-fast-stack/apps/web/ui/welcome"
@@ -19,7 +19,7 @@ import (
 // resendCooldown matches the original's five minutes between resends.
 const resendCooldown = 5 * time.Minute
 
-func (ui *UI) home(writer http.ResponseWriter, request *http.Request, caller access.Caller) {
+func (ui *UI) home(writer http.ResponseWriter, request *http.Request, caller apiclient.Caller) {
 	if caller.SignedIn() {
 		http.Redirect(writer, request, config.AppRoutes.Dashboard, http.StatusSeeOther)
 		return
@@ -31,7 +31,7 @@ func (ui *UI) home(writer http.ResponseWriter, request *http.Request, caller acc
 	ui.render(writer, request, http.StatusOK, HomePage())
 }
 
-func (ui *UI) why(writer http.ResponseWriter, request *http.Request, _ access.Caller) {
+func (ui *UI) why(writer http.ResponseWriter, request *http.Request, _ apiclient.Caller) {
 	if !ui.features.TemplateWelcome {
 		http.NotFound(writer, request)
 		return
@@ -39,11 +39,11 @@ func (ui *UI) why(writer http.ResponseWriter, request *http.Request, _ access.Ca
 	ui.render(writer, request, http.StatusOK, welcome.WhyPage())
 }
 
-func (ui *UI) loginPage(writer http.ResponseWriter, request *http.Request, _ access.Caller) {
+func (ui *UI) loginPage(writer http.ResponseWriter, request *http.Request, _ apiclient.Caller) {
 	ui.render(writer, request, http.StatusOK, LoginPage(AuthForm{}))
 }
 
-func (ui *UI) login(writer http.ResponseWriter, request *http.Request, _ access.Caller) {
+func (ui *UI) login(writer http.ResponseWriter, request *http.Request, _ apiclient.Caller) {
 	ctx := request.Context()
 	in := SignInInput{
 		Email:       strings.TrimSpace(request.PostFormValue("email")),
@@ -67,11 +67,11 @@ func (ui *UI) login(writer http.ResponseWriter, request *http.Request, _ access.
 	ui.redirect(writer, request, config.AppRoutes.Dashboard)
 }
 
-func (ui *UI) signupPage(writer http.ResponseWriter, request *http.Request, _ access.Caller) {
+func (ui *UI) signupPage(writer http.ResponseWriter, request *http.Request, _ apiclient.Caller) {
 	ui.render(writer, request, http.StatusOK, SignupPage(AuthForm{}))
 }
 
-func (ui *UI) signup(writer http.ResponseWriter, request *http.Request, _ access.Caller) {
+func (ui *UI) signup(writer http.ResponseWriter, request *http.Request, _ apiclient.Caller) {
 	ctx := request.Context()
 	in := SignUpInput{
 		Name:        strings.TrimSpace(request.PostFormValue("name")),
@@ -93,11 +93,11 @@ func (ui *UI) signup(writer http.ResponseWriter, request *http.Request, _ access
 	ui.redirect(writer, request, config.AppRoutes.Dashboard)
 }
 
-func (ui *UI) forgotPasswordPage(writer http.ResponseWriter, request *http.Request, _ access.Caller) {
+func (ui *UI) forgotPasswordPage(writer http.ResponseWriter, request *http.Request, _ apiclient.Caller) {
 	ui.render(writer, request, http.StatusOK, ForgotPasswordPage(AuthForm{}, false))
 }
 
-func (ui *UI) forgotPassword(writer http.ResponseWriter, request *http.Request, _ access.Caller) {
+func (ui *UI) forgotPassword(writer http.ResponseWriter, request *http.Request, _ apiclient.Caller) {
 	ctx := request.Context()
 	email := strings.TrimSpace(request.PostFormValue("email"))
 	if err := ui.auth.RequestPasswordReset(ctx, email, config.AppRoutes.ResetPassword); err != nil {
@@ -109,12 +109,12 @@ func (ui *UI) forgotPassword(writer http.ResponseWriter, request *http.Request, 
 	ui.patch(writer, request, http.StatusOK, ForgotPasswordPage(AuthForm{}, true), ForgotPasswordSent())
 }
 
-func (ui *UI) resetPasswordPage(writer http.ResponseWriter, request *http.Request, _ access.Caller) {
+func (ui *UI) resetPasswordPage(writer http.ResponseWriter, request *http.Request, _ apiclient.Caller) {
 	ui.tokenPage(writer)
 	ui.render(writer, request, http.StatusOK, ResetPasswordPage(request.URL.Query().Get("token"), AuthForm{}, false))
 }
 
-func (ui *UI) resetPassword(writer http.ResponseWriter, request *http.Request, _ access.Caller) {
+func (ui *UI) resetPassword(writer http.ResponseWriter, request *http.Request, _ apiclient.Caller) {
 	ctx := request.Context()
 	token := request.PostFormValue("token")
 	password := request.PostFormValue("password")
@@ -149,11 +149,11 @@ func (ui *UI) resetPassword(writer http.ResponseWriter, request *http.Request, _
 	ui.patch(writer, request, http.StatusOK, ResetPasswordPage(token, AuthForm{}, true), ResetPasswordDone())
 }
 
-func (ui *UI) verifyEmailPage(writer http.ResponseWriter, request *http.Request, _ access.Caller) {
+func (ui *UI) verifyEmailPage(writer http.ResponseWriter, request *http.Request, _ apiclient.Caller) {
 	ui.render(writer, request, http.StatusOK, VerifyEmailPage(request.URL.Query().Get("email"), ResendState{}))
 }
 
-func (ui *UI) resendVerification(writer http.ResponseWriter, request *http.Request, _ access.Caller) {
+func (ui *UI) resendVerification(writer http.ResponseWriter, request *http.Request, _ apiclient.Caller) {
 	ctx := request.Context()
 	email := strings.TrimSpace(request.PostFormValue("email"))
 	state := ResendState{
@@ -168,7 +168,7 @@ func (ui *UI) resendVerification(writer http.ResponseWriter, request *http.Reque
 	ui.patch(writer, request, status, VerifyEmailPage(email, state), ResendBlock(email, state))
 }
 
-func (ui *UI) verifyEmailSuccessPage(writer http.ResponseWriter, request *http.Request, _ access.Caller) {
+func (ui *UI) verifyEmailSuccessPage(writer http.ResponseWriter, request *http.Request, _ apiclient.Caller) {
 	ui.tokenPage(writer)
 	query := request.URL.Query()
 	// auth's own link handler lands here with ?error=<code> when it failed.
@@ -183,7 +183,7 @@ func (ui *UI) verifyEmailSuccessPage(writer http.ResponseWriter, request *http.R
 // emails them to this page; the person confirmed with this POST) and signs
 // the opener in, then continues to the link's callbackURL when it is a path
 // on this site or a callback auth trusts, else the dashboard.
-func (ui *UI) verifyEmail(writer http.ResponseWriter, request *http.Request, _ access.Caller) {
+func (ui *UI) verifyEmail(writer http.ResponseWriter, request *http.Request, _ apiclient.Caller) {
 	ctx := request.Context()
 	token, callback := request.PostFormValue("token"), request.PostFormValue("callbackURL")
 	if token == "" {
@@ -228,16 +228,21 @@ func (ui *UI) tokenPage(writer http.ResponseWriter) {
 	}
 }
 
-func (ui *UI) dashboard(writer http.ResponseWriter, request *http.Request, caller access.Caller) {
+func (ui *UI) dashboard(writer http.ResponseWriter, request *http.Request, _ apiclient.Caller) {
 	writer.Header().Set("Cache-Control", "no-store")
-	ui.render(writer, request, http.StatusOK, DashboardPage(DashboardData{User: User(caller.User), Tab: newTabID()}))
+	current, err := ui.api.Me(request.Context())
+	if err != nil {
+		ui.apiFailed(writer, request, err)
+		return
+	}
+	ui.render(writer, request, http.StatusOK, DashboardPage(DashboardData{User: User(current.User), Tab: newTabID()}))
 }
 
 // dashboardLive is the server-push example: one SSE stream per open
 // dashboard that patches the clock every tick and the account card whenever
 // the user changes (from any tab or device served by this process), and
 // sends the tab to the login page when its session is revoked elsewhere.
-func (ui *UI) dashboardLive(writer http.ResponseWriter, request *http.Request, caller access.Caller) {
+func (ui *UI) dashboardLive(writer http.ResponseWriter, request *http.Request, caller apiclient.Caller) {
 	tab := request.URL.Query().Get("tab")
 	events, cancel := ui.hub.subscribe(caller.User.ID)
 	defer cancel()
@@ -277,7 +282,7 @@ func (ui *UI) dashboardLive(writer http.ResponseWriter, request *http.Request, c
 	}
 }
 
-func (ui *UI) logout(writer http.ResponseWriter, request *http.Request, caller access.Caller) {
+func (ui *UI) logout(writer http.ResponseWriter, request *http.Request, caller apiclient.Caller) {
 	ctx := request.Context()
 	if caller.SignedIn() {
 		if err := ui.auth.SignOut(ctx, caller.Session.Token); err != nil {
@@ -289,7 +294,7 @@ func (ui *UI) logout(writer http.ResponseWriter, request *http.Request, caller a
 }
 
 // setLocale is the language switcher: store the choice, go back to the page.
-func (ui *UI) setLocale(writer http.ResponseWriter, request *http.Request, _ access.Caller) {
+func (ui *UI) setLocale(writer http.ResponseWriter, request *http.Request, _ apiclient.Caller) {
 	locale, ok := i18n.Supported(request.PostFormValue("locale"))
 	if !ok {
 		locale = i18n.DefaultLocale

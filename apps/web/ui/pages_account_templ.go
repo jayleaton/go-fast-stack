@@ -11,8 +11,8 @@ import templruntime "github.com/a-h/templ/runtime"
 import (
 	"strconv"
 
+	"github.com/jayleaton/go-fast-stack/apps/web/internal/apiclient"
 	"github.com/jayleaton/go-fast-stack/apps/web/internal/config"
-	"github.com/jayleaton/go-fast-stack/apps/web/internal/services"
 	"github.com/jayleaton/go-fast-stack/apps/web/ui/i18n"
 	"github.com/jayleaton/go-fast-stack/apps/web/ui/routes"
 	"github.com/jayleaton/go-fast-stack/apps/web/ui/view"
@@ -35,8 +35,8 @@ const (
 // AccountData is everything the Account page renders.
 type AccountData struct {
 	User         User
-	Sessions     []services.Session
-	Summary      services.UserDataSummary
+	Sessions     []apiclient.Session
+	Summary      apiclient.UserDataSummary
 	EmailChanged bool
 	// LoadError is shown when sessions or the data summary failed to load.
 	LoadError string
@@ -780,11 +780,11 @@ func PasswordCard(email string, s Status) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = uikit.Input(uikit.Field{ID: "newPassword", Type: "password", Label: i18n.T(ctx, "pages.account.password.new"), Autocomplete: "new-password", MinLength: services.MinPasswordLength, MaxLength: services.MaxPasswordLength}).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = uikit.Input(uikit.Field{ID: "newPassword", Type: "password", Label: i18n.T(ctx, "pages.account.password.new"), Autocomplete: "new-password", MinLength: apiclient.MinPasswordLength, MaxLength: apiclient.MaxPasswordLength}).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = uikit.Input(uikit.Field{ID: "confirmPassword", Type: "password", Label: i18n.T(ctx, "pages.account.password.confirm"), Autocomplete: "new-password", MinLength: services.MinPasswordLength, MaxLength: services.MaxPasswordLength}).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = uikit.Input(uikit.Field{ID: "confirmPassword", Type: "password", Label: i18n.T(ctx, "pages.account.password.confirm"), Autocomplete: "new-password", MinLength: apiclient.MinPasswordLength, MaxLength: apiclient.MaxPasswordLength}).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -837,7 +837,7 @@ func PasswordCard(email string, s Status) templ.Component {
 }
 
 // SessionsCard lists the user's sessions; every action re-renders it.
-func SessionsCard(sessions []services.Session, s Status) templ.Component {
+func SessionsCard(sessions []apiclient.Session, s Status) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -1194,7 +1194,7 @@ func deviceIcon(mobile bool) templ.Component {
 
 // DangerCard asks for confirmation in a local signal, then posts. Without
 // JS the confirm form stays hidden, so nothing deletes in one click.
-func DangerCard(sum services.UserDataSummary) templ.Component {
+func DangerCard(sum apiclient.UserDataSummary) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {

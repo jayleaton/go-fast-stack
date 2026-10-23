@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jayleaton/go-fast-stack/apps/admin/internal/apiclient"
 	"github.com/jayleaton/go-fast-stack/apps/admin/internal/config"
-	"github.com/jayleaton/go-fast-stack/apps/admin/internal/services"
 	"github.com/jayleaton/go-fast-stack/apps/admin/ui/i18n"
 	"github.com/jayleaton/go-fast-stack/packages/uikit"
 )
@@ -207,8 +207,8 @@ func bannedOptions(ctx context.Context) []uikit.Option {
 }
 
 func roleOptions() []uikit.Option {
-	out := make([]uikit.Option, len(services.Roles))
-	for i, r := range services.Roles {
+	out := make([]uikit.Option, len(apiclient.Roles))
+	for i, r := range apiclient.Roles {
 		out[i] = uikit.Option{Value: r, Label: r}
 	}
 	return out
@@ -230,7 +230,7 @@ func banExpiryOptions(ctx context.Context) []uikit.Option {
 }
 
 // banExpires is when a ban ends, or "permanent".
-func banExpires(ctx context.Context, u services.User) string {
+func banExpires(ctx context.Context, u apiclient.User) string {
 	if u.BanExpires == nil {
 		return i18n.T(ctx, "pages.user.ban.permanent")
 	}
@@ -238,7 +238,7 @@ func banExpires(ctx context.Context, u services.User) string {
 }
 
 // banLabel is the ban button: ban, or update the ban of a banned user.
-func banLabel(ctx context.Context, u services.User) string {
+func banLabel(ctx context.Context, u apiclient.User) string {
 	if u.Banned {
 		return i18n.T(ctx, "pages.user.ban.update")
 	}
@@ -247,30 +247,30 @@ func banLabel(ctx context.Context, u services.User) string {
 
 // actionKeys label the audit actions; unknown actions show raw.
 var actionKeys = []struct{ action, key string }{
-	{services.ActionUserBan, "pages.audit.actions.userBan"},
-	{services.ActionUserUnban, "pages.audit.actions.userUnban"},
-	{services.ActionUserSetRole, "pages.audit.actions.userSetRole"},
-	{services.ActionUserRevokeSession, "pages.audit.actions.userRevokeSession"},
-	{services.ActionUserRevokeSessions, "pages.audit.actions.userRevokeSessions"},
-	{services.ActionAdminInvite, "pages.audit.actions.adminInvite"},
-	{services.ActionAdminBootstrap, "pages.audit.actions.adminBootstrap"},
-	{services.ActionAdminDisable, "pages.audit.actions.adminDisable"},
-	{services.ActionAdminEnable, "pages.audit.actions.adminEnable"},
-	{services.ActionAdminRemove, "pages.audit.actions.adminRemove"},
-	{services.ActionAdminPasswordReset, "pages.audit.actions.adminPasswordReset"},
-	{services.ActionAdminResetTwoFactor, "pages.audit.actions.adminResetTwoFactor"},
-	{services.ActionAdminSignIn, "pages.audit.actions.adminSignIn"},
-	{services.ActionAdminSignOut, "pages.audit.actions.adminSignOut"},
-	{services.ActionAdminTwoFactorFailed, "pages.audit.actions.adminTwoFactorFailed"},
-	{services.ActionAdminBackupCodeUsed, "pages.audit.actions.adminBackupCodeUsed"},
+	{apiclient.ActionUserBan, "pages.audit.actions.userBan"},
+	{apiclient.ActionUserUnban, "pages.audit.actions.userUnban"},
+	{apiclient.ActionUserSetRole, "pages.audit.actions.userSetRole"},
+	{apiclient.ActionUserRevokeSession, "pages.audit.actions.userRevokeSession"},
+	{apiclient.ActionUserRevokeSessions, "pages.audit.actions.userRevokeSessions"},
+	{apiclient.ActionAdminInvite, "pages.audit.actions.adminInvite"},
+	{apiclient.ActionAdminBootstrap, "pages.audit.actions.adminBootstrap"},
+	{apiclient.ActionAdminDisable, "pages.audit.actions.adminDisable"},
+	{apiclient.ActionAdminEnable, "pages.audit.actions.adminEnable"},
+	{apiclient.ActionAdminRemove, "pages.audit.actions.adminRemove"},
+	{apiclient.ActionAdminPasswordReset, "pages.audit.actions.adminPasswordReset"},
+	{apiclient.ActionAdminResetTwoFactor, "pages.audit.actions.adminResetTwoFactor"},
+	{apiclient.ActionAdminSignIn, "pages.audit.actions.adminSignIn"},
+	{apiclient.ActionAdminSignOut, "pages.audit.actions.adminSignOut"},
+	{apiclient.ActionAdminTwoFactorFailed, "pages.audit.actions.adminTwoFactorFailed"},
+	{apiclient.ActionAdminBackupCodeUsed, "pages.audit.actions.adminBackupCodeUsed"},
 }
 
 // signInMethodKeys label the "method" detail of ActionAdminSignIn; unknown
 // methods show raw.
 var signInMethodKeys = map[string]string{
-	services.SignInPassword:    "pages.audit.methods.password",
-	services.SignInTwoFactor:   "pages.audit.methods.twoFactor",
-	services.SignInSetPassword: "pages.audit.methods.setPassword",
+	apiclient.SignInPassword:    "pages.audit.methods.password",
+	apiclient.SignInTwoFactor:   "pages.audit.methods.twoFactor",
+	apiclient.SignInSetPassword: "pages.audit.methods.setPassword",
 }
 
 func actionLabel(ctx context.Context, action string) string {
@@ -313,9 +313,9 @@ func (f AuditFilters) url(offset int) string {
 }
 
 // auditTarget links user targets to their page.
-func auditTarget(e services.AuditEntry) (href, label string) {
+func auditTarget(e apiclient.AuditEntry) (href, label string) {
 	label = firstNonEmpty(e.TargetLabel, e.TargetID)
-	if e.TargetType == services.TargetUser && e.TargetID != "" {
+	if e.TargetType == apiclient.TargetUser && e.TargetID != "" {
 		href = config.UserPage(e.TargetID)
 	}
 	return href, label
@@ -323,15 +323,15 @@ func auditTarget(e services.AuditEntry) (href, label string) {
 
 // auditDetails are the detail lines of an entry: the sign-in method and the
 // reason a 2FA code was refused translated, anything else as details does.
-func auditDetails(ctx context.Context, e services.AuditEntry) []string {
+func auditDetails(ctx context.Context, e apiclient.AuditEntry) []string {
 	if len(e.Details) == 1 {
-		if m, ok := e.Details["method"]; ok && e.Action == services.ActionAdminSignIn {
+		if m, ok := e.Details["method"]; ok && e.Action == apiclient.ActionAdminSignIn {
 			if key, known := signInMethodKeys[m]; known {
 				m = i18n.T(ctx, key)
 			}
 			return []string{i18n.Tf(ctx, "pages.audit.signInMethod", m)}
 		}
-		if r, ok := e.Details["reason"]; ok && e.Action == services.ActionAdminTwoFactorFailed {
+		if r, ok := e.Details["reason"]; ok && e.Action == apiclient.ActionAdminTwoFactorFailed {
 			if key, known := twoFactorReasonKeys[r]; known {
 				r = i18n.T(ctx, key)
 			}
@@ -365,28 +365,28 @@ var auditStatusKeys = map[string]struct {
 	tone uikit.Tone
 	key  string
 }{
-	services.StatusSucceeded: {uikit.Success, "pages.audit.statuses.succeeded"},
-	services.StatusFailed:    {uikit.Error, "pages.audit.statuses.failed"},
-	services.StatusPending:   {uikit.Warning, "pages.audit.statuses.pending"},
-	services.StatusUnknown:   {uikit.Neutral, "pages.audit.statuses.unknown"},
+	apiclient.StatusSucceeded: {uikit.Success, "pages.audit.statuses.succeeded"},
+	apiclient.StatusFailed:    {uikit.Error, "pages.audit.statuses.failed"},
+	apiclient.StatusPending:   {uikit.Warning, "pages.audit.statuses.pending"},
+	apiclient.StatusUnknown:   {uikit.Neutral, "pages.audit.statuses.unknown"},
 }
 
 // reconciledReasonKeys translate the reconciler's reasons, which follow from
 // the status it resolved an entry to.
 var reconciledReasonKeys = map[string]string{
-	services.StatusSucceeded: "pages.audit.reconciledReasons.stateMatches",
-	services.StatusFailed:    "pages.audit.reconciledReasons.stateDiffers",
-	services.StatusUnknown:   "pages.audit.reconciledReasons.undecidable",
+	apiclient.StatusSucceeded: "pages.audit.reconciledReasons.stateMatches",
+	apiclient.StatusFailed:    "pages.audit.reconciledReasons.stateDiffers",
+	apiclient.StatusUnknown:   "pages.audit.reconciledReasons.undecidable",
 }
 
 // auditStatus is the badge, hint and reason of an entry. A pending entry's
 // outcome was never recorded: the change may or may not have been applied.
-func auditStatus(ctx context.Context, e services.AuditEntry) AuditStatus {
+func auditStatus(ctx context.Context, e apiclient.AuditEntry) AuditStatus {
 	s := AuditStatus{Tone: uikit.Neutral, Label: orDash(e.Status), Reason: auditReason(ctx, e.Reason), Reconciled: e.Reconciled}
 	if k, ok := auditStatusKeys[e.Status]; ok {
 		s.Tone, s.Label = k.tone, i18n.T(ctx, k.key)
 	}
-	if e.Status == services.StatusPending {
+	if e.Status == apiclient.StatusPending {
 		s.Hint = i18n.T(ctx, "pages.audit.statuses.pendingHint")
 	}
 	if key, ok := reconciledReasonKeys[e.Status]; ok && e.Reconciled {
@@ -398,11 +398,11 @@ func auditStatus(ctx context.Context, e services.AuditEntry) AuditStatus {
 // auditReason translates a recorded failure reason that is the message of a
 // service error the UI knows; anything else shows as recorded.
 func auditReason(ctx context.Context, reason string) string {
-	if reason == services.ReasonInternal {
+	if reason == apiclient.ReasonInternal {
 		return i18n.T(ctx, "pages.audit.internalReason")
 	}
 	for _, k := range errorKeys {
-		var se *services.Error
+		var se *apiclient.ServiceError
 		if errors.As(k.err, &se) && se.Message == reason {
 			return i18n.T(ctx, k.key)
 		}
@@ -433,7 +433,7 @@ func statusTone(s Status) uikit.Tone {
 }
 
 // analyticsStats are the overview's figures as stat tiles, in reading order.
-func analyticsStats(ctx context.Context, o services.Overview) []uikit.Stat {
+func analyticsStats(ctx context.Context, o apiclient.Overview) []uikit.Stat {
 	stat := func(key, id string, v int64) uikit.Stat {
 		return uikit.Stat{Label: i18n.T(ctx, key), Value: strconv.FormatInt(v, 10), TestID: id}
 	}

@@ -1,8 +1,8 @@
 package ui
 
 import (
+	"github.com/jayleaton/go-fast-stack/apps/admin/internal/apiclient"
 	"github.com/jayleaton/go-fast-stack/apps/admin/internal/config"
-	"github.com/jayleaton/go-fast-stack/apps/admin/internal/services"
 	"github.com/jayleaton/go-fast-stack/apps/admin/ui/i18n"
 	"github.com/jayleaton/go-fast-stack/apps/admin/ui/routes"
 	"github.com/jayleaton/go-fast-stack/apps/admin/ui/view"
@@ -21,7 +21,7 @@ const (
 type UsersData struct {
 	Filters UserFilters
 	Sort    SortLinks
-	Users   []services.User
+	Users   []apiclient.User
 	Pager   Pager
 	Error   string
 }
@@ -39,7 +39,7 @@ type SortLink struct {
 
 // UserData is one user's page.
 type UserData struct {
-	Detail services.UserDetail
+	Detail apiclient.UserDetail
 	// Missing: the user could not be loaded; only Status renders.
 	Missing bool
 	Status  Status
@@ -141,7 +141,7 @@ templ sortHeading(l SortLink, label string) {
 }
 
 // banBadge is a user's state: banned (with when the ban ends) or active.
-templ banBadge(usr services.User) {
+templ banBadge(usr apiclient.User) {
 	if usr.Banned {
 		<span class="inline-flex flex-wrap items-center gap-1.5">
 			@uikit.Badge(uikit.Error, i18n.T(ctx, "pages.users.bannedBadge"), true)
@@ -181,7 +181,7 @@ templ UserStatus(s Status) {
 }
 
 // UserProfile is the profile card with the role form.
-templ UserProfile(usr services.User) {
+templ UserProfile(usr apiclient.User) {
 	@uikit.Card("p-5 sm:p-6", templ.Attributes{"id": userProfileID}) {
 		@uikit.CardHeader(i18n.T(ctx, "pages.user.profile"), "")
 		<div class="mt-2">
@@ -226,7 +226,7 @@ templ UserProfile(usr services.User) {
 
 // UserBan shows the ban state with the ban form (behind a confirm dialog),
 // and unban when banned.
-templ UserBan(usr services.User) {
+templ UserBan(usr apiclient.User) {
 	@uikit.Card("p-5 sm:p-6", templ.Attributes{"id": userBanID}) {
 		@uikit.CardHeader(i18n.T(ctx, "pages.user.ban.title"), "") {
 			if usr.Banned {
@@ -275,7 +275,7 @@ templ UserBan(usr services.User) {
 
 // UserSessions lists the active sessions, each with a revoke button, and
 // revoke-all behind a confirm dialog.
-templ UserSessions(usr services.User, sessions []services.Session) {
+templ UserSessions(usr apiclient.User, sessions []apiclient.Session) {
 	<section id={ userSessionsID } aria-labelledby="user-sessions-title">
 		<div class="mb-3 flex flex-wrap items-center justify-between gap-3">
 			<h2 id="user-sessions-title" class="text-base font-semibold">{ i18n.T(ctx, "pages.user.sessions.title") }</h2>

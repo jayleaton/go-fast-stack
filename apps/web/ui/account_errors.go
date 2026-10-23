@@ -4,32 +4,32 @@ import (
 	"context"
 	"errors"
 
-	"github.com/jayleaton/go-fast-stack/apps/web/internal/services"
-	"github.com/jayleaton/go-fast-stack/apps/web/internal/validate"
+	"github.com/jayleaton/go-fast-stack/apps/web/internal/apiclient"
+
 	"github.com/jayleaton/go-fast-stack/apps/web/ui/i18n"
 )
 
 // serviceErrorKeys translates user-service errors, most specific first: the
-// named errors, then the kind sentinels (errors.Is(err, services.ErrNotFound)
+// named errors, then the kind sentinels (errors.Is(err, apiclient.ErrNotFound)
 // holds for every not-found error).
 var serviceErrorKeys = []struct {
 	err error
 	key string
 }{
-	{services.ErrInvalidPassword, "pages.account.errors.wrongPassword"},
-	{services.ErrPasswordPolicy, "pages.account.errors.passwordPolicy"},
-	{services.ErrSamePassword, "pages.account.errors.samePassword"},
-	{services.ErrNoPassword, "pages.account.errors.noPassword"},
-	{services.ErrSameEmail, "pages.account.errors.sameEmail"},
-	{services.ErrEmailTaken, "errors.emailTaken"},
-	{services.ErrSessionNotFresh, "pages.account.errors.sessionNotFresh"},
-	{services.ErrSessionNotFound, "pages.account.errors.sessionNotFound"},
-	{services.ErrCurrentSession, "pages.account.errors.currentSession"},
-	{services.ErrRateLimited, "errors.tooManyRequests"},
-	{services.ErrValidation, "errors.invalidInput"},
-	{services.ErrForbidden, "errors.forbidden"},
-	{services.ErrNotFound, "errors.notFound"},
-	{services.ErrConflict, "errors.conflict"},
+	{apiclient.ErrInvalidPassword, "pages.account.errors.wrongPassword"},
+	{apiclient.ErrPasswordPolicy, "pages.account.errors.passwordPolicy"},
+	{apiclient.ErrSamePassword, "pages.account.errors.samePassword"},
+	{apiclient.ErrNoPassword, "pages.account.errors.noPassword"},
+	{apiclient.ErrSameEmail, "pages.account.errors.sameEmail"},
+	{apiclient.ErrEmailTaken, "errors.emailTaken"},
+	{apiclient.ErrSessionNotFresh, "pages.account.errors.sessionNotFresh"},
+	{apiclient.ErrSessionNotFound, "pages.account.errors.sessionNotFound"},
+	{apiclient.ErrCurrentSession, "pages.account.errors.currentSession"},
+	{apiclient.ErrRateLimited, "errors.tooManyRequests"},
+	{apiclient.ErrValidation, "errors.invalidInput"},
+	{apiclient.ErrForbidden, "errors.forbidden"},
+	{apiclient.ErrNotFound, "errors.notFound"},
+	{apiclient.ErrConflict, "errors.conflict"},
 }
 
 // fieldKeys translates validator failures by field, first match wins.
@@ -44,7 +44,7 @@ var fieldKeys = []struct{ field, key string }{
 // serviceMessage translates a validation or user-service error for display.
 // Internal errors are logged and shown as errors.somethingWentWrong.
 func (u *UI) serviceMessage(ctx context.Context, err error) string {
-	if verr, ok := errors.AsType[*validate.Error](err); ok {
+	if verr, ok := errors.AsType[*apiclient.ValidationError](err); ok {
 		for _, f := range fieldKeys {
 			if _, bad := verr.Fields[f.field]; bad {
 				return i18n.T(ctx, f.key)

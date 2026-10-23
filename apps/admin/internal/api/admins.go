@@ -26,62 +26,58 @@ type AdminService interface {
 
 var _ AdminService = (*services.AdminService)(nil)
 
-// Admins serves the dashboard's admins under /api/admin/v1/admins.
+// Admins serves the dashboard's admins under /api/admin/v1/admins. Each
+// endpoint is declared once, with its access policy; Routes serves it over
+// HTTP and Client calls it in-process.
 type Admins struct {
 	svc  AdminService
 	gate *access.Gate
+
+	list           Endpoint[NoInput, []services.Admin]
+	invite         Endpoint[validate.CreateAdminInvite, services.Admin]
+	disable        Endpoint[NoInput, Success]
+	enable         Endpoint[NoInput, Success]
+	remove         Endpoint[NoInput, Success]
+	passwordReset  Endpoint[NoInput, Success]
+	resetTwoFactor Endpoint[NoInput, Success]
 }
 
 // NewAdmins returns the admins endpoints.
 func NewAdmins(svc AdminService, gate *access.Gate) *Admins {
-	return &Admins{svc: svc, gate: gate}
-}
-
-// Routes registers the endpoints on mux, each with its access policy.
-func (endpoints *Admins) Routes(mux *http.ServeMux) {
+	admins := &Admins{svc: svc, gate: gate}
 	paths := config.APIRoutes
-	mux.Handle("GET "+paths.Admins, Route(endpoints.gate, access.SignedIn, endpoints.list))
-	mux.Handle("POST "+paths.AdminInvites, Route(endpoints.gate, access.SignedIn, endpoints.invite))
-	mux.Handle("POST "+paths.AdminDisable, Route(endpoints.gate, access.SignedIn, endpoints.disable))
-	mux.Handle("POST "+paths.AdminEnable, Route(endpoints.gate, access.SignedIn, endpoints.enable))
-	mux.Handle("DELETE "+paths.AdminByID, Route(endpoints.gate, access.SignedIn, endpoints.remove))
-	mux.Handle("POST "+paths.AdminPasswordReset, Route(endpoints.gate, access.SignedIn, endpoints.passwordReset))
-	mux.Handle("POST "+paths.AdminTwoFactorReset, Route(endpoints.gate, access.SignedIn, endpoints.resetTwoFactor))
+	admins.list = Endpoint[NoInput, []services.Admin]{"GET", paths.Admins, access.SignedIn, admins.listAdmins}
+	admins.invite = Endpoint[validate.CreateAdminInvite, services.Admin]{"POST", paths.AdminInvites, access.SignedIn, admins.inviteAdmin}
+	admins.disable = Endpoint[NoInput, Success]{"POST", paths.AdminDisable, access.SignedIn, admins.byID(svc.DisableAdmin)}
+	admins.enable = Endpoint[NoInput, Success]{"POST", paths.AdminEnable, access.SignedIn, admins.byID(svc.EnableAdmin)}
+	admins.remove = Endpoint[NoInput, Success]{"DELETE", paths.AdminByID, access.SignedIn, admins.byID(svc.RemoveAdmin)}
+	admins.passwordReset = Endpoint[NoInput, Success]{"POST", paths.AdminPasswordReset, access.SignedIn, admins.byID(svc.SendPasswordReset)}
+	admins.resetTwoFactor = Endpoint[NoInput, Success]{"POST", paths.AdminTwoFactorReset, access.SignedIn, admins.byID(svc.ResetTwoFactor)}
+	return admins
 }
 
-func (endpoints *Admins) list(request *http.Request, caller access.Caller) ([]services.Admin, error) {
-	return endpoints.svc.ListAdmins(request.Context(), caller.Actor())
-}
-
-func (endpoints *Admins) invite(request *http.Request, caller access.Caller) (services.Admin, error) {
-	in, err := validate.Decode[validate.CreateAdminInvite](request.Body)
-	if err != nil {
-		return services.Admin{}, err
+// Routes registers the endpoints on mux.
+func (admins *Admins) Routes(mux *http.ServeMux) {
+	for _, endpoint := range []Endpoint[NoInput, Success]{admins.disable, admins.enable, admins.remove, admins.passwordReset, admins.resetTwoFactor} {
+		mux.Handle(endpoint.Pattern(), endpoint.Serve(admins.gate))
 	}
-	return endpoints.svc.InviteAdmin(request.Context(), caller.Actor(), in)
+	mux.Handle(admins.list.Pattern(), admins.list.Serve(admins.gate))
+	mux.Handle(admins.invite.Pattern(), admins.invite.Serve(admins.gate))
 }
 
-func (endpoints *Admins) disable(request *http.Request, caller access.Caller) (Success, error) {
-	err := endpoints.svc.DisableAdmin(request.Context(), caller.Actor(), request.PathValue("id"))
-	return Success{err == nil}, err
+func (admins *Admins) listAdmins(request *http.Request, caller access.Caller, _ NoInput) ([]services.Admin, error) {
+	return admins.svc.ListAdmins(request.Context(), caller.Actor())
 }
 
-func (endpoints *Admins) enable(request *http.Request, caller access.Caller) (Success, error) {
-	err := endpoints.svc.EnableAdmin(request.Context(), caller.Actor(), request.PathValue("id"))
-	return Success{err == nil}, err
+func (admins *Admins) inviteAdmin(request *http.Request, caller access.Caller, input validate.CreateAdminInvite) (services.Admin, error) {
+	return admins.svc.InviteAdmin(request.Context(), caller.Actor(), input)
 }
 
-func (endpoints *Admins) remove(request *http.Request, caller access.Caller) (Success, error) {
-	err := endpoints.svc.RemoveAdmin(request.Context(), caller.Actor(), request.PathValue("id"))
-	return Success{err == nil}, err
-}
-
-func (endpoints *Admins) passwordReset(request *http.Request, caller access.Caller) (Success, error) {
-	err := endpoints.svc.SendPasswordReset(request.Context(), caller.Actor(), request.PathValue("id"))
-	return Success{err == nil}, err
-}
-
-func (endpoints *Admins) resetTwoFactor(request *http.Request, caller access.Caller) (Success, error) {
-	err := endpoints.svc.ResetTwoFactor(request.Context(), caller.Actor(), request.PathValue("id"))
-	return Success{err == nil}, err
+// byID is an endpoint that runs one service mutation on the admin in the
+// path ({id}) and reports the outcome.
+func (admins *Admins) byID(mutate func(ctx context.Context, actor services.Actor, adminID string) error) func(*http.Request, access.Caller, NoInput) (Success, error) {
+	return func(request *http.Request, caller access.Caller, _ NoInput) (Success, error) {
+		err := mutate(request.Context(), caller.Actor(), request.PathValue("id"))
+		return Success{err == nil}, err
+	}
 }

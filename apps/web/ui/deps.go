@@ -12,10 +12,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/jayleaton/go-fast-stack/apps/web/internal/access"
+	"github.com/jayleaton/go-fast-stack/apps/web/internal/apiclient"
 	"github.com/jayleaton/go-fast-stack/apps/web/internal/config"
-	"github.com/jayleaton/go-fast-stack/apps/web/internal/services"
-	"github.com/jayleaton/go-fast-stack/apps/web/internal/validate"
 	"github.com/jayleaton/go-fast-stack/apps/web/ui/i18n"
 	"github.com/jayleaton/go-fast-stack/packages/auth"
 )
@@ -50,26 +48,8 @@ type Auth interface {
 	ClearSessionCookie(w http.ResponseWriter)
 }
 
-// Users is the account service the dashboard and the Account page call: the
-// method set of *services.UserService. Every method names the user it acts
-// on; the service answers KindForbidden for anyone but the actor.
-type Users interface {
-	GetProfile(ctx context.Context, actor services.Actor, userID string) (services.User, error)
-	UpdateProfile(ctx context.Context, actor services.Actor, userID string, in validate.UpdateUserSettings) (services.User, error)
-	RequestEmailChange(ctx context.Context, actor services.Actor, userID string, in validate.UpdateUserEmail) error
-	ChangePassword(ctx context.Context, actor services.Actor, userID string, in validate.UpdateUserPassword) error
-	ListSessions(ctx context.Context, actor services.Actor, userID string) ([]services.Session, error)
-	RevokeSession(ctx context.Context, actor services.Actor, userID, sessionID string) error
-	RevokeOtherSessions(ctx context.Context, actor services.Actor, userID string) error
-	DeleteAccount(ctx context.Context, actor services.Actor, userID string) error
-	DataSummary(ctx context.Context, actor services.Actor, userID string) (services.UserDataSummary, error)
-}
-
-// The real implementations plug in without adapters.
-var (
-	_ Auth  = (*auth.Auth)(nil)
-	_ Users = (*services.UserService)(nil)
-)
+// The real implementation plugs in without an adapter.
+var _ Auth = (*auth.Auth)(nil)
 
 // AuthError pairs an auth error with the message key the UI shows for it.
 type AuthError struct {
@@ -108,11 +88,15 @@ func authCodeMessage(ctx context.Context, code string) string {
 
 // Deps are the in-process dependencies of the UI.
 type Deps struct {
-	Auth  Auth
-	Users Users
-	// Gate decides route access (access.NewGate(server.Callers)); the API
+	Auth Auth
+	// API is how pages and actions read and change data: the in-process
+	// api.Client, so every call takes the API's access policy and
+	// validation. There is no HTTP client for the UI and no API base URL:
+	// browsers only ever talk to the UI's own routes.
+	API apiclient.Client
+	// Gate decides route access (apiclient.NewGate(server.Callers)); the API
 	// gets the same one.
-	Gate     *access.Gate
+	Gate     *apiclient.Gate
 	Features config.Features
 	// AppName is the product name in the header and <title>; defaults to
 	// config.DefaultAppName.

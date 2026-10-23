@@ -63,6 +63,7 @@ lint: ## gofmt + golangci-lint (incl. layering rules) + test file locations
 	@test -z "$$(gofmt -l .)" || (gofmt -l . && echo 'gofmt: run gofmt -w .' && exit 1)
 	$(TOOL) golangci-lint run
 	./scripts/check-test-boundaries.sh
+	./scripts/check-ui-api-paths.sh
 
 .PHONY: check-migrations
 check-migrations: ## Fail if a new migration is numbered at or below the highest on origin/dev or origin/main (check-fast and CI run it too)

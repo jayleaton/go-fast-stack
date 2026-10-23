@@ -13,13 +13,15 @@ Go Fast Stack succeeds [jayleaton/ai-patterns-monorepo](https://github.com/jayle
 ## How it fits together
 
 ```
-browser ─── HTML ──▶ UI pages ──┐
-                                ├──▶ services ──▶ database layer ──▶ Postgres
-mobile app ─ JSON ──▶ JSON API ─┘    (business     (sqlc queries,
-                                      rules)        migrations)
+browser ─── HTML ──▶ UI pages and server actions
+                          │ API client (in-process)
+                          ▼
+mobile app ─ JSON ──▶ JSON API ──▶ services ──▶ database layer ──▶ Postgres
+                     (access,       (business     (sqlc queries,
+                      validation)    rules)        migrations)
 ```
 
-- **One program, two front doors.** The website and the mobile API both call the same services in-process. Business rules live in one place, and nothing calls its own API over the network.
+- **One program, two front doors, one gate.** The website's pages and form actions call the JSON API in-process, the same endpoints the mobile app calls over HTTP, so access rules and validation live in one place. Nothing calls its own API over the network, and the browser never calls the API at all.
 - **The browser only sees HTML.** It never gets JSON, tokens or internal errors ([security](docs/security.md)).
 - **Each layer talks only to the one below it.** Lint enforces this (see [Built for AI agents](#built-for-ai-agents)).
 - **Few moving parts.** Postgres is the only service it needs. Email goes through Resend in production, and secrets come from env vars or Doppler.

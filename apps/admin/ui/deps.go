@@ -13,7 +13,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/jayleaton/go-fast-stack/apps/admin/internal/access"
+	"github.com/jayleaton/go-fast-stack/apps/admin/internal/apiclient"
 )
 
 // Session is an admin session.
@@ -102,17 +102,18 @@ type Auth interface {
 	SetTrustDeviceCookie(w http.ResponseWriter, token string)
 }
 
-// Deps are the in-process dependencies of the UI. Every port and Gate are
+// Deps are the in-process dependencies of the UI. Auth, API and Gate are
 // required.
 type Deps struct {
-	Auth      Auth
-	Users     Users
-	Admins    Admins
-	Audit     Audit
-	Analytics Analytics
-	// Gate decides route access (access.NewGate(callers.Resolve)); the API
-	// would get the same one.
-	Gate *access.Gate
+	Auth Auth
+	// API is how pages and actions read and change data: the in-process
+	// api.Client, so every call takes the API's access policy and
+	// validation. There is no HTTP client for the UI and no API base URL:
+	// browsers only ever talk to the UI's own routes.
+	API apiclient.Client
+	// Gate decides route access (access.NewGate(callers.Resolve)), the same
+	// one the API's endpoints use.
+	Gate *apiclient.Gate
 	// RequireTwoFactor is ADMIN_REQUIRE_2FA: the setup page says enrolment
 	// is mandatory.
 	RequireTwoFactor bool

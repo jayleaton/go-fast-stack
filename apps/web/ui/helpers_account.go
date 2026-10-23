@@ -4,7 +4,8 @@ import (
 	"context"
 	"strings"
 
-	"github.com/jayleaton/go-fast-stack/apps/web/internal/services"
+	"github.com/jayleaton/go-fast-stack/apps/web/internal/apiclient"
+
 	"github.com/jayleaton/go-fast-stack/apps/web/ui/i18n"
 )
 
@@ -15,7 +16,7 @@ func deref(s *string) string {
 	return *s
 }
 
-func hasOtherSessions(sessions []services.Session) bool {
+func hasOtherSessions(sessions []apiclient.Session) bool {
 	for _, s := range sessions {
 		if !s.Current {
 			return true

@@ -117,15 +117,16 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	users := services.NewUserService(database.NewUserRepository(pool), server.NewAccountCredentials(authn))
 	// One gate decides route access for both transports (docs/route-access.md).
 	gate := access.NewGate(server.Callers)
+	usersAPI := api.NewUsers(users, gate)
 	handler := server.New(server.Deps{
 		Config:  cfg,
 		Log:     log,
 		DB:      pool,
 		Secrets: cfg.Secrets,
 		Auth:    authn,
-		Users:   api.NewUsers(users, gate),
+		Users:   usersAPI,
 		UI: ui.New(ui.Deps{
-			Auth: authn, Users: users, Gate: gate, Features: cfg.Features, AppName: cfg.AppName,
+			Auth: authn, API: api.NewClient(usersAPI), Gate: gate, Features: cfg.Features, AppName: cfg.AppName,
 			SecureCookies: cfg.PublicURL.Scheme == "https", Logger: log,
 		}).Handler(),
 	})

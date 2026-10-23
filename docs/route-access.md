@@ -1,7 +1,9 @@
 # Route access
 
 Every route declares who may reach it on the line that registers it, and one
-gate per app enforces that for both transports. This page shows how it fits
+gate per app enforces that for UI pages, for HTTP API requests, and for the
+UI's in-process API calls (UI → API → services: the UI reads and writes data
+only through `apiclient.Client`, which runs the same API endpoints). This page shows how it fits
 together and how to extend it with roles or tenants without touching
 middleware or handlers.
 
@@ -18,25 +20,37 @@ import `access` (depguard).
 
 ## Registering a route
 
-JSON API (`apps/web/internal/api`):
+JSON API (`apps/web/internal/api`): declare the endpoint once, serve it, and
+expose it to the UI on `api.Client`:
 
 ```go
-mux.Handle("GET "+routes.Me, Route(users.gate, access.SignedIn, users.get))
+users.me = Endpoint[NoInput, CurrentUser]{"GET", routes.Me, access.SignedIn, users.get}
+mux.Handle(users.me.Pattern(), users.me.Serve(users.gate))                // HTTP
+func (client *Client) Me(ctx context.Context) (CurrentUser, error) {     // in-process
+	return client.users.me.Call(ctx, client.users.gate, NoInput{})
+}
 
-func (users *Users) get(request *http.Request, caller access.Caller) (CurrentUser, error) {
+func (users *Users) get(request *http.Request, caller access.Caller, _ NoInput) (CurrentUser, error) {
 	user, err := users.svc.GetProfile(request.Context(), caller.Actor(), caller.User.ID)
 	return CurrentUser{User: user, Session: caller.Session}, err
 }
 ```
 
-UI (`apps/web/ui/ui.go`, `Routes`):
+`api.Route(gate, policy, handler)` is still there for a handler that does its
+own decoding; `Endpoint.Serve` is built on it.
+
+UI (`apps/web/ui/ui.go`, `Routes`): pages and server actions declare their
+own policy, and their API calls are checked again by each endpoint's:
 
 ```go
-page(access.SignedIn, "GET "+config.AppRoutes.Dashboard, ui.dashboard)
-action(access.SignedIn, "POST "+routes.AccountProfile, ui.updateProfile)
-action(access.Public, "POST "+routes.Locale, ui.setLocale)
+page(apiclient.SignedIn, "GET "+config.AppRoutes.Dashboard, ui.dashboard)
+action(apiclient.SignedIn, "POST "+routes.AccountProfile, ui.updateProfile)
+action(apiclient.Public, "POST "+routes.Locale, ui.setLocale)
 
-func (ui *UI) dashboard(writer http.ResponseWriter, request *http.Request, caller access.Caller) { ... }
+func (ui *UI) dashboard(writer http.ResponseWriter, request *http.Request, caller apiclient.Caller) {
+	current, err := ui.api.Me(request.Context()) // refused → apiFailed: login redirect or 403
+	...
+}
 ```
 
 A handler gets the caller the gate admitted; on an `access.Public` route
@@ -46,7 +60,7 @@ outside `apps/*/internal/server` and `(*access.Gate).Admit` outside the two
 route handlers (`api/route.go`, `ui/route.go`), and `make lint-layering`
 proves both rules bite.
 
-| Outcome | JSON API | UI |
+| Outcome | JSON API (HTTP) | UI page, action or in-process API call |
 |---|---|---|
 | admitted | handler runs | handler runs |
 | `access.ErrSignedOut` | 401 `{"data":null,"error":"Unauthorized"}` | 303 to the login page (an SSE redirect for Datastar) |
@@ -114,12 +128,16 @@ pieces (the apps never share code). Its business rule that every admin needs
    }
    ```
 
-4. **Routes.** Opt in on the registration line, in either transport:
+4. **Routes.** Opt in on the registration line. Re-export the policy in
+   `apiclient` (`var Role = access.Role`) for the UI:
 
    ```go
-   mux.Handle("GET "+routes.Reports, Route(reports.gate, access.Role("admin"), reports.list))
-   page(access.Role("admin"), "GET "+config.AppRoutes.Reports, ui.reportsPage)
+   reports.list = Endpoint[NoInput, []Report]{"GET", routes.Reports, access.Role("admin"), reports.listAll}
+   page(apiclient.Role("admin"), "GET "+config.AppRoutes.Reports, ui.reportsPage)
    ```
+
+   The page's policy keeps the page itself away; the endpoint's policy keeps
+   its data away, from the UI and from HTTP callers alike.
 
 Middleware, the other routes and the handlers stay as they are.
 

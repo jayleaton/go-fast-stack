@@ -100,17 +100,36 @@ func NewGate(resolve Resolver) *Gate {
 	return &Gate{resolve: resolve}
 }
 
-// Admit resolves the caller of request and checks policy. Only the route
-// handlers (api.Route, the UI's page and action) call it (forbidigo).
-func (gate *Gate) Admit(request *http.Request, policy Policy) (Caller, error) {
-	caller, err := gate.resolve(request)
+// Admit resolves the caller of request and checks policy. It returns the
+// request carrying the resolved caller, so API calls made while serving it
+// (the UI's in-process api.Client) reuse it instead of resolving again; only
+// a Gate can attach one. Only the route handlers (api.Route, api.Endpoint,
+// the UI's page and action) call it (forbidigo).
+func (gate *Gate) Admit(request *http.Request, policy Policy) (Caller, *http.Request, error) {
+	caller, err := gate.callerOf(request)
 	if err != nil {
-		return Caller{}, err
+		return Caller{}, request, err
 	}
+	request = request.WithContext(context.WithValue(request.Context(), resolvedKey{}, resolved{gate: gate, caller: caller}))
 	if err := policy(request, caller); err != nil {
-		return caller, err
+		return caller, request, err
 	}
-	return caller, nil
+	return caller, request, nil
+}
+
+// resolvedKey holds the caller a Gate already resolved for a request.
+type resolvedKey struct{}
+
+type resolved struct {
+	gate   *Gate
+	caller Caller
+}
+
+func (gate *Gate) callerOf(request *http.Request) (Caller, error) {
+	if earlier, ok := request.Context().Value(resolvedKey{}).(resolved); ok && earlier.gate == gate {
+		return earlier.caller, nil
+	}
+	return gate.resolve(request)
 }
 
 // FromContext adapts a context reader (auth.UserFrom behind an adapter, a

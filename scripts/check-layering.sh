@@ -72,6 +72,18 @@ cases=(
   "apps/web/internal/access|$mod/packages/database"
   "apps/admin/internal/access|$mod/packages/database/adminrepo"
   "apps/web/internal/access|$mod/apps/web/internal/api"
+  # UI -> API -> services: the UI reaches data only through its API client,
+  # which is a contract with no HTTP client in it.
+  "apps/web/ui|$mod/apps/web/internal/services"
+  "apps/web/ui|$mod/apps/web/internal/validate"
+  "apps/web/ui|$mod/apps/web/internal/access"
+  "apps/admin/ui|$mod/apps/admin/internal/services"
+  "apps/admin/ui|$mod/apps/admin/internal/validate"
+  "apps/admin/ui|$mod/apps/admin/internal/access"
+  "apps/web/internal/apiclient|net/http"
+  "apps/admin/internal/apiclient|net/http"
+  "apps/web/internal/apiclient|$mod/packages/database"
+  "apps/admin/internal/apiclient|$mod/apps/admin/internal/api"
 )
 
 # Test files. boundary dir | forbidden import
@@ -102,9 +114,14 @@ calls=(
   "apps/web/ui|$mod/packages/auth|auth.UserFrom"
   "apps/web/internal/api|$mod/packages/auth|auth.UserFrom"
   "apps/web/internal/api|$mod/apps/web/internal/access|(*access.Gate)(nil).Admit"
-  "apps/web/ui|$mod/apps/web/internal/access|(*access.Gate)(nil).Admit"
+  "apps/web/ui|$mod/apps/web/internal/apiclient|(*apiclient.Gate)(nil).Admit"
   "apps/admin/internal/api|$mod/apps/admin/internal/access|(*access.Gate)(nil).Admit"
-  "apps/admin/ui|$mod/apps/admin/internal/access|(*access.Gate)(nil).Admit"
+  "apps/admin/ui|$mod/apps/admin/internal/apiclient|(*apiclient.Gate)(nil).Admit"
+  # Browsers never talk to the JSON API, and the UI never calls it over HTTP.
+  "apps/web/ui|$mod/apps/web/internal/config|config.APIRoutes"
+  "apps/admin/ui|$mod/apps/admin/internal/config|config.APIRoutes"
+  "apps/web/ui|net/http|http.DefaultClient"
+  "apps/admin/ui|net/http|http.Get"
 )
 
 # Code that must not compile: a lint rule can be routed around, the compiler
@@ -218,6 +235,19 @@ for i in "${!builds[@]}"; do
   else
     echo "FAIL  $label (unexpected error)"; echo "$bout"
     failed=1
+  fi
+done
+# A page that renders an API path fails check-ui-api-paths.sh.
+for ui in apps/web/ui apps/admin/ui; do
+  dir="$ui/${probe}_paths"
+  mkdir -p "$dir"
+  paths+=("$dir")
+  printf 'package %s\n\ntempl probe() {\n\t<a href="/api/core/v1/users/me">me</a>\n}\n' "${probe}_paths" > "$dir/probe.templ"
+  if ./scripts/check-ui-api-paths.sh "$dir" >/dev/null 2>&1; then
+    echo "FAIL  $ui must not render an API path (check-ui-api-paths.sh passed)"
+    failed=1
+  else
+    echo "ok    $ui must not render an API path"
   fi
 done
 [ "$failed" = 0 ] || exit 1
