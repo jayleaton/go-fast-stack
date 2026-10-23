@@ -25,9 +25,16 @@ const AppPort = 3000
 
 // Railway deploy settings shared by every service.
 const (
-	maxRestarts        = 5       // restartPolicyMaxRetries: restarts after a crash before Railway gives up
-	healthcheckSeconds = 60      // how long a new deployment has to answer /healthz
-	bytesPerMiB        = 1 << 20 // memoryBytes is in bytes; sizes are in MiB
+	maxRestarts = 5 // restartPolicyMaxRetries: restarts after a crash before Railway gives up
+	// How long a new deployment has to answer /healthz before Railway keeps
+	// the previous one. Web migrates in its pre-deploy, so it is healthy
+	// within seconds. Admin deploys alongside web and cannot pass /healthz
+	// until web's pre-deploy has migrated the app database (its boot refuses
+	// an app database behind its migrations): its window covers that wait
+	// plus the boot, so a deploy that adds app migrations is not failed.
+	webHealthcheckSeconds   = 60
+	adminHealthcheckSeconds = 200
+	bytesPerMiB             = 1 << 20 // memoryBytes is in bytes; sizes are in MiB
 )
 
 // SecretKind says how setup provisions a bootstrap variable.
@@ -158,11 +165,12 @@ func (config Config) Build(env string) (Project, error) {
 	webEnv := map[string]any{"DATABASE_URL": db.Env("DATABASE_URL")}
 	setURL(webEnv, "PUBLIC_URL", settings.PublicURL)
 	web := railway.ServiceNamed(ServiceWeb, config.service(env, app{
-		dockerfile: "Dockerfile",
-		migrate:    "/server migrate",
-		watch:      []any{"apps/web/**", "packages/**", "go.mod", "go.sum", "Dockerfile"},
-		size:       config.Resources.Web,
-		env:        webEnv,
+		dockerfile:  "Dockerfile",
+		migrate:     "/server migrate",
+		watch:       []any{"apps/web/**", "packages/**", "go.mod", "go.sum", "Dockerfile"},
+		size:        config.Resources.Web,
+		env:         webEnv,
+		healthcheck: webHealthcheckSeconds,
 	}))
 	resources := []any{db, web}
 	var adminBackupURL map[string]any
@@ -177,11 +185,12 @@ func (config Config) Build(env string) (Project, error) {
 			vars["ADMIN_BOOTSTRAP_EMAIL"] = config.AdminBootstrapEmail
 		}
 		admin := railway.ServiceNamed(ServiceAdmin, config.service(env, app{
-			dockerfile: "apps/admin/Dockerfile",
-			migrate:    "/admin migrate",
-			watch:      []any{"apps/admin/**", "packages/**", "go.mod", "go.sum"},
-			size:       config.Resources.Admin,
-			env:        vars,
+			dockerfile:  "apps/admin/Dockerfile",
+			migrate:     "/admin migrate",
+			watch:       []any{"apps/admin/**", "packages/**", "go.mod", "go.sum"},
+			size:        config.Resources.Admin,
+			env:         vars,
+			healthcheck: adminHealthcheckSeconds,
 		}))
 		resources = append(resources, adminDB, admin)
 		if config.Backups.Enabled && config.Backups.Admin {
@@ -286,6 +295,8 @@ type app struct {
 	watch      []any
 	size       Size
 	env        map[string]any
+	// healthcheck is the seconds Railway waits for /healthz (healthcheckTimeout).
+	healthcheck int
 }
 
 func (config Config) postgres(name string) railway.Resource {
@@ -326,7 +337,7 @@ func (config Config) service(env string, app app) railway.ServiceConfig {
 		// Doppler secrets go stale, and a liveness probe would turn a Doppler
 		// outage into a restart loop. Restarts happen only on process exit.
 		"healthcheck":        "/healthz",
-		"healthcheckTimeout": healthcheckSeconds,
+		"healthcheckTimeout": app.healthcheck,
 		"replicas":           replicas,
 		"deploy": map[string]any{
 			// restartPolicyType is left at Railway's default (ON_FAILURE):
