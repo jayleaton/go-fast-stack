@@ -127,4 +127,11 @@ unmanaged_variables:
   - ADMIN_AUDIT_RECONCILE_AFTER
   - SECRETS_REFRESH_INTERVAL
   - SECRETS_MAX_STALENESS
+  # Sign in with Google / Apple and object storage: the non-secret halves
+  # (their secrets are Doppler's, or setup-owned on env).
+  - GOOGLE_CLIENT_ID
+  - APPLE_CLIENT_ID
+  - APPLE_TEAM_ID
+  - STORAGE_S3_REGION
+  - STORAGE_S3_PATH_STYLE
   - backup/BACKUP_S3_PATH_STYLE

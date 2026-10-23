@@ -116,6 +116,8 @@ jobs:
           filters: &deploy-filter |
             deploy:
               - 'deploy/**'
+              - '.env.example' # make deploy-vars reads it
+              - 'Makefile'
               - '.golangci.yml'
               - 'tools/**' # the golangci-lint pin
               - '.github/workflows/ci.yml'
