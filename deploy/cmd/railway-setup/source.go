@@ -3,8 +3,10 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -64,11 +66,71 @@ func (s *setup) instanceSource(ctx context.Context, svc, env string) (repo strin
 
 // connectRepo connects the web service to the repo: the real access check
 // when repoAccess can't tell. Railway answers with a GraphQL error when its
-// GitHub app cannot read the repo; nothing changes then.
+// GitHub app cannot read the repo, or when the branch does not exist;
+// nothing changes then. It connects production's branch (the last
+// environment's), which a repo has from its first push: staging's dev may
+// not exist yet, and IaC sets each environment's own branch afterwards.
 func (s *setup) connectRepo(ctx context.Context) error {
 	id := s.project.Services[platform.ServiceWeb]
 	return s.rw.gql(ctx, `mutation($id: String!, $input: ServiceConnectInput!) { serviceConnect(id: $id, input: $input) { id } }`,
-		map[string]any{"id": id, "input": map[string]any{"repo": s.cfg.Repo, "branch": s.cfg.BranchFor(s.cfg.Environments[0])}}, nil)
+		map[string]any{"id": id, "input": map[string]any{"repo": s.cfg.Repo, "branch": s.cfg.BranchFor(s.cfg.Environments[len(s.cfg.Environments)-1])}}, nil)
+}
+
+// checkBranches says which environment deploys which branch, and warns
+// about a branch the repo does not have yet: Railway's trigger is set
+// anyway, but nothing deploys there until the branch is pushed. Asked with
+// git ls-remote (public repos need no login; private ones use your git
+// credentials); when git cannot tell, nothing is reported.
+func (s *setup) checkBranches(ctx context.Context) {
+	if s.cfg.Repo == "" {
+		return
+	}
+	var mapping, branches []string
+	deploys := map[string][]string{} // branch -> the environments that deploy it
+	for _, env := range s.cfg.Environments {
+		branch := s.cfg.BranchFor(env)
+		mapping = append(mapping, env+" <- "+branch)
+		if deploys[branch] == nil {
+			branches = append(branches, branch)
+		}
+		deploys[branch] = append(deploys[branch], env)
+	}
+	s.say("branches: %s (deploy on push to github.com/%s)", strings.Join(mapping, ", "), s.cfg.Repo)
+	for _, branch := range branches {
+		if !errors.Is(branchExists(ctx, s.cfg.Repo, branch), errNoBranch) {
+			continue
+		}
+		envs := deploys[branch]
+		s.say("  ! %s deploys branch %s, which github.com/%s does not have yet: nothing deploys there until it is pushed", strings.Join(envs, ", "), branch, s.cfg.Repo)
+		s.next("Create branch %s, which %s deploys: git push origin %s:%s (or set branches.%s in platform.yaml)",
+			branch, strings.Join(envs, ", "), s.cfg.Branch, branch, envs[0])
+	}
+}
+
+var errNoBranch = errors.New("no such branch")
+
+const (
+	// branchLookupTimeout bounds one git ls-remote against GitHub.
+	branchLookupTimeout = 15 * time.Second
+	// lsRemoteNoMatch is git ls-remote --exit-code's status when the repo
+	// answered but has no matching ref.
+	lsRemoteNoMatch = 2
+)
+
+// branchExists asks GitHub for refs/heads/<branch>: nil when it exists,
+// errNoBranch when the repo answers without it, another error when git
+// cannot reach the repo (no network, a private repo without credentials).
+func branchExists(ctx context.Context, repo, branch string) error {
+	ctx, cancel := context.WithTimeout(ctx, branchLookupTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", "ls-remote", "--exit-code", "--heads", "https://github.com/"+repo+".git", "refs/heads/"+branch)
+	cmd.Env = append(cmd.Environ(), "GIT_TERMINAL_PROMPT=0")
+	err := cmd.Run()
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) && exitErr.ExitCode() == lsRemoteNoMatch {
+		return errNoBranch
+	}
+	return err
 }
 
 // installURL is where the repo owner installs Railway's GitHub app, with the

@@ -14,16 +14,21 @@ project: auto
 # belong to more than one).
 workspace: ""
 
-# GitHub repo and branch Railway builds on push. auto: this checkout's
-# origin remote. Until the Railway GitHub app can read the repo, setup
-# deploys your checkout by upload instead and prints the install link; the
-# next make railway-apply after installing switches to deploy-on-push.
+# GitHub repo Railway builds on push. auto: this checkout's origin remote.
+# Until the Railway GitHub app can read the repo, setup deploys your
+# checkout by upload instead and prints the install link; the next make
+# railway-apply after installing switches to deploy-on-push.
 # "" never connects GitHub: deploy with make railway-up.
 repo: auto
+# The branch production deploys (and every environment, when production is
+# the only one).
 branch: main
-# Optional per-environment branch, e.g. production deploys a release branch.
+# With more environments than production, staging and qa deploy dev: merge
+# to dev to ship to staging, then dev -> main to release. Override per
+# environment (production may not share a branch with another environment):
 # branches:
-#   production: release
+#   staging: develop
+#   qa: release
 
 # The admin dashboard (apps/admin) as its own service with its own small
 # Postgres. Adds two services per environment.
