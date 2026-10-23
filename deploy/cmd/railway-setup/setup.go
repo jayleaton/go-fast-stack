@@ -451,7 +451,13 @@ func (s *setup) rotateDatabases(ctx context.Context, env string) error {
 			s.say("  ! %s/%s reads DATABASE_URL from Doppler: if it uses the superuser, update it there (docs/secrets.md: rotate the database password)", env, svc)
 			continue
 		}
-		if _, err := s.rw.output(ctx, nil, "redeploy", "--service", svc, "--environment", env, "--yes"); err != nil {
+		args := []string{"redeploy", "--service", svc, "--environment", env, "--yes"}
+		if !s.cfg.Upload() {
+			// The branch's latest commit: a plain redeploy repeats the latest
+			// deployment's build, which may be an old one (docs/deploy.md).
+			args = append(args, "--from-source")
+		}
+		if _, err := s.rw.output(ctx, nil, args...); err != nil {
 			return err
 		}
 		s.change("%s/%s redeployed with the new DATABASE_URL", env, svc)
