@@ -2,7 +2,8 @@
 # The pre-push check (`make check-fast`, and the hook `make hooks` installs):
 # gofmt, go vet, golangci-lint and plain go test for only the packages this
 # checkout's changes can affect, the generators whose inputs changed, and the
-# deploy/ module when it changed. "Changes" are everything that differs from
+# deploy/ module when it changed, and the migration order when a migration
+# changed. "Changes" are everything that differs from
 # the merge base with origin/main: commits, staged, unstaged and untracked
 # files. scripts/affected.sh maps them to packages exactly as CI does, so a
 # change to a shared input (go.mod, tooling, lint config, migrations,
@@ -72,6 +73,14 @@ if [ "$full" = true ]; then
   echo "  everything (a shared input changed)"
 else
   echo "  ${#changed[@]} changed files -> ${#pkgs[@]} packages$([ "$deploy" = true ] && echo ' + deploy/')"
+fi
+
+# Migration order, when a migration changed: against the base's tip, not the
+# merge base, so a branch the base has moved past fails too (goose refuses a
+# version below one already applied).
+if printf '%s\n' "${changed[@]}" | grep -qE '(^|/)migrations/[^/]*\.sql$'; then
+  step "migration order"
+  if ! out=$(./scripts/check-migration-order.sh "$base_ref" 2>&1); then done_; echo "$out" | sed 's/^/  /'; fail migration-order; else done_; fi
 fi
 
 # Format: the changed Go files (everything on a full run).

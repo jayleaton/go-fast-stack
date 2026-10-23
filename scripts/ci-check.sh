@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # The CI checks, run as parallel tasks inside one job (.github/actions/check):
-# lint, generated code, tests, the deploy/ module and the mobile app each run
-# in the background with their own log, then the probes (which plant files in
-# the tree, so nothing else may be reading it) run once all of them are done.
+# lint, migration order, generated code, tests, the deploy/ module and the
+# mobile app each run in the background with their own log, then the probes
+# (which plant files in the tree, so nothing else may be reading it) run once
+# all of them are done.
 # Each task's log is printed as one collapsed group, failures expanded.
 #
 # Env (from the check action; empty or false skips a task):
@@ -13,6 +14,8 @@
 #   FULL      true: shared inputs changed, also run the probes
 #   SQLC TEMPL GENERATE   generators to rerun (scripts/affected.sh)
 #   MOBILE DEPLOY         true: check apps/mobile-app / the deploy/ module
+#   EVENT TARGET          the GitHub event and the branch it targets (the PR's
+#                         base, else the pushed or dispatched ref): migration order
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
@@ -101,6 +104,25 @@ SH
   TESTED="$TESTS" ./scripts/check-coverage.sh .cache/coverage.out
 }
 
+# A new migration must sit above every migration the deployed branches have
+# (scripts/check-migration-order.sh). Bases: HEAD^1 on PRs, the merge queue
+# and pushes (the target branch: the merge commit's base, or the branch's
+# previous commit, which catches two PRs that raced for one number), plus the
+# tip of each deployed branch other than the target itself.
+migration_order() {
+  set -e
+  bases=()
+  case $EVENT in pull_request | merge_group | push) bases+=(HEAD^1) ;; esac
+  for b in main; do
+    [ "$b" = "$TARGET" ] && continue
+    git fetch -q --no-tags --depth=1 origin "+refs/heads/$b:refs/remotes/origin/$b"
+    bases+=("origin/$b")
+  done
+  if [ "${#bases[@]}" -eq 0 ]; then echo "no base to compare with ($EVENT on $TARGET)"; return; fi
+  echo "bases: ${bases[*]}"
+  ./scripts/check-migration-order.sh "${bases[@]}"
+}
+
 deploy_mod() {
   set -e
   cd deploy
@@ -122,6 +144,7 @@ mobile() {
 }
 
 [ "$lint" = true ] && start lint lint_go
+[ "$MODE" != other ] && [ -n "${EVENT:-}" ] && start migrations migration_order
 [ "$MODE" != other ] && { [ "${SQLC:-}" = true ] || [ "${TEMPL:-}" = true ] || [ -n "${GENERATE:-}" ]; } && start generated generated
 [ -n "${TESTS:-}" ] && start test test_go
 [ "${DEPLOY:-}" = true ] && start deploy deploy_mod
