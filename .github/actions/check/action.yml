@@ -3,7 +3,8 @@
 # Expects: checkout, module cache, Go toolchain and the affected outputs
 # (scripts/affected.sh) to be done by the caller. The steps here only set up
 # tools and caches; scripts/ci-check.sh runs the checks themselves as parallel
-# tasks (lint, generated code, tests, deploy/, mobile), then the probes.
+# tasks (lint, migration order, generated code, tests, deploy/, mobile), then
+# the probes.
 name: check
 description: Lint, test and (optionally) mobile checks for the affected packages
 inputs:
@@ -98,6 +99,8 @@ runs:
         GENERATE: ${{ inputs.generate }}
         MOBILE: ${{ inputs.mobile }}
         DEPLOY: ${{ inputs.deploy }}
+        EVENT: ${{ github.event_name }}
+        TARGET: ${{ github.base_ref || github.ref_name }}
         COREPACK_ENABLE_DOWNLOAD_PROMPT: '0'
 
     - uses: actions/cache/save@v6

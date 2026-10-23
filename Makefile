@@ -64,6 +64,10 @@ lint: ## gofmt + golangci-lint (incl. layering rules) + test file locations
 	$(TOOL) golangci-lint run
 	./scripts/check-test-boundaries.sh
 
+.PHONY: check-migrations
+check-migrations: ## Fail if a new migration is numbered at or below the highest on origin/main (check-fast and CI run it too)
+	./scripts/check-migration-order.sh
+
 .PHONY: lint-layering
 lint-layering: ## Prove forbidden imports (code and tests) fail lint
 	./scripts/check-layering.sh
