@@ -113,10 +113,10 @@ migration_order() {
   set -e
   bases=()
   case $EVENT in pull_request | merge_group | push) bases+=(HEAD^1) ;; esac
-  for b in main; do
-    [ "$b" = "$TARGET" ] && continue
-    git fetch -q --no-tags --depth=1 origin "+refs/heads/$b:refs/remotes/origin/$b"
-    bases+=("origin/$b")
+  for branch in main; do
+    [ "$branch" = "$TARGET" ] && continue
+    git fetch -q --no-tags --depth=1 origin "+refs/heads/$branch:refs/remotes/origin/$branch"
+    bases+=("origin/$branch")
   done
   if [ "${#bases[@]}" -eq 0 ]; then echo "no base to compare with ($EVENT on $TARGET)"; return; fi
   echo "bases: ${bases[*]}"

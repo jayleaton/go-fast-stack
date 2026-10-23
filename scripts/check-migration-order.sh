@@ -18,56 +18,67 @@ set -euo pipefail
 unset $(git rev-parse --local-env-vars)
 cd "$(dirname "$0")/.."
 
+readonly exit_misnumbered=1 # a migration needs a new number
+readonly exit_usage=2        # a BASE git does not know
+
 bases=("$@")
 [ "${#bases[@]}" -gt 0 ] || bases=(origin/main)
 for base in "${bases[@]}"; do
   if ! git rev-parse --verify --quiet "$base^{commit}" >/dev/null; then
     echo "check-migration-order: unknown base $base (git fetch origin, or pass a ref)" >&2
-    exit 2
+    exit "$exit_usage"
   fi
 done
 label=${bases[0]}
 for base in "${bases[@]:1}"; do label+=" or $base"; done
 
-migration='(^|/)migrations/[0-9]+_[^/]*\.sql$'
-mapfile -t onbase < <(for base in "${bases[@]}"; do git ls-tree -r --name-only "$base"; done | grep -E "$migration" | sort -u || true)
-mapfile -t here < <(git ls-files --cached --others --exclude-standard | grep -E "$migration" | sort -u || true)
+migration_pattern='(^|/)migrations/[0-9]+_[^/]*\.sql$'
+mapfile -t base_files < <(for base in "${bases[@]}"; do git ls-tree -r --name-only "$base"; done | grep -E "$migration_pattern" | sort -u || true)
+mapfile -t tree_files < <(git ls-files --cached --others --exclude-standard | grep -E "$migration_pattern" | sort -u || true)
 
-prefix() { local n=${1##*/}; echo "${n%%_*}"; } # 00007
-declare -A deployed=() highest=() width=() next=() seen=()
-for f in "${onbase[@]}"; do
-  [ -n "$f" ] || continue
-  d=${f%/*} p=$(prefix "$f")
-  deployed[$f]=1 width[$d]=${#p}
-  if ((10#$p > ${highest[$d]:-0})); then highest[$d]=$((10#$p)); fi
+# version_prefix prints a migration's number as written ("00007").
+version_prefix() {
+  local name=${1##*/}
+  echo "${name%%_*}"
+}
+# Per set (a migrations directory): the highest version on the bases, the
+# width its numbers are written with, and the next free number.
+declare -A on_base=() highest=() width=() next_free=() first_with=()
+for file in "${base_files[@]}"; do
+  [ -n "$file" ] || continue
+  set_dir=${file%/*} prefix=$(version_prefix "$file")
+  on_base[$file]=1 width[$set_dir]=${#prefix}
+  if ((10#$prefix > ${highest[$set_dir]:-0})); then highest[$set_dir]=$((10#$prefix)); fi
 done
 
-# Added files, and per set the next free number above the bases and them.
+# Added files, and per set the highest number among the bases and them.
 added=()
-for f in "${here[@]}"; do
-  [ -n "$f" ] && [ -e "$f" ] && [ -z "${deployed[$f]:-}" ] || continue
-  d=${f%/*} p=$(prefix "$f")
-  added+=("$f")
-  : "${width[$d]:=${#p}}"
-  top=${next[$d]:-${highest[$d]:-0}}
-  if ((10#$p > top)); then top=$((10#$p)); fi
-  next[$d]=$top
+for file in "${tree_files[@]}"; do
+  [ -n "$file" ] && [ -e "$file" ] && [ -z "${on_base[$file]:-}" ] || continue
+  set_dir=${file%/*} prefix=$(version_prefix "$file")
+  added+=("$file")
+  : "${width[$set_dir]:=${#prefix}}"
+  top=${next_free[$set_dir]:-${highest[$set_dir]:-0}}
+  if ((10#$prefix > top)); then top=$((10#$prefix)); fi
+  next_free[$set_dir]=$top
 done
-for d in "${!next[@]}"; do next[$d]=$((next[$d] + 1)); done
+for set_dir in "${!next_free[@]}"; do next_free[$set_dir]=$((next_free[$set_dir] + 1)); done
 
 status=0
-for f in "${added[@]}"; do
-  d=${f%/*} p=$(prefix "$f") h=${highest[$d]:-0}
-  v=$((10#$p))
-  if ((v <= h)); then
-    printf '%s: version %d is not above the highest on %s (%d): renumber to %0*d\n' "$f" "$v" "$label" "$h" "${width[$d]}" "${next[$d]}" >&2
-  elif [ -n "${seen[$d/$v]:-}" ]; then
-    printf '%s: version %d is also used by %s: renumber to %0*d\n' "$f" "$v" "${seen[$d/$v]}" "${width[$d]}" "${next[$d]}" >&2
+for file in "${added[@]}"; do
+  set_dir=${file%/*} prefix=$(version_prefix "$file")
+  version=$((10#$prefix)) set_highest=${highest[$set_dir]:-0}
+  if ((version <= set_highest)); then
+    printf '%s: version %d is not above the highest on %s (%d): renumber to %0*d\n' \
+      "$file" "$version" "$label" "$set_highest" "${width[$set_dir]}" "${next_free[$set_dir]}" >&2
+  elif [ -n "${first_with[$set_dir/$version]:-}" ]; then
+    printf '%s: version %d is also used by %s: renumber to %0*d\n' \
+      "$file" "$version" "${first_with[$set_dir/$version]}" "${width[$set_dir]}" "${next_free[$set_dir]}" >&2
   else
-    seen[$d/$v]=$f
+    first_with[$set_dir/$version]=$file
     continue
   fi
-  status=1 next[$d]=$((next[$d] + 1))
+  status=$exit_misnumbered next_free[$set_dir]=$((next_free[$set_dir] + 1))
 done
 if [ "$status" -ne 0 ]; then
   echo "check-migration-order: number a new migration above every one on $label, per set (AGENTS.md \"Migrations\")" >&2
