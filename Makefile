@@ -211,7 +211,7 @@ admin-dev: db-up admin-migrate ## Run the admin dashboard (0.0.0.0, ADMIN_PORT o
 	$(GO) run ./apps/admin/cmd/admin serve
 
 .PHONY: admin-migrate
-admin-migrate: ## Migrate the admin database (auth + audit log) and seed ADMIN_BOOTSTRAP_EMAIL
+admin-migrate: ## Migrate the admin database (auth + audit log), seed ADMIN_BOOTSTRAP_EMAIL and send its invite (again once it expires)
 	$(GO) run ./apps/admin/cmd/admin migrate
 
 .PHONY: admin-invite

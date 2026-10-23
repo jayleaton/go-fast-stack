@@ -160,6 +160,22 @@ func (service *AdminService) invitedBefore(ctx context.Context, admin Admin) (bo
 	return false, nil
 }
 
+// lastInvite returns when admin was last invited, looked up like
+// invitedBefore: under its id, else its email (a first invite targets the
+// email and precedes every id-targeted one). The log lists newest first.
+func (service *AdminService) lastInvite(ctx context.Context, admin Admin) (at time.Time, invited bool, err error) {
+	for _, target := range []string{admin.ID, admin.Email} {
+		page, err := service.log.List(ctx, AuditQuery{Action: ActionAdminInvite, TargetID: target, Limit: 1})
+		if err != nil {
+			return time.Time{}, false, err
+		}
+		if len(page.Entries) > 0 {
+			return page.Entries[0].CreatedAt, true, nil
+		}
+	}
+	return time.Time{}, false, nil
+}
+
 // DisableAdmin blocks the admin's sign-in and signs them out everywhere.
 // Nobody disables themselves or the last active admin.
 func (service *AdminService) DisableAdmin(ctx context.Context, actor Actor, adminID string) error {
@@ -351,17 +367,21 @@ func (service *AdminService) Bootstrap(ctx context.Context, actor Actor, in vali
 // InviteBootstrapAdmin emails the bootstrap admin's invite from `admin
 // migrate` (the pre-deploy command, which runs inside the image), so a
 // deployment whose image has no shell to run `admin invite` in still gets its
-// first admin. It sends only while a is pending with no invite on record, so
-// later deploys send nothing (a fresh link: "Forgot password?" on the sign-in
-// page, or another admin). Only the operator may call it.
-func (service *AdminService) InviteBootstrapAdmin(ctx context.Context, actor Actor, admin Admin) (sent bool, err error) {
+// first admin. It sends only while the admin is pending (no password, not
+// disabled) and no invite is on record from the last linkTTL (how long a
+// set-password link stays valid): deploys inside that window send nothing,
+// and once the last link has expired, or its email never arrived (sends run
+// in the background, so nothing here sees a rejection), the next deploy sends
+// a fresh one. Only the operator may call it.
+func (service *AdminService) InviteBootstrapAdmin(ctx context.Context, actor Actor, admin Admin, linkTTL time.Duration) (sent bool, err error) {
 	if !actor.System {
 		return false, ErrForbidden
 	}
-	if admin.HasPassword {
+	if admin.HasPassword || admin.Disabled {
 		return false, nil
 	}
-	if invited, err := service.invitedBefore(ctx, admin); err != nil || invited {
+	last, invited, err := service.lastInvite(ctx, admin)
+	if err != nil || (invited && time.Since(last) < linkTTL) {
 		return false, err
 	}
 	err = mutate(ctx, service.log, actor, adminEntry(ActionAdminInvite, admin, map[string]string{}), func() error {
