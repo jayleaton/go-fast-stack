@@ -13,13 +13,23 @@ import (
 
 const idAlphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
+// Lengths passed to generateID, as Better Auth's generateId.
+const (
+	idLength         = 32 // row ids, session, challenge and trust-device tokens
+	resetTokenLength = 24 // password reset tokens
+)
+
+// idReadSlack is extra random bytes per read beyond n/4, so one read almost
+// always yields n accepted characters.
+const idReadSlack = 8
+
 // generateID returns a random [a-zA-Z0-9] string like Better Auth's generateId
 // (32 chars for ids and session tokens, 24 for reset tokens).
 func generateID(n int) string {
 	// 248 is the largest multiple of 62 below 256: rejecting bytes >= 248
 	// keeps every character equally likely.
 	out := make([]byte, 0, n)
-	buf := make([]byte, n+n/4+8)
+	buf := make([]byte, n+n/4+idReadSlack)
 	for len(out) < n {
 		if _, err := rand.Read(buf); err != nil {
 			panic(err) // crypto/rand.Read never fails on supported platforms

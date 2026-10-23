@@ -27,6 +27,9 @@ import (
 	"filippo.io/age"
 )
 
+// MinKeyLength is the shortest BACKUP_ENCRYPTION_KEY accepted, in characters.
+const MinKeyLength = 32
+
 // ErrNotFound: no backup with that id.
 var ErrNotFound = errors.New("backup: not found")
 
@@ -71,7 +74,7 @@ type Result struct {
 // Backup dumps db (a name: "app", "admin") from url, encrypts it, stores it
 // and logs its id, size and fingerprint.
 func (s *Service) Backup(ctx context.Context, db, url string) (Result, error) {
-	if len(s.Keys.Current) < 32 {
+	if len(s.Keys.Current) < MinKeyLength {
 		return Result{}, errors.New("backup: BACKUP_ENCRYPTION_KEY must be at least 32 characters")
 	}
 	start := s.now()

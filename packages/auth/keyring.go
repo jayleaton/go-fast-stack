@@ -134,17 +134,19 @@ func (a *Auth) SetSecrets(ctx context.Context, s Secrets) error {
 	return nil
 }
 
+const minSecretLength = 32 // bytes, for every current, previous and revoked secret
+
 func validateSecrets(s Secrets) error {
-	if len(s.Current) < 32 {
+	if len(s.Current) < minSecretLength {
 		return errors.New("auth: Secret must be at least 32 bytes")
 	}
 	for i, p := range s.Previous {
-		if len(p) < 32 {
+		if len(p) < minSecretLength {
 			return fmt.Errorf("auth: PreviousSecrets[%d] must be at least 32 bytes", i)
 		}
 	}
 	for i, p := range s.Revoked {
-		if len(p) < 32 {
+		if len(p) < minSecretLength {
 			return fmt.Errorf("auth: RevokedSecrets[%d] must be at least 32 bytes", i)
 		}
 	}

@@ -26,13 +26,23 @@ type argonParams struct {
 }
 
 // defaultArgonParams follow RFC 9106's second recommended option (64 MiB, t=3).
-var defaultArgonParams = argonParams{Memory: 64 * 1024, Time: 3, Threads: 4, SaltLen: 16, KeyLen: 32}
+var defaultArgonParams = argonParams{Memory: argonMemory, Time: argonTime, Threads: argonThreads, SaltLen: argonSaltLen, KeyLen: argonKeyLen}
+
+// argon2id costs and sizes (see defaultArgonParams and testArgonParams).
+const (
+	argonMemory     = 64 * 1024 // KiB: 64 MiB
+	argonTime       = 3         // passes over memory
+	argonThreads    = 4         // parallel lanes
+	argonSaltLen    = 16        // bytes of random salt
+	argonKeyLen     = 32        // bytes of derived key
+	testArgonMemory = 64        // KiB: cheap enough for test binaries
+)
 
 // testArgonParams replace the defaults in test binaries (see argonParamsFor).
 // At production cost every package whose tests sign users up spent ~1 GB and
 // seconds per test binary under -race. Each hash records its own parameters,
 // so hashes made either way verify either way.
-var testArgonParams = argonParams{Memory: 64, Time: 1, Threads: 1, SaltLen: 16, KeyLen: 32}
+var testArgonParams = argonParams{Memory: testArgonMemory, Time: 1, Threads: 1, SaltLen: argonSaltLen, KeyLen: argonKeyLen}
 
 // argonParamsFor returns the parameters New uses: the cheap test ones only
 // inside a `go test` binary (testing.Testing), which a production binary

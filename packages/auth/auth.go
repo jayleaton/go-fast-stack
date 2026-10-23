@@ -45,6 +45,11 @@ const (
 	ResetPasswordTokenTTL = time.Hour
 )
 
+const (
+	defaultMailTimeout = 30 * time.Second // Config.MailTimeout when unset
+	keySyncTimeout     = 15 * time.Second // New: storing the initial key state
+)
+
 // Config configures an Auth. Zero values fall back to the defaults above.
 type Config struct {
 	Secret                   string        // AUTH_SECRET: signs cookies and verification tokens, wraps the 2FA data keys; at least 32 bytes
@@ -215,7 +220,7 @@ func New(cfg Config, pool DB, mailer Mailer) (*Auth, error) {
 		cfg.Logger = slog.Default()
 	}
 	if cfg.MailTimeout <= 0 {
-		cfg.MailTimeout = 30 * time.Second
+		cfg.MailTimeout = defaultMailTimeout
 	}
 	if cfg.CookiePrefix == "" {
 		cfg.CookiePrefix = "better-auth"
@@ -274,7 +279,7 @@ func New(cfg Config, pool DB, mailer Mailer) (*Auth, error) {
 	if a.dummyHash, err = hashPassword("dummy-password-for-timing", a.argon); err != nil {
 		return nil, err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), keySyncTimeout)
 	defer cancel()
 	if err := a.syncKeys(ctx, secrets); err != nil {
 		return nil, err

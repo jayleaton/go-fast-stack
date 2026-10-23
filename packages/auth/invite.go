@@ -29,7 +29,7 @@ func (a *Auth) CreateUserWithoutPassword(ctx context.Context, in CreateUserInput
 		return User{}, ErrInvalidRole
 	}
 	now := a.now()
-	user := User{ID: generateID(32), Name: strings.TrimSpace(in.Name), Email: email, CreatedAt: now, UpdatedAt: now}
+	user := User{ID: generateID(idLength), Name: strings.TrimSpace(in.Name), Email: email, CreatedAt: now, UpdatedAt: now}
 	err = a.store.tx(ctx, func(q querier) error {
 		if err := a.store.createUser(ctx, q, user); err != nil {
 			return err
@@ -66,7 +66,7 @@ func (a *Auth) IssueSetPasswordLink(ctx context.Context, userID, redirectTo stri
 	if err != nil {
 		return err
 	}
-	token, now := generateID(32), a.now()
+	token, now := generateID(idLength), a.now()
 	err = a.store.tx(ctx, func(q querier) error {
 		if err := a.store.deleteResetTokens(ctx, q, userID); err != nil {
 			return err
@@ -74,7 +74,7 @@ func (a *Auth) IssueSetPasswordLink(ctx context.Context, userID, redirectTo stri
 		_, err := q.Exec(ctx, `
 			INSERT INTO "verification" ("id", "identifier", "value", "expiresAt", "createdAt", "updatedAt")
 			VALUES ($1, $2, $3, $4, $5, $5)`,
-			generateID(32), "reset-password:"+token, userID, now.Add(a.cfg.InviteTTL), now)
+			generateID(idLength), "reset-password:"+token, userID, now.Add(a.cfg.InviteTTL), now)
 		return err
 	})
 	if err != nil {

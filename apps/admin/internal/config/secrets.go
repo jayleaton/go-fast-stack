@@ -8,6 +8,10 @@ import (
 	"github.com/jayleaton/go-fast-stack/packages/secrets"
 )
 
+// minSecretLength is the shortest signing/encryption secret accepted: 32
+// characters, what `openssl rand -base64 32` comfortably exceeds.
+const minSecretLength = 32
+
 // Live secrets of the admin service: served by SECRETS_PROVIDER (its own
 // Doppler config and token) and rotated without a redeploy when the provider
 // is remote. Only DOPPLER_TOKEN is not one. See the web app's
@@ -88,14 +92,14 @@ func validateLive(env Env, appAuthSecret string) func(get func(string) string) [
 			errs = append(errs, errors.New("ADMIN_DATABASE_URL must be a different database from DATABASE_URL"))
 		}
 		k := secrets.ParseKeyring(get, secretAdminAuth)
-		if k.Current.Len() < 32 {
+		if k.Current.Len() < minSecretLength {
 			errs = append(errs, errors.New("ADMIN_AUTH_SECRET must be at least 32 characters (openssl rand -base64 32)"))
 		} else if appAuthSecret != "" && k.Current.Equal(secrets.NewSecret(appAuthSecret)) {
 			errs = append(errs, errors.New("ADMIN_AUTH_SECRET must differ from the app's AUTH_SECRET"))
 		}
 		for li, list := range [][]secrets.Secret{k.Previous, k.Revoked} {
 			for i, v := range list {
-				if v.Len() < 32 {
+				if v.Len() < minSecretLength {
 					errs = append(errs, fmt.Errorf("%s entry %d must be at least 32 characters", secrets.KeyringNames(secretAdminAuth)[li+1], i+1))
 				}
 			}

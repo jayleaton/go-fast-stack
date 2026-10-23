@@ -200,10 +200,11 @@ func settled(status string) bool {
 // to settle, then checks /healthz on its public domain. It fills the
 // summary and returns an exitUnhealthy error if any service is not ok.
 func (s *setup) health(ctx context.Context, wait time.Duration) error {
+	const healthTimeout = 10 * time.Second // per /healthz request
 	if s.project == nil {
 		return errors.New("the project does not exist yet")
 	}
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := &http.Client{Timeout: healthTimeout}
 	deadline := time.Now().Add(wait)
 	var bad []string
 	s.sum.Environments = nil
@@ -225,7 +226,7 @@ func (s *setup) health(ctx context.Context, wait time.Duration) error {
 				select {
 				case <-ctx.Done():
 					return ctx.Err()
-				case <-time.After(10 * time.Second):
+				case <-time.After(pollInterval):
 				}
 				status, err = s.deploymentStatus(ctx, svc, env)
 			}
@@ -265,13 +266,17 @@ func (s *setup) health(ctx context.Context, wait time.Duration) error {
 // healthz retries briefly: a fresh deployment can take a few seconds to be
 // routed after Railway reports it live.
 func healthz(ctx context.Context, client *http.Client, url string) (int, string) {
+	const (
+		healthRetryDelay = 5 * time.Second // between /healthz attempts
+		maxHealthBody    = 200             // bytes of the /healthz body kept for the summary
+	)
 	code, body := 0, ""
 	for attempt := range 4 {
 		if attempt > 0 {
 			select {
 			case <-ctx.Done():
 				return code, body
-			case <-time.After(5 * time.Second):
+			case <-time.After(healthRetryDelay):
 			}
 		}
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url+"/healthz", nil)
@@ -283,7 +288,7 @@ func healthz(ctx context.Context, client *http.Client, url string) (int, string)
 			body = err.Error()
 			continue
 		}
-		b, _ := io.ReadAll(io.LimitReader(resp.Body, 200))
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, maxHealthBody))
 		_ = resp.Body.Close()
 		code, body = resp.StatusCode, strings.TrimSpace(string(b))
 		if code == http.StatusOK {

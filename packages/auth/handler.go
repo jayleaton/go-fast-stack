@@ -79,14 +79,16 @@ func (a *Auth) writeError(w http.ResponseWriter, r *http.Request, err error) {
 	writeJSON(w, e.Status, map[string]string{"code": e.Code, "message": e.Message})
 }
 
-// decode reads a JSON body (at most 64 KiB) into v. JSON-only bodies also
+const maxJSONBody = 64 << 10 // 64 KiB cap on JSON request bodies
+
+// decode reads a JSON body (at most maxJSONBody) into v. JSON-only bodies also
 // force browsers into a CORS preflight for cross-site requests.
 func decode(r *http.Request, v any) error {
 	mt, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
 	if err != nil || mt != "application/json" {
 		return errMediaType
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(nil, r.Body, 64<<10)).Decode(v); err != nil {
+	if err := json.NewDecoder(http.MaxBytesReader(nil, r.Body, maxJSONBody)).Decode(v); err != nil {
 		return errBadBody
 	}
 	return nil

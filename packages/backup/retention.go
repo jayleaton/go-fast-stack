@@ -19,7 +19,12 @@ type Retention struct {
 }
 
 // DefaultRetention keeps a week of dailies and a month of weeklies.
-var DefaultRetention = Retention{Daily: 7, Weekly: 4}
+var DefaultRetention = Retention{Daily: defaultKeepDaily, Weekly: defaultKeepWeekly}
+
+const (
+	defaultKeepDaily  = 7 // days
+	defaultKeepWeekly = 4 // ISO weeks
+)
 
 const timeLayout = "20060102T150405Z"
 const suffix = ".dump.age"

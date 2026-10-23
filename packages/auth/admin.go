@@ -84,6 +84,12 @@ type AdminUser struct {
 	HasPassword      bool       `json:"hasPassword"`
 }
 
+// Page sizes for ListUsersQuery.Limit.
+const (
+	defaultUserListLimit = 25  // when Limit is unset
+	maxUserListLimit     = 100 // larger Limits are capped to this
+)
+
 // ListUsersQuery selects a page of users.
 type ListUsersQuery struct {
 	Search      string // case-insensitive "contains"
@@ -141,9 +147,9 @@ func (u *UserAdmin) ListUsers(ctx context.Context, q ListUsersQuery) (UserPage, 
 		field = `u."name"`
 	}
 	if q.Limit <= 0 {
-		q.Limit = 25
+		q.Limit = defaultUserListLimit
 	}
-	q.Limit = min(q.Limit, 100)
+	q.Limit = min(q.Limit, maxUserListLimit)
 	q.Offset = max(q.Offset, 0)
 
 	where := []string{"TRUE"}

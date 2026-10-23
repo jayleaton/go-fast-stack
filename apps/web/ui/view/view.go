@@ -49,12 +49,15 @@ func Get(path string) string { return uikit.Get(path) }
 // Assign is the expression that navigates to path (a safe relative path).
 func Assign(path string) string { return uikit.Assign(path) }
 
+// maxInitials is how many words the avatar's initials come from.
+const maxInitials = 2
+
 // initials is the avatar fallback: the first letter of up to two words.
 func initials(name string) string {
 	var out []rune
 	for _, w := range strings.Fields(name) {
 		out = append(out, unicode.ToUpper([]rune(w)[0]))
-		if len(out) == 2 {
+		if len(out) == maxInitials {
 			break
 		}
 	}

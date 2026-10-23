@@ -169,9 +169,10 @@ func (c *cli) checkVersion(ctx context.Context) error {
 }
 
 func tail(s string) string {
+	const maxTail = 2000 // bytes of a failed command's stderr kept in its error
 	s = strings.TrimSpace(s)
-	if len(s) > 2000 {
-		s = s[len(s)-2000:]
+	if len(s) > maxTail {
+		s = s[len(s)-maxTail:]
 	}
 	if s == "" {
 		return ""

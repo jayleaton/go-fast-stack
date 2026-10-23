@@ -192,6 +192,8 @@ func (a *Auth) clientIP(r *http.Request) string {
 	return host
 }
 
+const ipv6ClientBits = 64 // prefix length of the /64 one IPv6 client is treated as
+
 // normalizeIP canonicalises an address like Better Auth's normalizeIP:
 // IPv4-mapped IPv6 becomes IPv4 and IPv6 is reduced to its /64, since one
 // client usually owns a whole /64 and could otherwise rotate past rate limits.
@@ -203,7 +205,7 @@ func normalizeIP(s string) string {
 	}
 	addr = addr.Unmap().WithZone("")
 	if addr.Is6() {
-		return netip.PrefixFrom(addr, 64).Masked().String()
+		return netip.PrefixFrom(addr, ipv6ClientBits).Masked().String()
 	}
 	return addr.String()
 }
@@ -325,9 +327,9 @@ func (a *Auth) createSession(ctx context.Context, userID string) (Session, error
 	}
 	now := a.now()
 	s := Session{
-		ID:        generateID(32),
+		ID:        generateID(idLength),
 		ExpiresAt: now.Add(a.cfg.SessionTTL),
-		Token:     generateID(32),
+		Token:     generateID(idLength),
 		CreatedAt: now,
 		UpdatedAt: now,
 		UserID:    userID,

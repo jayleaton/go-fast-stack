@@ -273,6 +273,15 @@ type Size struct {
 	Replicas int     `yaml:"replicas"`
 }
 
+// Defaults for what platform.yaml leaves out.
+const (
+	defaultKeepDaily     = 7   // a week of nightly backups
+	defaultKeepWeekly    = 4   // and about a month of weeklies
+	defaultWebMemoryMB   = 512 // per web replica
+	defaultAdminCPU      = 0.5 // vCPU per admin replica: the admin app is light
+	defaultAdminMemoryMB = 256 // per admin replica
+)
+
 var (
 	defaults = Config{
 		Version:      1,
@@ -280,10 +289,10 @@ var (
 		Environments: Environments{"production"},
 		Secrets:      Secrets{Provider: ProviderDoppler, Project: DefaultDopplerProject},
 		Email:        Email{From: "noreply@example.com"},
-		Backups:      Backups{Enabled: true, Schedule: "0 3 * * *", KeepDaily: 7, KeepWeekly: 4, Admin: true, Storage: StorageRailway},
+		Backups:      Backups{Enabled: true, Schedule: "0 3 * * *", KeepDaily: defaultKeepDaily, KeepWeekly: defaultKeepWeekly, Admin: true, Storage: StorageRailway},
 		Resources: Resources{
-			Web:   Size{CPU: 1, MemoryMB: 512, Replicas: 1},
-			Admin: Size{CPU: 0.5, MemoryMB: 256, Replicas: 1},
+			Web:   Size{CPU: 1, MemoryMB: defaultWebMemoryMB, Replicas: 1},
+			Admin: Size{CPU: defaultAdminCPU, MemoryMB: defaultAdminMemoryMB, Replicas: 1},
 		},
 	}
 	// Railway allows 1 to 32 characters.
@@ -451,11 +460,12 @@ func (c Config) Validate() error {
 // ParseSchedule; deploy/ is its own module): 5 fields of *, numbers, ranges,
 // lists and steps within each field's bounds.
 func validCron(expr string) bool {
+	const cronFields = 5 // minute hour day-of-month month day-of-week
 	f := strings.Fields(expr)
-	if len(f) != 5 {
+	if len(f) != cronFields {
 		return false
 	}
-	bounds := [5][2]int{{0, 59}, {0, 23}, {1, 31}, {1, 12}, {0, 7}}
+	bounds := [cronFields][2]int{{0, 59}, {0, 23}, {1, 31}, {1, 12}, {0, 7}}
 	num := func(s string, lo, hi int) (int, bool) {
 		n, err := strconv.Atoi(s)
 		return n, err == nil && n >= lo && n <= hi

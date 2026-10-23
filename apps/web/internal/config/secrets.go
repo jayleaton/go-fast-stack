@@ -86,17 +86,21 @@ func validateLive(env Env, social Social) func(get func(name string) string) []e
 	}
 }
 
+// minSecretLength is the shortest signing/encryption secret accepted: 32
+// characters, what `openssl rand -base64 32` comfortably exceeds.
+const minSecretLength = 32
+
 // validateKeyring requires a current value and at least 32 characters for
 // every value of the keyring called name.
 func validateKeyring(get func(string) string, name string) []error {
 	var errs []error
 	k := secrets.ParseKeyring(get, name)
-	if k.Current.Len() < 32 {
+	if k.Current.Len() < minSecretLength {
 		errs = append(errs, fmt.Errorf("%s must be at least 32 characters (openssl rand -base64 32)", name))
 	}
 	for li, list := range [][]secrets.Secret{k.Previous, k.Revoked} {
 		for i, v := range list {
-			if v.Len() < 32 {
+			if v.Len() < minSecretLength {
 				errs = append(errs, fmt.Errorf("%s entry %d must be at least 32 characters", secrets.KeyringNames(name)[li+1], i+1))
 			}
 		}

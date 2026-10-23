@@ -31,8 +31,9 @@ func (c Config) Resolve(originURL, checkoutDir string) (Config, error) {
 		default:
 			return c, fmt.Errorf("project: auto needs a git checkout (or set project in platform.yaml)")
 		}
-		if len(c.Project) > 32 { // Railway's limit
-			c.Project = strings.TrimRight(c.Project[:32], "-._ ")
+		const maxProject = 32 // Railway's limit on project names
+		if len(c.Project) > maxProject {
+			c.Project = strings.TrimRight(c.Project[:maxProject], "-._ ")
 		}
 	}
 	switch c.Secrets.Project {

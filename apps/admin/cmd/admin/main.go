@@ -37,7 +37,15 @@ import (
 	"github.com/jayleaton/go-fast-stack/packages/secrets/reveal"
 )
 
-const shutdownTimeout = 15 * time.Second
+const (
+	shutdownTimeout = 15 * time.Second
+	// readHeaderTimeout bounds how long a client may take to send headers
+	// (slowloris); idleTimeout closes keep-alive connections nobody uses.
+	readHeaderTimeout = 10 * time.Second
+	idleTimeout       = 2 * time.Minute
+	// exitUsage is the conventional exit status for a command-line misuse.
+	exitUsage = 2
+)
 
 // emailCommandArgs is the argument count of the subcommands that take one
 // email (`invite <email>`, `reset-2fa <email>`): the command and the address.
@@ -56,7 +64,7 @@ func main() {
 	case (cmd == "invite" || cmd == "reset-2fa") && len(args) == emailCommandArgs:
 	default:
 		fmt.Fprintln(os.Stderr, usage)
-		os.Exit(2)
+		os.Exit(exitUsage)
 	}
 
 	cfg, err := config.Load(os.Getenv)
@@ -270,8 +278,8 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	srv := &http.Server{
 		Addr:              cfg.Addr,
 		Handler:           handler,
-		ReadHeaderTimeout: 10 * time.Second,
-		IdleTimeout:       2 * time.Minute,
+		ReadHeaderTimeout: readHeaderTimeout,
+		IdleTimeout:       idleTimeout,
 		// No WriteTimeout: Datastar SSE streams stay open.
 		ErrorLog: slog.NewLogLogger(log.Handler(), slog.LevelWarn),
 	}

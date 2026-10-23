@@ -17,11 +17,13 @@ type Schedule struct {
 	domStar, dowStar           bool
 }
 
+const cronFields = 5 // minute hour day-of-month month day-of-week
+
 // ParseSchedule parses a cron expression.
 func ParseSchedule(expr string) (Schedule, error) {
 	f := strings.Fields(expr)
-	if len(f) != 5 {
-		return Schedule{}, fmt.Errorf("backup: schedule %q must have 5 fields (minute hour day month weekday)", expr)
+	if len(f) != cronFields {
+		return Schedule{}, fmt.Errorf("backup: schedule %q must have %d fields (minute hour day month weekday)", expr, cronFields)
 	}
 	s := Schedule{expr: expr, domStar: f[2] == "*", dowStar: f[4] == "*"}
 	for _, p := range []struct {
@@ -76,11 +78,13 @@ func parseField(field string, set *[64]bool, lo, hi int) error {
 	return nil
 }
 
+const maxScheduleYears = 5 // how far ahead Next looks before giving up
+
 // Next is the first matching minute strictly after t (UTC). A schedule that
 // never matches (Feb 30) returns the zero time.
 func (s Schedule) Next(t time.Time) time.Time {
 	t = t.UTC().Truncate(time.Minute).Add(time.Minute)
-	for limit := t.AddDate(5, 0, 0); t.Before(limit); {
+	for limit := t.AddDate(maxScheduleYears, 0, 0); t.Before(limit); {
 		switch {
 		case !s.month[int(t.Month())]:
 			t = time.Date(t.Year(), t.Month()+1, 1, 0, 0, 0, 0, time.UTC)

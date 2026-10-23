@@ -75,7 +75,7 @@ check-migrations: ## Fail if a new migration is numbered at or below the highest
 	./scripts/check-migration-order.sh
 
 .PHONY: lint-layering
-lint-layering: ## Prove forbidden imports (code and tests) fail lint
+lint-layering: ## Prove forbidden imports (code and tests) and magic numbers fail lint
 	./scripts/check-layering.sh
 
 .PHONY: lint-tests

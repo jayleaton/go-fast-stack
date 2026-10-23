@@ -26,6 +26,9 @@ const dopplerDownloadPath = "/v3/configs/config/secrets/download?format=json&inc
 // maxDopplerBody bounds the response; a config is a few KiB.
 const maxDopplerBody = 1 << 20
 
+// dopplerTimeout bounds one call to the Doppler API.
+const dopplerTimeout = 15 * time.Second
+
 // Doppler fetches a config's secrets with a read-only service token over
 // plain net/http (Doppler has no maintained Go SDK). One request returns the
 // whole config; when Doppler sends an ETag the next request is conditional and
@@ -48,7 +51,7 @@ func NewDoppler(token Secret) *Doppler {
 // redirect. A 3xx becomes an "unexpected status" error.
 func newDopplerClient() *http.Client {
 	return &http.Client{
-		Timeout:       15 * time.Second,
+		Timeout:       dopplerTimeout,
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}
 }

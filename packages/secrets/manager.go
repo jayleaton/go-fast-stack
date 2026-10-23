@@ -11,6 +11,11 @@ import (
 	"time"
 )
 
+// retriesPerStaleBudget is how many fetch retries at the derived max backoff
+// fit in MaxStaleness, so a provider outage gets several attempts before the
+// values go stale.
+const retriesPerStaleBudget = 3
+
 // Defaults for Options.
 const (
 	DefaultInterval      = 60 * time.Second
@@ -114,8 +119,7 @@ func NewManager(p Provider, o Options) *Manager {
 		o.MaxStaleness = DefaultMaxStaleness
 	}
 	if o.MaxBackoff <= 0 {
-		// At least ~3 retries fit in the stale budget.
-		o.MaxBackoff = min(DefaultMaxBackoff, o.MaxStaleness/3)
+		o.MaxBackoff = min(DefaultMaxBackoff, o.MaxStaleness/retriesPerStaleBudget)
 	}
 	if o.StartAttempts <= 0 {
 		o.StartAttempts = DefaultStartAttempts

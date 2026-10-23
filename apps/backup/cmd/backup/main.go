@@ -36,10 +36,21 @@ import (
 
 const usage = `usage: backup serve | run | list [app|admin] | restore <id> --yes [--force] [--into app|admin] | prune`
 
+const (
+	minArgs   = 2 // the program name and a command
+	exitUsage = 2 // exit status for a usage error
+)
+
+// `backup list` table layout (text/tabwriter).
+const (
+	listTabWidth = 4
+	listPadding  = 2
+)
+
 func main() {
-	if len(os.Args) < 2 {
+	if len(os.Args) < minArgs {
 		fmt.Fprintln(os.Stderr, usage)
-		os.Exit(2)
+		os.Exit(exitUsage)
 	}
 	cmd, args := os.Args[1], os.Args[2:]
 
@@ -120,7 +131,7 @@ func run(ctx context.Context, cmd string, args []string, cfg config.Config, log 
 		if err != nil {
 			return err
 		}
-		w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+		w := tabwriter.NewWriter(os.Stdout, 0, listTabWidth, listPadding, ' ', 0)
 		_, _ = fmt.Fprintln(w, "ID\tBYTES")
 		for _, o := range objs {
 			_, _ = fmt.Fprintf(w, "%s\t%d\n", o.Key, o.Size)

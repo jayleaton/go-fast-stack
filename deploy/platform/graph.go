@@ -23,6 +23,13 @@ const (
 // AppPort is the port both apps listen on; public domains target it.
 const AppPort = 3000
 
+// Railway deploy settings shared by every service.
+const (
+	maxRestarts        = 5       // restartPolicyMaxRetries: restarts after a crash before Railway gives up
+	healthcheckSeconds = 60      // how long a new deployment has to answer /healthz
+	bytesPerMiB        = 1 << 20 // memoryBytes is in bytes; sizes are in MiB
+)
+
 // SecretKind says how setup provisions a bootstrap variable.
 type SecretKind int
 
@@ -234,6 +241,7 @@ func (c Config) backups(env string, appURL, adminURL map[string]any) []any {
 	if adminURL != nil {
 		vars["ADMIN_DATABASE_URL"] = adminURL
 	}
+	const backupMemoryMB = 512 // pg_dump of a large table
 	sc := railway.ServiceConfig{
 		"build": map[string]any{
 			"builder":        "DOCKERFILE",
@@ -241,10 +249,10 @@ func (c Config) backups(env string, appURL, adminURL map[string]any) []any {
 			"watchPatterns":  []any{"apps/backup/**", "packages/backup/**", "packages/secrets/**", "go.mod", "go.sum"},
 		},
 		"deploy": map[string]any{
-			"restartPolicyMaxRetries": 5,
+			"restartPolicyMaxRetries": maxRestarts,
 			"limitOverride": map[string]any{"containers": map[string]any{
 				"cpu":         1,
-				"memoryBytes": int64(512) << 20, // pg_dump of a large table
+				"memoryBytes": int64(backupMemoryMB) * bytesPerMiB,
 			}},
 		},
 		"env": vars,
@@ -318,15 +326,15 @@ func (c Config) service(env string, a app) railway.ServiceConfig {
 		// Doppler secrets go stale, and a liveness probe would turn a Doppler
 		// outage into a restart loop. Restarts happen only on process exit.
 		"healthcheck":        "/healthz",
-		"healthcheckTimeout": 60,
+		"healthcheckTimeout": healthcheckSeconds,
 		"replicas":           replicas,
 		"deploy": map[string]any{
 			// restartPolicyType is left at Railway's default (ON_FAILURE):
 			// declaring the default plans as a change forever.
-			"restartPolicyMaxRetries": 5,
+			"restartPolicyMaxRetries": maxRestarts,
 			"limitOverride": map[string]any{"containers": map[string]any{
 				"cpu":         a.size.CPU,
-				"memoryBytes": int64(a.size.MemoryMB) << 20,
+				"memoryBytes": int64(a.size.MemoryMB) * bytesPerMiB,
 			}},
 		},
 		"env": vars,

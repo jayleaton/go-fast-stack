@@ -23,13 +23,18 @@ const (
 	totpDigits = 6
 	totpPeriod = 30 * time.Second
 	totpWindow = 1 // steps accepted either side of now, for clock drift
+
+	totpKeyLength  = 20         // bytes: a 160-bit key, the size of an HMAC-SHA1 output
+	totpOffsetMask = 0x0f       // RFC 4226 dynamic truncation: offset is the last byte's low nibble
+	totpCodeMask   = 0x7fffffff // RFC 4226: keep the low 31 bits (drop the sign bit)
+	totpModulus    = 1_000_000  // 10^totpDigits
 )
 
 var b32 = base32.StdEncoding.WithPadding(base32.NoPadding)
 
 // newTOTPKey returns a random 160-bit TOTP key (RFC 4226 recommends >= 128).
 func newTOTPKey() []byte {
-	key := make([]byte, 20)
+	key := make([]byte, totpKeyLength)
 	_, _ = rand.Read(key)
 	return key
 }
@@ -41,9 +46,9 @@ func totpCode(key []byte, step int64) string {
 	m := hmac.New(sha1.New, key)
 	m.Write(msg[:])
 	sum := m.Sum(nil)
-	off := sum[len(sum)-1] & 0x0f
-	bin := binary.BigEndian.Uint32(sum[off:off+4]) & 0x7fffffff
-	return fmt.Sprintf("%0*d", totpDigits, bin%1_000_000)
+	off := sum[len(sum)-1] & totpOffsetMask
+	bin := binary.BigEndian.Uint32(sum[off:off+4]) & totpCodeMask
+	return fmt.Sprintf("%0*d", totpDigits, bin%totpModulus)
 }
 
 func totpStep(t time.Time) int64 { return t.Unix() / int64(totpPeriod/time.Second) }
@@ -117,13 +122,16 @@ func (a *Auth) totpCipher() (cipher.AEAD, error) {
 	return cipher.NewGCM(block)
 }
 
-const backupCodeCount = 10
+const (
+	backupCodeCount  = 10
+	backupCodeLength = 10 // characters, split 5-5 by a dash
+)
 
 // newBackupCodes returns fresh one-time codes ("abcde-12345": 50 bits each).
 func newBackupCodes() []string {
 	codes := make([]string, backupCodeCount)
 	for i := range codes {
-		c := strings.ToLower(generateID(10))
+		c := strings.ToLower(generateID(backupCodeLength))
 		codes[i] = c[:5] + "-" + c[5:]
 	}
 	return codes

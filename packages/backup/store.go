@@ -41,13 +41,15 @@ func (d Dir) path(key string) (string, error) {
 	return filepath.Join(string(d), filepath.FromSlash(key)), nil
 }
 
+const backupDirPerm = 0o700 // backup directories: owner only
+
 // Put writes body to key atomically (temp file, then rename).
 func (d Dir) Put(_ context.Context, key string, body io.Reader, _ int64, _ string) error {
 	p, err := d.path(key)
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+	if err := os.MkdirAll(filepath.Dir(p), backupDirPerm); err != nil {
 		return fmt.Errorf("backup: %w", err)
 	}
 	tmp, err := os.CreateTemp(filepath.Dir(p), ".put-*")
