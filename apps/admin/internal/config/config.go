@@ -42,7 +42,8 @@ type Config struct {
 	// ADMIN_AUTH_SECRET is accepted (0: packages/auth default).
 	AuthSecretGrace time.Duration
 	// BootstrapEmail is seeded as the first admin (without a password) by
-	// `admin migrate`; `admin invite <email>` then sends its set-password link.
+	// `admin migrate`, which also sends its set-password link while it is
+	// pending, at most once per link lifetime (72 h).
 	BootstrapEmail string
 	// RequireTwoFactor makes every admin enrol in TOTP before getting a
 	// session. Defaults to on in production.

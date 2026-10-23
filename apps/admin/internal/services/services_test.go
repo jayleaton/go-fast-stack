@@ -115,7 +115,7 @@ func policyCalls(fakes ports, policy services.Policy) map[string]func(services.A
 			return err
 		},
 		"AdminService.InviteBootstrapAdmin": func(actor services.Actor) error {
-			_, err := admins.InviteBootstrapAdmin(ctx, actor, pending)
+			_, err := admins.InviteBootstrapAdmin(ctx, actor, pending, time.Hour)
 			return err
 		},
 		"AuditService.List": func(actor services.Actor) error {
@@ -444,7 +444,7 @@ func mutations() []mutation {
 				return []any{fakes.accounts.EXPECT().SendSetPasswordLink(ctx, "a2").Return(err)}
 			},
 			call: func(fakes ports) error {
-				sent, err := admins(fakes).InviteBootstrapAdmin(ctx, cli, pending)
+				sent, err := admins(fakes).InviteBootstrapAdmin(ctx, cli, pending, time.Hour)
 				if sent != (err == nil) {
 					return fmt.Errorf("sent = %v with err %w", sent, err)
 				}

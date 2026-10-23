@@ -2,7 +2,7 @@
 // Railway service).
 //
 //	admin serve           run the HTTP server (default)
-//	admin migrate         migrate the admin database (auth, then audit log) and seed ADMIN_BOOTSTRAP_EMAIL
+//	admin migrate         migrate the admin database (auth, then audit log), seed ADMIN_BOOTSTRAP_EMAIL and email its invite (again once it expires)
 //	admin invite <email>  email a set-password link to a new or pending admin
 //	admin reset-2fa <email>  remove an admin's 2FA (the last admin lost the authenticator and backup codes)
 //
@@ -50,6 +50,11 @@ const (
 // emailCommandArgs is the argument count of the subcommands that take one
 // email (`invite <email>`, `reset-2fa <email>`): the command and the address.
 const emailCommandArgs = 2
+
+// inviteTTL is how long an admin's set-password link stays valid; `admin
+// migrate` resends the bootstrap admin's invite once the last one is older.
+// The admin auth instance gets the same value, so the two cannot drift.
+const inviteTTL = auth.DefaultInviteTTL
 
 const usage = "usage: admin [serve | migrate | invite <email> | reset-2fa <email>]"
 
@@ -105,8 +110,9 @@ func main() {
 
 // migrate runs the admin database's migrations: the admin auth instance's
 // tables, then the audit log. The app database is the web service's to
-// migrate. Then it seeds ADMIN_BOOTSTRAP_EMAIL and emails its invite once
-// (idempotent), so the first admin needs no shell in the image.
+// migrate. Then it seeds ADMIN_BOOTSTRAP_EMAIL and emails its invite while
+// that admin is pending, at most once per inviteTTL, so the first admin needs
+// no shell in the image and a failed or expired first link heals itself.
 func migrate(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	url, err := cfg.Secrets.AdminDatabaseURL()
 	if err != nil {
@@ -141,7 +147,7 @@ func migrate(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	admin, created, err := svc.Bootstrap(ctx, actor, in)
 	sent := false
 	if err == nil {
-		sent, err = svc.InviteBootstrapAdmin(ctx, actor, admin)
+		sent, err = svc.InviteBootstrapAdmin(ctx, actor, admin, inviteTTL)
 	}
 	// Let a queued invite email go out before the pre-deploy command exits.
 	if serr := admins.Shutdown(ctx); err == nil {
@@ -418,6 +424,7 @@ func newAdminAuth(ctx context.Context, cfg config.Config, adminPool auth.DB, eve
 		CookiePrefix:    "admin",
 		// No Better Auth clients: bind the admin cookies to this host.
 		HostOnlyCookies: true,
+		InviteTTL:       inviteTTL,
 		DisableSignUp:   true,
 		AppName:         cfg.AppName,
 		TrustedOrigins:  cfg.TrustedOrigins,

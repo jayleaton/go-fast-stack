@@ -3,6 +3,7 @@ package services_test
 import (
 	"fmt"
 	"testing"
+	"time"
 
 	"go.uber.org/mock/gomock"
 
@@ -425,34 +426,67 @@ func TestResetTwoFactorByEmail(test *testing.T) {
 func TestInviteBootstrapAdmin(test *testing.T) {
 	test.Parallel()
 	svc, accounts, log := newAdminService(test)
+	bootstrap := services.SystemActor("bootstrap")
+	const linkTTL = 72 * time.Hour
+	invitedAgo := func(age time.Duration) services.AuditPage {
+		return services.AuditPage{Total: 1, Entries: []services.AuditEntry{{Action: "admin.invite", CreatedAt: time.Now().Add(-age)}}}
+	}
+	send := func() {
+		gomock.InOrder(
+			log.EXPECT().Begin(ctx, adminAudit(bootstrap, "admin.invite", map[string]string{})).Return(entryID, nil),
+			accounts.EXPECT().SendSetPasswordLink(ctx, "a2").Return(nil),
+			log.EXPECT().Resolve(ctx, entryID, succeeded).Return(nil),
+		)
+	}
 
 	// A pending admin with no invite on record (under the id or the email)
-	// gets the link once, by the operator.
-	bootstrap := services.SystemActor("bootstrap")
-	gomock.InOrder(
-		log.EXPECT().List(ctx, priorInvite).Return(services.AuditPage{}, nil),
-		log.EXPECT().List(ctx, priorEmailInvite).Return(services.AuditPage{}, nil),
-		log.EXPECT().Begin(ctx, adminAudit(bootstrap, "admin.invite", map[string]string{})).Return(entryID, nil),
-		accounts.EXPECT().SendSetPasswordLink(ctx, "a2").Return(nil),
-		log.EXPECT().Resolve(ctx, entryID, succeeded).Return(nil),
-	)
-	if sent, err := svc.InviteBootstrapAdmin(ctx, bootstrap, pending); err != nil || !sent {
-		test.Fatalf("InviteBootstrapAdmin = %v, %v", sent, err)
+	// gets the link, by the operator.
+	log.EXPECT().List(ctx, priorInvite).Return(services.AuditPage{}, nil)
+	log.EXPECT().List(ctx, priorEmailInvite).Return(services.AuditPage{}, nil)
+	send()
+	if sent, err := svc.InviteBootstrapAdmin(ctx, bootstrap, pending, linkTTL); err != nil || !sent {
+		test.Fatalf("never invited = %v, %v", sent, err)
 	}
 
-	// Later deploys send nothing: an invite is on record, or it was accepted.
-	log.EXPECT().List(ctx, priorInvite).Return(services.AuditPage{Total: 1}, nil)
-	if sent, err := svc.InviteBootstrapAdmin(ctx, bootstrap, pending); err != nil || sent {
-		test.Fatalf("invited before = %v, %v", sent, err)
+	// Deploys while the last link is valid send nothing (by id, or by email
+	// for a first invite).
+	for _, age := range []time.Duration{time.Minute, linkTTL - time.Hour} {
+		log.EXPECT().List(ctx, priorInvite).Return(invitedAgo(age), nil)
+		if sent, err := svc.InviteBootstrapAdmin(ctx, bootstrap, pending, linkTTL); err != nil || sent {
+			test.Fatalf("invited %s ago = %v, %v", age, sent, err)
+		}
 	}
-	if sent, err := svc.InviteBootstrapAdmin(ctx, bootstrap, bob); err != nil || sent {
-		test.Fatalf("accepted = %v, %v", sent, err)
+	log.EXPECT().List(ctx, priorInvite).Return(services.AuditPage{}, nil)
+	log.EXPECT().List(ctx, priorEmailInvite).Return(invitedAgo(time.Hour), nil)
+	if sent, err := svc.InviteBootstrapAdmin(ctx, bootstrap, pending, linkTTL); err != nil || sent {
+		test.Fatalf("first invite by email 1h ago = %v, %v", sent, err)
 	}
 
-	log.EXPECT().List(ctx, priorInvite).Return(services.AuditPage{}, errDB)
-	sent, err := svc.InviteBootstrapAdmin(ctx, bootstrap, pending)
-	wantInternal(test, err, errDB)
-	if sent {
-		test.Fatal("sent on error")
+	// Once the last link has expired, the next deploy sends a fresh one.
+	log.EXPECT().List(ctx, priorInvite).Return(invitedAgo(linkTTL+time.Hour), nil)
+	send()
+	if sent, err := svc.InviteBootstrapAdmin(ctx, bootstrap, pending, linkTTL); err != nil || !sent {
+		test.Fatalf("last invite expired = %v, %v", sent, err)
+	}
+
+	// Accepted or disabled admins: no lookup, no send.
+	disabledPending := pending
+	disabledPending.Disabled = true
+	for _, admin := range []services.Admin{bob, disBob, disabledPending} {
+		if sent, err := svc.InviteBootstrapAdmin(ctx, bootstrap, admin, linkTTL); err != nil || sent {
+			test.Fatalf("%+v = %v, %v", admin, sent, err)
+		}
+	}
+
+	for _, query := range []services.AuditQuery{priorInvite, priorEmailInvite} {
+		if query == priorEmailInvite {
+			log.EXPECT().List(ctx, priorInvite).Return(services.AuditPage{}, nil)
+		}
+		log.EXPECT().List(ctx, query).Return(services.AuditPage{}, errDB)
+		sent, err := svc.InviteBootstrapAdmin(ctx, bootstrap, pending, linkTTL)
+		wantInternal(test, err, errDB)
+		if sent {
+			test.Fatal("sent on error")
+		}
 	}
 }
