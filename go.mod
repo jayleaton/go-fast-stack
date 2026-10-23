@@ -14,7 +14,6 @@ require (
 	github.com/starfederation/datastar-go v1.2.2
 	go.uber.org/mock v0.6.0
 	golang.org/x/crypto v0.58.0
-	golang.org/x/image v0.47.0
 	golang.org/x/text v0.43.0
 )
 

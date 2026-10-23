@@ -6,9 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"image"
+	"image/draw"
 
 	"github.com/gen2brain/webp"
-	"golang.org/x/image/draw"
 )
 
 // Format is the declared format of an input; Normalize refuses bytes that
@@ -50,14 +50,14 @@ const (
 	maxWebPSide        = 16383      // the WebP format's limit per side
 	defaultQuality     = 82         // libwebp quality; Sharp's default for photos
 	maxQuality         = 100
-	defaultConcurrency = 2    // two 48 MP decodes, about 400 MB of pixels
+	defaultConcurrency = 2    // two decodes at once; one 48 MP photo peaks at about 70 MB
 	bytesPerRGBAPixel  = 4    // R, G, B, A
 	alphaOpaque        = 0xff // 8-bit alpha of an opaque pixel
 	alphaChannel       = 3    // offset of A in an RGBA pixel
 )
 
 // Processor normalises images, at most a fixed number at once: a decoded
-// 48 MP photo is hundreds of MB, so the slot count bounds memory.
+// 48 MP photo is about 70 MB (73 MB of YCbCr), so the slot count bounds memory.
 type Processor struct {
 	slots chan struct{}
 }
@@ -123,9 +123,7 @@ func fit(src image.Image, maxSide int) *image.RGBA {
 	if height > width {
 		newWidth, newHeight = max(1, (width*maxSide+height/2)/height), maxSide
 	}
-	dst := image.NewRGBA(image.Rect(0, 0, newWidth, newHeight))
-	draw.CatmullRom.Scale(dst, dst.Bounds(), src, bounds, draw.Src, nil)
-	return dst
+	return resize(src, newWidth, newHeight)
 }
 
 // encode writes img as WebP. libwebp reads straight (non-premultiplied)
