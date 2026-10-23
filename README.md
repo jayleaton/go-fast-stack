@@ -38,7 +38,7 @@ Pages are rendered on the server in Go, and [Datastar](https://data-star.dev) ad
 | Home page | 17 KB of HTML, rendered in about 0.4 ms |
 | Production image | distroless, about 11 MB compressed (0.9 MB base + the binary) |
 
-7.9 MB of the binary is the pure-Go image codecs used by the optional image uploads ([docs/storage.md](docs/storage.md#pure-go-static-binary)). The binary and image sizes come from a production build (`make build`: `-tags nodynamic -trimpath -ldflags='-s -w'`, Go 1.26.8, linux/amd64); the memory and page numbers come from the same kind of build before the codecs were added. The Railway figure is from the [deploy cost notes](docs/deploy.md#cost).
+7.6 MB of the binary is the pure-Go image codecs used by the optional image uploads ([docs/storage.md](docs/storage.md#pure-go-static-binary)). The binary and image sizes come from a production build (`make build`: `-tags nodynamic -trimpath -ldflags='-s -w'`, Go 1.26.8, linux/amd64); the memory and page numbers come from the same kind of build before the codecs were added. The Railway figure is from the [deploy cost notes](docs/deploy.md#cost).
 
 **Fast CI and fast tests.** CI checks only the packages a change can affect, in one job.
 

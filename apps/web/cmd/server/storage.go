@@ -15,8 +15,10 @@ import (
 	"github.com/jayleaton/go-fast-stack/packages/storage/imaging"
 )
 
-// imageConcurrency bounds how many images are decoded at once: a 48 MP
-// photo is about 200 MB of pixels while it is normalised.
+// imageConcurrency bounds how many images are decoded at once. Measured peak
+// RSS above an idle server: about 30 MB for one 12 MP photo, 70 MB for one
+// 48 MP photo (the decoded pixels and the WebP encoder; resizing uses at most
+// 8 MiB), 120 MB for two 12 MP photos at once (docs/storage.md).
 const imageConcurrency = 2
 
 // newImages builds the image endpoints over object storage, or returns nil
