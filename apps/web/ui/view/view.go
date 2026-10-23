@@ -27,18 +27,18 @@ type State struct {
 type stateKey struct{}
 
 // WithState stores the layout state on ctx.
-func WithState(ctx context.Context, s State) context.Context {
-	return context.WithValue(ctx, stateKey{}, s)
+func WithState(ctx context.Context, state State) context.Context {
+	return context.WithValue(ctx, stateKey{}, state)
 }
 
 // StateFrom returns the layout state, zero when absent.
 func StateFrom(ctx context.Context) State {
-	s, _ := ctx.Value(stateKey{}).(State)
-	return s
+	state, _ := ctx.Value(stateKey{}).(State)
+	return state
 }
 
 // ThemeFrom reads the theme cookie: "dark", "light" or "" (system).
-func ThemeFrom(r *http.Request) string { return uikit.ThemeFrom(r) }
+func ThemeFrom(request *http.Request) string { return uikit.ThemeFrom(request) }
 
 // PostForm is the Datastar action that submits the closest form urlencoded.
 func PostForm(path string) string { return uikit.PostForm(path) }
@@ -55,8 +55,8 @@ const maxInitials = 2
 // initials is the avatar fallback: the first letter of up to two words.
 func initials(name string) string {
 	var out []rune
-	for _, w := range strings.Fields(name) {
-		out = append(out, unicode.ToUpper([]rune(w)[0]))
+	for _, field := range strings.Fields(name) {
+		out = append(out, unicode.ToUpper([]rune(field)[0]))
 		if len(out) == maxInitials {
 			break
 		}

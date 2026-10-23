@@ -13,23 +13,23 @@ import (
 // schedule is left as it is. Existing snapshots are never deleted: an
 // emptied schedule only stops new ones. Railway refusing it (the Hobby plan
 // has no volume backups) becomes a next step, not a failed apply.
-func (s *setup) volumeSnapshots(ctx context.Context, env string) error {
-	want, managed := s.cfg.VolumeSnapshots(env)
+func (setup *setup) volumeSnapshots(ctx context.Context, env string) error {
+	want, managed := setup.cfg.VolumeSnapshots(env)
 	if !managed {
 		return nil
 	}
-	if s.project == nil || s.project.Environments[env] == "" {
-		s.change("%s: Railway volume snapshots %v on every Postgres volume", env, want)
+	if setup.project == nil || setup.project.Environments[env] == "" {
+		setup.change("%s: Railway volume snapshots %v on every Postgres volume", env, want)
 		return nil
 	}
-	volumes, err := s.volumeInstances(ctx, env)
+	volumes, err := setup.volumeInstances(ctx, env)
 	if err != nil {
 		return err
 	}
-	for _, database := range s.databases() {
-		volume := volumes[s.project.Services[database]]
+	for _, database := range setup.databases() {
+		volume := volumes[setup.project.Services[database]]
 		if volume == "" {
-			s.change("%s/%s Railway volume snapshots %v (once its volume exists)", env, database, want)
+			setup.change("%s/%s Railway volume snapshots %v (once its volume exists)", env, database, want)
 			continue
 		}
 		var current struct {
@@ -37,7 +37,7 @@ func (s *setup) volumeSnapshots(ctx context.Context, env string) error {
 				Kind string `json:"kind"`
 			} `json:"volumeInstanceBackupScheduleList"`
 		}
-		if err := s.rw.gql(ctx, `query($id: String!) { volumeInstanceBackupScheduleList(volumeInstanceId: $id) { kind } }`,
+		if err := setup.rw.gql(ctx, `query($id: String!) { volumeInstanceBackupScheduleList(volumeInstanceId: $id) { kind } }`,
 			map[string]any{"id": volume}, &current); err != nil {
 			return err
 		}
@@ -49,16 +49,16 @@ func (s *setup) volumeSnapshots(ctx context.Context, env string) error {
 		if slices.Equal(have, want) {
 			continue
 		}
-		if s.apply {
-			err := s.rw.gql(ctx, `mutation($id: String!, $kinds: [VolumeInstanceBackupScheduleKind!]!) { volumeInstanceBackupScheduleUpdate(volumeInstanceId: $id, kinds: $kinds) }`,
+		if setup.apply {
+			err := setup.rw.gql(ctx, `mutation($id: String!, $kinds: [VolumeInstanceBackupScheduleKind!]!) { volumeInstanceBackupScheduleUpdate(volumeInstanceId: $id, kinds: $kinds) }`,
 				map[string]any{"id": volume, "kinds": want}, nil)
 			if err != nil {
-				s.say("  ! %s/%s Railway volume snapshots: %v", env, database, err)
-				s.next("Railway refused volume snapshots %v on %s/%s (they need the Pro plan): upgrade, or remove backups.volume_snapshots from platform.yaml", want, env, database)
+				setup.say("  ! %s/%s Railway volume snapshots: %v", env, database, err)
+				setup.next("Railway refused volume snapshots %v on %s/%s (they need the Pro plan): upgrade, or remove backups.volume_snapshots from platform.yaml", want, env, database)
 				continue
 			}
 		}
-		s.change("%s/%s Railway volume snapshots %s -> %s", env, database, scheduleText(have), scheduleText(want))
+		setup.change("%s/%s Railway volume snapshots %s -> %s", env, database, scheduleText(have), scheduleText(want))
 	}
 	return nil
 }
@@ -71,7 +71,7 @@ func scheduleText(kinds []string) string {
 }
 
 // volumeInstances maps service id to its volume instance id in env.
-func (s *setup) volumeInstances(ctx context.Context, env string) (map[string]string, error) {
+func (setup *setup) volumeInstances(ctx context.Context, env string) (map[string]string, error) {
 	var res struct {
 		Environment struct {
 			VolumeInstances struct {
@@ -84,8 +84,8 @@ func (s *setup) volumeInstances(ctx context.Context, env string) (map[string]str
 			} `json:"volumeInstances"`
 		} `json:"environment"`
 	}
-	if err := s.rw.gql(ctx, `query($env: String!) { environment(id: $env) { volumeInstances { edges { node { id serviceId } } } } }`,
-		map[string]any{"env": s.project.Environments[env]}, &res); err != nil {
+	if err := setup.rw.gql(ctx, `query($env: String!) { environment(id: $env) { volumeInstances { edges { node { id serviceId } } } } }`,
+		map[string]any{"env": setup.project.Environments[env]}, &res); err != nil {
 		return nil, err
 	}
 	out := map[string]string{}

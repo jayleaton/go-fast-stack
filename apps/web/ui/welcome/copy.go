@@ -63,24 +63,24 @@ var copyFS embed.FS
 
 var copies = func() map[i18n.Locale]*Copy {
 	out := map[i18n.Locale]*Copy{}
-	for _, l := range i18n.Locales {
-		raw, err := copyFS.ReadFile("copy/" + string(l) + ".json")
+	for _, locale := range i18n.Locales {
+		raw, err := copyFS.ReadFile("copy/" + string(locale) + ".json")
 		if err != nil {
-			panic(fmt.Sprintf("welcome: read %s: %v", l, err))
+			panic(fmt.Sprintf("welcome: read %s: %v", locale, err))
 		}
-		c := new(Copy)
-		if err := json.Unmarshal(raw, c); err != nil {
-			panic(fmt.Sprintf("welcome: parse %s: %v", l, err))
+		content := new(Copy)
+		if err := json.Unmarshal(raw, content); err != nil {
+			panic(fmt.Sprintf("welcome: parse %s: %v", locale, err))
 		}
-		out[l] = c
+		out[locale] = content
 	}
 	return out
 }()
 
 // CopyFor returns the copy for the request locale.
 func CopyFor(ctx context.Context) *Copy {
-	if c, ok := copies[i18n.From(ctx).Locale]; ok {
-		return c
+	if content, ok := copies[i18n.From(ctx).Locale]; ok {
+		return content
 	}
 	return copies[i18n.DefaultLocale]
 }

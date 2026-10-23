@@ -16,53 +16,53 @@ import (
 // It implements services.UserRepository: the method set is the port the
 // service declares, nothing more. Copy this file for a new repository.
 type UserRepository struct {
-	q *sqlc.Queries
+	queries *sqlc.Queries
 }
 
 // NewUserRepository returns a repository backed by db: a *Pool (live
 // DATABASE_URL rotation) or a *pgxpool.Pool.
 func NewUserRepository(db sqlc.DBTX) *UserRepository {
-	return &UserRepository{q: sqlc.New(db)}
+	return &UserRepository{queries: sqlc.New(db)}
 }
 
 // GetByID returns model.ErrNotFound when no user has id.
-func (r *UserRepository) GetByID(ctx context.Context, id string) (model.User, error) {
-	return one(r.q.GetUserByID(ctx, id))
+func (repository *UserRepository) GetByID(ctx context.Context, id string) (model.User, error) {
+	return one(repository.queries.GetUserByID(ctx, id))
 }
 
 // UpdateProfile applies p and returns the updated user.
-func (r *UserRepository) UpdateProfile(ctx context.Context, id string, p model.UserProfileUpdate) (model.User, error) {
-	return one(r.q.UpdateUserProfile(ctx, sqlc.UpdateUserProfileParams{
-		ID: id, Name: p.Name, SetImage: p.SetImage, Image: p.Image,
+func (repository *UserRepository) UpdateProfile(ctx context.Context, id string, update model.UserProfileUpdate) (model.User, error) {
+	return one(repository.queries.UpdateUserProfile(ctx, sqlc.UpdateUserProfileParams{
+		ID: id, Name: update.Name, SetImage: update.SetImage, Image: update.Image,
 	}))
 }
 
 // Delete deletes the user; sessions, accounts and app rows cascade.
-func (r *UserRepository) Delete(ctx context.Context, id string) error {
-	n, err := r.q.DeleteUser(ctx, id)
+func (repository *UserRepository) Delete(ctx context.Context, id string) error {
+	user, err := repository.queries.DeleteUser(ctx, id)
 	if err != nil {
 		return err
 	}
-	if n == 0 {
+	if user == 0 {
 		return model.ErrNotFound
 	}
 	return nil
 }
 
 // DataSummary lists the data stored for a user.
-func (r *UserRepository) DataSummary(ctx context.Context, id string) (model.UserDataSummary, error) {
-	u, err := r.GetByID(ctx, id)
+func (repository *UserRepository) DataSummary(ctx context.Context, id string) (model.UserDataSummary, error) {
+	user, err := repository.GetByID(ctx, id)
 	if err != nil {
 		return model.UserDataSummary{}, err
 	}
-	sessions, err := r.q.CountUserSessions(ctx, id)
+	sessions, err := repository.queries.CountUserSessions(ctx, id)
 	if err != nil {
 		return model.UserDataSummary{}, err
 	}
-	return model.UserDataSummary{User: u, Sessions: sessions}, nil
+	return model.UserDataSummary{User: user, Sessions: sessions}, nil
 }
 
-func one(u sqlc.User, err error) (model.User, error) {
+func one(user sqlc.User, err error) (model.User, error) {
 	if errors.Is(err, pgx.ErrNoRows) {
 		return model.User{}, model.ErrNotFound
 	}
@@ -72,12 +72,12 @@ func one(u sqlc.User, err error) (model.User, error) {
 	// Field by field: "user" belongs to packages/auth, whose admin and 2FA
 	// columns (role, banned, twoFactorEnabled, ...) are not part of model.User.
 	return model.User{
-		ID:            u.ID,
-		Name:          u.Name,
-		Email:         u.Email,
-		EmailVerified: u.EmailVerified,
-		Image:         u.Image,
-		CreatedAt:     u.CreatedAt,
-		UpdatedAt:     u.UpdatedAt,
+		ID:            user.ID,
+		Name:          user.Name,
+		Email:         user.Email,
+		EmailVerified: user.EmailVerified,
+		Image:         user.Image,
+		CreatedAt:     user.CreatedAt,
+		UpdatedAt:     user.UpdatedAt,
 	}, nil
 }

@@ -23,7 +23,7 @@ import (
 var (
 	grace  = access.Admin{ID: "a1", Name: "Grace", Email: "grace@example.com", TwoFactorEnabled: true}
 	actor  = apitest.Actor(grace)
-	r      = config.APIRoutes
+	routes = config.APIRoutes
 	anyCtx = gomock.Any()
 )
 
@@ -50,7 +50,7 @@ func newRouter(test *testing.T) (svcs, http.Handler) {
 	return svcs{users.EXPECT(), admins.EXPECT(), audit.EXPECT(), analytics.EXPECT()}, mux
 }
 
-func ptr[T any](v T) *T { return &v }
+func ptr[Value any](value Value) *Value { return &value }
 
 // svcErr is a service error and the response it must map to.
 type svcErr struct {
@@ -67,11 +67,11 @@ type svcErr struct {
 // specific to the endpoint, on top of the ones every endpoint maps.
 type route struct {
 	method, path, body       string
-	expect                   func(m svcs, err error)
+	expect                   func(deps svcs, err error)
 	invalidPath, invalidBody string
 	field                    string
 	errs                     []svcErr
-	check                    func(t *testing.T, res apitest.Response)
+	check                    func(test *testing.T, res apitest.Response)
 }
 
 // everyRoute maps the errors any service may return to any request.
@@ -82,72 +82,72 @@ var everyRoute = []svcErr{
 }
 
 // allRoutes merges the per-service tables (users_test.go, admins_test.go...).
-func allRoutes(t *testing.T) map[string]route {
+func allRoutes(test *testing.T) map[string]route {
 	all := map[string]route{}
-	for _, m := range []map[string]route{userRoutes, adminRoutes, auditRoutes, analyticsRoutes} {
-		for k, v := range m {
-			if _, dup := all[k]; dup {
-				t.Fatalf("duplicate route name %q", k)
+	for _, routeTable := range []map[string]route{userRoutes, adminRoutes, auditRoutes, analyticsRoutes} {
+		for key, testCase := range routeTable {
+			if _, dup := all[key]; dup {
+				test.Fatalf("duplicate route name %q", key)
 			}
-			all[k] = v
+			all[key] = testCase
 		}
 	}
 	return all
 }
 
-func wantSuccess(t *testing.T, res apitest.Response) {
-	t.Helper()
-	if !apitest.Data[api.Success](t, res).Success {
-		t.Errorf("data = %s", res.Data)
+func wantSuccess(test *testing.T, res apitest.Response) {
+	test.Helper()
+	if !apitest.Data[api.Success](test, res).Success {
+		test.Errorf("data = %s", res.Data)
 	}
 }
 
-func wantError(t *testing.T, res apitest.Response, status int, msg string) {
-	t.Helper()
+func wantError(test *testing.T, res apitest.Response, status int, msg string) {
+	test.Helper()
 	if res.Status != status || *res.Error != msg {
-		t.Errorf("got %d %q, want %d %q", res.Status, *res.Error, status, msg)
+		test.Errorf("got %d %q, want %d %q", res.Status, *res.Error, status, msg)
 	}
 }
 
 // wantInvalid sends a request the validators reject: it must be a 400 with
 // exactly want as details and never reach a service (the mocks have no
 // expectations).
-func wantInvalid(t *testing.T, method, path, body string, want map[string]string) {
-	t.Helper()
-	_, h := newRouter(t)
-	res := apitest.Do(t, h, apitest.AsAdmin(grace), method, path, body)
+func wantInvalid(test *testing.T, method, path, body string, want map[string]string) {
+	test.Helper()
+	_, handler := newRouter(test)
+	res := apitest.Do(test, handler, apitest.AsAdmin(grace), method, path, body)
 	if res.Status != 400 || *res.Error != "Invalid request data" || !maps.Equal(res.Details, want) {
-		t.Errorf("%s %.60s %.60q: %d %q %v, want 400 %v", method, path, body, res.Status, *res.Error, res.Details, want)
+		test.Errorf("%s %.60s %.60q: %d %q %v, want 400 %v", method, path, body, res.Status, *res.Error, res.Details, want)
 	}
 }
 
 // wantOK sends a valid request after expect registered the exact service
 // call it must make.
-func wantOK(t *testing.T, method, path, body string, expect func(m svcs)) {
-	t.Helper()
-	m, h := newRouter(t)
-	expect(m)
-	if res := apitest.Do(t, h, apitest.AsAdmin(grace), method, path, body); res.Status != 200 {
-		t.Errorf("%s %.60s %.60q: status %d (%s)", method, path, body, res.Status, *res.Error)
+func wantOK(test *testing.T, method, path, body string, expect func(deps svcs)) {
+	test.Helper()
+	deps, handler := newRouter(test)
+	expect(deps)
+	if res := apitest.Do(test, handler, apitest.AsAdmin(grace), method, path, body); res.Status != 200 {
+		test.Errorf("%s %.60s %.60q: status %d (%s)", method, path, body, res.Status, *res.Error)
 	}
 }
 
 // TestRoutes runs the boundary cases against every endpoint. The mocks fail
 // the test on any service call a case does not expect.
-func TestRoutes(t *testing.T) {
-	t.Parallel()
-	routes := allRoutes(t)
+func TestRoutes(test *testing.T) {
+	test.Parallel()
+	routes := allRoutes(test)
 	for _, name := range slices.Sorted(maps.Keys(routes)) {
 		rt := routes[name]
-		t.Run(name+"/no session is 401", func(t *testing.T) {
-			t.Parallel()
-			_, h := newRouter(t)
-			res := apitest.Do(t, h, apitest.Anonymous, rt.method, rt.path, rt.body)
-			wantError(t, res, 401, "Unauthorized")
+		test.Run(name+"/no session is 401", func(test *testing.T) {
+			test.Parallel()
+			_, handler := newRouter(test)
+			res := apitest.Do(test, handler, apitest.Anonymous, rt.method, rt.path, rt.body)
+			wantError(test, res, 401, "Unauthorized")
 		})
-		t.Run(name+"/invalid input is 400", func(t *testing.T) {
-			t.Parallel()
-			m, h := newRouter(t)
+		test.Run(name+"/invalid input is 400", func(test *testing.T) {
+			test.Parallel()
+			deps, handler := newRouter(test)
 			path, body := rt.path, rt.body
 			switch {
 			case rt.invalidPath != "":
@@ -155,36 +155,36 @@ func TestRoutes(t *testing.T) {
 			case rt.invalidBody != "":
 				body = rt.invalidBody
 			default: // no input to get wrong: the service rejects the request
-				rt.expect(m, services.ErrValidation)
+				rt.expect(deps, services.ErrValidation)
 			}
-			res := apitest.Do(t, h, apitest.AsAdmin(grace), rt.method, path, body)
+			res := apitest.Do(test, handler, apitest.AsAdmin(grace), rt.method, path, body)
 			if res.Status != 400 {
-				t.Fatalf("status %d, want 400 (%s)", res.Status, *res.Error)
+				test.Fatalf("status %d, want 400 (%s)", res.Status, *res.Error)
 			}
 			if rt.field != "" && (*res.Error != "Invalid request data" || res.Details[rt.field] == "") {
-				t.Errorf("got %q %v, want details on %q", *res.Error, res.Details, rt.field)
+				test.Errorf("got %q %v, want details on %q", *res.Error, res.Details, rt.field)
 			}
 		})
-		for _, e := range append(slices.Clone(everyRoute), rt.errs...) {
-			t.Run(fmt.Sprintf("%s/%v is %d", name, e.err, e.status), func(t *testing.T) {
-				t.Parallel()
-				m, h := newRouter(t)
-				rt.expect(m, e.err)
-				wantError(t, apitest.Do(t, h, apitest.AsAdmin(grace), rt.method, rt.path, rt.body), e.status, e.msg)
+		for _, testCase := range append(slices.Clone(everyRoute), rt.errs...) {
+			test.Run(fmt.Sprintf("%s/%v is %d", name, testCase.err, testCase.status), func(test *testing.T) {
+				test.Parallel()
+				deps, handler := newRouter(test)
+				rt.expect(deps, testCase.err)
+				wantError(test, apitest.Do(test, handler, apitest.AsAdmin(grace), rt.method, rt.path, rt.body), testCase.status, testCase.msg)
 			})
 		}
-		t.Run(name+"/ok is 200", func(t *testing.T) {
-			t.Parallel()
-			m, h := newRouter(t)
-			rt.expect(m, nil)
-			res := apitest.Do(t, h, apitest.AsAdmin(grace), rt.method, rt.path, rt.body)
+		test.Run(name+"/ok is 200", func(test *testing.T) {
+			test.Parallel()
+			deps, handler := newRouter(test)
+			rt.expect(deps, nil)
+			res := apitest.Do(test, handler, apitest.AsAdmin(grace), rt.method, rt.path, rt.body)
 			if res.Status != 200 {
-				t.Fatalf("status %d (%s)", res.Status, *res.Error)
+				test.Fatalf("status %d (%s)", res.Status, *res.Error)
 			}
 			if rt.check == nil {
-				t.Fatal("route has no check of its data")
+				test.Fatal("route has no check of its data")
 			}
-			rt.check(t, res)
+			rt.check(test, res)
 		})
 	}
 }
@@ -204,8 +204,8 @@ func TestCallerActor(test *testing.T) {
 
 // TestErrorMapping covers every service error kind once; it is the same
 // route wrapper for every endpoint.
-func TestErrorMapping(t *testing.T) {
-	t.Parallel()
+func TestErrorMapping(test *testing.T) {
+	test.Parallel()
 	cases := []svcErr{
 		{services.ErrUserNotFound, 404, "User not found"},
 		{fmt.Errorf("auth: %w", services.ErrAdminExists), 409, "This person is already an admin"},
@@ -220,22 +220,22 @@ func TestErrorMapping(t *testing.T) {
 		{&services.Error{Kind: services.KindInternal, Message: "secret detail"}, 500, "Internal server error"},
 		{errors.New("pq: connection refused"), 500, "Internal server error"},
 	}
-	for _, c := range cases {
-		m, h := newRouter(t)
-		m.users.UnbanUser(anyCtx, actor, "u1").Return(c.err)
-		wantError(t, apitest.Do(t, h, apitest.AsAdmin(grace), "POST", config.UserPath("u1", "/unban"), ""), c.status, c.msg)
+	for _, testCase := range cases {
+		deps, handler := newRouter(test)
+		deps.users.UnbanUser(anyCtx, actor, "u1").Return(testCase.err)
+		wantError(test, apitest.Do(test, handler, apitest.AsAdmin(grace), "POST", config.UserPath("u1", "/unban"), ""), testCase.status, testCase.msg)
 	}
 }
 
 // TestDecodeBody covers validate.Decode's body errors through every route
 // that reads a body: none reaches the service (the mocks have no
 // expectations) and each names the body.
-func TestDecodeBody(t *testing.T) {
-	t.Parallel()
+func TestDecodeBody(test *testing.T) {
+	test.Parallel()
 	bodies := []struct{ method, path string }{
 		{"POST", config.UserPath("u1", "/ban")},
 		{"PUT", config.UserPath("u1", "/role")},
-		{"POST", r.AdminInvites},
+		{"POST", routes.AdminInvites},
 	}
 	cases := []struct{ body, msg string }{
 		{``, "is empty"},
@@ -245,12 +245,12 @@ func TestDecodeBody(t *testing.T) {
 		{`{`, "must be valid JSON"},
 		{`null x`, "must be a single JSON object"},
 	}
-	for _, b := range bodies {
-		for _, c := range cases {
-			_, h := newRouter(t)
-			res := apitest.Do(t, h, apitest.AsAdmin(grace), b.method, b.path, c.body)
-			if res.Status != 400 || *res.Error != "Invalid request data" || res.Details["body"] != c.msg {
-				t.Errorf("%s %s %q: %d %q %v, want body %q", b.method, b.path, c.body, res.Status, *res.Error, res.Details, c.msg)
+	for _, body := range bodies {
+		for _, testCase := range cases {
+			_, handler := newRouter(test)
+			res := apitest.Do(test, handler, apitest.AsAdmin(grace), body.method, body.path, testCase.body)
+			if res.Status != 400 || *res.Error != "Invalid request data" || res.Details["body"] != testCase.msg {
+				test.Errorf("%s %s %q: %d %q %v, want body %q", body.method, body.path, testCase.body, res.Status, *res.Error, res.Details, testCase.msg)
 			}
 		}
 	}
@@ -260,25 +260,25 @@ func TestDecodeBody(t *testing.T) {
 		{"POST", config.UserPath("u1", "/ban"), `{"banReason":"spam","banExpiresIn":"1h"}`, "banExpiresIn must be an integer"},
 		{"POST", config.UserPath("u1", "/ban"), `{"banReason":"spam","banExpiresIn":1.5}`, "banExpiresIn must be an integer"},
 		{"PUT", config.UserPath("u1", "/role"), `{"role":["admin"]}`, "role must be a string"},
-		{"POST", r.AdminInvites, `{"email":true}`, "email must be a string"},
-		{"POST", r.AdminInvites, `{"email":"a@b.co","name":{}}`, "name must be a string"},
+		{"POST", routes.AdminInvites, `{"email":true}`, "email must be a string"},
+		{"POST", routes.AdminInvites, `{"email":"a@b.co","name":{}}`, "name must be a string"},
 	}
-	for _, c := range types {
-		_, h := newRouter(t)
-		res := apitest.Do(t, h, apitest.AsAdmin(grace), c.method, c.path, c.body)
-		if res.Status != 400 || res.Details["body"] != c.msg {
-			t.Errorf("%s %s %q: %d %v, want body %q", c.method, c.path, c.body, res.Status, res.Details, c.msg)
+	for _, testCase := range types {
+		_, handler := newRouter(test)
+		res := apitest.Do(test, handler, apitest.AsAdmin(grace), testCase.method, testCase.path, testCase.body)
+		if res.Status != 400 || res.Details["body"] != testCase.msg {
+			test.Errorf("%s %s %q: %d %v, want body %q", testCase.method, testCase.path, testCase.body, res.Status, res.Details, testCase.msg)
 		}
 	}
 }
 
 // TestBodyLimit: the route wrapper caps request bodies.
-func TestBodyLimit(t *testing.T) {
-	t.Parallel()
-	_, h := newRouter(t)
-	res := apitest.Do(t, h, apitest.AsAdmin(grace), "POST", config.UserPath("u1", "/ban"), `{"banReason":"`+strings.Repeat("x", 2<<20)+`"}`)
+func TestBodyLimit(test *testing.T) {
+	test.Parallel()
+	_, handler := newRouter(test)
+	res := apitest.Do(test, handler, apitest.AsAdmin(grace), "POST", config.UserPath("u1", "/ban"), `{"banReason":"`+strings.Repeat("x", 2<<20)+`"}`)
 	if res.Status != 400 || res.Details["body"] == "" {
-		t.Fatalf("oversized body: %d %v", res.Status, res.Details)
+		test.Fatalf("oversized body: %d %v", res.Status, res.Details)
 	}
 }
 
@@ -354,10 +354,10 @@ func TestRouteMapsHandlerErrors(test *testing.T) {
 
 // TestValidationErrorString: a validation error reads the same every time
 // (fields sorted), for logs and wrapped errors.
-func TestValidationErrorString(t *testing.T) {
-	t.Parallel()
+func TestValidationErrorString(test *testing.T) {
+	test.Parallel()
 	err := &validate.Error{Fields: map[string]string{"offset": "must be 0 or more", "limit": "must be 1-100"}}
 	if got, want := err.Error(), "invalid input: limit: must be 1-100, offset: must be 0 or more"; got != want {
-		t.Fatalf("Error() = %q, want %q", got, want)
+		test.Fatalf("Error() = %q, want %q", got, want)
 	}
 }

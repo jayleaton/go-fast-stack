@@ -30,9 +30,9 @@ func NewAnalyticsService(src Analytics, policy Policy) *AnalyticsService {
 }
 
 // Overview returns the headline numbers.
-func (s *AnalyticsService) Overview(ctx context.Context, actor Actor) (Overview, error) {
-	if err := s.policy.authorize(actor); err != nil {
+func (service *AnalyticsService) Overview(ctx context.Context, actor Actor) (Overview, error) {
+	if err := service.policy.authorize(actor); err != nil {
 		return Overview{}, err
 	}
-	return s.src.Overview(ctx)
+	return service.src.Overview(ctx)
 }

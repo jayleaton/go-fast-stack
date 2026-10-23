@@ -15,7 +15,7 @@ type Error struct {
 	Message string
 }
 
-func (e *Error) Error() string { return e.Message }
+func (err *Error) Error() string { return err.Message }
 
 // Errors returned by the service methods. Codes and messages match Better Auth.
 var (
@@ -67,13 +67,13 @@ type RateLimitError struct {
 	RetryAfter time.Duration
 }
 
-func (e *RateLimitError) Error() string        { return ErrTooManyRequests.Message }
-func (e *RateLimitError) Is(target error) bool { return target == ErrTooManyRequests }
+func (rateLimitError *RateLimitError) Error() string        { return ErrTooManyRequests.Message }
+func (rateLimitError *RateLimitError) Is(target error) bool { return target == ErrTooManyRequests }
 
 // asError maps err to an *Error, or nil when it is not an auth error.
 func asError(err error) *Error {
-	if e, ok := errors.AsType[*Error](err); ok {
-		return e
+	if authErr, ok := errors.AsType[*Error](err); ok {
+		return authErr
 	}
 	if errors.Is(err, ErrTooManyRequests) {
 		return ErrTooManyRequests

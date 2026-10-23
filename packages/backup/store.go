@@ -34,25 +34,25 @@ type Dir string
 
 var _ Store = Dir("")
 
-func (d Dir) path(key string) (string, error) {
+func (dir Dir) path(key string) (string, error) {
 	if key == "" || strings.Contains(key, "..") || filepath.IsAbs(key) {
 		return "", fmt.Errorf("backup: invalid key %q", key)
 	}
-	return filepath.Join(string(d), filepath.FromSlash(key)), nil
+	return filepath.Join(string(dir), filepath.FromSlash(key)), nil
 }
 
 const backupDirPerm = 0o700 // backup directories: owner only
 
 // Put writes body to key atomically (temp file, then rename).
-func (d Dir) Put(_ context.Context, key string, body io.Reader, _ int64, _ string) error {
-	p, err := d.path(key)
+func (dir Dir) Put(_ context.Context, key string, body io.Reader, _ int64, _ string) error {
+	path, err := dir.path(key)
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(p), backupDirPerm); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), backupDirPerm); err != nil {
 		return fmt.Errorf("backup: %w", err)
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(p), ".put-*")
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".put-*")
 	if err != nil {
 		return fmt.Errorf("backup: %w", err)
 	}
@@ -64,45 +64,45 @@ func (d Dir) Put(_ context.Context, key string, body io.Reader, _ int64, _ strin
 	if err := tmp.Close(); err != nil {
 		return fmt.Errorf("backup: write %s: %w", key, err)
 	}
-	return os.Rename(tmp.Name(), p)
+	return os.Rename(tmp.Name(), path)
 }
 
 // Get opens key.
-func (d Dir) Get(_ context.Context, key string) (io.ReadCloser, error) {
-	p, err := d.path(key)
+func (dir Dir) Get(_ context.Context, key string) (io.ReadCloser, error) {
+	path, err := dir.path(key)
 	if err != nil {
 		return nil, err
 	}
-	f, err := os.Open(p)
+	file, err := os.Open(path)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, fmt.Errorf("backup: %s: %w", key, ErrNotFound)
 	}
-	return f, err
+	return file, err
 }
 
 // Delete removes key.
-func (d Dir) Delete(_ context.Context, key string) error {
-	p, err := d.path(key)
+func (dir Dir) Delete(_ context.Context, key string) error {
+	path, err := dir.path(key)
 	if err != nil {
 		return err
 	}
-	if err := os.Remove(p); err != nil && !errors.Is(err, fs.ErrNotExist) {
+	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("backup: %w", err)
 	}
 	return nil
 }
 
 // List returns every object whose key starts with prefix.
-func (d Dir) List(_ context.Context, prefix string) ([]Object, error) {
+func (dir Dir) List(_ context.Context, prefix string) ([]Object, error) {
 	var out []Object
-	err := filepath.WalkDir(string(d), func(p string, e fs.DirEntry, err error) error {
-		if errors.Is(err, fs.ErrNotExist) && p == string(d) {
+	err := filepath.WalkDir(string(dir), func(path string, entry fs.DirEntry, err error) error {
+		if errors.Is(err, fs.ErrNotExist) && path == string(dir) {
 			return fs.SkipAll // no backups yet
 		}
-		if err != nil || e.IsDir() || strings.HasPrefix(e.Name(), ".") {
+		if err != nil || entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
 			return err
 		}
-		rel, err := filepath.Rel(string(d), p)
+		rel, err := filepath.Rel(string(dir), path)
 		if err != nil {
 			return err
 		}
@@ -110,7 +110,7 @@ func (d Dir) List(_ context.Context, prefix string) ([]Object, error) {
 		if !strings.HasPrefix(key, prefix) {
 			return nil
 		}
-		info, err := e.Info()
+		info, err := entry.Info()
 		if err != nil {
 			return err
 		}

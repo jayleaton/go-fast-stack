@@ -55,10 +55,10 @@ func (ui *UI) apiFailed(writer http.ResponseWriter, request *http.Request, err e
 		ui.redirect(writer, request, config.AppRoutes.Login)
 	case errors.Is(err, apiclient.ErrDenied):
 		ui.log.InfoContext(ctx, "ui: access denied", "path", request.URL.Path, "err", err)
-		http.Error(writer, i18n.T(ctx, "errors.accessDenied"), http.StatusForbidden)
+		http.Error(writer, i18n.Translate(ctx, "errors.accessDenied"), http.StatusForbidden)
 	default:
 		ui.log.ErrorContext(ctx, "ui: request failed", "path", request.URL.Path, "err", err)
-		http.Error(writer, i18n.T(ctx, "errors.somethingWentWrong"), http.StatusInternalServerError)
+		http.Error(writer, i18n.Translate(ctx, "errors.somethingWentWrong"), http.StatusInternalServerError)
 	}
 }
 

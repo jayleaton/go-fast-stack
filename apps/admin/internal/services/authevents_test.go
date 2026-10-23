@@ -10,9 +10,9 @@ import (
 	"github.com/jayleaton/go-fast-stack/apps/admin/internal/services/mocks"
 )
 
-func newAuthEventService(t *testing.T) (*services.AuthEventService, *mocks.MockAuditLog) {
-	p := newPorts(t)
-	return services.NewAuthEventService(p.log), p.log
+func newAuthEventService(test *testing.T) (*services.AuthEventService, *mocks.MockAuditLog) {
+	ports := newPorts(test)
+	return services.NewAuthEventService(ports.log), ports.log
 }
 
 // at is when the test's events happened: they arrive after the fact, and the
@@ -30,57 +30,57 @@ func selfAudit(id, email, action string, details map[string]string) services.New
 
 // No policy check by design: the events describe authentication itself, so
 // even an admin without 2FA is recorded.
-func TestSignedIn(t *testing.T) {
-	t.Parallel()
-	svc, log := newAuthEventService(t)
+func TestSignedIn(test *testing.T) {
+	test.Parallel()
+	svc, log := newAuthEventService(test)
 
 	for _, method := range []string{services.SignInPassword, services.SignInTwoFactor, services.SignInSetPassword} {
 		log.EXPECT().Append(ctx, selfAudit("a1", "grace@example.com", "admin.sign_in", map[string]string{"method": method})).Return(nil)
 		if err := svc.SignedIn(ctx, at, "a1", "grace@example.com", method); err != nil {
-			t.Fatalf("%s: %v", method, err)
+			test.Fatalf("%s: %v", method, err)
 		}
 	}
 
 	log.EXPECT().Append(ctx, gomock.Any()).Return(errDB)
-	wantInternal(t, svc.SignedIn(ctx, at, "a1", "grace@example.com", services.SignInPassword), errDB)
+	wantInternal(test, svc.SignedIn(ctx, at, "a1", "grace@example.com", services.SignInPassword), errDB)
 }
 
-func TestSignedOut(t *testing.T) {
-	t.Parallel()
-	svc, log := newAuthEventService(t)
+func TestSignedOut(test *testing.T) {
+	test.Parallel()
+	svc, log := newAuthEventService(test)
 
 	log.EXPECT().Append(ctx, selfAudit("a1", "grace@example.com", "admin.sign_out", nil)).Return(nil)
 	if err := svc.SignedOut(ctx, at, "a1", "grace@example.com"); err != nil {
-		t.Fatal(err)
+		test.Fatal(err)
 	}
 
 	log.EXPECT().Append(ctx, gomock.Any()).Return(errDB)
-	wantInternal(t, svc.SignedOut(ctx, at, "a1", "grace@example.com"), errDB)
+	wantInternal(test, svc.SignedOut(ctx, at, "a1", "grace@example.com"), errDB)
 }
 
-func TestTwoFactorFailed(t *testing.T) {
-	t.Parallel()
-	svc, log := newAuthEventService(t)
+func TestTwoFactorFailed(test *testing.T) {
+	test.Parallel()
+	svc, log := newAuthEventService(test)
 
 	// Attributed to the admin of the pending sign-in, with auth's reason.
 	log.EXPECT().Append(ctx, selfAudit("a1", "grace@example.com", "admin.two_factor_failed", map[string]string{"reason": "INVALID_CODE"})).Return(nil)
 	if err := svc.TwoFactorFailed(ctx, at, "a1", "grace@example.com", "INVALID_CODE"); err != nil {
-		t.Fatal(err)
+		test.Fatal(err)
 	}
 
 	log.EXPECT().Append(ctx, gomock.Any()).Return(errDB)
-	wantInternal(t, svc.TwoFactorFailed(ctx, at, "a1", "grace@example.com", "INVALID_CODE"), errDB)
+	wantInternal(test, svc.TwoFactorFailed(ctx, at, "a1", "grace@example.com", "INVALID_CODE"), errDB)
 }
 
-func TestBackupCodeUsed(t *testing.T) {
-	t.Parallel()
-	svc, log := newAuthEventService(t)
+func TestBackupCodeUsed(test *testing.T) {
+	test.Parallel()
+	svc, log := newAuthEventService(test)
 
 	log.EXPECT().Append(ctx, selfAudit("a1", "grace@example.com", "admin.backup_code_used", nil)).Return(nil)
 	if err := svc.BackupCodeUsed(ctx, at, "a1", "grace@example.com"); err != nil {
-		t.Fatal(err)
+		test.Fatal(err)
 	}
 
 	log.EXPECT().Append(ctx, gomock.Any()).Return(errDB)
-	wantInternal(t, svc.BackupCodeUsed(ctx, at, "a1", "grace@example.com"), errDB)
+	wantInternal(test, svc.BackupCodeUsed(ctx, at, "a1", "grace@example.com"), errDB)
 }

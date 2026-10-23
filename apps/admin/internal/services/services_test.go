@@ -24,7 +24,7 @@ var (
 	errDB   = errors.New("connection refused")
 )
 
-func ptr[T any](v T) *T { return &v }
+func ptr[Value any](value Value) *Value { return &value }
 
 // entryID is the id Begin hands out for an intent in these tests.
 const entryID int64 = 7
@@ -49,8 +49,8 @@ type ports struct {
 	analytics *mocks.MockAnalytics
 }
 
-func newPorts(t *testing.T) ports {
-	ctrl := gomock.NewController(t)
+func newPorts(test *testing.T) ports {
+	ctrl := gomock.NewController(test)
 	return ports{
 		dir:       mocks.NewMockUserDirectory(ctrl),
 		accounts:  mocks.NewMockAdminAccounts(ctrl),
@@ -60,18 +60,18 @@ func newPorts(t *testing.T) ports {
 }
 
 // wantErr fails unless errors.Is(err, target).
-func wantErr(t *testing.T, err, target error) {
-	t.Helper()
+func wantErr(test *testing.T, err, target error) {
+	test.Helper()
 	if !errors.Is(err, target) {
-		t.Fatalf("err = %v, want %v", err, target)
+		test.Fatalf("err = %v, want %v", err, target)
 	}
 }
 
 // wantInternal fails unless err is cause passed through as an internal error.
-func wantInternal(t *testing.T, err, cause error) {
-	t.Helper()
+func wantInternal(test *testing.T, err, cause error) {
+	test.Helper()
 	if services.KindOf(err) != services.KindInternal || !errors.Is(err, cause) {
-		t.Fatalf("err = %v, want internal wrapping %v", err, cause)
+		test.Fatalf("err = %v, want internal wrapping %v", err, cause)
 	}
 }
 
@@ -135,56 +135,56 @@ var operatorOnly = map[string]bool{
 
 // Every method refuses before touching a port: the mocks have no
 // expectations, so any call fails the test.
-func TestServicesRefuseUnauthorizedActors(t *testing.T) {
-	t.Parallel()
+func TestServicesRefuseUnauthorizedActors(test *testing.T) {
+	test.Parallel()
 	policy := services.Policy{RequireTwoFactor: true}
-	for name := range policyCalls(newPorts(t), policy) {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-			call := policyCalls(newPorts(t), policy)[name]            // mocks bound to this subtest
-			wantErr(t, call(services.Actor{}), services.ErrForbidden) // no actor is nobody
+	for name := range policyCalls(newPorts(test), policy) {
+		test.Run(name, func(test *testing.T) {
+			test.Parallel()
+			call := policyCalls(newPorts(test), policy)[name]            // mocks bound to this subtest
+			wantErr(test, call(services.Actor{}), services.ErrForbidden) // no actor is nobody
 			noTwoFactor := grace
 			noTwoFactor.TwoFactorEnabled = false
 			err := call(noTwoFactor)
 			if operatorOnly[name] {
-				wantErr(t, err, services.ErrForbidden) // only the operator calls these
-				wantErr(t, call(grace), services.ErrForbidden)
+				wantErr(test, err, services.ErrForbidden) // only the operator calls these
+				wantErr(test, call(grace), services.ErrForbidden)
 				return
 			}
-			wantErr(t, err, services.ErrTwoFactorRequired)
+			wantErr(test, err, services.ErrTwoFactorRequired)
 		})
 	}
 }
 
 // Without the 2FA requirement any admin may act, and the operator always may.
-func TestPolicyAllowsAdminsAndSystem(t *testing.T) {
-	t.Parallel()
+func TestPolicyAllowsAdminsAndSystem(test *testing.T) {
+	test.Parallel()
 	for _, policy := range []services.Policy{{}, {RequireTwoFactor: true}} {
 		for _, actor := range []services.Actor{cli, {AdminID: "a2", Email: "bob@example.com"}} {
 			if policy.RequireTwoFactor && !actor.System {
 				continue // covered by TestServicesRefuseUnauthorizedActors
 			}
-			p := newPorts(t)
-			p.analytics.EXPECT().Overview(ctx).Return(services.Overview{TotalUsers: 3}, nil)
-			got, err := services.NewAnalyticsService(p.analytics, policy).Overview(ctx, actor)
+			ports := newPorts(test)
+			ports.analytics.EXPECT().Overview(ctx).Return(services.Overview{TotalUsers: 3}, nil)
+			got, err := services.NewAnalyticsService(ports.analytics, policy).Overview(ctx, actor)
 			if err != nil || got.TotalUsers != 3 {
-				t.Fatalf("policy %+v, actor %+v: Overview = %+v, %v", policy, actor, got, err)
+				test.Fatalf("policy %+v, actor %+v: Overview = %+v, %v", policy, actor, got, err)
 			}
 		}
 	}
 }
 
-func TestSystemActor(t *testing.T) {
-	t.Parallel()
+func TestSystemActor(test *testing.T) {
+	test.Parallel()
 	want := services.Actor{AdminID: "system:cli", Email: "cli", System: true}
 	if cli != want {
-		t.Fatalf("SystemActor = %+v, want %+v", cli, want)
+		test.Fatalf("SystemActor = %+v, want %+v", cli, want)
 	}
 }
 
 // Kind sentinels match every error of their kind; specific errors only themselves.
-func TestErrorKinds(t *testing.T) {
-	t.Parallel()
+func TestErrorKinds(test *testing.T) {
+	test.Parallel()
 	cases := []struct {
 		err, target error
 		want        bool
@@ -199,16 +199,16 @@ func TestErrorKinds(t *testing.T) {
 		{services.ErrNotFound, services.ErrUserNotFound, false},
 		{errDB, services.ErrNotFound, false},
 	}
-	for _, c := range cases {
-		if got := errors.Is(c.err, c.target); got != c.want {
-			t.Errorf("errors.Is(%v, %v) = %v, want %v", c.err, c.target, got, c.want)
+	for _, testCase := range cases {
+		if got := errors.Is(testCase.err, testCase.target); got != testCase.want {
+			test.Errorf("errors.Is(%v, %v) = %v, want %v", testCase.err, testCase.target, got, testCase.want)
 		}
 	}
 	if services.KindOf(services.ErrAdminExists) != services.KindConflict || services.KindOf(errDB) != services.KindInternal {
-		t.Error("KindOf")
+		test.Error("KindOf")
 	}
 	if services.ErrUserNotFound.Error() != "User not found" {
-		t.Errorf("Error() = %q", services.ErrUserNotFound.Error())
+		test.Errorf("Error() = %q", services.ErrUserNotFound.Error())
 	}
 }
 
@@ -219,10 +219,10 @@ var errResolve = errors.New("audit outcome write timed out")
 // the intent is written, the change itself, and the service call.
 type mutation struct {
 	name    string
-	intent  services.NewAuditEntry             // what Begin must receive
-	reads   func(p ports) []any                // expectations before Begin
-	change  func(p ports, portErr error) []any // the change port(s), failing with portErr (nil: applied)
-	call    func(p ports) error
+	intent  services.NewAuditEntry                     // what Begin must receive
+	reads   func(portMocks ports) []any                // expectations before Begin
+	change  func(portMocks ports, portErr error) []any // the change port(s), failing with portErr (nil: applied)
+	call    func(portMocks ports) error
 	refusal error // a service error the change port reports...
 	want    error // ...and what the caller gets for it
 }
@@ -481,74 +481,74 @@ func mutations() []mutation {
 // Every mutation fails closed: the intent is written before the change, a
 // failed intent write stops the change (the change ports have no
 // expectations, so calling one fails the test), and the outcome follows it.
-func TestMutationsFailClosed(t *testing.T) {
-	t.Parallel()
-	for _, m := range mutations() {
+func TestMutationsFailClosed(test *testing.T) {
+	test.Parallel()
+	for _, mutation := range mutations() {
 		// sequence expects the reads, the intent, the change failing with
 		// portErr and its outcome write (returning resolveErr), in order.
-		sequence := func(p ports, portErr error, outcome services.AuditOutcome, resolveErr error) {
+		sequence := func(ports ports, portErr error, outcome services.AuditOutcome, resolveErr error) {
 			gomock.InOrder(slices.Concat(
-				m.reads(p),
-				[]any{p.log.EXPECT().Begin(ctx, m.intent).Return(entryID, nil)},
-				m.change(p, portErr),
-				[]any{p.log.EXPECT().Resolve(ctx, entryID, outcome).Return(resolveErr)},
+				mutation.reads(ports),
+				[]any{ports.log.EXPECT().Begin(ctx, mutation.intent).Return(entryID, nil)},
+				mutation.change(ports, portErr),
+				[]any{ports.log.EXPECT().Resolve(ctx, entryID, outcome).Return(resolveErr)},
 			)...)
 		}
 
-		t.Run(m.name+"/succeeded", func(t *testing.T) {
-			t.Parallel()
-			p := newPorts(t)
-			sequence(p, nil, succeeded, nil)
-			if err := m.call(p); err != nil {
-				t.Fatal(err)
+		test.Run(mutation.name+"/succeeded", func(test *testing.T) {
+			test.Parallel()
+			ports := newPorts(test)
+			sequence(ports, nil, succeeded, nil)
+			if err := mutation.call(ports); err != nil {
+				test.Fatal(err)
 			}
 		})
 
-		t.Run(m.name+"/intent not written", func(t *testing.T) {
-			t.Parallel()
-			p := newPorts(t)
-			gomock.InOrder(append(m.reads(p), p.log.EXPECT().Begin(ctx, m.intent).Return(int64(0), errDB))...)
-			err := m.call(p)
-			wantErr(t, err, services.ErrAuditUnavailable)
+		test.Run(mutation.name+"/intent not written", func(test *testing.T) {
+			test.Parallel()
+			ports := newPorts(test)
+			gomock.InOrder(append(mutation.reads(ports), ports.log.EXPECT().Begin(ctx, mutation.intent).Return(int64(0), errDB))...)
+			err := mutation.call(ports)
+			wantErr(test, err, services.ErrAuditUnavailable)
 			if services.KindOf(err) != services.KindUnavailable || !errors.Is(err, errDB) {
-				t.Fatalf("err = %v, want unavailable wrapping %v", err, errDB)
+				test.Fatalf("err = %v, want unavailable wrapping %v", err, errDB)
 			}
 		})
 
-		t.Run(m.name+"/outcome not written", func(t *testing.T) {
-			t.Parallel()
-			p := newPorts(t)
-			sequence(p, nil, succeeded, errResolve)
-			err := m.call(p)
-			wantInternal(t, err, errResolve)
+		test.Run(mutation.name+"/outcome not written", func(test *testing.T) {
+			test.Parallel()
+			ports := newPorts(test)
+			sequence(ports, nil, succeeded, errResolve)
+			err := mutation.call(ports)
+			wantInternal(test, err, errResolve)
 			if !strings.Contains(err.Error(), "WAS applied") {
-				t.Fatalf("err = %v, want it to say the change was applied", err)
+				test.Fatalf("err = %v, want it to say the change was applied", err)
 			}
 		})
 
-		t.Run(m.name+"/refused", func(t *testing.T) {
-			t.Parallel()
-			p := newPorts(t)
-			sequence(p, m.refusal, failed(m.want.Error()), nil)
-			wantErr(t, m.call(p), m.want)
+		test.Run(mutation.name+"/refused", func(test *testing.T) {
+			test.Parallel()
+			ports := newPorts(test)
+			sequence(ports, mutation.refusal, failed(mutation.want.Error()), nil)
+			wantErr(test, mutation.call(ports), mutation.want)
 		})
 
-		t.Run(m.name+"/refused, outcome not written", func(t *testing.T) {
-			t.Parallel()
-			p := newPorts(t)
-			sequence(p, m.refusal, failed(m.want.Error()), errResolve)
-			err := m.call(p)
-			wantErr(t, err, m.want)
+		test.Run(mutation.name+"/refused, outcome not written", func(test *testing.T) {
+			test.Parallel()
+			ports := newPorts(test)
+			sequence(ports, mutation.refusal, failed(mutation.want.Error()), errResolve)
+			err := mutation.call(ports)
+			wantErr(test, err, mutation.want)
 			if errors.Is(err, errResolve) {
-				t.Fatalf("err = %v, want the change's own error", err)
+				test.Fatalf("err = %v, want the change's own error", err)
 			}
 		})
 
-		t.Run(m.name+"/raw error", func(t *testing.T) {
-			t.Parallel()
-			p := newPorts(t)
-			sequence(p, errDB, internalFailure, nil)
-			wantInternal(t, m.call(p), errDB)
+		test.Run(mutation.name+"/raw error", func(test *testing.T) {
+			test.Parallel()
+			ports := newPorts(test)
+			sequence(ports, errDB, internalFailure, nil)
+			wantInternal(test, mutation.call(ports), errDB)
 		})
 	}
 }

@@ -30,44 +30,52 @@ var liveSecrets = slices.Concat([]string{secretResendAPIKey, secretDatabaseURL},
 // Secrets hands live secrets to the server through typed accessors; nothing
 // else reads them. Load builds it (no I/O); serve and migrate call Start,
 // which fetches the first snapshot, and Stop when done.
-type Secrets struct{ m *secrets.Manager }
+type Secrets struct{ manager *secrets.Manager }
 
 // Start fetches and validates the first snapshot (failing boot without one),
 // then polls until ctx ends or Stop is called.
-func (s Secrets) Start(ctx context.Context) error { return s.m.Start(ctx) }
+func (accessors Secrets) Start(ctx context.Context) error { return accessors.manager.Start(ctx) }
 
 // Stop ends polling. Values already handed out keep working.
-func (s Secrets) Stop() { s.m.Stop() }
+func (accessors Secrets) Stop() { accessors.manager.Stop() }
 
 // Healthy reports secrets.ErrNotLoaded or secrets.ErrStale (server /healthz).
-func (s Secrets) Healthy() error { return s.m.Healthy() }
+func (accessors Secrets) Healthy() error { return accessors.manager.Healthy() }
 
 // Status is for logs and metrics; it holds no values.
-func (s Secrets) Status() secrets.Status { return s.m.Status() }
+func (accessors Secrets) Status() secrets.Status { return accessors.manager.Status() }
 
 // Provider is SECRETS_PROVIDER.
-func (s Secrets) Provider() string { return s.m.Provider() }
+func (accessors Secrets) Provider() string { return accessors.manager.Provider() }
 
 // OnResendAPIKey calls fn now with RESEND_API_KEY (a zero Secret when unset)
 // and again whenever it changes upstream. fn rebuilds the Resend client.
-func (s Secrets) OnResendAPIKey(fn secrets.Hook) { s.m.OnChange(secretResendAPIKey, fn) }
+func (accessors Secrets) OnResendAPIKey(fn secrets.Hook) {
+	accessors.manager.OnChange(secretResendAPIKey, fn)
+}
 
 // DatabaseURL is the current DATABASE_URL (after Start), trimmed.
-func (s Secrets) DatabaseURL() (secrets.Secret, error) { return trimmed(s.m.Get(secretDatabaseURL)) }
+func (accessors Secrets) DatabaseURL() (secrets.Secret, error) {
+	return trimmed(accessors.manager.Get(secretDatabaseURL))
+}
 
 // OnDatabaseURL calls fn now with DATABASE_URL and again whenever it changes
 // upstream. fn swaps the database pool; an error keeps the old pool (and is
 // retried after the next fetch).
-func (s Secrets) OnDatabaseURL(fn secrets.Hook) {
-	s.m.OnChange(secretDatabaseURL, func(v secrets.Secret) error { u, _ := trimmed(v, nil); return fn(u) })
+func (accessors Secrets) OnDatabaseURL(fn secrets.Hook) {
+	accessors.manager.OnChange(secretDatabaseURL, func(updated secrets.Secret) error { trimmedURL, _ := trimmed(updated, nil); return fn(trimmedURL) })
 }
 
 // AuthSecrets is the AUTH_SECRET keyring (after Start).
-func (s Secrets) AuthSecrets() (secrets.Keyring, error) { return s.m.Keyring(secretAuth) }
+func (accessors Secrets) AuthSecrets() (secrets.Keyring, error) {
+	return accessors.manager.Keyring(secretAuth)
+}
 
 // OnAuthSecrets calls fn now and whenever the AUTH_SECRET keyring changes.
 // fn updates packages/auth (Auth.SetSecrets); an error keeps the old keyring.
-func (s Secrets) OnAuthSecrets(fn func(secrets.Keyring) error) { s.m.OnKeyring(secretAuth, fn) }
+func (accessors Secrets) OnAuthSecrets(fn func(secrets.Keyring) error) {
+	accessors.manager.OnKeyring(secretAuth, fn)
+}
 
 // validateLive checks the live secrets of one snapshot (env at boot, every
 // remote fetch before it is published). Messages name keys, never values.
@@ -94,14 +102,14 @@ const minSecretLength = 32
 // every value of the keyring called name.
 func validateKeyring(get func(string) string, name string) []error {
 	var errs []error
-	k := secrets.ParseKeyring(get, name)
-	if k.Current.Len() < minSecretLength {
+	keyring := secrets.ParseKeyring(get, name)
+	if keyring.Current.Len() < minSecretLength {
 		errs = append(errs, fmt.Errorf("%s must be at least 32 characters (openssl rand -base64 32)", name))
 	}
-	for li, list := range [][]secrets.Secret{k.Previous, k.Revoked} {
-		for i, v := range list {
-			if v.Len() < minSecretLength {
-				errs = append(errs, fmt.Errorf("%s entry %d must be at least 32 characters", secrets.KeyringNames(name)[li+1], i+1))
+	for li, list := range [][]secrets.Secret{keyring.Previous, keyring.Revoked} {
+		for index, secret := range list {
+			if secret.Len() < minSecretLength {
+				errs = append(errs, fmt.Errorf("%s entry %d must be at least 32 characters", secrets.KeyringNames(name)[li+1], index+1))
 			}
 		}
 	}
@@ -111,11 +119,13 @@ func validateKeyring(get func(string) string, name string) []error {
 // loadSecrets builds the Manager from SECRETS_PROVIDER and its bootstrap
 // vars. Every problem is appended to errs.
 func loadSecrets(env Env, social Social, get func(key, fallback string) string, errs *[]error) Secrets {
-	m, problems := secrets.Bootstrap(func(k string) string { return get(k, "") }, secrets.BootstrapOptions{
+	manager, problems := secrets.Bootstrap(func(key string) string { return get(key, "") }, secrets.BootstrapOptions{
 		Keys: liveSecrets, Validate: validateLive(env, social), Production: env == Production,
 	})
 	*errs = append(*errs, problems...)
-	return Secrets{m}
+	return Secrets{manager}
 }
 
-func trimmed(v secrets.Secret, err error) (secrets.Secret, error) { return v.TrimSpace(), err }
+func trimmed(secret secrets.Secret, err error) (secrets.Secret, error) {
+	return secret.TrimSpace(), err
+}

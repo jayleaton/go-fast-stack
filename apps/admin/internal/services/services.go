@@ -57,7 +57,7 @@ type Error struct {
 	Message string
 }
 
-func (e *Error) Error() string { return e.Message }
+func (err *Error) Error() string { return err.Message }
 
 // Kind sentinels: errors.Is(err, ErrNotFound) holds for every not-found
 // error, so callers can branch on a kind without knowing the specific error.
@@ -70,10 +70,10 @@ var (
 
 // Is makes the kind sentinels match every error of their kind. Specific
 // errors (ErrUserNotFound...) match only themselves.
-func (e *Error) Is(target error) bool {
+func (err *Error) Is(target error) bool {
 	switch target {
 	case ErrValidation, ErrForbidden, ErrNotFound, ErrConflict:
-		return e.Kind == target.(*Error).Kind
+		return err.Kind == target.(*Error).Kind
 	}
 	return false
 }
@@ -101,13 +101,13 @@ type Policy struct {
 	RequireTwoFactor bool
 }
 
-func (p Policy) authorize(a Actor) error {
+func (policy Policy) authorize(actor Actor) error {
 	switch {
-	case a.System:
+	case actor.System:
 		return nil
-	case a.AdminID == "":
+	case actor.AdminID == "":
 		return ErrForbidden
-	case p.RequireTwoFactor && !a.TwoFactorEnabled:
+	case policy.RequireTwoFactor && !actor.TwoFactorEnabled:
 		return ErrTwoFactorRequired
 	}
 	return nil
@@ -129,11 +129,11 @@ var ErrAuditUnavailable = &Error{KindUnavailable, "The audit log is unavailable,
 // later) and the caller gets an internal error saying the change WAS applied,
 // so it is logged loudly by the transport. A failed change whose outcome
 // could not be written returns the change's own error.
-func mutate(ctx context.Context, log AuditLog, actor Actor, e NewAuditEntry, change func() error) error {
-	e.ActorID, e.ActorEmail = actor.AdminID, actor.Email
-	id, err := log.Begin(ctx, e)
+func mutate(ctx context.Context, log AuditLog, actor Actor, entry NewAuditEntry, change func() error) error {
+	entry.ActorID, entry.ActorEmail = actor.AdminID, actor.Email
+	id, err := log.Begin(ctx, entry)
 	if err != nil {
-		return fmt.Errorf("%w: audit intent %s %s/%s: %w", ErrAuditUnavailable, e.Action, e.TargetType, e.TargetID, err)
+		return fmt.Errorf("%w: audit intent %s %s/%s: %w", ErrAuditUnavailable, entry.Action, entry.TargetType, entry.TargetID, err)
 	}
 	changeErr := change()
 	outcome := AuditOutcome{Status: StatusSucceeded}
@@ -142,7 +142,7 @@ func mutate(ctx context.Context, log AuditLog, actor Actor, e NewAuditEntry, cha
 	}
 	if err := log.Resolve(ctx, id, outcome); err != nil && changeErr == nil {
 		return fmt.Errorf("audit outcome of entry %d (%s %s/%s) NOT recorded; the change WAS applied and stays pending until reconciled: %w",
-			id, e.Action, e.TargetType, e.TargetID, err)
+			id, entry.Action, entry.TargetType, entry.TargetID, err)
 	}
 	return changeErr
 }
@@ -164,10 +164,10 @@ func safeReason(err error) string {
 // audit appends e for actor as a completed fact (sign-ins and other events
 // that are not admin mutations). A failed write is returned as an internal
 // error, never swallowed.
-func audit(ctx context.Context, log AuditLog, actor Actor, e NewAuditEntry) error {
-	e.ActorID, e.ActorEmail = actor.AdminID, actor.Email
-	if err := log.Append(ctx, e); err != nil {
-		return fmt.Errorf("audit %s %s/%s (action applied, not recorded): %w", e.Action, e.TargetType, e.TargetID, err)
+func audit(ctx context.Context, log AuditLog, actor Actor, entry NewAuditEntry) error {
+	entry.ActorID, entry.ActorEmail = actor.AdminID, actor.Email
+	if err := log.Append(ctx, entry); err != nil {
+		return fmt.Errorf("audit %s %s/%s (action applied, not recorded): %w", entry.Action, entry.TargetType, entry.TargetID, err)
 	}
 	return nil
 }

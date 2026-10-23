@@ -37,15 +37,15 @@ var testDSN, templateDB string
 // shared test database, so it never touches existing data and can run
 // alongside other packages' tests. Without a URL the database tests skip,
 // except under CI where they fail.
-func TestMain(m *testing.M) {
+func TestMain(suite *testing.M) {
 	testDSN = os.Getenv("TEST_DATABASE_URL")
 	if testDSN == "" {
 		testDSN = os.Getenv("DATABASE_URL")
 	}
 	if testDSN == "" {
-		os.Exit(m.Run())
+		os.Exit(suite.Run())
 	}
-	code, err := runWithDatabase(m)
+	code, err := runWithDatabase(suite)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "auth tests:", err)
 		os.Exit(1)
@@ -53,7 +53,7 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-func runWithDatabase(m *testing.M) (int, error) {
+func runWithDatabase(suite *testing.M) (int, error) {
 	ctx := context.Background()
 	admin, err := connectWhenReady(ctx, testDSN)
 	if err != nil {
@@ -87,7 +87,7 @@ func runWithDatabase(m *testing.M) (int, error) {
 		return 0, err
 	}
 	defer testPool.Close()
-	return m.Run(), nil
+	return suite.Run(), nil
 }
 
 // migrateTemplate applies the auth migrations to tmpl and marks it a
@@ -123,34 +123,34 @@ func poolOn(ctx context.Context, name string) (*pgxpool.Pool, error) {
 // newDatabase gives one test a migrated database of its own (a clone of the
 // template), dropped when it ends: for tests that read table-wide state or
 // change state other tests share (key rotation).
-func newDatabase(t *testing.T) *pgxpool.Pool {
-	t.Helper()
-	needDB(t)
-	return createDatabase(t, cloneSQL)
+func newDatabase(test *testing.T) *pgxpool.Pool {
+	test.Helper()
+	needDB(test)
+	return createDatabase(test, cloneSQL)
 }
 
 // newEmptyDatabase gives one test an empty database (no migrations), dropped
 // when it ends.
-func newEmptyDatabase(t *testing.T) *pgxpool.Pool {
-	t.Helper()
-	needDB(t)
-	return createDatabase(t, func(name string) string { return "CREATE DATABASE " + name })
+func newEmptyDatabase(test *testing.T) *pgxpool.Pool {
+	test.Helper()
+	needDB(test)
+	return createDatabase(test, func(name string) string { return "CREATE DATABASE " + name })
 }
 
-func createDatabase(t *testing.T, create func(name string) string) *pgxpool.Pool {
-	t.Helper()
+func createDatabase(test *testing.T, create func(name string) string) *pgxpool.Pool {
+	test.Helper()
 	ctx := context.Background()
 	admin, err := pgx.Connect(ctx, testDSN)
 	if err != nil {
-		t.Fatal(err)
+		test.Fatal(err)
 	}
 	name := "auth_extra_" + strings.ToLower(generateID(12))
 	if _, err := admin.Exec(ctx, create(name)); err != nil {
 		_ = admin.Close(ctx)
-		t.Fatal(err)
+		test.Fatal(err)
 	}
 	pool, err := poolOn(ctx, name)
-	t.Cleanup(func() {
+	test.Cleanup(func() {
 		if pool != nil {
 			pool.Close()
 		}
@@ -158,7 +158,7 @@ func createDatabase(t *testing.T, create func(name string) string) *pgxpool.Pool
 		_ = admin.Close(context.Background())
 	})
 	if err != nil {
-		t.Fatal(err)
+		test.Fatal(err)
 	}
 	return pool
 }
@@ -185,13 +185,13 @@ func connectWhenReady(ctx context.Context, dsn string) (*pgx.Conn, error) {
 	}
 }
 
-func needDB(t *testing.T) {
-	t.Helper()
+func needDB(test *testing.T) {
+	test.Helper()
 	if testPool == nil {
 		if os.Getenv("CI") != "" {
-			t.Fatal("TEST_DATABASE_URL or DATABASE_URL must be set in CI")
+			test.Fatal("TEST_DATABASE_URL or DATABASE_URL must be set in CI")
 		}
-		t.Skip("no TEST_DATABASE_URL/DATABASE_URL: skipping database test")
+		test.Skip("no TEST_DATABASE_URL/DATABASE_URL: skipping database test")
 	}
 }
 
@@ -206,32 +206,32 @@ type captureMailer struct {
 	sent []sentMail
 }
 
-func (m *captureMailer) SendVerificationEmail(_ context.Context, to, url string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.sent = append(m.sent, sentMail{"verification", to, url})
+func (mailer *captureMailer) SendVerificationEmail(_ context.Context, to, url string) error {
+	mailer.mu.Lock()
+	defer mailer.mu.Unlock()
+	mailer.sent = append(mailer.sent, sentMail{"verification", to, url})
 	return nil
 }
 
-func (m *captureMailer) SendPasswordResetEmail(_ context.Context, to, url string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.sent = append(m.sent, sentMail{"reset", to, url})
+func (mailer *captureMailer) SendPasswordResetEmail(_ context.Context, to, url string) error {
+	mailer.mu.Lock()
+	defer mailer.mu.Unlock()
+	mailer.sent = append(mailer.sent, sentMail{"reset", to, url})
 	return nil
 }
 
-func (m *captureMailer) SendSetPasswordEmail(_ context.Context, to, url string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.sent = append(m.sent, sentMail{"set-password", to, url})
+func (mailer *captureMailer) SendSetPasswordEmail(_ context.Context, to, url string) error {
+	mailer.mu.Lock()
+	defer mailer.mu.Unlock()
+	mailer.sent = append(mailer.sent, sentMail{"set-password", to, url})
 	return nil
 }
 
 // SendEmailChangeNotice records the new address in url.
-func (m *captureMailer) SendEmailChangeNotice(_ context.Context, to, newEmail string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.sent = append(m.sent, sentMail{"change-notice", to, newEmail})
+func (mailer *captureMailer) SendEmailChangeNotice(_ context.Context, to, newEmail string) error {
+	mailer.mu.Lock()
+	defer mailer.mu.Unlock()
+	mailer.sent = append(mailer.sent, sentMail{"change-notice", to, newEmail})
 	return nil
 }
 
@@ -241,88 +241,88 @@ func (allowAll) Allow(context.Context, string, RateRule) (time.Duration, error) 
 
 // testClock is a settable clock for expiry tests.
 type testClock struct {
-	mu sync.Mutex
-	t  time.Time
+	mu     sync.Mutex
+	moment time.Time
 }
 
-func (c *testClock) Now() time.Time {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.t
+func (clock *testClock) Now() time.Time {
+	clock.mu.Lock()
+	defer clock.mu.Unlock()
+	return clock.moment
 }
 
-func (c *testClock) Advance(d time.Duration) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.t = c.t.Add(d)
+func (clock *testClock) Advance(duration time.Duration) {
+	clock.mu.Lock()
+	defer clock.mu.Unlock()
+	clock.moment = clock.moment.Add(duration)
 }
 
 type harness struct {
-	t      *testing.T
-	a      *Auth
-	h      http.Handler
-	mail   *captureMailer
-	clock  *testClock
-	logBuf *bytes.Buffer
+	test    *testing.T
+	auth    *Auth
+	handler http.Handler
+	mail    *captureMailer
+	clock   *testClock
+	logBuf  *bytes.Buffer
 }
 
 // newHarness builds an Auth on the test database with a capturing mailer, no
 // rate limiting and a settable clock. mutate adjusts the config.
-func newHarness(t *testing.T, mutate func(*Config)) *harness {
-	t.Helper()
-	needDB(t)
+func newHarness(test *testing.T, mutate func(*Config)) *harness {
+	test.Helper()
+	needDB(test)
 	logBuf := &bytes.Buffer{}
 	cfg := Config{
 		Secret:         testSecret,
 		BaseURL:        testBase,
 		TrustedOrigins: MobileTrustedOrigins(false),
 		RateLimiter:    allowAll{},
-		Logger:         slog.New(slog.NewTextHandler(&lockedWriter{w: logBuf}, nil)),
+		Logger:         slog.New(slog.NewTextHandler(&lockedWriter{writer: logBuf}, nil)),
 	}
 	if mutate != nil {
 		mutate(&cfg)
 	}
 	mail := &captureMailer{}
-	a, err := New(cfg, testPool, mail)
+	auth, err := New(cfg, testPool, mail)
 	if err != nil {
-		t.Fatal(err)
+		test.Fatal(err)
 	}
-	clock := &testClock{t: time.Now()}
-	a.now = clock.Now
+	clock := &testClock{moment: time.Now()}
+	auth.now = clock.Now
 	// Limiters run on the same clock as everything else, so a slow machine
 	// cannot let a rate-limit window lapse mid-test.
-	if m, ok := a.limiter.(*MemoryRateLimiter); ok {
-		m.now = clock.Now
+	if limiter, ok := auth.limiter.(*MemoryRateLimiter); ok {
+		limiter.now = clock.Now
 	}
-	return &harness{t: t, a: a, h: a.Handler(), mail: mail, clock: clock, logBuf: logBuf}
+	return &harness{test: test, auth: auth, handler: auth.Handler(), mail: mail, clock: clock, logBuf: logBuf}
 }
 
 type lockedWriter struct {
-	mu sync.Mutex
-	w  io.Writer
+	mu     sync.Mutex
+	writer io.Writer
 }
 
-func (l *lockedWriter) Write(p []byte) (int, error) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	return l.w.Write(p)
+func (lockedWriter *lockedWriter) Write(data []byte) (int, error) {
+	lockedWriter.mu.Lock()
+	defer lockedWriter.mu.Unlock()
+	return lockedWriter.writer.Write(data)
 }
 
 // mails waits for background sends and returns what was sent.
-func (h *harness) mails() []sentMail {
-	h.t.Helper()
-	if err := h.a.Shutdown(context.Background()); err != nil {
-		h.t.Fatal(err)
+func (harness *harness) mails() []sentMail {
+	harness.test.Helper()
+	if err := harness.auth.Shutdown(context.Background()); err != nil {
+		harness.test.Fatal(err)
 	}
-	h.mail.mu.Lock()
-	defer h.mail.mu.Unlock()
-	return append([]sentMail(nil), h.mail.sent...)
+	harness.mail.mu.Lock()
+	defer harness.mail.mu.Unlock()
+	return append([]sentMail(nil), harness.mail.sent...)
 }
 
 var emailSeq atomic.Int64
 
-func uniqueEmail(t *testing.T) string {
-	name := strings.ToLower(regexp.MustCompile(`[^a-zA-Z0-9]+`).ReplaceAllString(t.Name(), "-"))
+func uniqueEmail(test *testing.T) string {
+	name := strings.ToLower(regexp.MustCompile(`[^a-zA-Z0-9]+`).ReplaceAllString(test.Name(), "-"))
 	return fmt.Sprintf("%s-%d@example.com", name, emailSeq.Add(1))
 }
 
@@ -330,27 +330,27 @@ type hdr map[string]string
 
 // do sends a request through the auth handler. body is JSON-encoded unless it
 // is nil; Content-Type defaults to application/json.
-func (h *harness) do(method, path string, body any, headers hdr) *httptest.ResponseRecorder {
-	h.t.Helper()
-	return h.serve(h.h, method, path, body, headers)
+func (harness *harness) do(method, path string, body any, headers hdr) *httptest.ResponseRecorder {
+	harness.test.Helper()
+	return harness.serve(harness.handler, method, path, body, headers)
 }
 
-func (h *harness) serve(handler http.Handler, method, path string, body any, headers hdr) *httptest.ResponseRecorder {
-	h.t.Helper()
-	var r io.Reader
+func (harness *harness) serve(handler http.Handler, method, path string, body any, headers hdr) *httptest.ResponseRecorder {
+	harness.test.Helper()
+	var reader io.Reader
 	if body != nil {
-		b, err := json.Marshal(body)
+		data, err := json.Marshal(body)
 		if err != nil {
-			h.t.Fatal(err)
+			harness.test.Fatal(err)
 		}
-		r = bytes.NewReader(b)
+		reader = bytes.NewReader(data)
 	}
-	req := httptest.NewRequestWithContext(context.Background(), method, path, r)
+	req := httptest.NewRequestWithContext(context.Background(), method, path, reader)
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	for k, v := range headers {
-		req.Header.Set(k, v)
+	for key, header := range headers {
+		req.Header.Set(key, header)
 	}
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -358,79 +358,79 @@ func (h *harness) serve(handler http.Handler, method, path string, body any, hea
 }
 
 // jsonBody decodes the response body.
-func jsonBody(t *testing.T, rec *httptest.ResponseRecorder) map[string]any {
-	t.Helper()
-	var m map[string]any
-	if err := json.Unmarshal(rec.Body.Bytes(), &m); err != nil {
-		t.Fatalf("decode %q: %v", rec.Body.String(), err)
+func jsonBody(test *testing.T, rec *httptest.ResponseRecorder) map[string]any {
+	test.Helper()
+	var lookup map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &lookup); err != nil {
+		test.Fatalf("decode %q: %v", rec.Body.String(), err)
 	}
-	return m
+	return lookup
 }
 
-func wantStatus(t *testing.T, rec *httptest.ResponseRecorder, status int) {
-	t.Helper()
+func wantStatus(test *testing.T, rec *httptest.ResponseRecorder, status int) {
+	test.Helper()
 	if rec.Code != status {
-		t.Fatalf("status = %d, want %d; body: %s", rec.Code, status, rec.Body.String())
+		test.Fatalf("status = %d, want %d; body: %s", rec.Code, status, rec.Body.String())
 	}
 }
 
-func wantCode(t *testing.T, rec *httptest.ResponseRecorder, status int, code string) {
-	t.Helper()
-	wantStatus(t, rec, status)
-	if got := jsonBody(t, rec)["code"]; got != code {
-		t.Fatalf("code = %v, want %s; body: %s", got, code, rec.Body.String())
+func wantCode(test *testing.T, rec *httptest.ResponseRecorder, status int, code string) {
+	test.Helper()
+	wantStatus(test, rec, status)
+	if got := jsonBody(test, rec)["code"]; got != code {
+		test.Fatalf("code = %v, want %s; body: %s", got, code, rec.Body.String())
 	}
 }
 
 // sessionCookie returns the session cookie set by rec, or nil.
 func sessionCookie(rec *httptest.ResponseRecorder) *http.Cookie {
-	for _, c := range rec.Result().Cookies() {
-		if strings.HasSuffix(c.Name, ".session_token") {
-			return c
+	for _, cookie := range rec.Result().Cookies() {
+		if strings.HasSuffix(cookie.Name, ".session_token") {
+			return cookie
 		}
 	}
 	return nil
 }
 
 // cookieHeader turns the session cookie of rec into a Cookie header value.
-func cookieHeader(t *testing.T, rec *httptest.ResponseRecorder) string {
-	t.Helper()
-	c := sessionCookie(rec)
-	if c == nil || c.MaxAge < 0 {
-		t.Fatalf("no session cookie set; headers: %v", rec.Header())
+func cookieHeader(test *testing.T, rec *httptest.ResponseRecorder) string {
+	test.Helper()
+	cookie := sessionCookie(rec)
+	if cookie == nil || cookie.MaxAge < 0 {
+		test.Fatalf("no session cookie set; headers: %v", rec.Header())
 	}
-	return c.Name + "=" + c.Value
+	return cookie.Name + "=" + cookie.Value
 }
 
 // signUp registers a user through the JSON endpoint and returns the response.
-func (h *harness) signUp(email, password string) *httptest.ResponseRecorder {
-	h.t.Helper()
-	return h.do("POST", BasePath+"/sign-up/email", map[string]any{"name": "Test User", "email": email, "password": password}, nil)
+func (harness *harness) signUp(email, password string) *httptest.ResponseRecorder {
+	harness.test.Helper()
+	return harness.do("POST", BasePath+"/sign-up/email", map[string]any{"name": "Test User", "email": email, "password": password}, nil)
 }
 
-func (h *harness) signIn(email, password string) *httptest.ResponseRecorder {
-	h.t.Helper()
-	return h.do("POST", BasePath+"/sign-in/email", map[string]any{"email": email, "password": password}, nil)
+func (harness *harness) signIn(email, password string) *httptest.ResponseRecorder {
+	harness.test.Helper()
+	return harness.do("POST", BasePath+"/sign-in/email", map[string]any{"email": email, "password": password}, nil)
 }
 
 // getSession returns the decoded get-session body (nil when signed out).
-func (h *harness) getSession(headers hdr) map[string]any {
-	h.t.Helper()
-	rec := h.do("GET", BasePath+"/get-session", nil, headers)
-	wantStatus(h.t, rec, http.StatusOK)
+func (harness *harness) getSession(headers hdr) map[string]any {
+	harness.test.Helper()
+	rec := harness.do("GET", BasePath+"/get-session", nil, headers)
+	wantStatus(harness.test, rec, http.StatusOK)
 	if strings.TrimSpace(rec.Body.String()) == "null" {
 		return nil
 	}
-	return jsonBody(h.t, rec)
+	return jsonBody(harness.test, rec)
 }
 
 // pathOf strips the origin from an absolute link so it can be served by the
 // in-process handler.
-func pathOf(t *testing.T, link string) string {
-	t.Helper()
-	u, err := url.Parse(link)
+func pathOf(test *testing.T, link string) string {
+	test.Helper()
+	address, err := url.Parse(link)
 	if err != nil {
-		t.Fatal(err)
+		test.Fatal(err)
 	}
-	return u.RequestURI()
+	return address.RequestURI()
 }

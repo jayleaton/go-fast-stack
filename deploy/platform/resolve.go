@@ -14,35 +14,35 @@ var githubRemote = regexp.MustCompile(`^(?:https?://(?:[^@/]+@)?github\.com/|ssh
 // GitHub owner/name of the origin remote ("" when origin is not on GitHub:
 // upload mode), project is the repo name or else the checkout directory's.
 // Pure, so it is tested; LoadResolved feeds it from git.
-func (c Config) Resolve(originURL, checkoutDir string) (Config, error) {
-	m := githubRemote.FindStringSubmatch(strings.TrimSpace(originURL))
-	if c.Repo == Auto {
-		c.Repo = ""
-		if m != nil {
-			c.Repo = m[1] + "/" + m[2]
+func (config Config) Resolve(originURL, checkoutDir string) (Config, error) {
+	submatch := githubRemote.FindStringSubmatch(strings.TrimSpace(originURL))
+	if config.Repo == Auto {
+		config.Repo = ""
+		if submatch != nil {
+			config.Repo = submatch[1] + "/" + submatch[2]
 		}
 	}
-	if c.Project == Auto {
+	if config.Project == Auto {
 		switch {
-		case m != nil:
-			c.Project = m[2]
+		case submatch != nil:
+			config.Project = submatch[2]
 		case checkoutDir != "":
-			c.Project = filepath.Base(checkoutDir)
+			config.Project = filepath.Base(checkoutDir)
 		default:
-			return c, fmt.Errorf("project: auto needs a git checkout (or set project in platform.yaml)")
+			return config, fmt.Errorf("project: auto needs a git checkout (or set project in platform.yaml)")
 		}
 		const maxProject = 32 // Railway's limit on project names
-		if len(c.Project) > maxProject {
-			c.Project = strings.TrimRight(c.Project[:maxProject], "-._ ")
+		if len(config.Project) > maxProject {
+			config.Project = strings.TrimRight(config.Project[:maxProject], "-._ ")
 		}
 	}
-	switch c.Secrets.Project {
+	switch config.Secrets.Project {
 	case "":
-		c.Secrets.Project = DefaultDopplerProject
+		config.Secrets.Project = DefaultDopplerProject
 	case Auto:
-		c.Secrets.Project = c.Project
+		config.Secrets.Project = config.Project
 	}
-	return c, c.Validate()
+	return config, config.Validate()
 }
 
 // LoadResolved is Load plus Resolve against the git checkout holding path.

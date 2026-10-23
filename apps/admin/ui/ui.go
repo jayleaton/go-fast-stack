@@ -246,15 +246,15 @@ func (ui *UI) errorMessage(ctx context.Context, err error) string {
 	}
 	for _, entry := range errorKeys {
 		if errors.Is(err, entry.err) {
-			return i18n.T(ctx, entry.key)
+			return i18n.Translate(ctx, entry.key)
 		}
 	}
 	var verr *apiclient.ValidationError
 	if errors.As(err, &verr) || apiclient.KindOf(err) == apiclient.KindInvalid {
-		return i18n.T(ctx, "errors.invalidInput")
+		return i18n.Translate(ctx, "errors.invalidInput")
 	}
 	ui.log.ErrorContext(ctx, "ui: error", "err", err)
-	return i18n.T(ctx, "errors.somethingWentWrong")
+	return i18n.Translate(ctx, "errors.somethingWentWrong")
 }
 
 // statusOf is the HTTP status of a page that failed with err.

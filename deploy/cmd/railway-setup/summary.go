@@ -28,20 +28,20 @@ type exitErr struct {
 	err  error
 }
 
-func (e exitErr) Error() string { return e.err.Error() }
-func (e exitErr) Unwrap() error { return e.err }
+func (err exitErr) Error() string { return err.err.Error() }
+func (err exitErr) Unwrap() error { return err.err }
 
-func withCode(code int, format string, a ...any) error {
-	return exitErr{code, fmt.Errorf(format, a...)}
+func withCode(code int, format string, values ...any) error {
+	return exitErr{code, fmt.Errorf(format, values...)}
 }
 
 func exitCode(err error) int {
 	if err == nil {
 		return exitOK
 	}
-	var e exitErr
-	if errors.As(err, &e) {
-		return e.code
+	var coded exitErr
+	if errors.As(err, &coded) {
+		return coded.code
 	}
 	return exitError
 }
@@ -83,50 +83,50 @@ type serviceInfo struct {
 }
 
 // next records a next step once.
-func (s *setup) next(format string, a ...any) {
-	step := fmt.Sprintf(format, a...)
-	for _, n := range s.sum.NextSteps {
-		if n == step {
+func (setup *setup) next(format string, values ...any) {
+	step := fmt.Sprintf(format, values...)
+	for _, nextStep := range setup.sum.NextSteps {
+		if nextStep == step {
 			return
 		}
 	}
-	s.sum.NextSteps = append(s.sum.NextSteps, step)
+	setup.sum.NextSteps = append(setup.sum.NextSteps, step)
 }
 
-func (s *setup) finish(err error) int {
+func (setup *setup) finish(err error) int {
 	code := exitCode(err)
-	s.sum.ExitCode, s.sum.OK = code, err == nil
-	if s.sum.NextSteps == nil {
-		s.sum.NextSteps = []string{}
+	setup.sum.ExitCode, setup.sum.OK = code, err == nil
+	if setup.sum.NextSteps == nil {
+		setup.sum.NextSteps = []string{}
 	}
 	if err != nil {
-		s.sum.Error = err.Error()
+		setup.sum.Error = err.Error()
 	}
-	if s.project != nil {
-		s.sum.Project = &projectInfo{ID: s.project.ID, Name: s.project.Name, Workspace: s.project.Workspace,
-			URL: "https://railway.com/project/" + s.project.ID}
+	if setup.project != nil {
+		setup.sum.Project = &projectInfo{ID: setup.project.ID, Name: setup.project.Name, Workspace: setup.project.Workspace,
+			URL: "https://railway.com/project/" + setup.project.ID}
 	}
-	if s.jsonOut {
+	if setup.jsonOut {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
-		_ = enc.Encode(s.sum)
+		_ = enc.Encode(setup.sum)
 		return code
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "railway-setup:", err)
 	}
-	if len(s.sum.NextSteps) > 0 {
-		s.say("\nNext steps:")
-		for i, n := range s.sum.NextSteps {
-			s.say("  %d. %s", i+1, n)
+	if len(setup.sum.NextSteps) > 0 {
+		setup.say("\nNext steps:")
+		for index, nextStep := range setup.sum.NextSteps {
+			setup.say("  %d. %s", index+1, nextStep)
 		}
 	}
 	return code
 }
 
 // deploymentStatus is the latest deployment's status ("" when none).
-func (s *setup) deploymentStatus(ctx context.Context, svc, env string) (string, error) {
-	_, status, err := s.latestDeployment(ctx, svc, env)
+func (setup *setup) deploymentStatus(ctx context.Context, svc, env string) (string, error) {
+	_, status, err := setup.latestDeployment(ctx, svc, env)
 	return status, err
 }
 
@@ -144,7 +144,7 @@ const (
 )
 
 // deployments lists svc's deployments in env, newest first.
-func (s *setup) deployments(ctx context.Context, svc, env string) ([]deployment, error) {
+func (setup *setup) deployments(ctx context.Context, svc, env string) ([]deployment, error) {
 	var list []deployment
 	var err error
 	for attempt := range deploymentReadAttempts {
@@ -155,7 +155,7 @@ func (s *setup) deployments(ctx context.Context, svc, env string) ([]deployment,
 			case <-time.After(deploymentRetryDelay):
 			}
 		}
-		if err = s.rw.json(ctx, &list, "deployment", "list", "--service", svc, "--environment", env); err == nil {
+		if err = setup.rw.json(ctx, &list, "deployment", "list", "--service", svc, "--environment", env); err == nil {
 			return list, nil
 		}
 	}
@@ -163,8 +163,8 @@ func (s *setup) deployments(ctx context.Context, svc, env string) ([]deployment,
 }
 
 // latestDeployment reads the newest deployment ("" when none).
-func (s *setup) latestDeployment(ctx context.Context, svc, env string) (id, status string, err error) {
-	list, err := s.deployments(ctx, svc, env)
+func (setup *setup) latestDeployment(ctx context.Context, svc, env string) (id, status string, err error) {
+	list, err := setup.deployments(ctx, svc, env)
 	if err != nil || len(list) == 0 {
 		return "", "", err
 	}
@@ -174,8 +174,8 @@ func (s *setup) latestDeployment(ctx context.Context, svc, env string) (id, stat
 // latestBuilt reads the newest deployment Railway did not skip. A SKIPPED
 // one (a push outside the watch paths) never replaces the running
 // deployment, and one can land while a variable change is still building.
-func (s *setup) latestBuilt(ctx context.Context, svc, env string) (id, status string, err error) {
-	list, err := s.deployments(ctx, svc, env)
+func (setup *setup) latestBuilt(ctx context.Context, svc, env string) (id, status string, err error) {
+	list, err := setup.deployments(ctx, svc, env)
 	if err != nil {
 		return "", "", err
 	}
@@ -199,40 +199,40 @@ func settled(status string) bool {
 // health waits (up to wait) for every public service's latest deployment
 // to settle, then checks /healthz on its public domain. It fills the
 // summary and returns an exitUnhealthy error if any service is not ok.
-func (s *setup) health(ctx context.Context, wait time.Duration) error {
+func (setup *setup) health(ctx context.Context, wait time.Duration) error {
 	const healthTimeout = 10 * time.Second // per /healthz request
-	if s.project == nil {
+	if setup.project == nil {
 		return errors.New("the project does not exist yet")
 	}
 	client := &http.Client{Timeout: healthTimeout}
 	deadline := time.Now().Add(wait)
 	var bad []string
-	s.sum.Environments = nil
-	for _, env := range s.cfg.Environments {
+	setup.sum.Environments = nil
+	for _, env := range setup.cfg.Environments {
 		info := envInfo{Name: env}
-		if !s.cfg.Upload() {
-			info.Branch = s.cfg.BranchFor(env)
+		if !setup.cfg.Upload() {
+			info.Branch = setup.cfg.BranchFor(env)
 		}
-		for _, svc := range s.cfg.PublicServices() {
+		for _, svc := range setup.cfg.PublicServices() {
 			si := serviceInfo{Name: svc, Health: "unknown"}
-			if s.project.Environments[env] == "" || s.project.Services[svc] == "" {
+			if setup.project.Environments[env] == "" || setup.project.Services[svc] == "" {
 				si.Health = "not deployed"
 				bad = append(bad, env+"/"+svc+": missing")
 				info.Services = append(info.Services, si)
 				continue
 			}
-			status, err := s.deploymentStatus(ctx, svc, env)
+			status, err := setup.deploymentStatus(ctx, svc, env)
 			for err == nil && !settled(status) && time.Now().Before(deadline) {
 				select {
 				case <-ctx.Done():
 					return ctx.Err()
 				case <-time.After(pollInterval):
 				}
-				status, err = s.deploymentStatus(ctx, svc, env)
+				status, err = setup.deploymentStatus(ctx, svc, env)
 			}
 			si.Deployment = status
-			if d, _ := s.domain(ctx, svc, env); d != "" {
-				si.URL = "https://" + d
+			if domain, _ := setup.domain(ctx, svc, env); domain != "" {
+				si.URL = "https://" + domain
 			}
 			switch {
 			case err != nil:
@@ -251,13 +251,13 @@ func (s *setup) health(ctx context.Context, wait time.Duration) error {
 					bad = append(bad, fmt.Sprintf("%s/%s: deployment %s, /healthz %d %s", env, svc, status, code, body))
 				}
 			}
-			s.say("  %-11s %-6s %-9s %s/healthz %s", env, svc, si.Health, si.URL, strings.ToLower(status))
+			setup.say("  %-11s %-6s %-9s %s/healthz %s", env, svc, si.Health, si.URL, strings.ToLower(status))
 			info.Services = append(info.Services, si)
 		}
-		s.sum.Environments = append(s.sum.Environments, info)
+		setup.sum.Environments = append(setup.sum.Environments, info)
 	}
 	if len(bad) > 0 {
-		s.next("Check the failing deployments' logs: railway logs --service <service> --environment <env>")
+		setup.next("Check the failing deployments' logs: railway logs --service <service> --environment <env>")
 		return withCode(exitUnhealthy, "unhealthy: %s", strings.Join(bad, "; "))
 	}
 	return nil
@@ -288,9 +288,9 @@ func healthz(ctx context.Context, client *http.Client, url string) (int, string)
 			body = err.Error()
 			continue
 		}
-		b, _ := io.ReadAll(io.LimitReader(resp.Body, maxHealthBody))
+		data, _ := io.ReadAll(io.LimitReader(resp.Body, maxHealthBody))
 		_ = resp.Body.Close()
-		code, body = resp.StatusCode, strings.TrimSpace(string(b))
+		code, body = resp.StatusCode, strings.TrimSpace(string(data))
 		if code == http.StatusOK {
 			break
 		}

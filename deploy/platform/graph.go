@@ -71,7 +71,7 @@ const DopplerPlaceholder = "REPLACE_WITH_DOPPLER_SERVICE_TOKEN"
 const ResendPlaceholder = "re_REPLACE_WITH_RESEND_API_KEY"
 
 // SecretVars lists every bootstrap variable for the configured services.
-func (c Config) SecretVars() []Secret {
+func (config Config) SecretVars() []Secret {
 	out := []Secret{
 		{ServiceWeb, "AUTH_SECRET", Generated},
 		{ServiceWeb, "AUTH_SECRET_PREVIOUS", Manual},
@@ -82,7 +82,7 @@ func (c Config) SecretVars() []Secret {
 	// DOPPLER_TOKEN is listed (ignored by IaC) even with provider env, so
 	// switching provider never plans deleting a real token.
 	out = append(out, Secret{ServiceWeb, "DOPPLER_TOKEN", DopplerToken})
-	if c.Backups.Enabled {
+	if config.Backups.Enabled {
 		// Encrypts every backup (age). Keep a copy outside Railway: without
 		// it a backup cannot be restored. _PREVIOUS decrypts older backups
 		// after a rotation.
@@ -90,13 +90,13 @@ func (c Config) SecretVars() []Secret {
 			Secret{ServiceBackup, "BACKUP_ENCRYPTION_KEY", Generated},
 			Secret{ServiceBackup, "BACKUP_ENCRYPTION_KEY_PREVIOUS", Manual},
 		)
-		if c.Backups.Storage == StorageExternal {
-			for _, v := range BackupS3Vars {
-				out = append(out, Secret{ServiceBackup, v, Manual})
+		if config.Backups.Storage == StorageExternal {
+			for _, backupS3Var := range BackupS3Vars {
+				out = append(out, Secret{ServiceBackup, backupS3Var, Manual})
 			}
 		}
 	}
-	if c.Admin {
+	if config.Admin {
 		out = append(out,
 			Secret{ServiceAdmin, "ADMIN_AUTH_SECRET", Generated},
 			Secret{ServiceAdmin, "ADMIN_AUTH_SECRET_PREVIOUS", Manual},
@@ -110,20 +110,20 @@ func (c Config) SecretVars() []Secret {
 }
 
 // HasService reports whether the graph has a service with this name.
-func (c Config) HasService(name string) bool {
-	services := append(c.PublicServices(), ServicePostgres)
-	if c.Admin {
+func (config Config) HasService(name string) bool {
+	services := append(config.PublicServices(), ServicePostgres)
+	if config.Admin {
 		services = append(services, ServiceAdminPostgres)
 	}
-	if c.Backups.Enabled {
+	if config.Backups.Enabled {
 		services = append(services, ServiceBackup)
 	}
 	return slices.Contains(services, name)
 }
 
 // PublicServices are the services that get a Railway-generated domain.
-func (c Config) PublicServices() []string {
-	if c.Admin {
+func (config Config) PublicServices() []string {
+	if config.Admin {
 		return []string{ServiceWeb, ServiceAdmin}
 	}
 	return []string{ServiceWeb}
@@ -138,79 +138,79 @@ type Project struct {
 }
 
 // Graph is the IaC graph the CLI plans and applies.
-func (p Project) Graph() map[string]any {
-	g := p.Project.Graph()
-	g["variables"] = map[string]any{"managed": true, "ignore": p.Ignore}
-	return g
+func (project Project) Graph() map[string]any {
+	graph := project.Project.Graph()
+	graph["variables"] = map[string]any{"managed": true, "ignore": project.Ignore}
+	return graph
 }
 
 // Build builds the desired Railway graph for env: the web service and its
 // Postgres, plus the admin service and its own Postgres when admin is on.
-func (c Config) Build(env string) (Project, error) {
-	if !c.Has(env) {
-		return Project{}, fmt.Errorf("environment %q is not in deploy/platform.yaml environments %v", env, []string(c.Environments))
+func (config Config) Build(env string) (Project, error) {
+	if !config.Has(env) {
+		return Project{}, fmt.Errorf("environment %q is not in deploy/platform.yaml environments %v", env, []string(config.Environments))
 	}
-	if c.Project == Auto || c.Repo == Auto {
+	if config.Project == Auto || config.Repo == Auto {
 		return Project{}, fmt.Errorf("project/repo: auto is unresolved: load platform.yaml with LoadResolved")
 	}
-	settings := c.Settings(env)
-	db := c.postgres(ServicePostgres)
+	settings := config.Settings(env)
+	db := config.postgres(ServicePostgres)
 	webEnv := map[string]any{"DATABASE_URL": db.Env("DATABASE_URL")}
 	setURL(webEnv, "PUBLIC_URL", settings.PublicURL)
-	web := railway.ServiceNamed(ServiceWeb, c.service(env, app{
+	web := railway.ServiceNamed(ServiceWeb, config.service(env, app{
 		dockerfile: "Dockerfile",
 		migrate:    "/server migrate",
 		watch:      []any{"apps/web/**", "packages/**", "go.mod", "go.sum", "Dockerfile"},
-		size:       c.Resources.Web,
+		size:       config.Resources.Web,
 		env:        webEnv,
 	}))
 	resources := []any{db, web}
 	var adminBackupURL map[string]any
-	if c.Admin {
-		adminDB := c.postgres(ServiceAdminPostgres)
+	if config.Admin {
+		adminDB := config.postgres(ServiceAdminPostgres)
 		vars := map[string]any{
 			"DATABASE_URL":       db.Env("DATABASE_URL"),
 			"ADMIN_DATABASE_URL": adminDB.Env("DATABASE_URL"),
 		}
 		setURL(vars, "ADMIN_PUBLIC_URL", settings.AdminPublicURL)
-		if c.AdminBootstrapEmail != "" {
-			vars["ADMIN_BOOTSTRAP_EMAIL"] = c.AdminBootstrapEmail
+		if config.AdminBootstrapEmail != "" {
+			vars["ADMIN_BOOTSTRAP_EMAIL"] = config.AdminBootstrapEmail
 		}
-		admin := railway.ServiceNamed(ServiceAdmin, c.service(env, app{
+		admin := railway.ServiceNamed(ServiceAdmin, config.service(env, app{
 			dockerfile: "apps/admin/Dockerfile",
 			migrate:    "/admin migrate",
 			watch:      []any{"apps/admin/**", "packages/**", "go.mod", "go.sum"},
-			size:       c.Resources.Admin,
+			size:       config.Resources.Admin,
 			env:        vars,
 		}))
 		resources = append(resources, adminDB, admin)
-		if c.Backups.Enabled && c.Backups.Admin {
+		if config.Backups.Enabled && config.Backups.Admin {
 			adminBackupURL = adminDB.Env("DATABASE_URL")
 		}
 	}
-	if c.Backups.Enabled {
-		resources = append(resources, c.backups(env, db.Env("DATABASE_URL"), adminBackupURL)...)
+	if config.Backups.Enabled {
+		resources = append(resources, config.backups(env, db.Env("DATABASE_URL"), adminBackupURL)...)
 	}
 
 	var ignore []string
-	for _, s := range c.SecretVars() {
-		ignore = append(ignore, s.Service+"/"+s.Name)
+	for _, secretVar := range config.SecretVars() {
+		ignore = append(ignore, secretVar.Service+"/"+secretVar.Name)
 	}
 	// A pattern scoped to a service this environment does not have is an
 	// error to Railway, not a no-op (docs/railway-go-iac-issues.md #18):
 	// keep only the ones whose service is in the graph.
-	for _, pattern := range c.Unmanaged {
-		if service, _, scoped := strings.Cut(pattern, "/"); !scoped || c.HasService(service) {
+	for _, pattern := range config.Unmanaged {
+		if service, _, scoped := strings.Cut(pattern, "/"); !scoped || config.HasService(service) {
 			ignore = append(ignore, pattern)
 		}
 	}
 	// Without admin_bootstrap_email, a value set by hand is left alone.
-	if c.Admin && c.AdminBootstrapEmail == "" {
+	if config.Admin && config.AdminBootstrapEmail == "" {
 		ignore = append(ignore, ServiceAdmin+"/ADMIN_BOOTSTRAP_EMAIL")
 	}
 	// Values platform.yaml marks manual stay whatever the environment holds.
-	ignore = append(ignore, c.HandSet(env)...)
-	return Project{Project: railway.ProjectNamed(c.Project, resources), Ignore: ignore}, nil
+	ignore = append(ignore, config.HandSet(env)...)
+	return Project{Project: railway.ProjectNamed(config.Project, resources), Ignore: ignore}, nil
 }
 
 // backups is the backup service and its storage bucket: it sleeps until
@@ -219,17 +219,17 @@ func (c Config) Build(env string) (Project, error) {
 // cron: it stays up (a few MB) so people can `railway ssh` in to list,
 // back up or restore over the private network. No domain, no healthcheck,
 // no pre-deploy.
-func (c Config) backups(env string, appURL, adminURL map[string]any) []any {
+func (config Config) backups(env string, appURL, adminURL map[string]any) []any {
 	vars := map[string]any{
 		"APP_ENV":            "production",
 		"DATABASE_URL":       appURL,
-		"BACKUP_SCHEDULE":    c.Backups.Schedule,
-		"BACKUP_KEEP_DAILY":  fmt.Sprint(c.Backups.KeepDaily),
-		"BACKUP_KEEP_WEEKLY": fmt.Sprint(c.Backups.KeepWeekly),
+		"BACKUP_SCHEDULE":    config.Backups.Schedule,
+		"BACKUP_KEEP_DAILY":  fmt.Sprint(config.Backups.KeepDaily),
+		"BACKUP_KEEP_WEEKLY": fmt.Sprint(config.Backups.KeepWeekly),
 	}
 	var out []any
-	if c.Backups.Storage == StorageRailway {
-		bucket := railway.Bucket(BucketBackups, map[string]any{"region": c.BucketRegion()})
+	if config.Backups.Storage == StorageRailway {
+		bucket := railway.Bucket(BucketBackups, map[string]any{"region": config.BucketRegion()})
 		for name, output := range map[string]string{
 			"BACKUP_S3_ENDPOINT": "ENDPOINT", "BACKUP_S3_BUCKET": "BUCKET", "BACKUP_S3_REGION": "REGION",
 			"BACKUP_S3_ACCESS_KEY_ID": "ACCESS_KEY_ID", "BACKUP_S3_SECRET_ACCESS_KEY": "SECRET_ACCESS_KEY",
@@ -257,11 +257,11 @@ func (c Config) backups(env string, appURL, adminURL map[string]any) []any {
 		},
 		"env": vars,
 	}
-	if c.Region != "" {
-		sc["replicas"] = map[string]any{c.Region: 1}
+	if config.Region != "" {
+		sc["replicas"] = map[string]any{config.Region: 1}
 	}
-	if !c.Upload() {
-		sc["source"] = railway.Github(c.Repo, map[string]any{"branch": c.BranchFor(env)})
+	if !config.Upload() {
+		sc["source"] = railway.Github(config.Repo, map[string]any{"branch": config.BranchFor(env)})
 	} else {
 		delete(sc["build"].(map[string]any), "watchPatterns")
 	}
@@ -288,39 +288,39 @@ type app struct {
 	env        map[string]any
 }
 
-func (c Config) postgres(name string) railway.Resource {
-	if c.Region == "" {
+func (config Config) postgres(name string) railway.Resource {
+	if config.Region == "" {
 		return railway.Postgres(name)
 	}
-	return railway.Postgres(name, map[string]any{"region": c.Region})
+	return railway.Postgres(name, map[string]any{"region": config.Region})
 }
 
 // service is the shared shape of a Go app service: built from the repo root
 // with its Dockerfile (shared packages need the whole module), migrations as
 // the pre-deploy command, /healthz gating activation, capped resources.
-func (c Config) service(env string, a app) railway.ServiceConfig {
+func (config Config) service(env string, app app) railway.ServiceConfig {
 	vars := map[string]any{
 		"APP_ENV":          "production",
 		"PORT":             fmt.Sprint(AppPort),
 		"CLIENT_IP_HEADER": "X-Real-IP", // Railway's edge sets it; auth rate limits key on it
 	}
-	if from := c.Settings(env).FromEmail; from != ManualValue {
+	if from := config.Settings(env).FromEmail; from != ManualValue {
 		vars["FROM_EMAIL"] = from
 	}
-	for k, v := range a.env {
-		vars[k] = v
+	for key, value := range app.env {
+		vars[key] = value
 	}
-	var replicas any = a.size.Replicas
-	if c.Region != "" {
-		replicas = map[string]any{c.Region: a.size.Replicas}
+	var replicas any = app.size.Replicas
+	if config.Region != "" {
+		replicas = map[string]any{config.Region: app.size.Replicas}
 	}
 	sc := railway.ServiceConfig{
 		"build": map[string]any{
 			"builder":        "DOCKERFILE",
-			"dockerfilePath": a.dockerfile,
-			"watchPatterns":  a.watch,
+			"dockerfilePath": app.dockerfile,
+			"watchPatterns":  app.watch,
 		},
-		"preDeploy": a.migrate,
+		"preDeploy": app.migrate,
 		// A deploy gate only: Railway checks it until the new deployment is
 		// live, never afterwards. Keep it that way: /healthz answers 503 when
 		// Doppler secrets go stale, and a liveness probe would turn a Doppler
@@ -333,14 +333,14 @@ func (c Config) service(env string, a app) railway.ServiceConfig {
 			// declaring the default plans as a change forever.
 			"restartPolicyMaxRetries": maxRestarts,
 			"limitOverride": map[string]any{"containers": map[string]any{
-				"cpu":         a.size.CPU,
-				"memoryBytes": int64(a.size.MemoryMB) * bytesPerMiB,
+				"cpu":         app.size.CPU,
+				"memoryBytes": int64(app.size.MemoryMB) * bytesPerMiB,
 			}},
 		},
 		"env": vars,
 	}
-	if !c.Upload() {
-		sc["source"] = railway.Github(c.Repo, map[string]any{"branch": c.BranchFor(env)})
+	if !config.Upload() {
+		sc["source"] = railway.Github(config.Repo, map[string]any{"branch": config.BranchFor(env)})
 	} else {
 		// Railway applies watch paths to `railway up` too: a re-upload with
 		// no change under them is SKIPPED. Omitted (an empty list plans as a

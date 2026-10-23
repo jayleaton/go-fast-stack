@@ -187,11 +187,11 @@ func (ui *UI) redirect(writer http.ResponseWriter, request *http.Request, to str
 func (ui *UI) errorMessage(ctx context.Context, err error) string {
 	for _, authError := range AuthErrors {
 		if errors.Is(err, authError.Err) {
-			return i18n.T(ctx, authError.Key)
+			return i18n.Translate(ctx, authError.Key)
 		}
 	}
 	ui.log.ErrorContext(ctx, "ui: service error", "err", err)
-	return i18n.T(ctx, "errors.somethingWentWrong")
+	return i18n.Translate(ctx, "errors.somethingWentWrong")
 }
 
 // safeNext keeps redirects on this site.

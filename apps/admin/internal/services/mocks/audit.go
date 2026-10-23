@@ -43,47 +43,47 @@ func (m *MockAuditLog) EXPECT() *MockAuditLogMockRecorder {
 }
 
 // Append mocks base method.
-func (m *MockAuditLog) Append(ctx context.Context, e services.NewAuditEntry) error {
+func (m *MockAuditLog) Append(ctx context.Context, entry services.NewAuditEntry) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Append", ctx, e)
+	ret := m.ctrl.Call(m, "Append", ctx, entry)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // Append indicates an expected call of Append.
-func (mr *MockAuditLogMockRecorder) Append(ctx, e any) *gomock.Call {
+func (mr *MockAuditLogMockRecorder) Append(ctx, entry any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Append", reflect.TypeOf((*MockAuditLog)(nil).Append), ctx, e)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Append", reflect.TypeOf((*MockAuditLog)(nil).Append), ctx, entry)
 }
 
 // Begin mocks base method.
-func (m *MockAuditLog) Begin(ctx context.Context, e services.NewAuditEntry) (int64, error) {
+func (m *MockAuditLog) Begin(ctx context.Context, entry services.NewAuditEntry) (int64, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Begin", ctx, e)
+	ret := m.ctrl.Call(m, "Begin", ctx, entry)
 	ret0, _ := ret[0].(int64)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // Begin indicates an expected call of Begin.
-func (mr *MockAuditLogMockRecorder) Begin(ctx, e any) *gomock.Call {
+func (mr *MockAuditLogMockRecorder) Begin(ctx, entry any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Begin", reflect.TypeOf((*MockAuditLog)(nil).Begin), ctx, e)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Begin", reflect.TypeOf((*MockAuditLog)(nil).Begin), ctx, entry)
 }
 
 // List mocks base method.
-func (m *MockAuditLog) List(ctx context.Context, q services.AuditQuery) (services.AuditPage, error) {
+func (m *MockAuditLog) List(ctx context.Context, query services.AuditQuery) (services.AuditPage, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "List", ctx, q)
+	ret := m.ctrl.Call(m, "List", ctx, query)
 	ret0, _ := ret[0].(services.AuditPage)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // List indicates an expected call of List.
-func (mr *MockAuditLogMockRecorder) List(ctx, q any) *gomock.Call {
+func (mr *MockAuditLogMockRecorder) List(ctx, query any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "List", reflect.TypeOf((*MockAuditLog)(nil).List), ctx, q)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "List", reflect.TypeOf((*MockAuditLog)(nil).List), ctx, query)
 }
 
 // Pending mocks base method.
@@ -102,15 +102,15 @@ func (mr *MockAuditLogMockRecorder) Pending(ctx, before, limit any) *gomock.Call
 }
 
 // Resolve mocks base method.
-func (m *MockAuditLog) Resolve(ctx context.Context, id int64, o services.AuditOutcome) error {
+func (m *MockAuditLog) Resolve(ctx context.Context, id int64, outcome services.AuditOutcome) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Resolve", ctx, id, o)
+	ret := m.ctrl.Call(m, "Resolve", ctx, id, outcome)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // Resolve indicates an expected call of Resolve.
-func (mr *MockAuditLogMockRecorder) Resolve(ctx, id, o any) *gomock.Call {
+func (mr *MockAuditLogMockRecorder) Resolve(ctx, id, outcome any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Resolve", reflect.TypeOf((*MockAuditLog)(nil).Resolve), ctx, id, o)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Resolve", reflect.TypeOf((*MockAuditLog)(nil).Resolve), ctx, id, outcome)
 }

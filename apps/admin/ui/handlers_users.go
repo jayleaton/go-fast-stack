@@ -107,7 +107,7 @@ func (ui *UI) userAction(writer http.ResponseWriter, request *http.Request, _ ap
 		http.Redirect(writer, request, config.UserPage(id), http.StatusSeeOther)
 		return
 	}
-	st := Status{Message: i18n.T(ctx, doneKey)}
+	st := Status{Message: i18n.Translate(ctx, doneKey)}
 	data, err := ui.api.GetUser(ctx, id)
 	if err != nil {
 		ui.log.WarnContext(ctx, "ui: reload user after action", "err", err)

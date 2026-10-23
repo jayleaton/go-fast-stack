@@ -45,56 +45,56 @@ func normalizeEmail(email string) (string, error) {
 // unverified, nobody has proven they own it: the new password replaces the
 // old one and a fresh link goes to the inbox. That stops a squatter who signed
 // up with someone else's email from keeping access after the owner verifies.
-func (a *Auth) SignUpEmail(ctx context.Context, in SignUpInput) (User, Session, error) {
-	if a.cfg.DisableSignUp {
+func (auth *Auth) SignUpEmail(ctx context.Context, in SignUpInput) (User, Session, error) {
+	if auth.cfg.DisableSignUp {
 		return User{}, Session{}, ErrSignUpDisabled
 	}
-	if err := a.rateLimit(ctx, "sign-up", RuleSignIn); err != nil {
+	if err := auth.rateLimit(ctx, "sign-up", RuleSignIn); err != nil {
 		return User{}, Session{}, err
 	}
 	email, err := normalizeEmail(in.Email)
 	if err != nil {
 		return User{}, Session{}, err
 	}
-	if err := a.checkPasswordLength(in.Password); err != nil {
+	if err := auth.checkPasswordLength(in.Password); err != nil {
 		return User{}, Session{}, err
 	}
-	if err := a.checkCallbackURL(in.CallbackURL, ErrInvalidCallbackURL); err != nil {
+	if err := auth.checkCallbackURL(in.CallbackURL, ErrInvalidCallbackURL); err != nil {
 		return User{}, Session{}, err
 	}
 
-	now := a.now()
+	now := auth.now()
 	user := User{ID: generateID(idLength), Name: in.Name, Email: email, Image: in.Image, CreatedAt: now, UpdatedAt: now}
 	// Hash before looking up so both branches cost the same.
-	hash, err := hashPassword(in.Password, a.argon)
+	hash, err := hashPassword(in.Password, auth.argon)
 	if err != nil {
 		return User{}, Session{}, err
 	}
 	duplicate := func() (User, Session, error) {
-		if !a.cfg.RequireEmailVerification {
+		if !auth.cfg.RequireEmailVerification {
 			return User{}, Session{}, ErrUserAlreadyExists
 		}
-		id, revoked, err := a.store.replaceUnverifiedPassword(ctx, email, hash, now)
+		id, revoked, err := auth.store.replaceUnverifiedPassword(ctx, email, hash, now)
 		if err == nil && revoked > 0 {
-			a.emitRevoked(ctx, id, "", revoked, "sign_up")
+			auth.emitRevoked(ctx, id, "", revoked, "sign_up")
 		}
 		if err == nil {
-			a.sendVerification(ctx, email, a.credFingerprint(&hash), in.CallbackURL)
+			auth.sendVerification(ctx, email, auth.credFingerprint(&hash), in.CallbackURL)
 		} else if !errors.Is(err, errNotFound) {
 			return User{}, Session{}, err
 		}
 		return user, Session{}, nil
 	}
-	if _, err := a.store.userByEmail(ctx, email); err == nil {
+	if _, err := auth.store.userByEmail(ctx, email); err == nil {
 		return duplicate()
 	} else if !errors.Is(err, errNotFound) {
 		return User{}, Session{}, err
 	}
-	err = a.store.tx(ctx, func(q querier) error {
-		if err := a.store.createUser(ctx, q, user); err != nil {
+	err = auth.store.tx(ctx, func(querier querier) error {
+		if err := auth.store.createUser(ctx, querier, user); err != nil {
 			return err
 		}
-		return a.store.setCredentialPassword(ctx, q, user.ID, hash, now)
+		return auth.store.setCredentialPassword(ctx, querier, user.ID, hash, now)
 	})
 	if isUniqueViolation(err) {
 		return duplicate()
@@ -103,20 +103,20 @@ func (a *Auth) SignUpEmail(ctx context.Context, in SignUpInput) (User, Session, 
 		return User{}, Session{}, err
 	}
 
-	if a.cfg.RequireEmailVerification {
-		a.sendVerification(ctx, email, a.credFingerprint(&hash), in.CallbackURL)
+	if auth.cfg.RequireEmailVerification {
+		auth.sendVerification(ctx, email, auth.credFingerprint(&hash), in.CallbackURL)
 		return user, Session{}, nil
 	}
-	if c, err := a.secondFactor(ctx, user.ID); err != nil {
+	if challenge, err := auth.secondFactor(ctx, user.ID); err != nil {
 		return User{}, Session{}, err
-	} else if c != nil {
-		return user, Session{}, c // TwoFactorConfig.Required: enrol before the first session
+	} else if challenge != nil {
+		return user, Session{}, challenge // TwoFactorConfig.Required: enrol before the first session
 	}
-	sess, err := a.createSession(ctx, user.ID)
+	sess, err := auth.createSession(ctx, user.ID)
 	if err != nil {
 		return User{}, Session{}, err
 	}
-	a.emit(ctx, Event{Kind: EventSignIn, UserID: user.ID, Email: user.Email, SessionID: sess.ID, Method: SignInMethodSignUp})
+	auth.emit(ctx, Event{Kind: EventSignIn, UserID: user.ID, Email: user.Email, SessionID: sess.ID, Method: SignInMethodSignUp})
 	return user, sess, nil
 }
 
@@ -124,34 +124,34 @@ func (a *Auth) SignUpEmail(ctx context.Context, in SignUpInput) (User, Session, 
 // emails and wrong passwords both return ErrInvalidEmailOrPassword after the
 // same amount of hashing work. With required verification, unverified users
 // get ErrEmailNotVerified (only after the password matched).
-func (a *Auth) SignInEmail(ctx context.Context, in SignInInput) (User, Session, error) {
-	user, sess, knownID, err := a.signInEmail(ctx, in)
+func (auth *Auth) SignInEmail(ctx context.Context, in SignInInput) (User, Session, error) {
+	user, sess, knownID, err := auth.signInEmail(ctx, in)
 	if _, challenged := errors.AsType[*TwoFactorChallenge](err); err == nil {
-		a.emit(ctx, Event{Kind: EventSignIn, UserID: user.ID, Email: user.Email, SessionID: sess.ID, Method: SignInMethodPassword})
+		auth.emit(ctx, Event{Kind: EventSignIn, UserID: user.ID, Email: user.Email, SessionID: sess.ID, Method: SignInMethodPassword})
 	} else if !challenged {
-		a.emitFailure(ctx, EventSignInFailed, knownID, SignInMethodPassword, err)
+		auth.emitFailure(ctx, EventSignInFailed, knownID, SignInMethodPassword, err)
 	}
 	return user, sess, err
 }
 
 // signInEmail is SignInEmail; knownID is the user's id once the email matched
 // an account (for EventSignInFailed), even when sign-in is refused.
-func (a *Auth) signInEmail(ctx context.Context, in SignInInput) (_ User, _ Session, knownID string, _ error) {
-	if err := a.rateLimit(ctx, "sign-in", RuleSignIn); err != nil {
+func (auth *Auth) signInEmail(ctx context.Context, in SignInInput) (_ User, _ Session, knownID string, _ error) {
+	if err := auth.rateLimit(ctx, "sign-in", RuleSignIn); err != nil {
 		return User{}, Session{}, knownID, err
 	}
 	email, err := normalizeEmail(in.Email)
 	if err != nil {
 		return User{}, Session{}, knownID, err
 	}
-	if len([]rune(in.Password)) > a.cfg.MaxPasswordLength {
+	if len([]rune(in.Password)) > auth.cfg.MaxPasswordLength {
 		return User{}, Session{}, knownID, ErrPasswordTooLong
 	}
-	if err := a.checkCallbackURL(in.CallbackURL, ErrInvalidCallbackURL); err != nil {
+	if err := auth.checkCallbackURL(in.CallbackURL, ErrInvalidCallbackURL); err != nil {
 		return User{}, Session{}, knownID, err
 	}
 
-	user, hash, err := a.store.userWithPassword(ctx, email)
+	user, hash, err := auth.store.userWithPassword(ctx, email)
 	if err == nil {
 		knownID = user.ID
 	}
@@ -159,29 +159,29 @@ func (a *Auth) signInEmail(ctx context.Context, in SignInInput) (_ User, _ Sessi
 		return User{}, Session{}, knownID, err
 	}
 	if err != nil || hash == nil {
-		_, _ = verifyPassword(in.Password, a.dummyHash)
+		_, _ = verifyPassword(in.Password, auth.dummyHash)
 		return User{}, Session{}, knownID, ErrInvalidEmailOrPassword
 	}
 	ok, err := verifyPassword(in.Password, *hash)
 	if err != nil {
-		a.log.ErrorContext(ctx, "auth: stored password hash is unreadable", "userId", user.ID, "err", err)
+		auth.log.ErrorContext(ctx, "auth: stored password hash is unreadable", "userId", user.ID, "err", err)
 		return User{}, Session{}, knownID, ErrInvalidEmailOrPassword
 	}
 	if !ok {
 		return User{}, Session{}, knownID, ErrInvalidEmailOrPassword
 	}
 	if isLegacyHash(*hash) {
-		a.upgradeHash(ctx, user.ID, in.Password)
+		auth.upgradeHash(ctx, user.ID, in.Password)
 	}
-	if a.cfg.RequireEmailVerification && !user.EmailVerified {
+	if auth.cfg.RequireEmailVerification && !user.EmailVerified {
 		return User{}, Session{}, knownID, ErrEmailNotVerified
 	}
-	if c, err := a.secondFactor(ctx, user.ID); err != nil {
+	if challenge, err := auth.secondFactor(ctx, user.ID); err != nil {
 		return User{}, Session{}, knownID, err
-	} else if c != nil {
-		return User{}, Session{}, knownID, c
+	} else if challenge != nil {
+		return User{}, Session{}, knownID, challenge
 	}
-	sess, err := a.createSession(ctx, user.ID)
+	sess, err := auth.createSession(ctx, user.ID)
 	if err != nil {
 		return User{}, Session{}, knownID, err
 	}
@@ -190,29 +190,29 @@ func (a *Auth) signInEmail(ctx context.Context, in SignInInput) (_ User, _ Sessi
 
 // upgradeHash replaces an imported Better Auth scrypt hash with argon2id after
 // a successful sign-in. Failures are logged; the old hash keeps working.
-func (a *Auth) upgradeHash(ctx context.Context, userID, password string) {
-	hash, err := hashPassword(password, a.argon)
+func (auth *Auth) upgradeHash(ctx context.Context, userID, password string) {
+	hash, err := hashPassword(password, auth.argon)
 	if err == nil {
-		err = a.store.setCredentialPassword(ctx, a.store.pool, userID, hash, a.now())
+		err = auth.store.setCredentialPassword(ctx, auth.store.pool, userID, hash, auth.now())
 	}
 	if err != nil {
-		a.log.WarnContext(ctx, "auth: upgrading password hash failed", "userId", userID, "err", err)
+		auth.log.WarnContext(ctx, "auth: upgrading password hash failed", "userId", userID, "err", err)
 	}
 }
 
 // SignOut deletes the session with sessionToken. Unknown tokens are ignored.
-func (a *Auth) SignOut(ctx context.Context, sessionToken string) error {
+func (auth *Auth) SignOut(ctx context.Context, sessionToken string) error {
 	if sessionToken == "" {
 		return nil
 	}
-	id, userID, err := a.store.endSession(ctx, sessionToken)
+	id, userID, err := auth.store.endSession(ctx, sessionToken)
 	if errors.Is(err, errNotFound) {
 		return nil
 	}
 	if err != nil {
 		return err
 	}
-	a.emit(ctx, Event{Kind: EventSignOut, UserID: userID, SessionID: id})
+	auth.emit(ctx, Event{Kind: EventSignOut, UserID: userID, SessionID: id})
 	return nil
 }
 
@@ -221,52 +221,52 @@ func (a *Auth) SignOut(ctx context.Context, sessionToken string) error {
 // page that takes the new password (a relative path, e.g. "/reset-password",
 // or a trusted URL); see passwordLink for the link each one gets. Either way
 // the page receives ?token= and calls ResetPassword.
-func (a *Auth) RequestPasswordReset(ctx context.Context, email, redirectTo string) error {
-	if err := a.rateLimit(ctx, "request-password-reset", RuleEmailSending); err != nil {
+func (auth *Auth) RequestPasswordReset(ctx context.Context, email, redirectTo string) error {
+	if err := auth.rateLimit(ctx, "request-password-reset", RuleEmailSending); err != nil {
 		return err
 	}
 	if redirectTo == "" {
 		return ErrInvalidRedirectURL // the emailed link would lead nowhere
 	}
-	if err := a.checkCallbackURL(redirectTo, ErrInvalidRedirectURL); err != nil {
+	if err := auth.checkCallbackURL(redirectTo, ErrInvalidRedirectURL); err != nil {
 		return err
 	}
 	email, err := normalizeEmail(email)
 	if err != nil {
 		return err
 	}
-	now := a.now()
-	user, err := a.store.userByEmail(ctx, email)
+	now := auth.now()
+	user, err := auth.store.userByEmail(ctx, email)
 	if errors.Is(err, errNotFound) {
 		// Same database work as the found path; the email itself is sent in
 		// the background either way.
-		_, _ = a.store.verificationValue(ctx, "reset-password:dummy", now)
+		_, _ = auth.store.verificationValue(ctx, "reset-password:dummy", now)
 		return nil
 	}
 	if err != nil {
 		return err
 	}
 	token := generateID(resetTokenLength)
-	if err := a.store.createVerification(ctx, "reset-password:"+token, user.ID, now.Add(ResetPasswordTokenTTL), now); err != nil {
+	if err := auth.store.createVerification(ctx, "reset-password:"+token, user.ID, now.Add(ResetPasswordTokenTTL), now); err != nil {
 		return err
 	}
-	link := a.passwordLink(token, redirectTo)
-	a.sendMail(ctx, "password-reset", user.Email, func(ctx context.Context) error {
+	link := auth.passwordLink(token, redirectTo)
+	auth.sendMail(ctx, "password-reset", user.Email, func(ctx context.Context) error {
 		// Cleanup runs here, off the request path, so it adds no timing signal.
-		if err := a.store.deleteExpiredVerifications(ctx, now); err != nil {
-			a.log.WarnContext(ctx, "auth: cleaning verification rows failed", "err", err)
+		if err := auth.store.deleteExpiredVerifications(ctx, now); err != nil {
+			auth.log.WarnContext(ctx, "auth: cleaning verification rows failed", "err", err)
 		}
-		return a.mailer.SendPasswordResetEmail(ctx, user.Email, link)
+		return auth.mailer.SendPasswordResetEmail(ctx, user.Email, link)
 	})
 	return nil
 }
 
 // resetTokenValid reports whether a reset token exists and has not expired.
-func (a *Auth) resetTokenValid(ctx context.Context, token string) (bool, error) {
+func (auth *Auth) resetTokenValid(ctx context.Context, token string) (bool, error) {
 	if !isTokenString(token) {
 		return false, nil
 	}
-	_, err := a.store.verificationValue(ctx, "reset-password:"+token, a.now())
+	_, err := auth.store.verificationValue(ctx, "reset-password:"+token, auth.now())
 	if errors.Is(err, errNotFound) {
 		return false, nil
 	}
@@ -278,35 +278,35 @@ func (a *Auth) resetTokenValid(ctx context.Context, token string) (bool, error) 
 // pending 2FA sign-in and trusted device of the user, all in one transaction.
 // Used, expired or unknown tokens return ErrInvalidToken. It does not sign in;
 // CompleteSetPassword does.
-func (a *Auth) ResetPassword(ctx context.Context, token, newPassword string) error {
-	userID, revoked, err := a.setPassword(ctx, token, newPassword, false)
+func (auth *Auth) ResetPassword(ctx context.Context, token, newPassword string) error {
+	userID, revoked, err := auth.setPassword(ctx, token, newPassword, false)
 	if err == nil {
-		a.emit(ctx, Event{Kind: EventPasswordReset, UserID: userID, Method: "reset"})
-		a.emitRevoked(ctx, userID, "", revoked, "password_reset")
+		auth.emit(ctx, Event{Kind: EventPasswordReset, UserID: userID, Method: "reset"})
+		auth.emitRevoked(ctx, userID, "", revoked, "password_reset")
 	}
 	return err
 }
 
 // setPassword is ResetPassword returning the user id; verifyEmail also marks
 // the email verified (invites: the link proves the inbox).
-func (a *Auth) setPassword(ctx context.Context, token, newPassword string, verifyEmail bool) (_ string, revoked int64, _ error) {
-	if err := a.rateLimit(ctx, "reset-password", RuleResetPassword); err != nil {
+func (auth *Auth) setPassword(ctx context.Context, token, newPassword string, verifyEmail bool) (_ string, revoked int64, _ error) {
+	if err := auth.rateLimit(ctx, "reset-password", RuleResetPassword); err != nil {
 		return "", 0, err
 	}
 	if !isTokenString(token) {
 		return "", 0, ErrInvalidToken
 	}
-	if err := a.checkPasswordLength(newPassword); err != nil {
+	if err := auth.checkPasswordLength(newPassword); err != nil {
 		return "", 0, err
 	}
-	hash, err := hashPassword(newPassword, a.argon)
+	hash, err := hashPassword(newPassword, auth.argon)
 	if err != nil {
 		return "", 0, err
 	}
-	now := a.now()
+	now := auth.now()
 	var userID string
-	err = a.store.tx(ctx, func(q querier) error {
-		id, err := a.store.consumeVerification(ctx, q, "reset-password:"+token, now)
+	err = auth.store.tx(ctx, func(txQuerier querier) error {
+		id, err := auth.store.consumeVerification(ctx, txQuerier, "reset-password:"+token, now)
 		if errors.Is(err, errNotFound) {
 			return ErrInvalidToken
 		}
@@ -314,29 +314,29 @@ func (a *Auth) setPassword(ctx context.Context, token, newPassword string, verif
 			return err
 		}
 		userID = id
-		if _, err := a.store.userByID(ctx, q, id); err != nil {
+		if _, err := auth.store.userByID(ctx, txQuerier, id); err != nil {
 			if errors.Is(err, errNotFound) {
 				return ErrUserNotFound
 			}
 			return err
 		}
-		if revoked, err = a.store.deleteUserSessionsCount(ctx, q, id); err != nil {
+		if revoked, err = auth.store.deleteUserSessionsCount(ctx, txQuerier, id); err != nil {
 			return err
 		}
 		for _, revoke := range []func(context.Context, querier, string) error{
-			a.store.deleteResetTokens, a.store.deleteEmailChanges,
-			a.store.deleteChallenges, a.store.deleteTrustedDevices,
+			auth.store.deleteResetTokens, auth.store.deleteEmailChanges,
+			auth.store.deleteChallenges, auth.store.deleteTrustedDevices,
 		} {
-			if err := revoke(ctx, q, id); err != nil {
+			if err := revoke(ctx, txQuerier, id); err != nil {
 				return err
 			}
 		}
 		if verifyEmail {
-			if _, err := q.Exec(ctx, `UPDATE "user" SET "emailVerified" = true, "updatedAt" = $2 WHERE "id" = $1`, id, now); err != nil {
+			if _, err := txQuerier.Exec(ctx, `UPDATE "user" SET "emailVerified" = true, "updatedAt" = $2 WHERE "id" = $1`, id, now); err != nil {
 				return err
 			}
 		}
-		return a.store.setCredentialPassword(ctx, q, id, hash, now)
+		return auth.store.setCredentialPassword(ctx, txQuerier, id, hash, now)
 	})
 	return userID, revoked, err
 }
@@ -355,15 +355,15 @@ func (a *Auth) setPassword(ctx context.Context, token, newPassword string, verif
 // It behaves exactly like GET /verify-email (which calls it), including the
 // signed-in opener read from ctx, so an app page (Config.VerifyEmailPath) can
 // spend either kind of link and set the returned session's cookie.
-func (a *Auth) VerifyEmail(ctx context.Context, token string) (User, Session, error) {
-	user, sess, _, err := a.verifyEmail(ctx, token)
+func (auth *Auth) VerifyEmail(ctx context.Context, token string) (User, Session, error) {
+	user, sess, _, err := auth.verifyEmail(ctx, token)
 	return user, sess, err
 }
 
 // verifyEmail is VerifyEmail that also reports whether the link was an email
 // change (Better Auth then returns the updated user).
-func (a *Auth) verifyEmail(ctx context.Context, token string) (User, Session, bool, error) {
-	claims, err := a.parseVerificationToken(token)
+func (auth *Auth) verifyEmail(ctx context.Context, token string) (User, Session, bool, error) {
+	claims, err := auth.parseVerificationToken(token)
 	if errors.Is(err, errTokenExpired) {
 		return User{}, Session{}, false, ErrTokenExpired
 	}
@@ -371,25 +371,25 @@ func (a *Auth) verifyEmail(ctx context.Context, token string) (User, Session, bo
 		return User{}, Session{}, false, err
 	}
 	if claims.RequestType == changeEmailRequest {
-		user, sess, err := a.confirmEmailChange(ctx, claims)
+		user, sess, err := auth.confirmEmailChange(ctx, claims)
 		return user, sess, true, err
 	}
-	user, sess, err := a.verifyAddress(ctx, claims)
+	user, sess, err := auth.verifyAddress(ctx, claims)
 	return user, sess, false, err
 }
 
 // verifyAddress handles an ordinary verification link.
-func (a *Auth) verifyAddress(ctx context.Context, claims verificationClaims) (User, Session, error) {
+func (auth *Auth) verifyAddress(ctx context.Context, claims verificationClaims) (User, Session, error) {
 	email, cred := claims.Email, claims.Cred
-	user, err := a.store.userByEmail(ctx, email)
+	user, err := auth.store.userByEmail(ctx, email)
 	if errors.Is(err, errNotFound) {
 		return User{}, Session{}, ErrUserNotFound
 	}
 	if err != nil {
 		return User{}, Session{}, err
 	}
-	verified, err := a.store.verifyEmail(ctx, email, a.now(), func(hash *string) error {
-		if !a.credMatches(cred, hash) {
+	verified, err := auth.store.verifyEmail(ctx, email, auth.now(), func(hash *string) error {
+		if !auth.credMatches(cred, hash) {
 			return ErrInvalidToken
 		}
 		return nil
@@ -401,37 +401,37 @@ func (a *Auth) verifyAddress(ctx context.Context, claims verificationClaims) (Us
 		return User{}, Session{}, err
 	}
 	user = verified
-	revoked, err := a.store.deleteUserSessionsCount(ctx, a.store.pool, user.ID)
+	revoked, err := auth.store.deleteUserSessionsCount(ctx, auth.store.pool, user.ID)
 	if err != nil {
 		return User{}, Session{}, err
 	}
-	a.emitRevoked(ctx, user.ID, "", revoked, "email_verification")
-	if needs, err := a.needsSecondFactor(ctx, user.ID); err != nil || needs {
+	auth.emitRevoked(ctx, user.ID, "", revoked, "email_verification")
+	if needs, err := auth.needsSecondFactor(ctx, user.ID); err != nil || needs {
 		return user, Session{}, err // an email link is no second factor: sign in normally
 	}
-	sess, err := a.createSession(ctx, user.ID)
+	sess, err := auth.createSession(ctx, user.ID)
 	if err != nil {
 		return User{}, Session{}, err
 	}
-	a.emit(ctx, Event{Kind: EventSignIn, UserID: user.ID, Email: user.Email, SessionID: sess.ID, Method: SignInMethodEmailVerified})
+	auth.emit(ctx, Event{Kind: EventSignIn, UserID: user.ID, Email: user.Email, SessionID: sess.ID, Method: SignInMethodEmailVerified})
 	return user, sess, nil
 }
 
 // SendVerificationEmail (re)sends the verification link. Signed in, the email
 // must be the user's own and not yet verified. Signed out, it returns nil
 // whether or not the email exists, and only unverified users get an email.
-func (a *Auth) SendVerificationEmail(ctx context.Context, email, callbackURL string) error {
-	if err := a.rateLimit(ctx, "send-verification-email", RuleEmailSending); err != nil {
+func (auth *Auth) SendVerificationEmail(ctx context.Context, email, callbackURL string) error {
+	if err := auth.rateLimit(ctx, "send-verification-email", RuleEmailSending); err != nil {
 		return err
 	}
-	if err := a.checkCallbackURL(callbackURL, ErrInvalidCallbackURL); err != nil {
+	if err := auth.checkCallbackURL(callbackURL, ErrInvalidCallbackURL); err != nil {
 		return err
 	}
 	email, err := normalizeEmail(email)
 	if err != nil {
 		return err
 	}
-	current, _, signedIn := a.userFrom(ctx)
+	current, _, signedIn := auth.userFrom(ctx)
 	if signedIn {
 		if current.Email != email {
 			return ErrEmailMismatch
@@ -440,21 +440,21 @@ func (a *Auth) SendVerificationEmail(ctx context.Context, email, callbackURL str
 			return ErrEmailAlreadyVerified
 		}
 	}
-	user, hash, err := a.store.userWithPassword(ctx, email)
+	user, hash, err := auth.store.userWithPassword(ctx, email)
 	if err != nil && !errors.Is(err, errNotFound) {
 		return err
 	}
 	if err == nil && !user.EmailVerified {
-		a.sendVerification(ctx, email, a.credFingerprint(hash), callbackURL)
+		auth.sendVerification(ctx, email, auth.credFingerprint(hash), callbackURL)
 	}
 	return nil
 }
 
 // sendVerification emails a verification link bound to the credential
 // fingerprint cred.
-func (a *Auth) sendVerification(ctx context.Context, email, cred, callbackURL string) {
-	link := a.verificationLink(a.signVerificationToken(email, cred, VerificationTokenTTL), callbackURL)
-	a.sendMail(ctx, "verification", email, func(ctx context.Context) error {
-		return a.mailer.SendVerificationEmail(ctx, email, link)
+func (auth *Auth) sendVerification(ctx context.Context, email, cred, callbackURL string) {
+	link := auth.verificationLink(auth.signVerificationToken(email, cred, VerificationTokenTTL), callbackURL)
+	auth.sendMail(ctx, "verification", email, func(ctx context.Context) error {
+		return auth.mailer.SendVerificationEmail(ctx, email, link)
 	})
 }

@@ -20,23 +20,25 @@ type resendPayload struct {
 	Text    string   `json:"text"`
 }
 
-func TestResendMailerSends(t *testing.T) {
-	t.Parallel()
+func TestResendMailerSends(test *testing.T) {
+	test.Parallel()
 	const link = "https://app.example.test/api/auth/verify-email?token=abc&next=/dashboard"
 
 	tests := []struct {
 		name        string
 		to          string
-		send        func(m *ResendMailer, to string) error
+		send        func(mailer *ResendMailer, to string) error
 		subject     string
 		htmlContain []string
 		textContain []string
 		noLink      bool // the email carries no link
 	}{
 		{
-			name:        "verification",
-			to:          "user@example.test",
-			send:        func(m *ResendMailer, to string) error { return m.SendVerificationEmail(context.Background(), to, link) },
+			name: "verification",
+			to:   "user@example.test",
+			send: func(mailer *ResendMailer, to string) error {
+				return mailer.SendVerificationEmail(context.Background(), to, link)
+			},
 			subject:     "Verify your email address",
 			htmlContain: []string{"Verify Email Address", "user@example.test", "expire in 24 hours"},
 			textContain: []string{"user@example.test", "expire in 24 hours"},
@@ -44,8 +46,8 @@ func TestResendMailerSends(t *testing.T) {
 		{
 			name: "password reset",
 			to:   "user@example.test",
-			send: func(m *ResendMailer, to string) error {
-				return m.SendPasswordResetEmail(context.Background(), to, link)
+			send: func(mailer *ResendMailer, to string) error {
+				return mailer.SendPasswordResetEmail(context.Background(), to, link)
 			},
 			subject:     "Reset your password",
 			htmlContain: []string{"Reset Password", "user@example.test", "expire in 1 hour", "safely ignore this email"},
@@ -54,8 +56,8 @@ func TestResendMailerSends(t *testing.T) {
 		{
 			name: "email change notice",
 			to:   "old@example.test",
-			send: func(m *ResendMailer, to string) error {
-				return m.SendEmailChangeNotice(context.Background(), to, "<i>new</i>@example.test")
+			send: func(mailer *ResendMailer, to string) error {
+				return mailer.SendEmailChangeNotice(context.Background(), to, "<i>new</i>@example.test")
 			},
 			subject:     "Your email address is being changed",
 			htmlContain: []string{"old@example.test", "&lt;i&gt;new&lt;/i&gt;@example.test", "reset your password"},
@@ -63,9 +65,11 @@ func TestResendMailerSends(t *testing.T) {
 			noLink:      true,
 		},
 		{
-			name:        "email is html-escaped",
-			to:          "<b>evil</b>@example.test",
-			send:        func(m *ResendMailer, to string) error { return m.SendVerificationEmail(context.Background(), to, link) },
+			name: "email is html-escaped",
+			to:   "<b>evil</b>@example.test",
+			send: func(mailer *ResendMailer, to string) error {
+				return mailer.SendVerificationEmail(context.Background(), to, link)
+			},
 			subject:     "Verify your email address",
 			htmlContain: []string{"&lt;b&gt;evil&lt;/b&gt;@example.test"},
 			textContain: []string{"<b>evil</b>@example.test"},
@@ -73,44 +77,44 @@ func TestResendMailerSends(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
+		test.Run(tt.name, func(test *testing.T) {
+			test.Parallel()
 			var got resendPayload
-			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if r.Method != http.MethodPost {
-					t.Errorf("method = %s, want POST", r.Method)
+			srv := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+				if request.Method != http.MethodPost {
+					test.Errorf("method = %s, want POST", request.Method)
 				}
-				if r.URL.Path != "/emails" {
-					t.Errorf("path = %s, want /emails", r.URL.Path)
+				if request.URL.Path != "/emails" {
+					test.Errorf("path = %s, want /emails", request.URL.Path)
 				}
-				if h := r.Header.Get("Authorization"); h != "Bearer re_test" {
-					t.Errorf("Authorization = %q", h)
+				if header := request.Header.Get("Authorization"); header != "Bearer re_test" {
+					test.Errorf("Authorization = %q", header)
 				}
-				if h := r.Header.Get("Content-Type"); h != "application/json" {
-					t.Errorf("Content-Type = %q", h)
+				if header := request.Header.Get("Content-Type"); header != "application/json" {
+					test.Errorf("Content-Type = %q", header)
 				}
-				if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
-					t.Errorf("decode body: %v", err)
+				if err := json.NewDecoder(request.Body).Decode(&got); err != nil {
+					test.Errorf("decode body: %v", err)
 				}
-				w.WriteHeader(http.StatusOK)
-				_, _ = io.WriteString(w, `{"id":"email_1"}`)
+				writer.WriteHeader(http.StatusOK)
+				_, _ = io.WriteString(writer, `{"id":"email_1"}`)
 			}))
 			defer srv.Close()
 
-			m := NewResendMailer("re_test", "App <noreply@example.test>")
-			m.Endpoint = srv.URL + "/emails"
-			if err := tt.send(m, tt.to); err != nil {
-				t.Fatalf("send: %v", err)
+			mailer := NewResendMailer("re_test", "App <noreply@example.test>")
+			mailer.Endpoint = srv.URL + "/emails"
+			if err := tt.send(mailer, tt.to); err != nil {
+				test.Fatalf("send: %v", err)
 			}
 
 			if got.From != "App <noreply@example.test>" {
-				t.Errorf("from = %q", got.From)
+				test.Errorf("from = %q", got.From)
 			}
 			if len(got.To) != 1 || got.To[0] != tt.to {
-				t.Errorf("to = %v, want [%s]", got.To, tt.to)
+				test.Errorf("to = %v, want [%s]", got.To, tt.to)
 			}
 			if got.Subject != tt.subject {
-				t.Errorf("subject = %q, want %q", got.Subject, tt.subject)
+				test.Errorf("subject = %q, want %q", got.Subject, tt.subject)
 			}
 			// html/template escapes & in attributes and text as &amp;.
 			htmlWant, textWant := tt.htmlContain, tt.textContain
@@ -118,30 +122,30 @@ func TestResendMailerSends(t *testing.T) {
 				htmlWant = append([]string{strings.ReplaceAll(link, "&", "&amp;")}, htmlWant...)
 				textWant = append([]string{link}, textWant...)
 			}
-			for _, s := range htmlWant {
-				if !strings.Contains(got.HTML, s) {
-					t.Errorf("html missing %q", s)
+			for _, text := range htmlWant {
+				if !strings.Contains(got.HTML, text) {
+					test.Errorf("html missing %q", text)
 				}
 			}
 			if strings.Contains(tt.to, "<") && strings.Contains(got.HTML, tt.to) {
-				t.Errorf("html contains unescaped email %q", tt.to)
+				test.Errorf("html contains unescaped email %q", tt.to)
 			}
-			for _, s := range textWant {
-				if !strings.Contains(got.Text, s) {
-					t.Errorf("text missing %q", s)
+			for _, text := range textWant {
+				if !strings.Contains(got.Text, text) {
+					test.Errorf("text missing %q", text)
 				}
 			}
 		})
 	}
 }
 
-func TestResendMailerErrors(t *testing.T) {
-	t.Parallel()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusUnprocessableEntity)
-		_, _ = io.WriteString(w, `{"message":"invalid from address"}`)
+func TestResendMailerErrors(test *testing.T) {
+	test.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.WriteHeader(http.StatusUnprocessableEntity)
+		_, _ = io.WriteString(writer, `{"message":"invalid from address"}`)
 	}))
-	t.Cleanup(srv.Close) // after the parallel subtests, not when this function returns
+	test.Cleanup(srv.Close) // after the parallel subtests, not when this function returns
 
 	tests := []struct {
 		name    string
@@ -154,64 +158,64 @@ func TestResendMailerErrors(t *testing.T) {
 		{"empty from", &ResendMailer{APIKey: "re_test", Endpoint: srv.URL}, "from address"},
 	}
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
+		test.Run(tt.name, func(test *testing.T) {
+			test.Parallel()
 			err := tt.mailer.SendPasswordResetEmail(context.Background(), "user@example.test", "https://app.example.test/reset")
 			if err == nil {
-				t.Fatal("expected error")
+				test.Fatal("expected error")
 			}
 			if !strings.Contains(err.Error(), tt.wantErr) {
-				t.Errorf("error %q does not contain %q", err, tt.wantErr)
+				test.Errorf("error %q does not contain %q", err, tt.wantErr)
 			}
 		})
 	}
 }
 
-func TestDevMailerLogsLink(t *testing.T) {
-	t.Parallel()
+func TestDevMailerLogsLink(test *testing.T) {
+	test.Parallel()
 	tests := []struct {
 		name string
-		send func(m *DevMailer) error
+		send func(mailer *DevMailer) error
 		msg  string
 	}{
-		{"verification", func(m *DevMailer) error {
-			return m.SendVerificationEmail(context.Background(), "user@example.test", "https://app.example.test/verify?token=t1")
+		{"verification", func(mailer *DevMailer) error {
+			return mailer.SendVerificationEmail(context.Background(), "user@example.test", "https://app.example.test/verify?token=t1")
 		}, "verification email"},
-		{"password reset", func(m *DevMailer) error {
-			return m.SendPasswordResetEmail(context.Background(), "user@example.test", "https://app.example.test/verify?token=t1")
+		{"password reset", func(mailer *DevMailer) error {
+			return mailer.SendPasswordResetEmail(context.Background(), "user@example.test", "https://app.example.test/verify?token=t1")
 		}, "password reset email"},
 	}
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
+		test.Run(tt.name, func(test *testing.T) {
+			test.Parallel()
 			var buf bytes.Buffer
-			m := NewDevMailer(slog.New(slog.NewTextHandler(&buf, nil)))
-			if err := tt.send(m); err != nil {
-				t.Fatalf("send: %v", err)
+			mailer := NewDevMailer(slog.New(slog.NewTextHandler(&buf, nil)))
+			if err := tt.send(mailer); err != nil {
+				test.Fatalf("send: %v", err)
 			}
 			out := buf.String()
-			for _, s := range []string{tt.msg, "to=user@example.test", "https://app.example.test/verify?token=t1"} {
-				if !strings.Contains(out, s) {
-					t.Errorf("log %q missing %q", out, s)
+			for _, text := range []string{tt.msg, "to=user@example.test", "https://app.example.test/verify?token=t1"} {
+				if !strings.Contains(out, text) {
+					test.Errorf("log %q missing %q", out, text)
 				}
 			}
 		})
 	}
 }
 
-func TestNewDevMailerNilLogger(t *testing.T) {
-	t.Parallel()
-	if m := NewDevMailer(nil); m.Logger == nil {
-		t.Fatal("expected default logger")
+func TestNewDevMailerNilLogger(test *testing.T) {
+	test.Parallel()
+	if mailer := NewDevMailer(nil); mailer.Logger == nil {
+		test.Fatal("expected default logger")
 	}
 }
 
-func TestSwapMailerUsesTheLatestMailer(t *testing.T) {
-	t.Parallel()
+func TestSwapMailerUsesTheLatestMailer(test *testing.T) {
+	test.Parallel()
 	var keys []string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		keys = append(keys, r.Header.Get("Authorization"))
-		w.WriteHeader(http.StatusOK)
+	srv := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		keys = append(keys, request.Header.Get("Authorization"))
+		writer.WriteHeader(http.StatusOK)
 	}))
 	defer srv.Close()
 	resend := func(key string) *ResendMailer {
@@ -219,23 +223,23 @@ func TestSwapMailerUsesTheLatestMailer(t *testing.T) {
 	}
 
 	var logs bytes.Buffer
-	m := NewSwapMailer(NewDevMailer(slog.New(slog.NewTextHandler(&logs, nil))))
+	mailer := NewSwapMailer(NewDevMailer(slog.New(slog.NewTextHandler(&logs, nil))))
 	ctx := context.Background()
-	if err := m.SendVerificationEmail(ctx, "u@example.test", "https://app.example.test/v"); err != nil {
-		t.Fatal(err)
+	if err := mailer.SendVerificationEmail(ctx, "u@example.test", "https://app.example.test/v"); err != nil {
+		test.Fatal(err)
 	}
-	m.Swap(resend("re_old"))
-	if err := m.SendPasswordResetEmail(ctx, "u@example.test", "https://app.example.test/r"); err != nil {
-		t.Fatal(err)
+	mailer.Swap(resend("re_old"))
+	if err := mailer.SendPasswordResetEmail(ctx, "u@example.test", "https://app.example.test/r"); err != nil {
+		test.Fatal(err)
 	}
-	m.Swap(resend("re_new")) // the key rotated
-	if err := m.SendEmailChangeNotice(ctx, "u@example.test", "n@example.test"); err != nil {
-		t.Fatal(err)
+	mailer.Swap(resend("re_new")) // the key rotated
+	if err := mailer.SendEmailChangeNotice(ctx, "u@example.test", "n@example.test"); err != nil {
+		test.Fatal(err)
 	}
-	if err := m.SendSetPasswordEmail(ctx, "u@example.test", "https://app.example.test/s"); err != nil {
-		t.Fatal(err)
+	if err := mailer.SendSetPasswordEmail(ctx, "u@example.test", "https://app.example.test/s"); err != nil {
+		test.Fatal(err)
 	}
 	if !strings.Contains(logs.String(), "verification email") || strings.Join(keys, ",") != "Bearer re_old,Bearer re_new,Bearer re_new" {
-		t.Fatalf("dev log %q, resend keys %v", logs.String(), keys)
+		test.Fatalf("dev log %q, resend keys %v", logs.String(), keys)
 	}
 }

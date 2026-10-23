@@ -34,7 +34,7 @@ type DashboardData struct {
 	Tab string
 }
 
-func DashboardPage(d DashboardData) templ.Component {
+func DashboardPage(data DashboardData) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -89,7 +89,7 @@ func DashboardPage(d DashboardData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = uikit.PageHeader(i18n.T(ctx, "pages.dashboard.title"), i18n.T(ctx, "pages.dashboard.subtitle")).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = uikit.PageHeader(i18n.Translate(ctx, "pages.dashboard.title"), i18n.Translate(ctx, "pages.dashboard.subtitle")).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -97,7 +97,7 @@ func DashboardPage(d DashboardData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = AccountCard(d.User).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = AccountCard(data.User).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -105,7 +105,7 @@ func DashboardPage(d DashboardData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = LiveCard(d.Tab).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = LiveCard(data.Tab).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -125,7 +125,7 @@ func DashboardPage(d DashboardData) templ.Component {
 					}()
 				}
 				ctx = templ.InitializeContext(ctx)
-				templ_7745c5c3_Err = uikit.CardHeader(i18n.T(ctx, "pages.dashboard.sections.analytics.title"), i18n.T(ctx, "pages.dashboard.sections.analytics.description")).Render(ctx, templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = uikit.CardHeader(i18n.Translate(ctx, "pages.dashboard.sections.analytics.title"), i18n.Translate(ctx, "pages.dashboard.sections.analytics.description")).Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -133,8 +133,8 @@ func DashboardPage(d DashboardData) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				for _, h := range []string{"h-1/3", "h-1/2", "h-2/5", "h-3/4", "h-3/5", "h-full", "h-2/3"} {
-					var templ_7745c5c3_Var6 = []any{"flex-1 rounded-t bg-accent", h}
+				for _, header := range []string{"h-1/3", "h-1/2", "h-2/5", "h-3/4", "h-3/5", "h-full", "h-2/3"} {
+					var templ_7745c5c3_Var6 = []any{"flex-1 rounded-t bg-accent", header}
 					templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var6...)
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
@@ -179,7 +179,7 @@ func DashboardPage(d DashboardData) templ.Component {
 					}()
 				}
 				ctx = templ.InitializeContext(ctx)
-				templ_7745c5c3_Err = uikit.CardHeader(i18n.T(ctx, "pages.dashboard.sections.activity.title"), i18n.T(ctx, "pages.dashboard.sections.activity.description")).Render(ctx, templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = uikit.CardHeader(i18n.Translate(ctx, "pages.dashboard.sections.activity.title"), i18n.Translate(ctx, "pages.dashboard.sections.activity.description")).Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -187,12 +187,12 @@ func DashboardPage(d DashboardData) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				for _, w := range []string{"w-3/4", "w-1/2", "w-2/3"} {
+				for _, word := range []string{"w-3/4", "w-1/2", "w-2/3"} {
 					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<li class=\"flex items-center gap-3\"><span class=\"size-2 shrink-0 rounded-full bg-primary\"></span> ")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					var templ_7745c5c3_Var9 = []any{"h-3 rounded-full bg-muted", w}
+					var templ_7745c5c3_Var9 = []any{"h-3 rounded-full bg-muted", word}
 					templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var9...)
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
@@ -237,7 +237,7 @@ func DashboardPage(d DashboardData) templ.Component {
 					}()
 				}
 				ctx = templ.InitializeContext(ctx)
-				templ_7745c5c3_Err = uikit.CardHeader(i18n.T(ctx, "pages.dashboard.sections.settings.title"), i18n.T(ctx, "pages.dashboard.sections.settings.description")).Render(ctx, templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = uikit.CardHeader(i18n.Translate(ctx, "pages.dashboard.sections.settings.title"), i18n.Translate(ctx, "pages.dashboard.sections.settings.description")).Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -289,7 +289,7 @@ func DashboardPage(d DashboardData) templ.Component {
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = view.SectionLayout(i18n.T(ctx, "pages.dashboard.title"), view.SectionDashboard).Render(templ.WithChildren(ctx, templ_7745c5c3_Var2), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = view.SectionLayout(i18n.Translate(ctx, "pages.dashboard.title"), view.SectionDashboard).Render(templ.WithChildren(ctx, templ_7745c5c3_Var2), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -299,7 +299,7 @@ func DashboardPage(d DashboardData) templ.Component {
 
 // AccountCard is the signed-in user at a glance; the settings save and the
 // live stream patch it in place.
-func AccountCard(u User) templ.Component {
+func AccountCard(user User) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -344,13 +344,13 @@ func AccountCard(u User) templ.Component {
 					}()
 				}
 				ctx = templ.InitializeContext(ctx)
-				templ_7745c5c3_Err = uikit.Badge(uikit.Success, i18n.T(ctx, "pages.dashboard.subscriptionActive"), true).Render(ctx, templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = uikit.Badge(uikit.Success, i18n.Translate(ctx, "pages.dashboard.subscriptionActive"), true).Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				return nil
 			})
-			templ_7745c5c3_Err = uikit.CardHeader(i18n.T(ctx, "pages.dashboard.account"), "").Render(templ.WithChildren(ctx, templ_7745c5c3_Var16), templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = uikit.CardHeader(i18n.Translate(ctx, "pages.dashboard.account"), "").Render(templ.WithChildren(ctx, templ_7745c5c3_Var16), templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -358,7 +358,7 @@ func AccountCard(u User) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = view.Avatar(u.Name, deref(u.Image), "size-11 text-sm").Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = view.Avatar(user.Name, deref(user.Image), "size-11 text-sm").Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -367,9 +367,9 @@ func AccountCard(u User) templ.Component {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var17 string
-			templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(orDash(u.Name))
+			templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(orDash(user.Name))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_dashboard.templ`, Line: 86, Col: 79}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_dashboard.templ`, Line: 86, Col: 82}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 			if templ_7745c5c3_Err != nil {
@@ -380,9 +380,9 @@ func AccountCard(u User) templ.Component {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var18 string
-			templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs(orDash(u.Email))
+			templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs(orDash(user.Email))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_dashboard.templ`, Line: 87, Col: 99}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_dashboard.templ`, Line: 87, Col: 102}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
 			if templ_7745c5c3_Err != nil {
@@ -393,9 +393,9 @@ func AccountCard(u User) templ.Component {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var19 string
-			templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "pages.dashboard.memberSince"))
+			templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.Translate(ctx, "pages.dashboard.memberSince"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_dashboard.templ`, Line: 91, Col: 81}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_dashboard.templ`, Line: 91, Col: 89}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
 			if templ_7745c5c3_Err != nil {
@@ -406,9 +406,9 @@ func AccountCard(u User) templ.Component {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var20 string
-			templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinStringErrs(memberSince(ctx, u.CreatedAt))
+			templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinStringErrs(memberSince(ctx, user.CreatedAt))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_dashboard.templ`, Line: 92, Col: 58}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_dashboard.templ`, Line: 92, Col: 61}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
 			if templ_7745c5c3_Err != nil {
@@ -461,7 +461,7 @@ func quickActions() templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = uikit.CardHeader(i18n.T(ctx, "pages.dashboard.quickActions.title"), "").Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = uikit.CardHeader(i18n.Translate(ctx, "pages.dashboard.quickActions.title"), "").Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -487,7 +487,7 @@ func quickActions() templ.Component {
 				}
 				return nil
 			})
-			templ_7745c5c3_Err = quickAction(config.AppRoutes.Account, i18n.T(ctx, "pages.dashboard.quickActions.settings")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var23), templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = quickAction(config.AppRoutes.Account, i18n.Translate(ctx, "pages.dashboard.quickActions.settings")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var23), templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -513,7 +513,7 @@ func quickActions() templ.Component {
 				}
 				return nil
 			})
-			templ_7745c5c3_Err = quickAction(config.AppRoutes.Account+"#"+profileCardID, i18n.T(ctx, "pages.dashboard.quickActions.profile")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var24), templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = quickAction(config.AppRoutes.Account+"#"+profileCardID, i18n.Translate(ctx, "pages.dashboard.quickActions.profile")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var24), templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -630,7 +630,7 @@ func LiveCard(tab string) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = uikit.CardHeader(i18n.T(ctx, "pages.dashboard.live.title"), i18n.T(ctx, "pages.dashboard.live.description")).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = uikit.CardHeader(i18n.Translate(ctx, "pages.dashboard.live.title"), i18n.Translate(ctx, "pages.dashboard.live.description")).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -722,9 +722,9 @@ func LiveBody(now time.Time, session apiclient.CallerSession) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var34 string
-		templ_7745c5c3_Var34, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "pages.dashboard.live.connected"))
+		templ_7745c5c3_Var34, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.Translate(ctx, "pages.dashboard.live.connected"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_dashboard.templ`, Line: 149, Col: 50}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_dashboard.templ`, Line: 149, Col: 58}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var34))
 		if templ_7745c5c3_Err != nil {
@@ -735,9 +735,9 @@ func LiveBody(now time.Time, session apiclient.CallerSession) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var35 string
-		templ_7745c5c3_Var35, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "pages.dashboard.live.serverTime"))
+		templ_7745c5c3_Var35, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.Translate(ctx, "pages.dashboard.live.serverTime"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_dashboard.templ`, Line: 153, Col: 86}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_dashboard.templ`, Line: 153, Col: 94}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var35))
 		if templ_7745c5c3_Err != nil {
@@ -766,9 +766,9 @@ func LiveBody(now time.Time, session apiclient.CallerSession) templ.Component {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var37 string
-			templ_7745c5c3_Var37, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "pages.dashboard.live.sessionExpires"))
+			templ_7745c5c3_Var37, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.Translate(ctx, "pages.dashboard.live.sessionExpires"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_dashboard.templ`, Line: 158, Col: 91}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_dashboard.templ`, Line: 158, Col: 99}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var37))
 			if templ_7745c5c3_Err != nil {
@@ -822,7 +822,7 @@ func LiveNotice() templ.Component {
 			templ_7745c5c3_Var39 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = uikit.Alert(liveNoticeID, uikit.Info, i18n.T(ctx, "pages.dashboard.live.updatedElsewhere")).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = uikit.Alert(liveNoticeID, uikit.Info, i18n.Translate(ctx, "pages.dashboard.live.updatedElsewhere")).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -895,9 +895,9 @@ func HomePage() templ.Component {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var44 string
-			templ_7745c5c3_Var44, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "pages.home.title"))
+			templ_7745c5c3_Var44, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.Translate(ctx, "pages.home.title"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_dashboard.templ`, Line: 177, Col: 117}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_dashboard.templ`, Line: 177, Col: 125}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var44))
 			if templ_7745c5c3_Err != nil {
@@ -908,9 +908,9 @@ func HomePage() templ.Component {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var45 string
-			templ_7745c5c3_Var45, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "pages.home.body"))
+			templ_7745c5c3_Var45, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.Translate(ctx, "pages.home.body"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_dashboard.templ`, Line: 178, Col: 112}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_dashboard.templ`, Line: 178, Col: 120}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var45))
 			if templ_7745c5c3_Err != nil {
@@ -933,9 +933,9 @@ func HomePage() templ.Component {
 				}
 				ctx = templ.InitializeContext(ctx)
 				var templ_7745c5c3_Var47 string
-				templ_7745c5c3_Var47, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "pages.home.signUp"))
+				templ_7745c5c3_Var47, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.Translate(ctx, "pages.home.signUp"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_dashboard.templ`, Line: 181, Col: 40}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_dashboard.templ`, Line: 181, Col: 48}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var47))
 				if templ_7745c5c3_Err != nil {
@@ -960,9 +960,9 @@ func HomePage() templ.Component {
 				}
 				ctx = templ.InitializeContext(ctx)
 				var templ_7745c5c3_Var49 string
-				templ_7745c5c3_Var49, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "pages.home.signIn"))
+				templ_7745c5c3_Var49, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.Translate(ctx, "pages.home.signIn"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_dashboard.templ`, Line: 184, Col: 40}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_dashboard.templ`, Line: 184, Col: 48}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var49))
 				if templ_7745c5c3_Err != nil {

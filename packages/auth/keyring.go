@@ -58,11 +58,11 @@ type dataKeys struct {
 }
 
 // accepted returns the keys a signature may verify with at now, current first.
-func (r *keyring) accepted(now time.Time) []signingKey {
-	out := []signingKey{r.current}
-	for _, k := range r.previous {
-		if now.Before(k.until) {
-			out = append(out, k)
+func (keyring *keyring) accepted(now time.Time) []signingKey {
+	out := []signingKey{keyring.current}
+	for _, key := range keyring.previous {
+		if now.Before(key.until) {
+			out = append(out, key)
 		}
 	}
 	return out
@@ -74,31 +74,31 @@ func kidOf(secret []byte) string {
 }
 
 func hmacSum(key []byte, value string) []byte {
-	m := hmac.New(sha256.New, key)
-	m.Write([]byte(value))
-	return m.Sum(nil)
+	mac := hmac.New(sha256.New, key)
+	mac.Write([]byte(value))
+	return mac.Sum(nil)
 }
 
 // mac signs value with the current secret.
-func (a *Auth) mac(value string) []byte { return hmacSum(a.ring.Load().current.secret, value) }
+func (auth *Auth) mac(value string) []byte { return hmacSum(auth.ring.Load().current.secret, value) }
 
 // checkMAC reports whether sig is value's MAC under an accepted secret, and
 // whether that secret is the current one.
-func (a *Auth) checkMAC(value string, sig []byte) (ok, current bool) {
-	for i, k := range a.ring.Load().accepted(a.now()) {
-		if hmac.Equal(sig, hmacSum(k.secret, value)) {
-			return true, i == 0
+func (auth *Auth) checkMAC(value string, sig []byte) (ok, current bool) {
+	for index, key := range auth.ring.Load().accepted(auth.now()) {
+		if hmac.Equal(sig, hmacSum(key.secret, value)) {
+			return true, index == 0
 		}
 	}
 	return false, false
 }
 
 // dataKey returns the key protecting purpose's data at rest.
-func (a *Auth) dataKey(purpose string) []byte {
+func (auth *Auth) dataKey(purpose string) []byte {
 	if purpose == purposeBackup {
-		return a.data.Load().backup
+		return auth.data.Load().backup
 	}
-	return a.data.Load().totp
+	return auth.data.Load().totp
 }
 
 // legacyDataKey is how data keys were derived before "authKey" existed.
@@ -122,32 +122,32 @@ type Secrets struct {
 // The key state is stored in one transaction. If that fails, the new keyring
 // still takes effect in this process (a revoke must never wait on the
 // database) and the error is returned so the caller retries.
-func (a *Auth) SetSecrets(ctx context.Context, s Secrets) error {
-	if err := validateSecrets(s); err != nil {
+func (auth *Auth) SetSecrets(ctx context.Context, secrets Secrets) error {
+	if err := validateSecrets(secrets); err != nil {
 		return err
 	}
-	if err := a.syncKeys(ctx, s); err != nil {
+	if err := auth.syncKeys(ctx, secrets); err != nil {
 		return err
 	}
-	r := a.ring.Load()
-	a.log.Info("auth: secrets updated", "current_kid", r.current.kid, "accepted_previous", len(r.accepted(a.now()))-1, "revoked", len(s.Revoked), "grace", a.cfg.SecretGrace)
+	keyring := auth.ring.Load()
+	auth.log.Info("auth: secrets updated", "current_kid", keyring.current.kid, "accepted_previous", len(keyring.accepted(auth.now()))-1, "revoked", len(secrets.Revoked), "grace", auth.cfg.SecretGrace)
 	return nil
 }
 
 const minSecretLength = 32 // bytes, for every current, previous and revoked secret
 
-func validateSecrets(s Secrets) error {
-	if len(s.Current) < minSecretLength {
+func validateSecrets(secrets Secrets) error {
+	if len(secrets.Current) < minSecretLength {
 		return errors.New("auth: Secret must be at least 32 bytes")
 	}
-	for i, p := range s.Previous {
-		if len(p) < minSecretLength {
-			return fmt.Errorf("auth: PreviousSecrets[%d] must be at least 32 bytes", i)
+	for index, path := range secrets.Previous {
+		if len(path) < minSecretLength {
+			return fmt.Errorf("auth: PreviousSecrets[%d] must be at least 32 bytes", index)
 		}
 	}
-	for i, p := range s.Revoked {
-		if len(p) < minSecretLength {
-			return fmt.Errorf("auth: RevokedSecrets[%d] must be at least 32 bytes", i)
+	for index, path := range secrets.Revoked {
+		if len(path) < minSecretLength {
+			return fmt.Errorf("auth: RevokedSecrets[%d] must be at least 32 bytes", index)
 		}
 	}
 	return nil
@@ -160,59 +160,59 @@ type plan struct {
 	unlistedKid string       // the replaced current secret when nothing lists it
 }
 
-func (a *Auth) planKeys(s Secrets, now time.Time) plan {
+func (auth *Auth) planKeys(secrets Secrets, now time.Time) plan {
 	key := func(secret string) signingKey { return signingKey{secret: []byte(secret), kid: kidOf([]byte(secret))} }
-	p := plan{ring: &keyring{current: key(s.Current)}}
-	seen := map[string]bool{p.ring.current.kid: true}
-	for _, r := range s.Revoked { // revoked wins over previous
-		if k := key(r); !seen[k.kid] {
-			seen[k.kid] = true
-			p.revoked = append(p.revoked, k)
+	rotation := plan{ring: &keyring{current: key(secrets.Current)}}
+	seen := map[string]bool{rotation.ring.current.kid: true}
+	for _, raw := range secrets.Revoked { // revoked wins over previous
+		if signingKey := key(raw); !seen[signingKey.kid] {
+			seen[signingKey.kid] = true
+			rotation.revoked = append(rotation.revoked, signingKey)
 		}
 	}
-	for _, prev := range s.Previous {
-		if k := key(prev); !seen[k.kid] {
-			seen[k.kid] = true
-			k.until = now.Add(a.cfg.SecretGrace) // provisional; persistKeys replaces it with the stored window
-			p.ring.previous = append(p.ring.previous, k)
+	for _, prev := range secrets.Previous {
+		if signingKey := key(prev); !seen[signingKey.kid] {
+			seen[signingKey.kid] = true
+			signingKey.until = now.Add(auth.cfg.SecretGrace) // provisional; persistKeys replaces it with the stored window
+			rotation.ring.previous = append(rotation.ring.previous, signingKey)
 		}
 	}
-	if old := a.ring.Load(); old != nil && !seen[old.current.kid] {
-		p.unlistedKid = old.current.kid
-		p.revoked = append(p.revoked, old.current)
+	if old := auth.ring.Load(); old != nil && !seen[old.current.kid] {
+		rotation.unlistedKid = old.current.kid
+		rotation.revoked = append(rotation.revoked, old.current)
 	}
-	return p
+	return rotation
 }
 
 // syncKeys stores the key state, loads the data keys and publishes both.
-func (a *Auth) syncKeys(ctx context.Context, s Secrets) error {
-	a.keysMu.Lock()
-	defer a.keysMu.Unlock()
-	now := a.now()
-	p := a.planKeys(s, now)
-	if p.unlistedKid != "" {
-		a.log.Warn("auth: AUTH_SECRET changed and AUTH_SECRET_PREVIOUS does not list the old value: everything it signed is rejected now (users sign in again)",
-			"revoked_kid", p.unlistedKid)
+func (auth *Auth) syncKeys(ctx context.Context, secrets Secrets) error {
+	auth.keysMu.Lock()
+	defer auth.keysMu.Unlock()
+	now := auth.now()
+	plan := auth.planKeys(secrets, now)
+	if plan.unlistedKid != "" {
+		auth.log.Warn("auth: AUTH_SECRET changed and AUTH_SECRET_PREVIOUS does not list the old value: everything it signed is rejected now (users sign in again)",
+			"revoked_kid", plan.unlistedKid)
 	}
-	data, err := a.persistKeys(ctx, p, now)
+	data, err := auth.persistKeys(ctx, plan, now)
 	if err != nil {
-		if a.ring.Load() != nil { // running: apply in memory anyway; the data keys in memory stay valid
-			a.ring.Store(p.ring)
+		if auth.ring.Load() != nil { // running: apply in memory anyway; the data keys in memory stay valid
+			auth.ring.Store(plan.ring)
 		}
 		return err
 	}
-	a.ring.Store(p.ring)
-	a.data.Store(data)
+	auth.ring.Store(plan.ring)
+	auth.data.Store(data)
 	return nil
 }
 
-func (a *Auth) persistKeys(ctx context.Context, p plan, now time.Time) (*dataKeys, error) {
-	tx, err := a.store.pool.Begin(ctx)
+func (auth *Auth) persistKeys(ctx context.Context, plan plan, now time.Time) (*dataKeys, error) {
+	tx, err := auth.store.pool.Begin(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("auth: store key state: %w", err)
 	}
 	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
-	expired := now.Add(-a.cfg.SecretGrace - time.Second)
+	expired := now.Add(-auth.cfg.SecretGrace - time.Second)
 
 	// Current: promoting a secret still inside its window (pre-staged, or a
 	// rollback) clears its retirement; an expired or revoked one stays so.
@@ -220,30 +220,30 @@ func (a *Auth) persistKeys(ctx context.Context, p plan, now time.Time) (*dataKey
 		INSERT INTO "authKey" ("id", "createdAt", "updatedAt") VALUES ($1, $2, $2)
 		ON CONFLICT ("id") DO UPDATE SET "updatedAt" = $2,
 			"retiredAt" = CASE WHEN "authKey"."retiredAt" > $3 THEN NULL ELSE "authKey"."retiredAt" END`,
-		"secret:"+p.ring.current.kid, now, expired); err != nil {
+		"secret:"+plan.ring.current.kid, now, expired); err != nil {
 		return nil, fmt.Errorf("auth: record current secret: %w", err)
 	}
-	for i := range p.ring.previous {
-		k := &p.ring.previous[i]
+	for index := range plan.ring.previous {
+		key := &plan.ring.previous[index]
 		var retired time.Time
 		if err := tx.QueryRow(ctx, `
 			INSERT INTO "authKey" ("id", "retiredAt", "createdAt", "updatedAt") VALUES ($1, $2, $2, $2)
 			ON CONFLICT ("id") DO UPDATE SET "retiredAt" = COALESCE("authKey"."retiredAt", EXCLUDED."retiredAt"), "updatedAt" = EXCLUDED."updatedAt"
-			RETURNING "retiredAt"`, "secret:"+k.kid, now).Scan(&retired); err != nil {
+			RETURNING "retiredAt"`, "secret:"+key.kid, now).Scan(&retired); err != nil {
 			return nil, fmt.Errorf("auth: record previous secret: %w", err)
 		}
-		k.until = retired.Add(a.cfg.SecretGrace)
+		key.until = retired.Add(auth.cfg.SecretGrace)
 	}
-	for _, k := range p.revoked {
+	for _, key := range plan.revoked {
 		if _, err := tx.Exec(ctx, `
 			INSERT INTO "authKey" ("id", "retiredAt", "createdAt", "updatedAt") VALUES ($1, $2, $3, $3)
 			ON CONFLICT ("id") DO UPDATE SET "retiredAt" = LEAST(COALESCE("authKey"."retiredAt", EXCLUDED."retiredAt"), EXCLUDED."retiredAt"), "updatedAt" = $3`,
-			"secret:"+k.kid, expired, now); err != nil {
+			"secret:"+key.kid, expired, now); err != nil {
 			return nil, fmt.Errorf("auth: record revoked secret: %w", err)
 		}
 	}
 
-	data, err := a.loadDataKeys(ctx, tx, p)
+	data, err := auth.loadDataKeys(ctx, tx, plan)
 	if err != nil {
 		return nil, err
 	}
@@ -253,47 +253,47 @@ func (a *Auth) persistKeys(ctx context.Context, p plan, now time.Time) (*dataKey
 	return data, nil
 }
 
-func (a *Auth) loadDataKeys(ctx context.Context, q querier, p plan) (*dataKeys, error) {
-	ring := p.ring
+func (auth *Auth) loadDataKeys(ctx context.Context, querier querier, plan plan) (*dataKeys, error) {
+	ring := plan.ring
 	var initial []byte // secret the first data keys derive from, looked up once
 	keys, wrappedBy := map[string][]byte{}, map[string]string{}
 	for _, purpose := range []string{purposeTOTP, purposeBackup} {
-		id := "data:" + a.cfg.CookiePrefix + ":" + purpose
-		kid, wrapped, err := readDataKey(ctx, q, id)
+		id := "data:" + auth.cfg.CookiePrefix + ":" + purpose
+		kid, wrapped, err := readDataKey(ctx, querier, id)
 		if errors.Is(err, pgx.ErrNoRows) {
 			if initial == nil {
-				if initial, err = a.initialSecret(ctx, q, p); err != nil {
+				if initial, err = auth.initialSecret(ctx, querier, plan); err != nil {
 					return nil, err
 				}
 			}
 			// Derived, not random: replicas still on the previous release
 			// seal new 2FA rows with exactly this key during a rolling deploy.
-			w, werr := wrapKey(ring.current.secret, id, legacyDataKey(initial, purpose))
+			key, werr := wrapKey(ring.current.secret, id, legacyDataKey(initial, purpose))
 			if werr != nil {
 				return nil, werr
 			}
-			if _, werr := q.Exec(ctx, `
+			if _, werr := querier.Exec(ctx, `
 				INSERT INTO "authKey" ("id", "kid", "wrapped", "createdAt", "updatedAt") VALUES ($1, $2, $3, now(), now())
-				ON CONFLICT ("id") DO NOTHING`, id, ring.current.kid, w); werr != nil {
+				ON CONFLICT ("id") DO NOTHING`, id, ring.current.kid, key); werr != nil {
 				return nil, fmt.Errorf("auth: store data key: %w", werr)
 			}
-			kid, wrapped, err = readDataKey(ctx, q, id) // another replica may have won the insert
+			kid, wrapped, err = readDataKey(ctx, querier, id) // another replica may have won the insert
 		}
 		if err != nil {
 			return nil, fmt.Errorf("auth: read data key: %w", err)
 		}
-		key, err := a.unwrapDataKey(p, purpose, id, kid, wrapped)
+		key, err := auth.unwrapDataKey(plan, purpose, id, kid, wrapped)
 		if err != nil {
 			return nil, err
 		}
 		if kid != ring.current.kid { // wrapped by an older secret: move it to the current one
-			w, err := wrapKey(ring.current.secret, id, key)
+			word, err := wrapKey(ring.current.secret, id, key)
 			if err != nil {
 				return nil, err
 			}
-			if _, err := q.Exec(ctx, `
+			if _, err := querier.Exec(ctx, `
 				UPDATE "authKey" SET "kid" = $2, "wrapped" = $3, "updatedAt" = now() WHERE "id" = $1 AND "kid" = $4`,
-				id, ring.current.kid, w, kid); err != nil {
+				id, ring.current.kid, word, kid); err != nil {
 				return nil, fmt.Errorf("auth: rewrap data key: %w", err)
 			}
 		}
@@ -306,63 +306,63 @@ func (a *Auth) loadDataKeys(ctx context.Context, q querier, p plan) (*dataKeys, 
 // previous (expired or not) or revoked. A running process still holds the
 // key it loaded last time (whatever secret wrapped it then), so an emergency
 // rotation keeps 2FA working even before AUTH_SECRET_REVOKED is set.
-func (a *Auth) unwrapDataKey(p plan, purpose, id, kid, wrapped string) ([]byte, error) {
-	for _, k := range slices.Concat([]signingKey{p.ring.current}, p.ring.previous, p.revoked) {
-		if k.kid == kid {
-			return unwrapKey(k.secret, id, wrapped)
+func (auth *Auth) unwrapDataKey(plan plan, purpose, id, kid, wrapped string) ([]byte, error) {
+	for _, key := range slices.Concat([]signingKey{plan.ring.current}, plan.ring.previous, plan.revoked) {
+		if key.kid == kid {
+			return unwrapKey(key.secret, id, wrapped)
 		}
 	}
-	if loaded := a.data.Load(); loaded != nil && loaded.wrappedBy[purpose] == kid {
-		return a.dataKey(purpose), nil
+	if loaded := auth.data.Load(); loaded != nil && loaded.wrappedBy[purpose] == kid {
+		return auth.dataKey(purpose), nil
 	}
 	return nil, fmt.Errorf("auth: the %s key is wrapped by a secret this process doesn't have (kid %s): list it in AUTH_SECRET_PREVIOUS, or in AUTH_SECRET_REVOKED if it leaked", purpose, kid)
 }
 
-func readDataKey(ctx context.Context, q querier, id string) (kid, wrapped string, err error) {
-	var k, w *string
-	err = q.QueryRow(ctx, `SELECT "kid", "wrapped" FROM "authKey" WHERE "id" = $1`, id).Scan(&k, &w)
-	if err == nil && (k == nil || w == nil) {
+func readDataKey(ctx context.Context, querier querier, id string) (kid, wrapped string, err error) {
+	var key, word *string
+	err = querier.QueryRow(ctx, `SELECT "kid", "wrapped" FROM "authKey" WHERE "id" = $1`, id).Scan(&key, &word)
+	if err == nil && (key == nil || word == nil) {
 		err = fmt.Errorf("auth: data key %s is incomplete", id)
 	}
 	if err != nil {
 		return "", "", err
 	}
-	return *k, *w, nil
+	return *key, *word, nil
 }
 
 // initialSecret picks the secret the first data keys derive from: the one
 // that sealed most of a sample of existing 2FA rows (written before "authKey"
 // existed), preferring the current secret; the current one when there are none.
-func (a *Auth) initialSecret(ctx context.Context, q querier, p plan) ([]byte, error) {
-	rows, err := q.Query(ctx, `SELECT "userId", "secret" FROM "twoFactor" ORDER BY "createdAt" DESC LIMIT 100`)
+func (auth *Auth) initialSecret(ctx context.Context, querier querier, plan plan) ([]byte, error) {
+	rows, err := querier.Query(ctx, `SELECT "userId", "secret" FROM "twoFactor" ORDER BY "createdAt" DESC LIMIT 100`)
 	if err != nil {
 		return nil, fmt.Errorf("auth: inspect two-factor rows: %w", err)
 	}
 	type row struct{ userID, sealed string }
-	sample, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (row, error) {
-		var x row
-		return x, r.Scan(&x.userID, &x.sealed)
+	sample, err := pgx.CollectRows(rows, func(collectableRow pgx.CollectableRow) (row, error) {
+		var scanned row
+		return scanned, collectableRow.Scan(&scanned.userID, &scanned.sealed)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("auth: inspect two-factor rows: %w", err)
 	}
 	if len(sample) == 0 {
-		return p.ring.current.secret, nil
+		return plan.ring.current.secret, nil
 	}
-	best, bestN := p.ring.current.secret, 0
-	for _, k := range slices.Concat([]signingKey{p.ring.current}, p.ring.previous, p.revoked) {
-		n := 0
-		for _, r := range sample {
-			if _, err := openSealed(legacyDataKey(k.secret, purposeTOTP), r.userID, r.sealed); err == nil {
-				n++
+	best, bestN := plan.ring.current.secret, 0
+	for _, key := range slices.Concat([]signingKey{plan.ring.current}, plan.ring.previous, plan.revoked) {
+		count := 0
+		for _, row := range sample {
+			if _, err := openSealed(legacyDataKey(key.secret, purposeTOTP), row.userID, row.sealed); err == nil {
+				count++
 			}
 		}
-		if n > bestN {
-			best, bestN = k.secret, n
+		if count > bestN {
+			best, bestN = key.secret, count
 		}
 	}
 	if bestN == 0 {
-		a.log.Warn("auth: existing two-factor secrets decrypt with no configured auth secret; those users must re-enrol")
+		auth.log.Warn("auth: existing two-factor secrets decrypt with no configured auth secret; those users must re-enrol")
 	}
 	return best, nil
 }

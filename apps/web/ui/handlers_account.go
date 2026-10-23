@@ -84,7 +84,7 @@ func (ui *UI) updateProfile(writer http.ResponseWriter, request *http.Request, c
 	}
 	updated := updatedUser.User
 	ui.hub.publish(caller.User.ID, userEvent{User: updated})
-	ui.accountResult(writer, request, caller, "", ProfileCard(updated, Status{Message: i18n.T(ctx, "pages.account.profile.saved")}))
+	ui.accountResult(writer, request, caller, "", ProfileCard(updated, Status{Message: i18n.Translate(ctx, "pages.account.profile.saved")}))
 }
 
 func (ui *UI) requestEmailChange(writer http.ResponseWriter, request *http.Request, caller apiclient.Caller) {
@@ -112,7 +112,7 @@ func (ui *UI) changePassword(writer http.ResponseWriter, request *http.Request, 
 		ui.accountResult(writer, request, caller, msg, StatusAlert(passwordStatusID, Status{Error: msg}))
 	}
 	if in.NewPassword != request.PostFormValue("confirmPassword") {
-		fail(i18n.T(ctx, "pages.account.password.mismatch"))
+		fail(i18n.Translate(ctx, "pages.account.password.mismatch"))
 		return
 	}
 	if err := ui.api.ChangePassword(ctx, in); err != nil {
@@ -128,7 +128,7 @@ func (ui *UI) changePassword(writer http.ResponseWriter, request *http.Request, 
 		ui.hub.publish(caller.User.ID, userEvent{KeepSession: caller.Session.ID})
 	}
 	ui.accountResult(writer, request, caller, "",
-		replaced{PasswordCard(caller.User.Email, Status{Message: i18n.T(ctx, done)})},
+		replaced{PasswordCard(caller.User.Email, Status{Message: i18n.Translate(ctx, done)})},
 		ui.sessionsCard(ctx, caller, Status{}))
 }
 
@@ -153,7 +153,7 @@ func (ui *UI) revokeSession(writer http.ResponseWriter, request *http.Request, c
 		return
 	}
 	ui.hub.publish(caller.User.ID, userEvent{RevokedSession: id})
-	ui.accountResult(writer, request, caller, "", ui.sessionsCard(ctx, caller, Status{Message: i18n.T(ctx, "pages.account.sessions.revoked")}))
+	ui.accountResult(writer, request, caller, "", ui.sessionsCard(ctx, caller, Status{Message: i18n.Translate(ctx, "pages.account.sessions.revoked")}))
 }
 
 func (ui *UI) revokeOtherSessions(writer http.ResponseWriter, request *http.Request, caller apiclient.Caller) {
@@ -167,7 +167,7 @@ func (ui *UI) revokeOtherSessions(writer http.ResponseWriter, request *http.Requ
 		return
 	}
 	ui.hub.publish(caller.User.ID, userEvent{KeepSession: caller.Session.ID})
-	ui.accountResult(writer, request, caller, "", ui.sessionsCard(ctx, caller, Status{Message: i18n.T(ctx, "pages.account.sessions.othersRevoked")}))
+	ui.accountResult(writer, request, caller, "", ui.sessionsCard(ctx, caller, Status{Message: i18n.Translate(ctx, "pages.account.sessions.othersRevoked")}))
 }
 
 func (ui *UI) deleteAccount(writer http.ResponseWriter, request *http.Request, caller apiclient.Caller) {

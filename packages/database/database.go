@@ -46,11 +46,11 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 func RunMigrations(ctx context.Context, pool *pgxpool.Pool, table string, fsys fs.FS) error {
 	db := stdlib.OpenDBFromPool(pool)
 	defer func() { _ = db.Close() }()
-	p, err := goose.NewProvider(goose.DialectPostgres, db, fsys, goose.WithTableName(table))
+	provider, err := goose.NewProvider(goose.DialectPostgres, db, fsys, goose.WithTableName(table))
 	if err != nil {
 		return fmt.Errorf("migrate %s: %w", table, err)
 	}
-	if _, err := p.Up(ctx); err != nil {
+	if _, err := provider.Up(ctx); err != nil {
 		return fmt.Errorf("migrate %s: %w", table, err)
 	}
 	return nil

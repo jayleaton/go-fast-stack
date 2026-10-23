@@ -9,24 +9,24 @@ import (
 	"github.com/jayleaton/go-fast-stack/apps/web/ui/i18n"
 )
 
-func orDash(s string) string {
-	if s == "" {
+func orDash(text string) string {
+	if text == "" {
 		return "—"
 	}
-	return s
+	return text
 }
 
-func memberSince(ctx context.Context, t time.Time) string {
-	if t.IsZero() {
+func memberSince(ctx context.Context, moment time.Time) string {
+	if moment.IsZero() {
 		return "—"
 	}
-	return i18n.From(ctx).Date(t)
+	return i18n.From(ctx).Date(moment)
 }
 
 // jsString encodes s as a JavaScript string literal.
-func jsString(s string) string {
-	b, _ := json.Marshal(s)
-	return string(b)
+func jsString(text string) string {
+	data, _ := json.Marshal(text)
+	return string(data)
 }
 
 func cooldownSignals(seconds int) string {

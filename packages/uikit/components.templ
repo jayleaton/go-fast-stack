@@ -3,27 +3,27 @@ package uikit
 import "strconv"
 
 // Button renders a <button> (type "button" unless p.Type) around children.
-templ Button(p ButtonProps) {
-	<button type={ p.typ("button") } class={ p.class() } { p.Attrs... }>
+templ Button(props ButtonProps) {
+	<button type={ props.typ("button") } class={ props.class() } { props.Attrs... }>
 		{ children... }
 	</button>
 }
 
 // LinkButton is a link that looks like a button.
-templ LinkButton(href string, p ButtonProps) {
-	<a href={ templ.SafeURL(href) } class={ p.class() } { p.Attrs... }>
+templ LinkButton(href string, props ButtonProps) {
+	<a href={ templ.SafeURL(href) } class={ props.class() } { props.Attrs... }>
 		{ children... }
 	</a>
 }
 
 // SubmitButton is a submit button that swaps its label for a spinner and
 // s.Loading while the form's Datastar indicator is on.
-templ SubmitButton(s Submit) {
-	<button type={ s.typ("submit") } class={ s.class() } data-attr:disabled={ "$" + s.Signal } { s.Attrs... }>
-		<span data-show={ "!$" + s.Signal }>{ s.Label }</span>
-		<span class="hidden items-center gap-2" data-class:hidden={ "!$" + s.Signal } data-class:inline-flex={ "$" + s.Signal }>
+templ SubmitButton(submit Submit) {
+	<button type={ submit.typ("submit") } class={ submit.class() } data-attr:disabled={ "$" + submit.Signal } { submit.Attrs... }>
+		<span data-show={ "!$" + submit.Signal }>{ submit.Label }</span>
+		<span class="hidden items-center gap-2" data-class:hidden={ "!$" + submit.Signal } data-class:inline-flex={ "$" + submit.Signal }>
 			@Spinner("size-4")
-			{ s.Loading }
+			{ submit.Loading }
 		</span>
 	</button>
 }
@@ -37,129 +37,129 @@ templ Spinner(class string) {
 }
 
 // Input renders a labelled input with its hint and error.
-templ Input(f Field) {
+templ Input(field Field) {
 	<div>
-		<label for={ f.ID } class={ LabelClass }>{ f.Label }</label>
+		<label for={ field.ID } class={ LabelClass }>{ field.Label }</label>
 		<input
-			id={ f.ID }
-			name={ f.name() }
-			type={ f.typ() }
-			if f.Autocomplete != "" {
-				autocomplete={ f.Autocomplete }
+			id={ field.ID }
+			name={ field.name() }
+			type={ field.typ() }
+			if field.Autocomplete != "" {
+				autocomplete={ field.Autocomplete }
 			}
-			if !f.Optional {
+			if !field.Optional {
 				required
 			}
-			if f.ReadOnly {
+			if field.ReadOnly {
 				readonly
 			}
-			if f.Inputmode != "" {
-				inputmode={ f.Inputmode }
+			if field.Inputmode != "" {
+				inputmode={ field.Inputmode }
 			}
-			if f.MinLength > 0 {
-				minlength={ strconv.Itoa(f.MinLength) }
+			if field.MinLength > 0 {
+				minlength={ strconv.Itoa(field.MinLength) }
 			}
-			if f.MaxLength > 0 {
-				maxlength={ strconv.Itoa(f.MaxLength) }
+			if field.MaxLength > 0 {
+				maxlength={ strconv.Itoa(field.MaxLength) }
 			}
-			if f.Placeholder != "" {
-				placeholder={ f.Placeholder }
+			if field.Placeholder != "" {
+				placeholder={ field.Placeholder }
 			}
-			if f.describedBy() != "" {
-				aria-describedby={ f.describedBy() }
+			if field.describedBy() != "" {
+				aria-describedby={ field.describedBy() }
 			}
-			if f.Error != "" {
+			if field.Error != "" {
 				aria-invalid="true"
 			}
-			value={ f.Value }
+			value={ field.Value }
 			class={ InputClass, "mt-1.5 h-10" }
-			{ f.Attrs... }
+			{ field.Attrs... }
 		/>
-		@fieldNotes(f)
+		@fieldNotes(field)
 	</div>
 }
 
 // Textarea is Input as a <textarea>.
-templ Textarea(f Field) {
+templ Textarea(field Field) {
 	<div>
-		<label for={ f.ID } class={ LabelClass }>{ f.Label }</label>
+		<label for={ field.ID } class={ LabelClass }>{ field.Label }</label>
 		<textarea
-			id={ f.ID }
-			name={ f.name() }
-			rows={ strconv.Itoa(max(f.Rows, 3)) }
-			if !f.Optional {
+			id={ field.ID }
+			name={ field.name() }
+			rows={ strconv.Itoa(max(field.Rows, 3)) }
+			if !field.Optional {
 				required
 			}
-			if f.MaxLength > 0 {
-				maxlength={ strconv.Itoa(f.MaxLength) }
+			if field.MaxLength > 0 {
+				maxlength={ strconv.Itoa(field.MaxLength) }
 			}
-			if f.Placeholder != "" {
-				placeholder={ f.Placeholder }
+			if field.Placeholder != "" {
+				placeholder={ field.Placeholder }
 			}
-			if f.describedBy() != "" {
-				aria-describedby={ f.describedBy() }
+			if field.describedBy() != "" {
+				aria-describedby={ field.describedBy() }
 			}
-			if f.Error != "" {
+			if field.Error != "" {
 				aria-invalid="true"
 			}
 			class={ InputClass, "mt-1.5" }
-			{ f.Attrs... }
-		>{ f.Value }</textarea>
-		@fieldNotes(f)
+			{ field.Attrs... }
+		>{ field.Value }</textarea>
+		@fieldNotes(field)
 	</div>
 }
 
-templ fieldNotes(f Field) {
-	if f.Hint != "" {
-		<p id={ f.ID + "-hint" } class={ HintClass }>{ f.Hint }</p>
+templ fieldNotes(field Field) {
+	if field.Hint != "" {
+		<p id={ field.ID + "-hint" } class={ HintClass }>{ field.Hint }</p>
 	}
-	if f.Error != "" {
-		<p id={ f.ID + "-error" } class="mt-1.5 text-xs font-medium text-danger-soft-foreground">{ f.Error }</p>
+	if field.Error != "" {
+		<p id={ field.ID + "-error" } class="mt-1.5 text-xs font-medium text-danger-soft-foreground">{ field.Error }</p>
 	}
 }
 
 // Select renders a labelled <select>.
-templ Select(s SelectField) {
+templ Select(field SelectField) {
 	<div>
-		<label for={ s.ID } class={ LabelClass }>{ s.Label }</label>
+		<label for={ field.ID } class={ LabelClass }>{ field.Label }</label>
 		<select
-			id={ s.ID }
-			name={ s.ID }
-			if s.Hint != "" {
-				aria-describedby={ s.ID + "-hint" }
+			id={ field.ID }
+			name={ field.ID }
+			if field.Hint != "" {
+				aria-describedby={ field.ID + "-hint" }
 			}
 			class={ InputClass, "mt-1.5 h-10 pr-8" }
-			{ s.Attrs... }
+			{ field.Attrs... }
 		>
-			for _, o := range s.Options {
-				<option value={ o.Value } selected?={ o.Value == s.Selected }>{ o.Label }</option>
+			for _, option := range field.Options {
+				<option value={ option.Value } selected?={ option.Value == field.Selected }>{ option.Label }</option>
 			}
 		</select>
-		if s.Hint != "" {
-			<p id={ s.ID + "-hint" } class={ HintClass }>{ s.Hint }</p>
+		if field.Hint != "" {
+			<p id={ field.ID + "-hint" } class={ HintClass }>{ field.Hint }</p>
 		}
 	</div>
 }
 
 // CheckboxField renders a checkbox with its label to the right.
-templ CheckboxField(c Checkbox) {
+templ CheckboxField(checkbox Checkbox) {
 	<div class="flex items-start gap-3">
 		<input
 			type="checkbox"
-			id={ c.ID }
-			name={ c.Name }
-			value={ c.Value }
-			checked?={ c.Checked }
-			if c.Hint != "" {
-				aria-describedby={ c.ID + "-hint" }
+			id={ checkbox.ID }
+			name={ checkbox.Name }
+			value={ checkbox.Value }
+			checked?={ checkbox.Checked }
+			if checkbox.Hint != "" {
+				aria-describedby={ checkbox.ID + "-hint" }
 			}
 			class={ CheckboxClass, "mt-0.5" }
-			{ c.Attrs... }
+			{ checkbox.Attrs... }
 		/>
 		<div>
-			<label for={ c.ID } class="text-sm font-medium text-foreground">{ c.Label }</label>
-			if c.Hint != "" {
-				<p id={ c.ID + "-hint" } class="text-xs text-muted-foreground">{ c.Hint }</p>
+			<label for={ checkbox.ID } class="text-sm font-medium text-foreground">{ checkbox.Label }</label>
+			if checkbox.Hint != "" {
+				<p id={ checkbox.ID + "-hint" } class="text-xs text-muted-foreground">{ checkbox.Hint }</p>
 			}
 		</div>
 	</div>
@@ -213,8 +213,8 @@ templ ToastRegion(id string) {
 	</div>
 }
 
-templ toneIcon(t Tone, class string) {
-	switch t {
+templ toneIcon(tone Tone, class string) {
+	switch tone {
 		case Success:
 			<svg class={ class } viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm3.86-9.86a.75.75 0 0 0-1.22-.88l-3.24 4.5-1.8-1.8a.75.75 0 1 0-1.06 1.06l2.42 2.42a.75.75 0 0 0 1.14-.09l3.76-5.21Z" clip-rule="evenodd"></path></svg>
 		case Error, Warning:
@@ -331,49 +331,49 @@ templ PageSkeleton() {
 
 // ConfirmForm is a post form whose trigger asks first in a modal dialog.
 // children are the form's hidden inputs; label is the trigger's content.
-templ ConfirmForm(c Confirm, label string) {
+templ ConfirmForm(confirm Confirm, label string) {
 	<form
 		method="post"
-		action={ templ.SafeURL(c.Action) }
-		data-on:submit={ PostForm(c.Action) }
-		{ indicator(c.Signal)... }
+		action={ templ.SafeURL(confirm.Action) }
+		data-on:submit={ PostForm(confirm.Action) }
+		{ indicator(confirm.Signal)... }
 	>
 		{ children... }
 		<button
 			type="submit"
-			class={ c.Trigger.class() }
-			data-on:click__prevent={ openDialog(dialogID(c)) }
+			class={ confirm.Trigger.class() }
+			data-on:click__prevent={ openDialog(dialogID(confirm)) }
 			aria-haspopup="dialog"
-			if c.Signal != "" {
-				data-attr:disabled={ "$" + c.Signal }
+			if confirm.Signal != "" {
+				data-attr:disabled={ "$" + confirm.Signal }
 			}
-			{ c.Trigger.Attrs... }
+			{ confirm.Trigger.Attrs... }
 		>{ label }</button>
 		<dialog
-			id={ dialogID(c) }
-			aria-labelledby={ dialogID(c) + "-title" }
-			aria-describedby={ dialogID(c) + "-message" }
+			id={ dialogID(confirm) }
+			aria-labelledby={ dialogID(confirm) + "-title" }
+			aria-describedby={ dialogID(confirm) + "-message" }
 			class="m-auto w-[min(28rem,calc(100vw-2rem))] rounded-card border border-border bg-surface p-0 text-foreground shadow-popover"
 		>
 			<div class="p-6">
-				<h2 id={ dialogID(c) + "-title" } class="text-base font-semibold">{ c.Title }</h2>
-				<p id={ dialogID(c) + "-message" } class="mt-2 text-sm text-muted-foreground">{ c.Message }</p>
+				<h2 id={ dialogID(confirm) + "-title" } class="text-base font-semibold">{ confirm.Title }</h2>
+				<p id={ dialogID(confirm) + "-message" } class="mt-2 text-sm text-muted-foreground">{ confirm.Message }</p>
 			</div>
 			<div class="flex flex-col-reverse gap-2 border-t border-border bg-muted/50 px-6 py-4 sm:flex-row sm:justify-end">
-				<button type="button" class={ ButtonClass(Secondary, Medium, false) } data-on:click="el.closest('dialog').close()" autofocus>{ c.CancelLabel }</button>
-				<button type="submit" class={ ButtonClass(c.Variant, Medium, false) } data-on:click="el.closest('dialog').close()">{ c.ConfirmLabel }</button>
+				<button type="button" class={ ButtonClass(Secondary, Medium, false) } data-on:click="el.closest('dialog').close()" autofocus>{ confirm.CancelLabel }</button>
+				<button type="submit" class={ ButtonClass(confirm.Variant, Medium, false) } data-on:click="el.closest('dialog').close()">{ confirm.ConfirmLabel }</button>
 			</div>
 		</dialog>
 	</form>
 }
 
 // Pagination renders a Pager.
-templ Pagination(p Pager) {
-	<nav aria-label={ p.Label } class="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm text-muted-foreground">
-		<p data-testid="pager-summary">{ p.Summary }</p>
+templ Pagination(pager Pager) {
+	<nav aria-label={ pager.Label } class="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm text-muted-foreground">
+		<p data-testid="pager-summary">{ pager.Summary }</p>
 		<div class="flex gap-2">
-			@pagerLink(p.PrevURL, p.PrevLabel)
-			@pagerLink(p.NextURL, p.NextLabel)
+			@pagerLink(pager.PrevURL, pager.PrevLabel)
+			@pagerLink(pager.NextURL, pager.NextLabel)
 		</div>
 	</nav>
 }
@@ -389,17 +389,17 @@ templ pagerLink(href, label string) {
 // StatGrid shows figures as tiles.
 templ StatGrid(stats []Stat) {
 	<dl class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-		for _, s := range stats {
+		for _, stat := range stats {
 			<div class={ CardClass, "p-5" }>
-				<dt class="text-sm font-medium text-muted-foreground">{ s.Label }</dt>
+				<dt class="text-sm font-medium text-muted-foreground">{ stat.Label }</dt>
 				<dd
 					class="mt-2 text-3xl font-semibold tracking-tight tabular-nums"
-					if s.TestID != "" {
-						data-testid={ s.TestID }
+					if stat.TestID != "" {
+						data-testid={ stat.TestID }
 					}
-				>{ s.Value }</dd>
-				if s.Hint != "" {
-					<dd class="mt-1 text-xs text-muted-foreground">{ s.Hint }</dd>
+				>{ stat.Value }</dd>
+				if stat.Hint != "" {
+					<dd class="mt-1 text-xs text-muted-foreground">{ stat.Hint }</dd>
 				}
 			</div>
 		}

@@ -62,31 +62,31 @@ func NewResendMailer(apiKey, from string) *ResendMailer {
 }
 
 // SendVerificationEmail sends the "verify your email" email containing url to to.
-func (m *ResendMailer) SendVerificationEmail(ctx context.Context, to, url string) error {
-	return m.send(ctx, to, "Verify your email address", "verification", emailData{Email: to, URL: url})
+func (mailer *ResendMailer) SendVerificationEmail(ctx context.Context, to, url string) error {
+	return mailer.send(ctx, to, "Verify your email address", "verification", emailData{Email: to, URL: url})
 }
 
 // SendPasswordResetEmail sends the "reset your password" email containing url to to.
-func (m *ResendMailer) SendPasswordResetEmail(ctx context.Context, to, url string) error {
-	return m.send(ctx, to, "Reset your password", "password_reset", emailData{Email: to, URL: url})
+func (mailer *ResendMailer) SendPasswordResetEmail(ctx context.Context, to, url string) error {
+	return mailer.send(ctx, to, "Reset your password", "password_reset", emailData{Email: to, URL: url})
 }
 
 // SendSetPasswordEmail sends the "set your password" invitation containing url to to.
-func (m *ResendMailer) SendSetPasswordEmail(ctx context.Context, to, url string) error {
-	return m.send(ctx, to, "Set your password", "set_password", emailData{Email: to, URL: url})
+func (mailer *ResendMailer) SendSetPasswordEmail(ctx context.Context, to, url string) error {
+	return mailer.send(ctx, to, "Set your password", "set_password", emailData{Email: to, URL: url})
 }
 
 // SendEmailChangeNotice tells to that the account's email is being changed to newEmail.
-func (m *ResendMailer) SendEmailChangeNotice(ctx context.Context, to, newEmail string) error {
-	return m.send(ctx, to, "Your email address is being changed", "email_change_notice", emailData{Email: to, NewEmail: newEmail})
+func (mailer *ResendMailer) SendEmailChangeNotice(ctx context.Context, to, newEmail string) error {
+	return mailer.send(ctx, to, "Your email address is being changed", "email_change_notice", emailData{Email: to, NewEmail: newEmail})
 }
 
 // send renders templates/<name>.html and .txt and posts them to Resend.
-func (m *ResendMailer) send(ctx context.Context, to, subject, name string, data emailData) error {
-	if m.APIKey == "" {
+func (mailer *ResendMailer) send(ctx context.Context, to, subject, name string, data emailData) error {
+	if mailer.APIKey == "" {
 		return errors.New("auth: resend mailer: missing API key")
 	}
-	if m.From == "" {
+	if mailer.From == "" {
 		return errors.New("auth: resend mailer: missing from address")
 	}
 
@@ -104,12 +104,12 @@ func (m *ResendMailer) send(ctx context.Context, to, subject, name string, data 
 		Subject string   `json:"subject"`
 		HTML    string   `json:"html"`
 		Text    string   `json:"text"`
-	}{m.From, []string{to}, subject, html.String(), text.String()})
+	}{mailer.From, []string{to}, subject, html.String(), text.String()})
 	if err != nil {
 		return fmt.Errorf("auth: encode resend request: %w", err)
 	}
 
-	endpoint := m.Endpoint
+	endpoint := mailer.Endpoint
 	if endpoint == "" {
 		endpoint = DefaultResendEndpoint
 	}
@@ -117,10 +117,10 @@ func (m *ResendMailer) send(ctx context.Context, to, subject, name string, data 
 	if err != nil {
 		return fmt.Errorf("auth: build resend request: %w", err)
 	}
-	req.Header.Set("Authorization", "Bearer "+m.APIKey)
+	req.Header.Set("Authorization", "Bearer "+mailer.APIKey)
 	req.Header.Set("Content-Type", "application/json")
 
-	client := m.HTTPClient
+	client := mailer.HTTPClient
 	if client == nil {
 		client = &http.Client{Timeout: resendTimeout}
 	}

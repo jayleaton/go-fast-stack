@@ -24,15 +24,15 @@ type Error struct {
 	Fields map[string]string
 }
 
-func (e *Error) Error() string {
-	keys := make([]string, 0, len(e.Fields))
-	for k := range e.Fields {
-		keys = append(keys, k)
+func (err *Error) Error() string {
+	keys := make([]string, 0, len(err.Fields))
+	for key := range err.Fields {
+		keys = append(keys, key)
 	}
 	sort.Strings(keys)
 	parts := make([]string, len(keys))
-	for i, k := range keys {
-		parts[i] = k + ": " + e.Fields[k]
+	for index, key := range keys {
+		parts[index] = key + ": " + err.Fields[key]
 	}
 	return "invalid input: " + strings.Join(parts, ", ")
 }
@@ -41,28 +41,28 @@ func (e *Error) Error() string {
 type Fields map[string]string
 
 // Add records msg for field when bad is true.
-func (f Fields) Add(bad bool, field, msg string) {
+func (fields Fields) Add(bad bool, field, msg string) {
 	if bad {
-		f[field] = msg
+		fields[field] = msg
 	}
 }
 
 // Err returns an *Error, or nil when no field failed.
-func (f Fields) Err() error {
-	if len(f) == 0 {
+func (fields Fields) Err() error {
+	if len(fields) == 0 {
 		return nil
 	}
-	return &Error{Fields: f}
+	return &Error{Fields: fields}
 }
 
 // Decode reads one JSON object into T, rejecting unknown fields and trailing
 // data, then runs (*T).Validate: validate.Decode[validate.UpdateUserSettings](r.Body).
-func Decode[T any, PT interface {
-	*T
+func Decode[Value any, PT interface {
+	*Value
 	Validator
-}](r io.Reader) (T, error) {
-	var v T
-	return v, DecodeInto(r, PT(&v))
+}](reader io.Reader) (Value, error) {
+	var value Value
+	return value, DecodeInto(reader, PT(&value))
 }
 
 // DecodeInto is Decode for a target only known as a Validator (the API's
@@ -94,11 +94,11 @@ func jsonMessage(err error) string {
 }
 
 // jsonType names t the way a JSON client sees it, never as a Go type.
-func jsonType(t reflect.Type) string {
-	for t.Kind() == reflect.Pointer {
-		t = t.Elem()
+func jsonType(kind reflect.Type) string {
+	for kind.Kind() == reflect.Pointer {
+		kind = kind.Elem()
 	}
-	switch t.Kind() {
+	switch kind.Kind() {
 	case reflect.String:
 		return "a string"
 	case reflect.Bool:
@@ -117,17 +117,17 @@ func jsonType(t reflect.Type) string {
 
 // Nullable distinguishes an absent field (Set false) from an explicit null
 // (Set true, Value nil), so PATCH bodies can clear a value.
-type Nullable[T any] struct {
+type Nullable[Value any] struct {
 	Set   bool
-	Value *T
+	Value *Value
 }
 
 // UnmarshalJSON marks the field as present.
-func (n *Nullable[T]) UnmarshalJSON(b []byte) error {
-	n.Set = true
-	if bytes.Equal(b, []byte("null")) {
-		n.Value = nil
+func (nullable *Nullable[Value]) UnmarshalJSON(data []byte) error {
+	nullable.Set = true
+	if bytes.Equal(data, []byte("null")) {
+		nullable.Value = nil
 		return nil
 	}
-	return json.Unmarshal(b, &n.Value)
+	return json.Unmarshal(data, &nullable.Value)
 }

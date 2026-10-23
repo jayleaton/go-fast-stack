@@ -59,7 +59,7 @@ type Status struct {
 	Error   bool
 }
 
-func UsersPage(d UsersData) templ.Component {
+func UsersPage(data UsersData) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -114,7 +114,7 @@ func UsersPage(d UsersData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = uikit.PageHeader(i18n.T(ctx, "pages.users.title"), i18n.T(ctx, "pages.users.subtitle")).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = uikit.PageHeader(i18n.Translate(ctx, "pages.users.title"), i18n.Translate(ctx, "pages.users.subtitle")).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -128,9 +128,9 @@ func UsersPage(d UsersData) templ.Component {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var6 string
-			templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.ResolveAttributeValue(i18n.T(ctx, "pages.users.filters.label"))
+			templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.ResolveAttributeValue(i18n.Translate(ctx, "pages.users.filters.label"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_users.templ`, Line: 58, Col: 89}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_users.templ`, Line: 58, Col: 97}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var6)
 			if templ_7745c5c3_Err != nil {
@@ -143,7 +143,7 @@ func UsersPage(d UsersData) templ.Component {
 			var templ_7745c5c3_Var7 templ.SafeURL
 			templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(config.AppRoutes.Users))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_users.templ`, Line: 58, Col: 138}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_users.templ`, Line: 58, Col: 146}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 			if templ_7745c5c3_Err != nil {
@@ -167,9 +167,9 @@ func UsersPage(d UsersData) templ.Component {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var9 string
-			templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.ResolveAttributeValue(d.Filters.SortBy)
+			templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.ResolveAttributeValue(data.Filters.SortBy)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_users.templ`, Line: 59, Col: 63}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_users.templ`, Line: 59, Col: 66}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var9)
 			if templ_7745c5c3_Err != nil {
@@ -180,9 +180,9 @@ func UsersPage(d UsersData) templ.Component {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var10 string
-			templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.ResolveAttributeValue(d.Filters.SortDirection)
+			templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.ResolveAttributeValue(data.Filters.SortDirection)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_users.templ`, Line: 60, Col: 77}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_users.templ`, Line: 60, Col: 80}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var10)
 			if templ_7745c5c3_Err != nil {
@@ -192,7 +192,7 @@ func UsersPage(d UsersData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = uikit.Input(uikit.Field{ID: "search", Type: "search", Label: i18n.T(ctx, "pages.users.filters.search"), Placeholder: i18n.T(ctx, "pages.users.filters.searchPlaceholder"), Value: d.Filters.Search, Optional: true}).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = uikit.Input(uikit.Field{ID: "search", Type: "search", Label: i18n.Translate(ctx, "pages.users.filters.search"), Placeholder: i18n.Translate(ctx, "pages.users.filters.searchPlaceholder"), Value: data.Filters.Search, Optional: true}).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -200,19 +200,19 @@ func UsersPage(d UsersData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = uikit.Select(uikit.SelectField{ID: "searchField", Label: i18n.T(ctx, "pages.users.filters.searchField"), Options: searchFieldOptions(ctx), Selected: d.Filters.SearchField}).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = uikit.Select(uikit.SelectField{ID: "searchField", Label: i18n.Translate(ctx, "pages.users.filters.searchField"), Options: searchFieldOptions(ctx), Selected: data.Filters.SearchField}).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = uikit.Select(uikit.SelectField{ID: "banned", Label: i18n.T(ctx, "pages.users.filters.status"), Options: bannedOptions(ctx), Selected: d.Filters.Banned}).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = uikit.Select(uikit.SelectField{ID: "banned", Label: i18n.Translate(ctx, "pages.users.filters.status"), Options: bannedOptions(ctx), Selected: data.Filters.Banned}).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = uikit.Select(uikit.SelectField{ID: "role", Label: i18n.T(ctx, "pages.users.role"), Options: roleFilterOptions(ctx), Selected: d.Filters.Role}).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = uikit.Select(uikit.SelectField{ID: "role", Label: i18n.Translate(ctx, "pages.users.role"), Options: roleFilterOptions(ctx), Selected: data.Filters.Role}).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = filterButton(i18n.T(ctx, "pages.users.filters.apply"), "_searching").Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = filterButton(i18n.Translate(ctx, "pages.users.filters.apply"), "_searching").Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -220,13 +220,13 @@ func UsersPage(d UsersData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			if d.Error != "" {
-				templ_7745c5c3_Err = uikit.Alert("users-error", uikit.Error, d.Error).Render(ctx, templ_7745c5c3_Buffer)
+			if data.Error != "" {
+				templ_7745c5c3_Err = uikit.Alert("users-error", uikit.Error, data.Error).Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			} else {
-				if len(d.Users) == 0 {
+				if len(data.Users) == 0 {
 					templ_7745c5c3_Var11 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 						templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 						templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
@@ -239,7 +239,7 @@ func UsersPage(d UsersData) templ.Component {
 							}()
 						}
 						ctx = templ.InitializeContext(ctx)
-						if d.Filters.filtered() {
+						if data.Filters.filtered() {
 							templ_7745c5c3_Var12 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 								templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 								templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
@@ -253,9 +253,9 @@ func UsersPage(d UsersData) templ.Component {
 								}
 								ctx = templ.InitializeContext(ctx)
 								var templ_7745c5c3_Var13 string
-								templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "pages.users.filters.clear"))
+								templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.Translate(ctx, "pages.users.filters.clear"))
 								if templ_7745c5c3_Err != nil {
-									return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_users.templ`, Line: 77, Col: 51}
+									return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_users.templ`, Line: 77, Col: 59}
 								}
 								_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 								if templ_7745c5c3_Err != nil {
@@ -270,7 +270,7 @@ func UsersPage(d UsersData) templ.Component {
 						}
 						return nil
 					})
-					templ_7745c5c3_Err = uikit.EmptyState(i18n.T(ctx, "pages.users.empty"), i18n.T(ctx, "pages.users.emptyHint")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var11), templ_7745c5c3_Buffer)
+					templ_7745c5c3_Err = uikit.EmptyState(i18n.Translate(ctx, "pages.users.empty"), i18n.Translate(ctx, "pages.users.emptyHint")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var11), templ_7745c5c3_Buffer)
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -309,11 +309,11 @@ func UsersPage(d UsersData) templ.Component {
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
-						templ_7745c5c3_Err = sortHeading(d.Sort.Email, i18n.T(ctx, "common.email")).Render(ctx, templ_7745c5c3_Buffer)
+						templ_7745c5c3_Err = sortHeading(data.Sort.Email, i18n.Translate(ctx, "common.email")).Render(ctx, templ_7745c5c3_Buffer)
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
-						templ_7745c5c3_Err = sortHeading(d.Sort.Name, i18n.T(ctx, "common.name")).Render(ctx, templ_7745c5c3_Buffer)
+						templ_7745c5c3_Err = sortHeading(data.Sort.Name, i18n.Translate(ctx, "common.name")).Render(ctx, templ_7745c5c3_Buffer)
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
@@ -340,9 +340,9 @@ func UsersPage(d UsersData) templ.Component {
 							return templ_7745c5c3_Err
 						}
 						var templ_7745c5c3_Var19 string
-						templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "pages.users.role"))
+						templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.Translate(ctx, "pages.users.role"))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_users.templ`, Line: 88, Col: 83}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_users.templ`, Line: 88, Col: 91}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
 						if templ_7745c5c3_Err != nil {
@@ -375,9 +375,9 @@ func UsersPage(d UsersData) templ.Component {
 							return templ_7745c5c3_Err
 						}
 						var templ_7745c5c3_Var22 string
-						templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "pages.users.verified"))
+						templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.Translate(ctx, "pages.users.verified"))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_users.templ`, Line: 89, Col: 87}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_users.templ`, Line: 89, Col: 95}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var22))
 						if templ_7745c5c3_Err != nil {
@@ -410,9 +410,9 @@ func UsersPage(d UsersData) templ.Component {
 							return templ_7745c5c3_Err
 						}
 						var templ_7745c5c3_Var25 string
-						templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "pages.users.filters.status"))
+						templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.Translate(ctx, "pages.users.filters.status"))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_users.templ`, Line: 90, Col: 93}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_users.templ`, Line: 90, Col: 101}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var25))
 						if templ_7745c5c3_Err != nil {
@@ -422,7 +422,7 @@ func UsersPage(d UsersData) templ.Component {
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
-						templ_7745c5c3_Err = sortHeading(d.Sort.Created, i18n.T(ctx, "pages.users.created")).Render(ctx, templ_7745c5c3_Buffer)
+						templ_7745c5c3_Err = sortHeading(data.Sort.Created, i18n.Translate(ctx, "pages.users.created")).Render(ctx, templ_7745c5c3_Buffer)
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
@@ -430,7 +430,7 @@ func UsersPage(d UsersData) templ.Component {
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
-						for _, usr := range d.Users {
+						for _, usr := range data.Users {
 							var templ_7745c5c3_Var26 = []any{uikit.TrClass}
 							templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var26...)
 							if templ_7745c5c3_Err != nil {
@@ -700,7 +700,7 @@ func UsersPage(d UsersData) templ.Component {
 						}
 						return nil
 					})
-					templ_7745c5c3_Err = uikit.TableWrap(i18n.T(ctx, "pages.users.title")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var14), templ_7745c5c3_Buffer)
+					templ_7745c5c3_Err = uikit.TableWrap(i18n.Translate(ctx, "pages.users.title")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var14), templ_7745c5c3_Buffer)
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -709,7 +709,7 @@ func UsersPage(d UsersData) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = uikit.Pagination(pagination(ctx, d.Pager)).Render(ctx, templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = uikit.Pagination(pagination(ctx, data.Pager)).Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -720,7 +720,7 @@ func UsersPage(d UsersData) templ.Component {
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = view.Layout(i18n.T(ctx, "pages.users.title")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var2), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = view.Layout(i18n.Translate(ctx, "pages.users.title")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var2), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -846,9 +846,9 @@ func filterButton(label, signal string) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var56 string
-		templ_7745c5c3_Var56, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "common.loading"))
+		templ_7745c5c3_Var56, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.Translate(ctx, "common.loading"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_users.templ`, Line: 124, Col: 34}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_users.templ`, Line: 124, Col: 42}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var56))
 		if templ_7745c5c3_Err != nil {
@@ -864,7 +864,7 @@ func filterButton(label, signal string) templ.Component {
 
 // sortHeading is a sortable column heading: a link that sorts by it (or
 // flips the direction), with aria-sort on the active column.
-func sortHeading(l SortLink, label string) templ.Component {
+func sortHeading(link SortLink, label string) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -907,15 +907,15 @@ func sortHeading(l SortLink, label string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		if sortOrder(l) != "" {
+		if sortOrder(link) != "" {
 			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 60, " aria-sort=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var60 string
-			templ_7745c5c3_Var60, templ_7745c5c3_Err = templ.ResolveAttributeValue(sortOrder(l))
+			templ_7745c5c3_Var60, templ_7745c5c3_Err = templ.ResolveAttributeValue(sortOrder(link))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_users.templ`, Line: 136, Col: 27}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_users.templ`, Line: 136, Col: 30}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var60)
 			if templ_7745c5c3_Err != nil {
@@ -930,7 +930,7 @@ func sortHeading(l SortLink, label string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var61 = []any{"rounded-sm hover:text-foreground", templ.KV("text-foreground", l.Active)}
+		var templ_7745c5c3_Var61 = []any{"rounded-sm hover:text-foreground", templ.KV("text-foreground", link.Active)}
 		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var61...)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
@@ -940,9 +940,9 @@ func sortHeading(l SortLink, label string) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var62 templ.SafeURL
-		templ_7745c5c3_Var62, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(l.URL))
+		templ_7745c5c3_Var62, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(link.URL))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_users.templ`, Line: 139, Col: 32}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_users.templ`, Line: 139, Col: 35}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var62))
 		if templ_7745c5c3_Err != nil {
@@ -968,16 +968,16 @@ func sortHeading(l SortLink, label string) templ.Component {
 		var templ_7745c5c3_Var64 string
 		templ_7745c5c3_Var64, templ_7745c5c3_Err = templ.JoinStringErrs(label)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_users.templ`, Line: 139, Col: 126}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_users.templ`, Line: 139, Col: 132}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var64))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var65 string
-		templ_7745c5c3_Var65, templ_7745c5c3_Err = templ.JoinStringErrs(sortMark(l))
+		templ_7745c5c3_Var65, templ_7745c5c3_Err = templ.JoinStringErrs(sortMark(link))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_users.templ`, Line: 139, Col: 141}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_users.templ`, Line: 139, Col: 150}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var65))
 		if templ_7745c5c3_Err != nil {
@@ -1018,7 +1018,7 @@ func banBadge(usr apiclient.User) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = uikit.Badge(uikit.Error, i18n.T(ctx, "pages.users.bannedBadge"), true).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = uikit.Badge(uikit.Error, i18n.Translate(ctx, "pages.users.bannedBadge"), true).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1040,7 +1040,7 @@ func banBadge(usr apiclient.User) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = uikit.Badge(uikit.Success, i18n.T(ctx, "pages.users.activeBadge"), true).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = uikit.Badge(uikit.Success, i18n.Translate(ctx, "pages.users.activeBadge"), true).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1049,7 +1049,7 @@ func banBadge(usr apiclient.User) templ.Component {
 	})
 }
 
-func UserPage(d UserData) templ.Component {
+func UserPage(data UserData) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -1140,9 +1140,9 @@ func UserPage(d UserData) templ.Component {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var75 string
-			templ_7745c5c3_Var75, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "pages.user.back"))
+			templ_7745c5c3_Var75, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.Translate(ctx, "pages.user.back"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_users.templ`, Line: 159, Col: 112}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_users.templ`, Line: 159, Col: 120}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var75))
 			if templ_7745c5c3_Err != nil {
@@ -1152,7 +1152,7 @@ func UserPage(d UserData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = uikit.PageHeader(firstNonEmpty(d.Detail.User.Email, i18n.T(ctx, "pages.user.title")), d.Detail.User.Name).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = uikit.PageHeader(firstNonEmpty(data.Detail.User.Email, i18n.Translate(ctx, "pages.user.title")), data.Detail.User.Name).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1160,16 +1160,16 @@ func UserPage(d UserData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = UserStatus(d.Status).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = UserStatus(data.Status).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			if !d.Missing {
+			if !data.Missing {
 				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 77, "<div class=\"grid grid-cols-1 items-start gap-6 lg:grid-cols-3\"><div class=\"lg:col-span-2\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = UserProfile(d.Detail.User).Render(ctx, templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = UserProfile(data.Detail.User).Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -1177,7 +1177,7 @@ func UserPage(d UserData) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = UserBan(d.Detail.User).Render(ctx, templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = UserBan(data.Detail.User).Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -1185,7 +1185,7 @@ func UserPage(d UserData) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = UserSessions(d.Detail.User, d.Detail.Sessions).Render(ctx, templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = UserSessions(data.Detail.User, data.Detail.Sessions).Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -1196,7 +1196,7 @@ func UserPage(d UserData) templ.Component {
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = view.Layout(i18n.T(ctx, "pages.user.title")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var69), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = view.Layout(i18n.Translate(ctx, "pages.user.title")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var69), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1205,7 +1205,7 @@ func UserPage(d UserData) templ.Component {
 }
 
 // UserStatus is the patch target for action outcomes.
-func UserStatus(s Status) templ.Component {
+func UserStatus(status Status) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -1226,7 +1226,7 @@ func UserStatus(s Status) templ.Component {
 			templ_7745c5c3_Var76 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = uikit.Alert(userStatusID, statusTone(s), s.Message).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = uikit.Alert(userStatusID, statusTone(status), status.Message).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1268,7 +1268,7 @@ func UserProfile(usr apiclient.User) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = uikit.CardHeader(i18n.T(ctx, "pages.user.profile"), "").Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = uikit.CardHeader(i18n.Translate(ctx, "pages.user.profile"), "").Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1319,7 +1319,7 @@ func UserProfile(usr apiclient.User) templ.Component {
 					}
 					return nil
 				})
-				templ_7745c5c3_Err = uikit.Detail(i18n.T(ctx, "pages.user.id")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var80), templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = uikit.Detail(i18n.Translate(ctx, "pages.user.id")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var80), templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -1346,7 +1346,7 @@ func UserProfile(usr apiclient.User) templ.Component {
 					}
 					return nil
 				})
-				templ_7745c5c3_Err = uikit.Detail(i18n.T(ctx, "common.name")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var82), templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = uikit.Detail(i18n.Translate(ctx, "common.name")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var82), templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -1373,7 +1373,7 @@ func UserProfile(usr apiclient.User) templ.Component {
 					}
 					return nil
 				})
-				templ_7745c5c3_Err = uikit.Detail(i18n.T(ctx, "common.email")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var84), templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = uikit.Detail(i18n.Translate(ctx, "common.email")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var84), templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -1400,7 +1400,7 @@ func UserProfile(usr apiclient.User) templ.Component {
 					}
 					return nil
 				})
-				templ_7745c5c3_Err = uikit.Detail(i18n.T(ctx, "pages.users.verified")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var86), templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = uikit.Detail(i18n.Translate(ctx, "pages.users.verified")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var86), templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -1427,7 +1427,7 @@ func UserProfile(usr apiclient.User) templ.Component {
 					}
 					return nil
 				})
-				templ_7745c5c3_Err = uikit.Detail(i18n.T(ctx, "pages.users.role")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var88), templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = uikit.Detail(i18n.Translate(ctx, "pages.users.role")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var88), templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -1454,7 +1454,7 @@ func UserProfile(usr apiclient.User) templ.Component {
 					}
 					return nil
 				})
-				templ_7745c5c3_Err = uikit.Detail(i18n.T(ctx, "pages.user.twoFactor")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var90), templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = uikit.Detail(i18n.Translate(ctx, "pages.user.twoFactor")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var90), templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -1481,7 +1481,7 @@ func UserProfile(usr apiclient.User) templ.Component {
 					}
 					return nil
 				})
-				templ_7745c5c3_Err = uikit.Detail(i18n.T(ctx, "pages.user.hasPassword")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var92), templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = uikit.Detail(i18n.Translate(ctx, "pages.user.hasPassword")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var92), templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -1508,7 +1508,7 @@ func UserProfile(usr apiclient.User) templ.Component {
 					}
 					return nil
 				})
-				templ_7745c5c3_Err = uikit.Detail(i18n.T(ctx, "pages.users.created")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var94), templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = uikit.Detail(i18n.Translate(ctx, "pages.users.created")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var94), templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -1535,7 +1535,7 @@ func UserProfile(usr apiclient.User) templ.Component {
 					}
 					return nil
 				})
-				templ_7745c5c3_Err = uikit.Detail(i18n.T(ctx, "pages.user.updated")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var96), templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = uikit.Detail(i18n.Translate(ctx, "pages.user.updated")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var96), templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -1575,7 +1575,7 @@ func UserProfile(usr apiclient.User) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = uikit.Select(uikit.SelectField{ID: "role", Label: i18n.T(ctx, "pages.user.setRole"), Options: roleOptions(), Selected: usr.Role}).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = uikit.Select(uikit.SelectField{ID: "role", Label: i18n.Translate(ctx, "pages.user.setRole"), Options: roleOptions(), Selected: usr.Role}).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1583,7 +1583,7 @@ func UserProfile(usr apiclient.User) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = uikit.SubmitButton(uikit.Submit{Label: i18n.T(ctx, "common.save"), Loading: i18n.T(ctx, "common.saving"), Signal: "_settingRole", ButtonProps: uikit.ButtonProps{Variant: uikit.Secondary}}).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = uikit.SubmitButton(uikit.Submit{Label: i18n.Translate(ctx, "common.save"), Loading: i18n.Translate(ctx, "common.saving"), Signal: "_settingRole", ButtonProps: uikit.ButtonProps{Variant: uikit.Secondary}}).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1649,19 +1649,19 @@ func UserBan(usr apiclient.User) templ.Component {
 				}
 				ctx = templ.InitializeContext(ctx)
 				if usr.Banned {
-					templ_7745c5c3_Err = uikit.Badge(uikit.Error, i18n.T(ctx, "pages.users.bannedBadge"), true).Render(ctx, templ_7745c5c3_Buffer)
+					templ_7745c5c3_Err = uikit.Badge(uikit.Error, i18n.Translate(ctx, "pages.users.bannedBadge"), true).Render(ctx, templ_7745c5c3_Buffer)
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 				} else {
-					templ_7745c5c3_Err = uikit.Badge(uikit.Success, i18n.T(ctx, "pages.users.activeBadge"), true).Render(ctx, templ_7745c5c3_Buffer)
+					templ_7745c5c3_Err = uikit.Badge(uikit.Success, i18n.Translate(ctx, "pages.users.activeBadge"), true).Render(ctx, templ_7745c5c3_Buffer)
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 				}
 				return nil
 			})
-			templ_7745c5c3_Err = uikit.CardHeader(i18n.T(ctx, "pages.user.ban.title"), "").Render(templ.WithChildren(ctx, templ_7745c5c3_Var102), templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = uikit.CardHeader(i18n.Translate(ctx, "pages.user.ban.title"), "").Render(templ.WithChildren(ctx, templ_7745c5c3_Var102), templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1705,7 +1705,7 @@ func UserBan(usr apiclient.User) templ.Component {
 						}
 						return nil
 					})
-					templ_7745c5c3_Err = uikit.Detail(i18n.T(ctx, "pages.user.ban.reason")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var104), templ_7745c5c3_Buffer)
+					templ_7745c5c3_Err = uikit.Detail(i18n.Translate(ctx, "pages.user.ban.reason")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var104), templ_7745c5c3_Buffer)
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -1732,7 +1732,7 @@ func UserBan(usr apiclient.User) templ.Component {
 						}
 						return nil
 					})
-					templ_7745c5c3_Err = uikit.Detail(i18n.T(ctx, "pages.user.ban.expires")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var106), templ_7745c5c3_Buffer)
+					templ_7745c5c3_Err = uikit.Detail(i18n.Translate(ctx, "pages.user.ban.expires")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var106), templ_7745c5c3_Buffer)
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -1772,7 +1772,7 @@ func UserBan(usr apiclient.User) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = uikit.SubmitButton(uikit.Submit{Label: i18n.T(ctx, "pages.user.ban.unban"), Loading: i18n.T(ctx, "common.loading"), Signal: "_unbanning", ButtonProps: uikit.ButtonProps{Variant: uikit.Secondary, Full: true}}).Render(ctx, templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = uikit.SubmitButton(uikit.Submit{Label: i18n.Translate(ctx, "pages.user.ban.unban"), Loading: i18n.Translate(ctx, "common.loading"), Signal: "_unbanning", ButtonProps: uikit.ButtonProps{Variant: uikit.Secondary, Full: true}}).Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -1786,9 +1786,9 @@ func UserBan(usr apiclient.User) templ.Component {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var110 string
-				templ_7745c5c3_Var110, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "pages.user.ban.notBanned"))
+				templ_7745c5c3_Var110, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.Translate(ctx, "pages.user.ban.notBanned"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_users.templ`, Line: 253, Col: 102}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_users.templ`, Line: 253, Col: 110}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var110))
 				if templ_7745c5c3_Err != nil {
@@ -1819,11 +1819,11 @@ func UserBan(usr apiclient.User) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = uikit.Textarea(uikit.Field{ID: "banReason", Label: i18n.T(ctx, "pages.user.ban.reason"), Placeholder: i18n.T(ctx, "pages.user.ban.reasonPlaceholder"), MaxLength: 500, Rows: 2}).Render(ctx, templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = uikit.Textarea(uikit.Field{ID: "banReason", Label: i18n.Translate(ctx, "pages.user.ban.reason"), Placeholder: i18n.Translate(ctx, "pages.user.ban.reasonPlaceholder"), MaxLength: 500, Rows: 2}).Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = uikit.Select(uikit.SelectField{ID: "banExpiresIn", Label: i18n.T(ctx, "pages.user.ban.expires"), Options: banExpiryOptions(ctx), Selected: "86400"}).Render(ctx, templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = uikit.Select(uikit.SelectField{ID: "banExpiresIn", Label: i18n.Translate(ctx, "pages.user.ban.expires"), Options: banExpiryOptions(ctx), Selected: "86400"}).Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -1837,10 +1837,10 @@ func UserBan(usr apiclient.User) templ.Component {
 				ID:           "ban",
 				Action:       routes.User(routes.UserBan, usr.ID),
 				Signal:       "_banning",
-				Title:        i18n.T(ctx, "pages.user.ban.confirmTitle"),
+				Title:        i18n.Translate(ctx, "pages.user.ban.confirmTitle"),
 				Message:      i18n.Tf(ctx, "pages.user.ban.confirmMessage", usr.Email),
 				ConfirmLabel: banLabel(ctx, usr),
-				CancelLabel:  i18n.T(ctx, "components.confirm.cancel"),
+				CancelLabel:  i18n.Translate(ctx, "components.confirm.cancel"),
 				Trigger:      uikit.ButtonProps{Variant: uikit.DangerOutline, Full: true, Class: "mt-4"},
 				Variant:      uikit.Danger,
 			}, banLabel(ctx, usr)).Render(templ.WithChildren(ctx, templ_7745c5c3_Var111), templ_7745c5c3_Buffer)
@@ -1902,9 +1902,9 @@ func UserSessions(usr apiclient.User, sessions []apiclient.Session) templ.Compon
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var114 string
-		templ_7745c5c3_Var114, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "pages.user.sessions.title"))
+		templ_7745c5c3_Var114, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.Translate(ctx, "pages.user.sessions.title"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_users.templ`, Line: 281, Col: 106}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_users.templ`, Line: 281, Col: 114}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var114))
 		if templ_7745c5c3_Err != nil {
@@ -1919,13 +1919,13 @@ func UserSessions(usr apiclient.User, sessions []apiclient.Session) templ.Compon
 				ID:           "revoke-all",
 				Action:       routes.User(routes.UserSessions, usr.ID),
 				Signal:       "_revokingAll",
-				Title:        i18n.T(ctx, "pages.user.sessions.confirmRevokeAllTitle"),
+				Title:        i18n.Translate(ctx, "pages.user.sessions.confirmRevokeAllTitle"),
 				Message:      i18n.Tf(ctx, "pages.user.sessions.confirmRevokeAll", usr.Email),
-				ConfirmLabel: i18n.T(ctx, "pages.user.sessions.revokeAll"),
-				CancelLabel:  i18n.T(ctx, "components.confirm.cancel"),
+				ConfirmLabel: i18n.Translate(ctx, "pages.user.sessions.revokeAll"),
+				CancelLabel:  i18n.Translate(ctx, "components.confirm.cancel"),
 				Trigger:      uikit.ButtonProps{Variant: uikit.DangerOutline, Size: uikit.Small},
 				Variant:      uikit.Danger,
-			}, i18n.T(ctx, "pages.user.sessions.revokeAll")).Render(ctx, templ_7745c5c3_Buffer)
+			}, i18n.Translate(ctx, "pages.user.sessions.revokeAll")).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1935,7 +1935,7 @@ func UserSessions(usr apiclient.User, sessions []apiclient.Session) templ.Compon
 			return templ_7745c5c3_Err
 		}
 		if len(sessions) == 0 {
-			templ_7745c5c3_Err = uikit.EmptyState(i18n.T(ctx, "pages.user.sessions.empty"), "").Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = uikit.EmptyState(i18n.Translate(ctx, "pages.user.sessions.empty"), "").Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1997,9 +1997,9 @@ func UserSessions(usr apiclient.User, sessions []apiclient.Session) templ.Compon
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var120 string
-				templ_7745c5c3_Var120, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "pages.users.created"))
+				templ_7745c5c3_Var120, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.Translate(ctx, "pages.users.created"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_users.templ`, Line: 303, Col: 83}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_users.templ`, Line: 303, Col: 91}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var120))
 				if templ_7745c5c3_Err != nil {
@@ -2032,9 +2032,9 @@ func UserSessions(usr apiclient.User, sessions []apiclient.Session) templ.Compon
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var123 string
-				templ_7745c5c3_Var123, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "pages.user.sessions.expires"))
+				templ_7745c5c3_Var123, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.Translate(ctx, "pages.user.sessions.expires"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_users.templ`, Line: 304, Col: 91}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_users.templ`, Line: 304, Col: 99}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var123))
 				if templ_7745c5c3_Err != nil {
@@ -2067,9 +2067,9 @@ func UserSessions(usr apiclient.User, sessions []apiclient.Session) templ.Compon
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var126 string
-				templ_7745c5c3_Var126, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "pages.user.sessions.ip"))
+				templ_7745c5c3_Var126, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.Translate(ctx, "pages.user.sessions.ip"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_users.templ`, Line: 305, Col: 86}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_users.templ`, Line: 305, Col: 94}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var126))
 				if templ_7745c5c3_Err != nil {
@@ -2102,9 +2102,9 @@ func UserSessions(usr apiclient.User, sessions []apiclient.Session) templ.Compon
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var129 string
-				templ_7745c5c3_Var129, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "pages.user.sessions.userAgent"))
+				templ_7745c5c3_Var129, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.Translate(ctx, "pages.user.sessions.userAgent"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_users.templ`, Line: 306, Col: 93}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_users.templ`, Line: 306, Col: 101}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var129))
 				if templ_7745c5c3_Err != nil {
@@ -2137,9 +2137,9 @@ func UserSessions(usr apiclient.User, sessions []apiclient.Session) templ.Compon
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var132 string
-				templ_7745c5c3_Var132, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T(ctx, "common.actions"))
+				templ_7745c5c3_Var132, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.Translate(ctx, "common.actions"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_users.templ`, Line: 307, Col: 112}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_users.templ`, Line: 307, Col: 120}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var132))
 				if templ_7745c5c3_Err != nil {
@@ -2149,7 +2149,7 @@ func UserSessions(usr apiclient.User, sessions []apiclient.Session) templ.Compon
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				for _, s := range sessions {
+				for _, session := range sessions {
 					var templ_7745c5c3_Var133 = []any{uikit.TrClass}
 					templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var133...)
 					if templ_7745c5c3_Err != nil {
@@ -2195,9 +2195,9 @@ func UserSessions(usr apiclient.User, sessions []apiclient.Session) templ.Compon
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var137 string
-					templ_7745c5c3_Var137, templ_7745c5c3_Err = templ.JoinStringErrs(dateTime(ctx, s.CreatedAt))
+					templ_7745c5c3_Var137, templ_7745c5c3_Err = templ.JoinStringErrs(dateTime(ctx, session.CreatedAt))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_users.templ`, Line: 313, Col: 80}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_users.templ`, Line: 313, Col: 86}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var137))
 					if templ_7745c5c3_Err != nil {
@@ -2230,9 +2230,9 @@ func UserSessions(usr apiclient.User, sessions []apiclient.Session) templ.Compon
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var140 string
-					templ_7745c5c3_Var140, templ_7745c5c3_Err = templ.JoinStringErrs(dateTime(ctx, s.ExpiresAt))
+					templ_7745c5c3_Var140, templ_7745c5c3_Err = templ.JoinStringErrs(dateTime(ctx, session.ExpiresAt))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_users.templ`, Line: 314, Col: 80}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_users.templ`, Line: 314, Col: 86}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var140))
 					if templ_7745c5c3_Err != nil {
@@ -2265,9 +2265,9 @@ func UserSessions(usr apiclient.User, sessions []apiclient.Session) templ.Compon
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var143 string
-					templ_7745c5c3_Var143, templ_7745c5c3_Err = templ.JoinStringErrs(orDash(deref(s.IPAddress)))
+					templ_7745c5c3_Var143, templ_7745c5c3_Err = templ.JoinStringErrs(orDash(deref(session.IPAddress)))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_users.templ`, Line: 315, Col: 85}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_users.templ`, Line: 315, Col: 91}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var143))
 					if templ_7745c5c3_Err != nil {
@@ -2300,9 +2300,9 @@ func UserSessions(usr apiclient.User, sessions []apiclient.Session) templ.Compon
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var146 string
-					templ_7745c5c3_Var146, templ_7745c5c3_Err = templ.ResolveAttributeValue(deref(s.UserAgent))
+					templ_7745c5c3_Var146, templ_7745c5c3_Err = templ.ResolveAttributeValue(deref(session.UserAgent))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_users.templ`, Line: 316, Col: 105}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_users.templ`, Line: 316, Col: 111}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var146)
 					if templ_7745c5c3_Err != nil {
@@ -2313,9 +2313,9 @@ func UserSessions(usr apiclient.User, sessions []apiclient.Session) templ.Compon
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var147 string
-					templ_7745c5c3_Var147, templ_7745c5c3_Err = templ.JoinStringErrs(orDash(deref(s.UserAgent)))
+					templ_7745c5c3_Var147, templ_7745c5c3_Err = templ.JoinStringErrs(orDash(deref(session.UserAgent)))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_users.templ`, Line: 316, Col: 136}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_users.templ`, Line: 316, Col: 148}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var147))
 					if templ_7745c5c3_Err != nil {
@@ -2348,9 +2348,9 @@ func UserSessions(usr apiclient.User, sessions []apiclient.Session) templ.Compon
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var150 templ.SafeURL
-					templ_7745c5c3_Var150, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(routes.Session(usr.ID, s.ID)))
+					templ_7745c5c3_Var150, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(routes.Session(usr.ID, session.ID)))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_users.templ`, Line: 318, Col: 81}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_users.templ`, Line: 318, Col: 87}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var150))
 					if templ_7745c5c3_Err != nil {
@@ -2361,9 +2361,9 @@ func UserSessions(usr apiclient.User, sessions []apiclient.Session) templ.Compon
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var151 string
-					templ_7745c5c3_Var151, templ_7745c5c3_Err = templ.ResolveAttributeValue(uikit.PostForm(routes.Session(usr.ID, s.ID)))
+					templ_7745c5c3_Var151, templ_7745c5c3_Err = templ.ResolveAttributeValue(uikit.PostForm(routes.Session(usr.ID, session.ID)))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_users.templ`, Line: 318, Col: 145}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `pages_users.templ`, Line: 318, Col: 157}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var151)
 					if templ_7745c5c3_Err != nil {
@@ -2373,7 +2373,7 @@ func UserSessions(usr apiclient.User, sessions []apiclient.Session) templ.Compon
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = uikit.SubmitButton(uikit.Submit{Label: i18n.T(ctx, "pages.user.sessions.revoke"), Loading: i18n.T(ctx, "common.loading"), Signal: "_revoking", ButtonProps: uikit.ButtonProps{Variant: uikit.Secondary, Size: uikit.Small}}).Render(ctx, templ_7745c5c3_Buffer)
+					templ_7745c5c3_Err = uikit.SubmitButton(uikit.Submit{Label: i18n.Translate(ctx, "pages.user.sessions.revoke"), Loading: i18n.Translate(ctx, "common.loading"), Signal: "_revoking", ButtonProps: uikit.ButtonProps{Variant: uikit.Secondary, Size: uikit.Small}}).Render(ctx, templ_7745c5c3_Buffer)
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -2388,7 +2388,7 @@ func UserSessions(usr apiclient.User, sessions []apiclient.Session) templ.Compon
 				}
 				return nil
 			})
-			templ_7745c5c3_Err = uikit.TableWrap(i18n.T(ctx, "pages.user.sessions.table")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var115), templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = uikit.TableWrap(i18n.Translate(ctx, "pages.user.sessions.table")).Render(templ.WithChildren(ctx, templ_7745c5c3_Var115), templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

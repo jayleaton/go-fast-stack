@@ -9,55 +9,55 @@ import (
 	"time"
 )
 
-func TestBanAndUnban(t *testing.T) {
-	t.Parallel()
-	h := newHarness(t, nil)
+func TestBanAndUnban(test *testing.T) {
+	test.Parallel()
+	harness := newHarness(test, nil)
 	ctx := context.Background()
-	email := uniqueEmail(t)
-	cookie := hdr{"Cookie": cookieHeader(t, h.signUp(email, "password123"))}
-	bearer, _ := h.session(email, "password123")
-	id := h.userID(cookie)
-	admin := h.a.Users()
+	email := uniqueEmail(test)
+	cookie := hdr{"Cookie": cookieHeader(test, harness.signUp(email, "password123"))}
+	bearer, _ := harness.session(email, "password123")
+	id := harness.userID(cookie)
+	admin := harness.auth.Users()
 
 	if err := admin.BanUser(ctx, id, "spam", 0); err != nil {
-		t.Fatal(err)
+		test.Fatal(err)
 	}
 	// Existing sessions die and sign-in is refused, but only after the password matched.
-	if h.getSession(cookie) != nil || h.getSession(bearer) != nil {
-		t.Fatal("session survived the ban")
+	if harness.getSession(cookie) != nil || harness.getSession(bearer) != nil {
+		test.Fatal("session survived the ban")
 	}
-	wantCode(t, h.signIn(email, "password123"), http.StatusForbidden, "BANNED_USER")
-	wantCode(t, h.signIn(email, "wrong-password"), http.StatusUnauthorized, "INVALID_EMAIL_OR_PASSWORD")
+	wantCode(test, harness.signIn(email, "password123"), http.StatusForbidden, "BANNED_USER")
+	wantCode(test, harness.signIn(email, "wrong-password"), http.StatusUnauthorized, "INVALID_EMAIL_OR_PASSWORD")
 	detail, err := admin.GetUserDetail(ctx, id)
 	if err != nil || !detail.User.Banned || detail.User.BanReason == nil || *detail.User.BanReason != "spam" || detail.User.BanExpires != nil || len(detail.Sessions) != 0 {
-		t.Fatalf("detail = %+v %v", detail, err)
+		test.Fatalf("detail = %+v %v", detail, err)
 	}
 	// A session that appears anyway (e.g. created by another process) is refused.
 	if _, err := testPool.Exec(ctx, `INSERT INTO "session" ("id","expiresAt","token","userId") VALUES ($1,$2,$3,$4)`,
-		generateID(32), h.clock.Now().Add(time.Hour), "smuggled"+generateID(24), id); err != nil {
-		t.Fatal(err)
+		generateID(32), harness.clock.Now().Add(time.Hour), "smuggled"+generateID(24), id); err != nil {
+		test.Fatal(err)
 	}
 	var token string
 	_ = testPool.QueryRow(ctx, `SELECT "token" FROM "session" WHERE "userId" = $1`, id).Scan(&token)
-	if h.getSession(hdr{"Authorization": "Bearer " + token}) != nil {
-		t.Fatal("banned user's session accepted")
+	if harness.getSession(hdr{"Authorization": "Bearer " + token}) != nil {
+		test.Fatal("banned user's session accepted")
 	}
 
 	// Unban restores sign-in.
 	if err := admin.UnbanUser(ctx, id); err != nil {
-		t.Fatal(err)
+		test.Fatal(err)
 	}
-	wantStatus(t, h.signIn(email, "password123"), http.StatusOK)
+	wantStatus(test, harness.signIn(email, "password123"), http.StatusOK)
 
 	// A timed ban lifts itself once it expires.
 	if err := admin.BanUser(ctx, id, "", time.Hour); err != nil {
-		t.Fatal(err)
+		test.Fatal(err)
 	}
-	wantCode(t, h.signIn(email, "password123"), http.StatusForbidden, "BANNED_USER")
-	h.clock.Advance(time.Hour + time.Second)
-	wantStatus(t, h.signIn(email, "password123"), http.StatusOK)
-	if d, _ := admin.GetUserDetail(ctx, id); d.User.Banned || d.User.BanExpires != nil {
-		t.Fatalf("expired ban not lifted: %+v", d.User)
+	wantCode(test, harness.signIn(email, "password123"), http.StatusForbidden, "BANNED_USER")
+	harness.clock.Advance(time.Hour + time.Second)
+	wantStatus(test, harness.signIn(email, "password123"), http.StatusOK)
+	if detail, _ := admin.GetUserDetail(ctx, id); detail.User.Banned || detail.User.BanExpires != nil {
+		test.Fatalf("expired ban not lifted: %+v", detail.User)
 	}
 
 	for name, err := range map[string]error{
@@ -67,120 +67,120 @@ func TestBanAndUnban(t *testing.T) {
 		"detail unknown": func() error { _, err := admin.GetUserDetail(ctx, generateID(32)); return err }(),
 	} {
 		if !errors.Is(err, ErrUserNotFound) {
-			t.Errorf("%s: %v", name, err)
+			test.Errorf("%s: %v", name, err)
 		}
 	}
 	if err := admin.BanUser(ctx, id, "", -time.Second); err == nil {
-		t.Error("negative ban duration accepted")
+		test.Error("negative ban duration accepted")
 	}
 }
 
-func TestAdminResetTwoFactorRecoversAccess(t *testing.T) {
-	t.Parallel()
-	h := newHarness(t, with2FA(true))
+func TestAdminResetTwoFactorRecoversAccess(test *testing.T) {
+	test.Parallel()
+	harness := newHarness(test, with2FA(true))
 	ctx := context.Background()
-	email := uniqueEmail(t)
-	rec := h.signUp(email, "password123")
+	email := uniqueEmail(test)
+	rec := harness.signUp(email, "password123")
 	pending := hdr{"Cookie": cookies(rec), "Origin": testBase}
-	secret := jsonBody(t, h.do("POST", BasePath+"/two-factor/enable", map[string]any{}, pending))["secret"].(string)
-	rec = h.do("POST", BasePath+"/two-factor/verify-totp", map[string]any{"code": h.code(secret)}, pending)
-	id := h.userID(hdr{"Cookie": cookieHeader(t, rec)})
+	secret := jsonBody(test, harness.do("POST", BasePath+"/two-factor/enable", map[string]any{}, pending))["secret"].(string)
+	rec = harness.do("POST", BasePath+"/two-factor/verify-totp", map[string]any{"code": harness.code(secret)}, pending)
+	id := harness.userID(hdr{"Cookie": cookieHeader(test, rec)})
 
 	// Lost authenticator: the admin resets 2FA; sign-in asks to enrol again.
-	if err := h.a.Users().ResetTwoFactor(ctx, id); err != nil {
-		t.Fatal(err)
+	if err := harness.auth.Users().ResetTwoFactor(ctx, id); err != nil {
+		test.Fatal(err)
 	}
-	rec = h.signIn(email, "password123")
-	if body := jsonBody(t, rec); body["twoFactorSetupRequired"] != true {
-		t.Fatalf("after reset sign-in = %v", body)
+	rec = harness.signIn(email, "password123")
+	if body := jsonBody(test, rec); body["twoFactorSetupRequired"] != true {
+		test.Fatalf("after reset sign-in = %v", body)
 	}
-	if err := h.a.Users().ResetTwoFactor(ctx, generateID(32)); !errors.Is(err, ErrUserNotFound) {
-		t.Fatalf("unknown user err = %v", err)
+	if err := harness.auth.Users().ResetTwoFactor(ctx, generateID(32)); !errors.Is(err, ErrUserNotFound) {
+		test.Fatalf("unknown user err = %v", err)
 	}
 }
 
-func TestDisableSignUpKeepsInvites(t *testing.T) {
-	t.Parallel()
-	h := newHarness(t, func(c *Config) { c.DisableSignUp = true })
+func TestDisableSignUpKeepsInvites(test *testing.T) {
+	test.Parallel()
+	harness := newHarness(test, func(config *Config) { config.DisableSignUp = true })
 	ctx := context.Background()
-	email := uniqueEmail(t)
-	wantCode(t, h.signUp(email, "password123"), http.StatusBadRequest, "EMAIL_PASSWORD_SIGN_UP_DISABLED")
-	if _, _, err := h.a.SignUpEmail(ctx, SignUpInput{Email: email, Password: "password123"}); !errors.Is(err, ErrSignUpDisabled) {
-		t.Fatalf("SignUpEmail err = %v", err)
+	email := uniqueEmail(test)
+	wantCode(test, harness.signUp(email, "password123"), http.StatusBadRequest, "EMAIL_PASSWORD_SIGN_UP_DISABLED")
+	if _, _, err := harness.auth.SignUpEmail(ctx, SignUpInput{Email: email, Password: "password123"}); !errors.Is(err, ErrSignUpDisabled) {
+		test.Fatalf("SignUpEmail err = %v", err)
 	}
-	if n := len(h.mails()); n != 0 {
-		t.Fatalf("disabled sign-up sent %d mails", n)
+	if count := len(harness.mails()); count != 0 {
+		test.Fatalf("disabled sign-up sent %d mails", count)
 	}
 	// Invites still create accounts that can sign in.
-	user, err := h.a.CreateUserWithoutPassword(ctx, CreateUserInput{Email: email, Role: "admin"})
+	user, err := harness.auth.CreateUserWithoutPassword(ctx, CreateUserInput{Email: email, Role: "admin"})
 	if err != nil {
-		t.Fatal(err)
+		test.Fatal(err)
 	}
-	if err := h.a.IssueSetPasswordLink(ctx, user.ID, "/set"); err != nil {
-		t.Fatal(err)
+	if err := harness.auth.IssueSetPasswordLink(ctx, user.ID, "/set"); err != nil {
+		test.Fatal(err)
 	}
-	token := mustQuery(t, h.mails()[0].url, "token")
-	wantStatus(t, h.do("POST", BasePath+"/set-password", map[string]any{"token": token, "newPassword": "admin-password"}, nil), http.StatusOK)
-	wantStatus(t, h.signIn(email, "admin-password"), http.StatusOK)
+	token := mustQuery(test, harness.mails()[0].url, "token")
+	wantStatus(test, harness.do("POST", BasePath+"/set-password", map[string]any{"token": token, "newPassword": "admin-password"}, nil), http.StatusOK)
+	wantStatus(test, harness.signIn(email, "admin-password"), http.StatusOK)
 }
 
-func TestBannedUserGetsNoTwoFactorChallenge(t *testing.T) {
-	t.Parallel()
-	h := newHarness(t, with2FA(false))
-	email := uniqueEmail(t)
-	_, signedIn := h.enrol(email)
-	if err := h.a.Users().BanUser(context.Background(), h.userID(signedIn), "", 0); err != nil {
-		t.Fatal(err)
+func TestBannedUserGetsNoTwoFactorChallenge(test *testing.T) {
+	test.Parallel()
+	harness := newHarness(test, with2FA(false))
+	email := uniqueEmail(test)
+	_, signedIn := harness.enrol(email)
+	if err := harness.auth.Users().BanUser(context.Background(), harness.userID(signedIn), "", 0); err != nil {
+		test.Fatal(err)
 	}
-	wantCode(t, h.signIn(email, "password123"), http.StatusForbidden, "BANNED_USER")
+	wantCode(test, harness.signIn(email, "password123"), http.StatusForbidden, "BANNED_USER")
 }
 
-func TestListUsersAndAdminOperations(t *testing.T) {
-	t.Parallel()
+func TestListUsersAndAdminOperations(test *testing.T) {
+	test.Parallel()
 	ctx := context.Background()
-	pool := newDatabase(t) // lists and counts every user: not the shared database
-	h := newHarness(t, nil)
-	a, err := New(h.a.cfg, pool, h.mail)
+	pool := newDatabase(test) // lists and counts every user: not the shared database
+	harness := newHarness(test, nil)
+	auth, err := New(harness.auth.cfg, pool, harness.mail)
 	if err != nil {
-		t.Fatal(err)
+		test.Fatal(err)
 	}
-	a.now = h.clock.Now
+	auth.now = harness.clock.Now
 	admin := NewUserAdmin(pool) // no secret, cookies or mailer needed
-	admin.now = h.clock.Now
+	admin.now = harness.clock.Now
 
 	names := []string{"Ada Lovelace", "Grace Hopper", "Alan Turing", "100% Real", "under_score"}
 	ids := map[string]string{}
-	for i, n := range names {
-		user, _, err := a.SignUpEmail(ctx, SignUpInput{Name: n, Email: strings.ToLower(strings.ReplaceAll(strings.ReplaceAll(n, " ", "."), "%", "pct")) + "@example.com", Password: "password123"})
+	for index, name := range names {
+		user, _, err := auth.SignUpEmail(ctx, SignUpInput{Name: name, Email: strings.ToLower(strings.ReplaceAll(strings.ReplaceAll(name, " ", "."), "%", "pct")) + "@example.com", Password: "password123"})
 		if err != nil {
-			t.Fatal(err)
+			test.Fatal(err)
 		}
-		ids[n] = user.ID
-		h.clock.Advance(time.Duration(i+1) * time.Second)
+		ids[name] = user.ID
+		harness.clock.Advance(time.Duration(index+1) * time.Second)
 	}
 	if err := admin.SetRole(ctx, ids["Grace Hopper"], "admin"); err != nil {
-		t.Fatal(err)
+		test.Fatal(err)
 	}
 	if err := admin.BanUser(ctx, ids["Alan Turing"], "", 0); err != nil {
-		t.Fatal(err)
+		test.Fatal(err)
 	}
 
-	list := func(q ListUsersQuery) []string {
-		t.Helper()
-		page, err := admin.ListUsers(ctx, q)
+	list := func(query ListUsersQuery) []string {
+		test.Helper()
+		page, err := admin.ListUsers(ctx, query)
 		if err != nil {
-			t.Fatal(err)
+			test.Fatal(err)
 		}
 		var out []string
-		for _, u := range page.Users {
-			out = append(out, u.Name)
+		for _, user := range page.Users {
+			out = append(out, user.Name)
 		}
 		return out
 	}
 	yes, no := true, false
-	for name, c := range map[string]struct {
-		q    ListUsersQuery
-		want string
+	for name, testCase := range map[string]struct {
+		query ListUsersQuery
+		want  string
 	}{
 		"default newest last": {ListUsersQuery{}, "Ada Lovelace,Grace Hopper,Alan Turing,100% Real,under_score"},
 		"sort desc":           {ListUsersQuery{SortDesc: true}, "under_score,100% Real,Alan Turing,Grace Hopper,Ada Lovelace"},
@@ -194,216 +194,216 @@ func TestListUsersAndAdminOperations(t *testing.T) {
 		"banned filter":       {ListUsersQuery{Banned: &yes}, "Alan Turing"},
 		"not banned page":     {ListUsersQuery{Banned: &no, Limit: 2, Offset: 1}, "Grace Hopper,100% Real"},
 	} {
-		if got := strings.Join(list(c.q), ","); got != c.want {
-			t.Errorf("%s: got %q, want %q", name, got, c.want)
+		if got := strings.Join(list(testCase.query), ","); got != testCase.want {
+			test.Errorf("%s: got %q, want %q", name, got, testCase.want)
 		}
 	}
 	page, _ := admin.ListUsers(ctx, ListUsersQuery{Limit: 2, Offset: 2})
 	if page.Total != 5 || page.Limit != 2 || page.Offset != 2 || len(page.Users) != 2 {
-		t.Fatalf("page = %+v", page)
+		test.Fatalf("page = %+v", page)
 	}
 	past, _ := admin.ListUsers(ctx, ListUsersQuery{Limit: 1000, Offset: 50})
 	if past.Total != 5 || len(past.Users) != 0 || past.Limit != 100 {
-		t.Fatalf("past the end = %+v", past)
+		test.Fatalf("past the end = %+v", past)
 	}
 
 	detail, err := admin.GetUserDetail(ctx, ids["Grace Hopper"])
 	if err != nil || detail.User.Role != "admin" || !detail.User.HasPassword || detail.User.TwoFactorEnabled || len(detail.Sessions) != 1 || detail.Sessions[0].Token != "" {
-		t.Fatalf("detail = %+v %v", detail, err)
+		test.Fatalf("detail = %+v %v", detail, err)
 	}
 	if err := admin.SetRole(ctx, ids["Ada Lovelace"], "admin; DROP"); !errors.Is(err, ErrInvalidRole) {
-		t.Fatalf("bad role err = %v", err)
+		test.Fatalf("bad role err = %v", err)
 	}
 	if err := admin.SetRole(ctx, ids["Ada Lovelace"], "admin,support"); err != nil {
-		t.Fatal(err)
+		test.Fatal(err)
 	}
 	if err := admin.RevokeSession(ctx, ids["Ada Lovelace"], detail.Sessions[0].ID); !errors.Is(err, ErrSessionNotFound) {
-		t.Fatalf("revoking another user's session: %v", err)
+		test.Fatalf("revoking another user's session: %v", err)
 	}
 	if err := admin.RevokeSession(ctx, ids["Grace Hopper"], detail.Sessions[0].ID); err != nil {
-		t.Fatal(err)
+		test.Fatal(err)
 	}
 	if err := admin.RevokeSession(ctx, ids["Grace Hopper"], ""); !errors.Is(err, ErrSessionNotFound) {
-		t.Fatalf("empty session id: %v", err)
+		test.Fatalf("empty session id: %v", err)
 	}
 	if err := admin.RevokeUserSessions(ctx, ids["Ada Lovelace"]); err != nil {
-		t.Fatal(err)
+		test.Fatal(err)
 	}
-	if d, _ := admin.GetUserDetail(ctx, ids["Ada Lovelace"]); len(d.Sessions) != 0 {
-		t.Fatalf("sessions left: %+v", d.Sessions)
+	if detail, _ := admin.GetUserDetail(ctx, ids["Ada Lovelace"]); len(detail.Sessions) != 0 {
+		test.Fatalf("sessions left: %+v", detail.Sessions)
 	}
 }
 
-func TestInviteSetPasswordFlow(t *testing.T) {
-	t.Parallel()
-	h := newHarness(t, nil)
+func TestInviteSetPasswordFlow(test *testing.T) {
+	test.Parallel()
+	harness := newHarness(test, nil)
 	ctx := context.Background()
-	email := uniqueEmail(t)
+	email := uniqueEmail(test)
 
-	user, err := h.a.CreateUserWithoutPassword(ctx, CreateUserInput{Name: " New Admin ", Email: strings.ToUpper(email), Role: "admin"})
+	user, err := harness.auth.CreateUserWithoutPassword(ctx, CreateUserInput{Name: " New Admin ", Email: strings.ToUpper(email), Role: "admin"})
 	if err != nil || user.Email != email || user.Name != "New Admin" || user.EmailVerified {
-		t.Fatalf("created = %+v %v", user, err)
+		test.Fatalf("created = %+v %v", user, err)
 	}
-	if _, err := h.a.CreateUserWithoutPassword(ctx, CreateUserInput{Email: email}); !errors.Is(err, ErrEmailTaken) {
-		t.Fatalf("duplicate err = %v", err)
+	if _, err := harness.auth.CreateUserWithoutPassword(ctx, CreateUserInput{Email: email}); !errors.Is(err, ErrEmailTaken) {
+		test.Fatalf("duplicate err = %v", err)
 	}
-	if _, err := h.a.CreateUserWithoutPassword(ctx, CreateUserInput{Email: uniqueEmail(t), Role: "x y"}); !errors.Is(err, ErrInvalidRole) {
-		t.Fatalf("bad role err = %v", err)
+	if _, err := harness.auth.CreateUserWithoutPassword(ctx, CreateUserInput{Email: uniqueEmail(test), Role: "x y"}); !errors.Is(err, ErrInvalidRole) {
+		test.Fatalf("bad role err = %v", err)
 	}
 	// No password yet: sign-in fails like any wrong password.
-	wantCode(t, h.signIn(email, "anything-at-all"), http.StatusUnauthorized, "INVALID_EMAIL_OR_PASSWORD")
+	wantCode(test, harness.signIn(email, "anything-at-all"), http.StatusUnauthorized, "INVALID_EMAIL_OR_PASSWORD")
 
 	for _, bad := range []string{"", "https://evil.test/set"} {
-		if err := h.a.IssueSetPasswordLink(ctx, user.ID, bad); !errors.Is(err, ErrInvalidRedirectURL) {
-			t.Fatalf("redirect %q err = %v", bad, err)
+		if err := harness.auth.IssueSetPasswordLink(ctx, user.ID, bad); !errors.Is(err, ErrInvalidRedirectURL) {
+			test.Fatalf("redirect %q err = %v", bad, err)
 		}
 	}
-	if err := h.a.IssueSetPasswordLink(ctx, generateID(32), "/set"); !errors.Is(err, ErrUserNotFound) {
-		t.Fatalf("unknown user err = %v", err)
+	if err := harness.auth.IssueSetPasswordLink(ctx, generateID(32), "/set"); !errors.Is(err, ErrUserNotFound) {
+		test.Fatalf("unknown user err = %v", err)
 	}
-	if err := h.a.IssueSetPasswordLink(ctx, user.ID, "/set"); err != nil {
-		t.Fatal(err)
+	if err := harness.auth.IssueSetPasswordLink(ctx, user.ID, "/set"); err != nil {
+		test.Fatal(err)
 	}
-	first := h.mails()[0]
+	first := harness.mails()[0]
 	if first.kind != "set-password" || first.to != email || !strings.HasPrefix(first.url, testBase+"/set?token=") {
-		t.Fatalf("mail = %+v", first)
+		test.Fatalf("mail = %+v", first)
 	}
 	// A newer invite replaces the first.
-	if err := h.a.IssueSetPasswordLink(ctx, user.ID, "/set"); err != nil {
-		t.Fatal(err)
+	if err := harness.auth.IssueSetPasswordLink(ctx, user.ID, "/set"); err != nil {
+		test.Fatal(err)
 	}
-	if ok, err := h.a.resetTokenValid(ctx, mustQuery(t, first.url, "token")); ok || err != nil {
-		t.Fatalf("superseded invite still valid (%v)", err)
+	if ok, err := harness.auth.resetTokenValid(ctx, mustQuery(test, first.url, "token")); ok || err != nil {
+		test.Fatalf("superseded invite still valid (%v)", err)
 	}
-	token := mustQuery(t, h.mails()[1].url, "token")
+	token := mustQuery(test, harness.mails()[1].url, "token")
 
-	wantCode(t, h.do("POST", BasePath+"/set-password", map[string]any{"token": token, "newPassword": "short"}, nil), http.StatusBadRequest, "PASSWORD_TOO_SHORT")
-	rec := h.do("POST", BasePath+"/set-password", map[string]any{"token": token, "newPassword": "admin-password"}, nil)
-	wantStatus(t, rec, http.StatusOK)
-	session := h.getSession(hdr{"Cookie": cookieHeader(t, rec)})
+	wantCode(test, harness.do("POST", BasePath+"/set-password", map[string]any{"token": token, "newPassword": "short"}, nil), http.StatusBadRequest, "PASSWORD_TOO_SHORT")
+	rec := harness.do("POST", BasePath+"/set-password", map[string]any{"token": token, "newPassword": "admin-password"}, nil)
+	wantStatus(test, rec, http.StatusOK)
+	session := harness.getSession(hdr{"Cookie": cookieHeader(test, rec)})
 	if session == nil || session["user"].(map[string]any)["emailVerified"] != true {
-		t.Fatalf("set-password session = %v", session)
+		test.Fatalf("set-password session = %v", session)
 	}
 	// Single use.
-	wantCode(t, h.do("POST", BasePath+"/set-password", map[string]any{"token": token, "newPassword": "other-password"}, nil), http.StatusBadRequest, "INVALID_TOKEN")
-	wantStatus(t, h.signIn(email, "admin-password"), http.StatusOK)
-	if d, _ := h.a.Users().GetUserDetail(ctx, user.ID); d.User.Role != "admin" || !d.User.HasPassword {
-		t.Fatalf("detail = %+v", d.User)
+	wantCode(test, harness.do("POST", BasePath+"/set-password", map[string]any{"token": token, "newPassword": "other-password"}, nil), http.StatusBadRequest, "INVALID_TOKEN")
+	wantStatus(test, harness.signIn(email, "admin-password"), http.StatusOK)
+	if detail, _ := harness.auth.Users().GetUserDetail(ctx, user.ID); detail.User.Role != "admin" || !detail.User.HasPassword {
+		test.Fatalf("detail = %+v", detail.User)
 	}
 
 	// Invite links expire after InviteTTL.
-	if err := h.a.IssueSetPasswordLink(ctx, user.ID, "/set"); err != nil {
-		t.Fatal(err)
+	if err := harness.auth.IssueSetPasswordLink(ctx, user.ID, "/set"); err != nil {
+		test.Fatal(err)
 	}
-	link := h.mails()[2].url
-	h.clock.Advance(DefaultInviteTTL + time.Minute)
-	if loc := h.do("GET", BasePath+"/reset-password/"+mustQuery(t, link, "token")+"?callbackURL=/set", nil, nil).Header().Get("Location"); loc != "/set?error=INVALID_TOKEN" {
-		t.Fatalf("expired invite redirect = %q", loc)
+	link := harness.mails()[2].url
+	harness.clock.Advance(DefaultInviteTTL + time.Minute)
+	if loc := harness.do("GET", BasePath+"/reset-password/"+mustQuery(test, link, "token")+"?callbackURL=/set", nil, nil).Header().Get("Location"); loc != "/set?error=INVALID_TOKEN" {
+		test.Fatalf("expired invite redirect = %q", loc)
 	}
 }
 
-func TestInviteContinuesIntoRequiredTwoFactor(t *testing.T) {
-	t.Parallel()
-	h := newHarness(t, with2FA(true))
+func TestInviteContinuesIntoRequiredTwoFactor(test *testing.T) {
+	test.Parallel()
+	harness := newHarness(test, with2FA(true))
 	ctx := context.Background()
-	email := uniqueEmail(t)
-	user, err := h.a.CreateUserWithoutPassword(ctx, CreateUserInput{Email: email, Role: "admin"})
+	email := uniqueEmail(test)
+	user, err := harness.auth.CreateUserWithoutPassword(ctx, CreateUserInput{Email: email, Role: "admin"})
 	if err != nil {
-		t.Fatal(err)
+		test.Fatal(err)
 	}
-	if err := h.a.IssueSetPasswordLink(ctx, user.ID, "/set"); err != nil {
-		t.Fatal(err)
+	if err := harness.auth.IssueSetPasswordLink(ctx, user.ID, "/set"); err != nil {
+		test.Fatal(err)
 	}
-	token := mustQuery(t, h.mails()[0].url, "token")
+	token := mustQuery(test, harness.mails()[0].url, "token")
 
 	// Service form, as an HTML handler uses it.
-	_, _, err = h.a.CompleteSetPassword(ctx, token, "admin-password")
-	c, ok := errors.AsType[*TwoFactorChallenge](err)
-	if !ok || !c.SetupRequired || c.Token == "" {
-		t.Fatalf("CompleteSetPassword err = %v", err)
+	_, _, err = harness.auth.CompleteSetPassword(ctx, token, "admin-password")
+	challenge, ok := errors.AsType[*TwoFactorChallenge](err)
+	if !ok || !challenge.SetupRequired || challenge.Token == "" {
+		test.Fatalf("CompleteSetPassword err = %v", err)
 	}
-	setup, err := h.a.StartTwoFactorSetup(ctx, c.Token)
+	setup, err := harness.auth.StartTwoFactorSetup(ctx, challenge.Token)
 	if err != nil || len(setup.BackupCodes) != backupCodeCount {
-		t.Fatalf("setup = %+v %v", setup, err)
+		test.Fatalf("setup = %+v %v", setup, err)
 	}
-	res, err := h.a.VerifyTwoFactor(ctx, VerifyTwoFactorInput{ChallengeToken: c.Token, Code: h.code(setup.Secret)})
+	res, err := harness.auth.VerifyTwoFactor(ctx, VerifyTwoFactorInput{ChallengeToken: challenge.Token, Code: harness.code(setup.Secret)})
 	if err != nil || res.Session.Token == "" || res.User.ID != user.ID {
-		t.Fatalf("verify = %+v %v", res, err)
+		test.Fatalf("verify = %+v %v", res, err)
 	}
-	if on, _ := h.a.TwoFactorEnabled(ctx, user.ID); !on {
-		t.Fatal("2FA not enabled by enrolment")
+	if on, _ := harness.auth.TwoFactorEnabled(ctx, user.ID); !on {
+		test.Fatal("2FA not enabled by enrolment")
 	}
 	// The enrolment challenge is spent; a fresh sign-in needs a code.
-	if _, err := h.a.StartTwoFactorSetup(ctx, c.Token); !errors.Is(err, ErrInvalidTwoFactorCookie) {
-		t.Fatalf("spent challenge err = %v", err)
+	if _, err := harness.auth.StartTwoFactorSetup(ctx, challenge.Token); !errors.Is(err, ErrInvalidTwoFactorCookie) {
+		test.Fatalf("spent challenge err = %v", err)
 	}
-	h.tick()
-	h.challenge(email, "admin-password")
+	harness.tick()
+	harness.challenge(email, "admin-password")
 }
 
-func TestSeparateInstancesDoNotCollide(t *testing.T) {
-	t.Parallel()
+func TestSeparateInstancesDoNotCollide(test *testing.T) {
+	test.Parallel()
 	ctx := context.Background()
-	appPool, adminPool := newDatabase(t), newEmptyDatabase(t)
+	appPool, adminPool := newDatabase(test), newEmptyDatabase(test)
 	if err := MigrateTable(ctx, adminPool, "goose_admin_auth"); err != nil {
-		t.Fatal(err)
+		test.Fatal(err)
 	}
 	if err := MigrateTable(ctx, adminPool, "goose_admin_auth"); err != nil {
-		t.Fatalf("second run: %v", err)
+		test.Fatalf("second run: %v", err)
 	}
 	var exists bool
 	_ = adminPool.QueryRow(ctx, `SELECT to_regclass('goose_admin_auth') IS NOT NULL AND to_regclass('goose_auth') IS NULL`).Scan(&exists)
 	if !exists {
-		t.Fatal("admin migrations did not use their own version table")
+		test.Fatal("admin migrations did not use their own version table")
 	}
 
-	h := newHarness(t, nil)
-	app, err := New(Config{Secret: testSecret, BaseURL: testBase, RateLimiter: allowAll{}}, appPool, h.mail)
+	fixture := newHarness(test, nil)
+	app, err := New(Config{Secret: testSecret, BaseURL: testBase, RateLimiter: allowAll{}}, appPool, fixture.mail)
 	if err != nil {
-		t.Fatal(err)
+		test.Fatal(err)
 	}
-	admins, err := New(Config{Secret: strings.Repeat("a", 40), BaseURL: "https://admin.test", CookiePrefix: "admin", RateLimiter: allowAll{}}, adminPool, h.mail)
+	admins, err := New(Config{Secret: strings.Repeat("a", 40), BaseURL: "https://admin.test", CookiePrefix: "admin", RateLimiter: allowAll{}}, adminPool, fixture.mail)
 	if err != nil {
-		t.Fatal(err)
+		test.Fatal(err)
 	}
-	if _, err := New(Config{Secret: testSecret, BaseURL: testBase, CookiePrefix: "bad;name"}, appPool, h.mail); err == nil {
-		t.Fatal("invalid cookie prefix accepted")
+	if _, err := New(Config{Secret: testSecret, BaseURL: testBase, CookiePrefix: "bad;name"}, appPool, fixture.mail); err == nil {
+		test.Fatal("invalid cookie prefix accepted")
 	}
 
-	signUp := func(a *Auth) *http.Cookie {
-		h2 := &harness{t: t, a: a, h: a.Handler(), mail: h.mail, clock: h.clock}
+	signUp := func(auth *Auth) *http.Cookie {
+		h2 := &harness{test: test, auth: auth, handler: auth.Handler(), mail: fixture.mail, clock: fixture.clock}
 		rec := h2.do("POST", BasePath+"/sign-up/email", map[string]any{"name": "x", "email": "same@example.com", "password": "password123"}, nil)
-		wantStatus(t, rec, http.StatusOK)
+		wantStatus(test, rec, http.StatusOK)
 		return sessionCookie(rec)
 	}
 	appCookie, adminCookie := signUp(app), signUp(admins)
 	if appCookie.Name != "better-auth.session_token" || adminCookie.Name != "__Secure-admin.session_token" {
-		t.Fatalf("cookie names %q / %q", appCookie.Name, adminCookie.Name)
+		test.Fatalf("cookie names %q / %q", appCookie.Name, adminCookie.Name)
 	}
 	// Each instance ignores the other's cookie, even under its own name.
-	get := func(a *Auth, cookie string) bool {
-		h2 := &harness{t: t, a: a, h: a.Handler(), mail: h.mail, clock: h.clock}
+	get := func(auth *Auth, cookie string) bool {
+		h2 := &harness{test: test, auth: auth, handler: auth.Handler(), mail: fixture.mail, clock: fixture.clock}
 		return h2.getSession(hdr{"Cookie": cookie}) != nil
 	}
 	if !get(app, appCookie.Name+"="+appCookie.Value) || !get(admins, adminCookie.Name+"="+adminCookie.Value) {
-		t.Fatal("own cookie rejected")
+		test.Fatal("own cookie rejected")
 	}
 	if get(admins, adminCookie.Name+"="+appCookie.Value) || get(app, appCookie.Name+"="+adminCookie.Value) {
-		t.Fatal("a cookie signed by the other instance was accepted")
+		test.Fatal("a cookie signed by the other instance was accepted")
 	}
 
 	// Nested (admin handler mounted inside the app's Middleware): each instance
 	// still only sees its own session.
-	nested := &harness{t: t, a: admins, h: app.Middleware(admins.Handler()), mail: h.mail, clock: h.clock}
+	nested := &harness{test: test, auth: admins, handler: app.Middleware(admins.Handler()), mail: fixture.mail, clock: fixture.clock}
 	both := appCookie.Name + "=" + appCookie.Value
 	if nested.getSession(hdr{"Cookie": both}) != nil {
-		t.Fatal("admin instance accepted the app session through nested Middleware")
+		test.Fatal("admin instance accepted the app session through nested Middleware")
 	}
 	if nested.getSession(hdr{"Cookie": both + "; " + adminCookie.Name + "=" + adminCookie.Value}) == nil {
-		t.Fatal("admin session lost under nested Middleware")
+		test.Fatal("admin session lost under nested Middleware")
 	}
-	protected := app.Middleware(admins.RequireUser(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })))
+	protected := app.Middleware(admins.RequireUser(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) { writer.WriteHeader(http.StatusNoContent) })))
 	if rec := nested.serve(protected, "GET", "/admin", nil, hdr{"Cookie": both}); rec.Code != http.StatusUnauthorized {
-		t.Fatalf("admin RequireUser with only an app session: %d", rec.Code)
+		test.Fatalf("admin RequireUser with only an app session: %d", rec.Code)
 	}
 }

@@ -16,25 +16,25 @@ type statusRecorder struct {
 	status int
 }
 
-func (s *statusRecorder) WriteHeader(code int) {
-	s.status = code
-	s.ResponseWriter.WriteHeader(code)
+func (recorder *statusRecorder) WriteHeader(code int) {
+	recorder.status = code
+	recorder.ResponseWriter.WriteHeader(code)
 }
 
 // Unwrap lets http.ResponseController reach Flush for SSE (Datastar).
-func (s *statusRecorder) Unwrap() http.ResponseWriter { return s.ResponseWriter }
+func (recorder *statusRecorder) Unwrap() http.ResponseWriter { return recorder.ResponseWriter }
 
 func logRequests(log *slog.Logger, next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		start := time.Now()
-		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
-		next.ServeHTTP(rec, r)
+		rec := &statusRecorder{ResponseWriter: writer, status: http.StatusOK}
+		next.ServeHTTP(rec, request)
 		level := slog.LevelInfo
-		if r.URL.Path == config.APIRoutes.Healthz {
+		if request.URL.Path == config.APIRoutes.Healthz {
 			level = slog.LevelDebug
 		}
-		log.Log(r.Context(), level, "request",
-			"method", r.Method, "path", logPath(r.URL.Path), "status", rec.status,
+		log.Log(request.Context(), level, "request",
+			"method", request.Method, "path", logPath(request.URL.Path), "status", rec.status,
 			"ms", float64(time.Since(start).Microseconds())/float64(time.Millisecond/time.Microsecond))
 	})
 }
@@ -42,21 +42,21 @@ func logRequests(log *slog.Logger, next http.Handler) http.Handler {
 // recoverPanics answers a panic with a generic 500: the JSON envelope on the
 // API, plain text elsewhere. The panic value is logged, never sent.
 func recoverPanics(log *slog.Logger, next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		defer func() {
-			if v := recover(); v != nil {
-				if err, ok := v.(error); ok && errors.Is(err, http.ErrAbortHandler) {
-					panic(v)
+			if value := recover(); value != nil {
+				if err, ok := value.(error); ok && errors.Is(err, http.ErrAbortHandler) {
+					panic(value)
 				}
-				log.ErrorContext(r.Context(), "panic", "method", r.Method, "path", logPath(r.URL.Path), "panic", v)
-				if strings.HasPrefix(r.URL.Path, apiPrefix) {
-					api.WriteError(w, http.StatusInternalServerError, "Internal server error", nil)
+				log.ErrorContext(request.Context(), "panic", "method", request.Method, "path", logPath(request.URL.Path), "panic", value)
+				if strings.HasPrefix(request.URL.Path, apiPrefix) {
+					api.WriteError(writer, http.StatusInternalServerError, "Internal server error", nil)
 					return
 				}
-				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+				http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			}
 		}()
-		next.ServeHTTP(w, r)
+		next.ServeHTTP(writer, request)
 	})
 }
 
@@ -70,49 +70,49 @@ const apiPrefix = "/api/"
 // the LAN) a typed-in URL still asks for text/html. Scripts and probes send
 // none of these. No CORS headers are ever set, so preflights fail too.
 func apiOnly(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		h := r.Header
-		if h.Get("Sec-Fetch-Site") != "" || h.Get("Sec-Fetch-Mode") != "" || h.Get("Sec-Fetch-Dest") != "" ||
-			h.Get("Origin") != "" || h.Get("Referer") != "" || strings.Contains(h.Get("Accept"), "text/html") {
-			http.NotFound(w, r)
+	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		header := request.Header
+		if header.Get("Sec-Fetch-Site") != "" || header.Get("Sec-Fetch-Mode") != "" || header.Get("Sec-Fetch-Dest") != "" ||
+			header.Get("Origin") != "" || header.Get("Referer") != "" || strings.Contains(header.Get("Accept"), "text/html") {
+			http.NotFound(writer, request)
 			return
 		}
-		next.ServeHTTP(w, r)
+		next.ServeHTTP(writer, request)
 	})
 }
 
 // hideMethods turns a 405 (with its Allow list) into the bare 404 of an
 // unknown path, so the API does not reveal which methods a path has.
 func hideMethods(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		next.ServeHTTP(&methodHider{ResponseWriter: w, r: r}, r)
+	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		next.ServeHTTP(&methodHider{ResponseWriter: writer, request: request}, request)
 	})
 }
 
 type methodHider struct {
 	http.ResponseWriter
-	r      *http.Request
-	hidden bool
+	request *http.Request
+	hidden  bool
 }
 
-func (m *methodHider) WriteHeader(code int) {
+func (hider *methodHider) WriteHeader(code int) {
 	if code != http.StatusMethodNotAllowed {
-		m.ResponseWriter.WriteHeader(code)
+		hider.ResponseWriter.WriteHeader(code)
 		return
 	}
-	m.hidden = true
-	m.Header().Del("Allow")
-	http.NotFound(m.ResponseWriter, m.r)
+	hider.hidden = true
+	hider.Header().Del("Allow")
+	http.NotFound(hider.ResponseWriter, hider.request)
 }
 
-func (m *methodHider) Write(b []byte) (int, error) {
-	if m.hidden {
-		return len(b), nil
+func (hider *methodHider) Write(data []byte) (int, error) {
+	if hider.hidden {
+		return len(data), nil
 	}
-	return m.ResponseWriter.Write(b)
+	return hider.ResponseWriter.Write(data)
 }
 
-func (m *methodHider) Unwrap() http.ResponseWriter { return m.ResponseWriter }
+func (hider *methodHider) Unwrap() http.ResponseWriter { return hider.ResponseWriter }
 
 // tokenPaths carry a single-use credential in the path (emailed reset and
 // set-password links). Logs keep the route, never the token: anyone reading
@@ -120,9 +120,9 @@ func (m *methodHider) Unwrap() http.ResponseWriter { return m.ResponseWriter }
 var tokenPaths = []string{"/api/auth/reset-password/"}
 
 func logPath(path string) string {
-	for _, p := range tokenPaths {
-		if strings.HasPrefix(path, p) && len(path) > len(p) {
-			return p + "{token}"
+	for _, tokenPath := range tokenPaths {
+		if strings.HasPrefix(path, tokenPath) && len(path) > len(tokenPath) {
+			return tokenPath + "{token}"
 		}
 	}
 	return path

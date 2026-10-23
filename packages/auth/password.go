@@ -58,15 +58,15 @@ var errMalformedHash = errors.New("auth: malformed password hash")
 
 // hashPassword returns a PHC-format argon2id hash:
 // $argon2id$v=19$m=65536,t=3,p=4$<salt>$<key> (unpadded standard base64).
-func hashPassword(password string, p argonParams) (string, error) {
-	salt := make([]byte, p.SaltLen)
+func hashPassword(password string, params argonParams) (string, error) {
+	salt := make([]byte, params.SaltLen)
 	if _, err := rand.Read(salt); err != nil {
 		return "", err
 	}
-	key := argon2.IDKey([]byte(password), salt, p.Time, p.Memory, p.Threads, p.KeyLen)
+	key := argon2.IDKey([]byte(password), salt, params.Time, params.Memory, params.Threads, params.KeyLen)
 	b64 := base64.RawStdEncoding
 	return fmt.Sprintf("$argon2id$v=%d$m=%d,t=%d,p=%d$%s$%s",
-		argon2.Version, p.Memory, p.Time, p.Threads, b64.EncodeToString(salt), b64.EncodeToString(key)), nil
+		argon2.Version, params.Memory, params.Time, params.Threads, b64.EncodeToString(salt), b64.EncodeToString(key)), nil
 }
 
 // verifyPassword reports whether password matches hash, comparing in constant
@@ -84,11 +84,11 @@ func verifyPassword(password, hash string) (bool, error) {
 	if _, err := fmt.Sscanf(parts[2], "v=%d", &version); err != nil || version != argon2.Version {
 		return false, errMalformedHash
 	}
-	var p argonParams
-	if _, err := fmt.Sscanf(parts[3], "m=%d,t=%d,p=%d", &p.Memory, &p.Time, &p.Threads); err != nil {
+	var params argonParams
+	if _, err := fmt.Sscanf(parts[3], "m=%d,t=%d,p=%d", &params.Memory, &params.Time, &params.Threads); err != nil {
 		return false, errMalformedHash
 	}
-	if p.Memory == 0 || p.Time == 0 || p.Threads == 0 || p.Memory > 1<<22 || p.Time > 64 {
+	if params.Memory == 0 || params.Time == 0 || params.Threads == 0 || params.Memory > 1<<22 || params.Time > 64 {
 		return false, errMalformedHash
 	}
 	b64 := base64.RawStdEncoding
@@ -100,7 +100,7 @@ func verifyPassword(password, hash string) (bool, error) {
 	if err != nil || len(want) == 0 || len(want) > 128 {
 		return false, errMalformedHash
 	}
-	got := argon2.IDKey([]byte(password), salt, p.Time, p.Memory, p.Threads, uint32(len(want))) //nolint:gosec // len(want) <= 128, checked above
+	got := argon2.IDKey([]byte(password), salt, params.Time, params.Memory, params.Threads, uint32(len(want))) //nolint:gosec // len(want) <= 128, checked above
 	return subtle.ConstantTimeCompare(got, want) == 1, nil
 }
 
@@ -135,12 +135,12 @@ func verifyScrypt(password, hash string) (bool, error) {
 
 // checkPasswordLength applies the configured length rules, counting characters
 // (not bytes) like Better Auth.
-func (a *Auth) checkPasswordLength(password string) error {
-	n := utf8.RuneCountInString(password)
-	if n < a.cfg.MinPasswordLength {
+func (auth *Auth) checkPasswordLength(password string) error {
+	count := utf8.RuneCountInString(password)
+	if count < auth.cfg.MinPasswordLength {
 		return ErrPasswordTooShort
 	}
-	if n > a.cfg.MaxPasswordLength {
+	if count > auth.cfg.MaxPasswordLength {
 		return ErrPasswordTooLong
 	}
 	return nil

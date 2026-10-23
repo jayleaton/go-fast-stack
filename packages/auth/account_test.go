@@ -12,35 +12,35 @@ import (
 )
 
 // session signs email in and returns its bearer header and session id.
-func (h *harness) session(email, password string) (hdr, string) {
-	h.t.Helper()
-	rec := h.signIn(email, password)
-	wantStatus(h.t, rec, http.StatusOK)
-	bearer := hdr{"Authorization": "Bearer " + jsonBody(h.t, rec)["token"].(string)}
-	got := h.getSession(bearer)
+func (harness *harness) session(email, password string) (hdr, string) {
+	harness.test.Helper()
+	rec := harness.signIn(email, password)
+	wantStatus(harness.test, rec, http.StatusOK)
+	bearer := hdr{"Authorization": "Bearer " + jsonBody(harness.test, rec)["token"].(string)}
+	got := harness.getSession(bearer)
 	return bearer, got["session"].(map[string]any)["id"].(string)
 }
 
-func (h *harness) userID(headers hdr) string {
-	h.t.Helper()
-	return h.getSession(headers)["user"].(map[string]any)["id"].(string)
+func (harness *harness) userID(headers hdr) string {
+	harness.test.Helper()
+	return harness.getSession(headers)["user"].(map[string]any)["id"].(string)
 }
 
-func TestChangePassword(t *testing.T) {
-	t.Parallel()
-	h := newHarness(t, nil)
-	email := uniqueEmail(t)
-	cookie := hdr{"Cookie": cookieHeader(t, h.signUp(email, "old-password")), "Origin": testBase}
-	other, _ := h.session(email, "old-password")
+func TestChangePassword(test *testing.T) {
+	test.Parallel()
+	harness := newHarness(test, nil)
+	email := uniqueEmail(test)
+	cookie := hdr{"Cookie": cookieHeader(test, harness.signUp(email, "old-password")), "Origin": testBase}
+	other, _ := harness.session(email, "old-password")
 	change := func(headers hdr, body map[string]any) *httpResult {
-		rec := h.do("POST", BasePath+"/change-password", body, headers)
+		rec := harness.do("POST", BasePath+"/change-password", body, headers)
 		return &httpResult{rec.Code, rec.Body.String()}
 	}
 	body := func(current, next string, revoke bool) map[string]any {
 		return map[string]any{"currentPassword": current, "newPassword": next, "revokeOtherSessions": revoke}
 	}
 
-	for name, c := range map[string]struct {
+	for name, testCase := range map[string]struct {
 		headers hdr
 		body    map[string]any
 		code    int
@@ -51,70 +51,70 @@ func TestChangePassword(t *testing.T) {
 		"wrong current":    {cookie, body("wrong-password", "new-password", false), 400, "INVALID_PASSWORD"},
 		"too short":        {cookie, body("old-password", "short", false), 400, "PASSWORD_TOO_SHORT"},
 	} {
-		if r := change(c.headers, c.body); r.code != c.code || !strings.Contains(r.body, c.errCode) {
-			t.Errorf("%s: %d %s", name, r.code, r.body)
+		if result := change(testCase.headers, testCase.body); result.code != testCase.code || !strings.Contains(result.body, testCase.errCode) {
+			test.Errorf("%s: %d %s", name, result.code, result.body)
 		}
 	}
-	wantStatus(t, h.signIn(email, "old-password"), http.StatusOK) // nothing changed yet
+	wantStatus(test, harness.signIn(email, "old-password"), http.StatusOK) // nothing changed yet
 
 	// An outstanding reset link dies with the password change.
-	if err := h.a.RequestPasswordReset(context.Background(), email, "/r"); err != nil {
-		t.Fatal(err)
+	if err := harness.auth.RequestPasswordReset(context.Background(), email, "/r"); err != nil {
+		test.Fatal(err)
 	}
-	resetToken := mustQuery(t, h.mails()[0].url, "token")
+	resetToken := mustQuery(test, harness.mails()[0].url, "token")
 
-	if r := change(cookie, body("old-password", "new-password", false)); r.code != 200 || !strings.Contains(r.body, `"token":null`) {
-		t.Fatalf("change: %+v", r)
+	if result := change(cookie, body("old-password", "new-password", false)); result.code != 200 || !strings.Contains(result.body, `"token":null`) {
+		test.Fatalf("change: %+v", result)
 	}
-	wantCode(t, h.signIn(email, "old-password"), http.StatusUnauthorized, "INVALID_EMAIL_OR_PASSWORD")
-	wantStatus(t, h.signIn(email, "new-password"), http.StatusOK)
-	if h.getSession(other) == nil || h.getSession(cookie) == nil {
-		t.Fatal("sessions revoked without revokeOtherSessions")
+	wantCode(test, harness.signIn(email, "old-password"), http.StatusUnauthorized, "INVALID_EMAIL_OR_PASSWORD")
+	wantStatus(test, harness.signIn(email, "new-password"), http.StatusOK)
+	if harness.getSession(other) == nil || harness.getSession(cookie) == nil {
+		test.Fatal("sessions revoked without revokeOtherSessions")
 	}
-	if err := h.a.ResetPassword(context.Background(), resetToken, "reset-password"); !errors.Is(err, ErrInvalidToken) {
-		t.Fatalf("reset link survived the password change: %v", err)
+	if err := harness.auth.ResetPassword(context.Background(), resetToken, "reset-password"); !errors.Is(err, ErrInvalidToken) {
+		test.Fatalf("reset link survived the password change: %v", err)
 	}
 
 	// revokeOtherSessions keeps only the session that made the change.
-	if r := change(cookie, body("new-password", "newer-password", true)); r.code != 200 {
-		t.Fatalf("change with revoke: %+v", r)
+	if result := change(cookie, body("new-password", "newer-password", true)); result.code != 200 {
+		test.Fatalf("change with revoke: %+v", result)
 	}
-	if h.getSession(cookie) == nil {
-		t.Fatal("current session revoked")
+	if harness.getSession(cookie) == nil {
+		test.Fatal("current session revoked")
 	}
-	if h.getSession(other) != nil {
-		t.Fatal("other session survived revokeOtherSessions")
+	if harness.getSession(other) != nil {
+		test.Fatal("other session survived revokeOtherSessions")
 	}
 }
 
-func TestChangePasswordWithoutCredentialAccount(t *testing.T) {
-	t.Parallel()
-	h := newHarness(t, nil)
+func TestChangePasswordWithoutCredentialAccount(test *testing.T) {
+	test.Parallel()
+	harness := newHarness(test, nil)
 	ctx := context.Background()
 	id := generateID(32)
-	if _, err := testPool.Exec(ctx, `INSERT INTO "user" ("id","name","email") VALUES ($1,'OAuth',$2)`, id, uniqueEmail(t)); err != nil {
-		t.Fatal(err)
+	if _, err := testPool.Exec(ctx, `INSERT INTO "user" ("id","name","email") VALUES ($1,'OAuth',$2)`, id, uniqueEmail(test)); err != nil {
+		test.Fatal(err)
 	}
-	if err := h.a.ChangePassword(ctx, id, "anything-at-all", "new-password", false, ""); !errors.Is(err, ErrCredentialAccountNotFound) {
-		t.Fatalf("err = %v", err)
+	if err := harness.auth.ChangePassword(ctx, id, "anything-at-all", "new-password", false, ""); !errors.Is(err, ErrCredentialAccountNotFound) {
+		test.Fatalf("err = %v", err)
 	}
-	if err := h.a.ChangePassword(ctx, id, strings.Repeat("x", 129), "new-password", false, ""); !errors.Is(err, ErrInvalidPassword) {
-		t.Fatalf("over-long current password err = %v", err)
+	if err := harness.auth.ChangePassword(ctx, id, strings.Repeat("x", 129), "new-password", false, ""); !errors.Is(err, ErrInvalidPassword) {
+		test.Fatalf("over-long current password err = %v", err)
 	}
 }
 
-func TestChangeEmail(t *testing.T) {
-	t.Parallel()
-	h := newHarness(t, nil)
-	email, taken, next := uniqueEmail(t), uniqueEmail(t), uniqueEmail(t)
-	cookie := hdr{"Cookie": cookieHeader(t, h.signUp(email, "password123")), "Origin": testBase}
-	wantStatus(t, h.signUp(taken, "password123"), http.StatusOK)
+func TestChangeEmail(test *testing.T) {
+	test.Parallel()
+	harness := newHarness(test, nil)
+	email, taken, next := uniqueEmail(test), uniqueEmail(test), uniqueEmail(test)
+	cookie := hdr{"Cookie": cookieHeader(test, harness.signUp(email, "password123")), "Origin": testBase}
+	wantStatus(test, harness.signUp(taken, "password123"), http.StatusOK)
 	change := func(headers hdr, newEmail, callback string) *httpResult {
-		rec := h.do("POST", BasePath+"/change-email", map[string]any{"newEmail": newEmail, "callbackURL": callback}, headers)
+		rec := harness.do("POST", BasePath+"/change-email", map[string]any{"newEmail": newEmail, "callbackURL": callback}, headers)
 		return &httpResult{rec.Code, rec.Body.String()}
 	}
 
-	for name, c := range map[string]struct {
+	for name, testCase := range map[string]struct {
 		headers  hdr
 		newEmail string
 		callback string
@@ -127,252 +127,252 @@ func TestChangeEmail(t *testing.T) {
 		"invalid email":      {cookie, "not-an-email", "", 400, "INVALID_EMAIL"},
 		"untrusted callback": {cookie, next, "https://evil.test/", 403, "INVALID_CALLBACK_URL"},
 	} {
-		if r := change(c.headers, c.newEmail, c.callback); r.code != c.code || !strings.Contains(r.body, c.errCode) {
-			t.Errorf("%s: %d %s", name, r.code, r.body)
+		if result := change(testCase.headers, testCase.newEmail, testCase.callback); result.code != testCase.code || !strings.Contains(result.body, testCase.errCode) {
+			test.Errorf("%s: %d %s", name, result.code, result.body)
 		}
 	}
-	if n := len(h.mails()); n != 0 {
-		t.Fatalf("rejected requests sent %d mails", n)
+	if count := len(harness.mails()); count != 0 {
+		test.Fatalf("rejected requests sent %d mails", count)
 	}
-	if err := h.a.RequestPasswordReset(context.Background(), email, "/r"); err != nil {
-		t.Fatal(err)
+	if err := harness.auth.RequestPasswordReset(context.Background(), email, "/r"); err != nil {
+		test.Fatal(err)
 	}
-	resetLink := h.mails()[0].url
+	resetLink := harness.mails()[0].url
 
-	if r := change(cookie, strings.ToUpper(next), "/dashboard"); r.code != 200 || !strings.Contains(r.body, `"status":true`) {
-		t.Fatalf("change-email: %+v", r)
+	if result := change(cookie, strings.ToUpper(next), "/dashboard"); result.code != 200 || !strings.Contains(result.body, `"status":true`) {
+		test.Fatalf("change-email: %+v", result)
 	}
-	mails := h.mails()[1:]
-	link := mails[slices.IndexFunc(mails, func(m sentMail) bool { return m.kind == "verification" })]
-	notice := mails[slices.IndexFunc(mails, func(m sentMail) bool { return m.kind == "change-notice" })]
+	mails := harness.mails()[1:]
+	link := mails[slices.IndexFunc(mails, func(mail sentMail) bool { return mail.kind == "verification" })]
+	notice := mails[slices.IndexFunc(mails, func(mail sentMail) bool { return mail.kind == "change-notice" })]
 	if len(mails) != 2 || link.to != next || notice.to != email || notice.url != next {
-		t.Fatalf("mails = %+v", mails)
+		test.Fatalf("mails = %+v", mails)
 	}
 	if !strings.HasPrefix(link.url, testBase+"/api/auth/verify-email?token=") || !strings.Contains(link.url, "callbackURL=%2Fdashboard") {
-		t.Fatalf("link = %s", link.url)
+		test.Fatalf("link = %s", link.url)
 	}
 
 	// Nothing changes until the link is opened.
-	if got := h.getSession(cookie)["user"].(map[string]any)["email"]; got != email {
-		t.Fatalf("email changed before confirmation: %v", got)
+	if got := harness.getSession(cookie)["user"].(map[string]any)["email"]; got != email {
+		test.Fatalf("email changed before confirmation: %v", got)
 	}
-	wantCode(t, h.signIn(next, "password123"), http.StatusUnauthorized, "INVALID_EMAIL_OR_PASSWORD")
+	wantCode(test, harness.signIn(next, "password123"), http.StatusUnauthorized, "INVALID_EMAIL_OR_PASSWORD")
 
 	// Opening the link switches the address, verifies it and signs in.
-	rec := h.do("GET", pathOf(t, link.url), nil, nil)
-	wantStatus(t, rec, http.StatusFound)
+	rec := harness.do("GET", pathOf(test, link.url), nil, nil)
+	wantStatus(test, rec, http.StatusFound)
 	if loc := rec.Header().Get("Location"); loc != "/dashboard" {
-		t.Fatalf("redirect = %q", loc)
+		test.Fatalf("redirect = %q", loc)
 	}
-	user := h.getSession(hdr{"Cookie": cookieHeader(t, rec)})["user"].(map[string]any)
+	user := harness.getSession(hdr{"Cookie": cookieHeader(test, rec)})["user"].(map[string]any)
 	if user["email"] != next || user["emailVerified"] != true {
-		t.Fatalf("after confirmation user = %v", user)
+		test.Fatalf("after confirmation user = %v", user)
 	}
-	if got := h.getSession(cookie)["user"].(map[string]any)["email"]; got != next {
-		t.Fatalf("existing session sees %v", got)
+	if got := harness.getSession(cookie)["user"].(map[string]any)["email"]; got != next {
+		test.Fatalf("existing session sees %v", got)
 	}
-	wantStatus(t, h.signIn(next, "password123"), http.StatusOK)
-	wantCode(t, h.signIn(email, "password123"), http.StatusUnauthorized, "INVALID_EMAIL_OR_PASSWORD")
+	wantStatus(test, harness.signIn(next, "password123"), http.StatusOK)
+	wantCode(test, harness.signIn(email, "password123"), http.StatusUnauthorized, "INVALID_EMAIL_OR_PASSWORD")
 
 	// Single use, and reset links sent to the old address are void.
-	rec = h.do("GET", pathOf(t, link.url), nil, nil)
+	rec = harness.do("GET", pathOf(test, link.url), nil, nil)
 	if loc := rec.Header().Get("Location"); loc != "/dashboard?error=INVALID_TOKEN" || sessionCookie(rec) != nil {
-		t.Fatalf("reused link: %d %q", rec.Code, loc)
+		test.Fatalf("reused link: %d %q", rec.Code, loc)
 	}
-	if err := h.a.ResetPassword(context.Background(), mustQuery(t, resetLink, "token"), "reset-password"); !errors.Is(err, ErrInvalidToken) {
-		t.Fatalf("old reset link err = %v", err)
+	if err := harness.auth.ResetPassword(context.Background(), mustQuery(test, resetLink, "token"), "reset-password"); !errors.Is(err, ErrInvalidToken) {
+		test.Fatalf("old reset link err = %v", err)
 	}
 }
 
-func TestChangeEmailLinkExpiresAndRechecksTheAddress(t *testing.T) {
-	t.Parallel()
-	h := newHarness(t, nil)
+func TestChangeEmailLinkExpiresAndRechecksTheAddress(test *testing.T) {
+	test.Parallel()
+	harness := newHarness(test, nil)
 	ctx := context.Background()
-	first, second := uniqueEmail(t), uniqueEmail(t)
-	wantStatus(t, h.signUp(first, "password123"), http.StatusOK)
-	wantStatus(t, h.signUp(second, "password123"), http.StatusOK)
-	firstID, secondID := h.userID(hdr{"Cookie": h.loginCookie(first)}), h.userID(hdr{"Cookie": h.loginCookie(second)})
+	first, second := uniqueEmail(test), uniqueEmail(test)
+	wantStatus(test, harness.signUp(first, "password123"), http.StatusOK)
+	wantStatus(test, harness.signUp(second, "password123"), http.StatusOK)
+	firstID, secondID := harness.userID(hdr{"Cookie": harness.loginCookie(first)}), harness.userID(hdr{"Cookie": harness.loginCookie(second)})
 
-	claimed, expiring := uniqueEmail(t), uniqueEmail(t)
-	if err := h.a.ChangeEmail(ctx, firstID, claimed, ""); err != nil {
-		t.Fatal(err)
+	claimed, expiring := uniqueEmail(test), uniqueEmail(test)
+	if err := harness.auth.ChangeEmail(ctx, firstID, claimed, ""); err != nil {
+		test.Fatal(err)
 	}
-	if err := h.a.ChangeEmail(ctx, secondID, expiring, ""); err != nil {
-		t.Fatal(err)
+	if err := harness.auth.ChangeEmail(ctx, secondID, expiring, ""); err != nil {
+		test.Fatal(err)
 	}
-	links := h.changeLinks()
+	links := harness.changeLinks()
 
 	// Someone registers the target address before the link is opened.
-	wantStatus(t, h.signUp(claimed, "password123"), http.StatusOK)
-	if _, _, err := h.a.VerifyEmail(ctx, links[claimed]); !errors.Is(err, ErrEmailTaken) {
-		t.Fatalf("claimed address err = %v", err)
+	wantStatus(test, harness.signUp(claimed, "password123"), http.StatusOK)
+	if _, _, err := harness.auth.VerifyEmail(ctx, links[claimed]); !errors.Is(err, ErrEmailTaken) {
+		test.Fatalf("claimed address err = %v", err)
 	}
 
-	h.clock.Advance(VerificationTokenTTL + time.Minute)
-	if _, _, err := h.a.VerifyEmail(ctx, links[expiring]); !errors.Is(err, ErrTokenExpired) {
-		t.Fatalf("expired link err = %v", err)
+	harness.clock.Advance(VerificationTokenTTL + time.Minute)
+	if _, _, err := harness.auth.VerifyEmail(ctx, links[expiring]); !errors.Is(err, ErrTokenExpired) {
+		test.Fatalf("expired link err = %v", err)
 	}
-	if err := h.a.ChangeEmail(ctx, generateID(32), uniqueEmail(t), ""); !errors.Is(err, ErrUserNotFound) {
-		t.Fatalf("unknown user err = %v", err)
+	if err := harness.auth.ChangeEmail(ctx, generateID(32), uniqueEmail(test), ""); !errors.Is(err, ErrUserNotFound) {
+		test.Fatalf("unknown user err = %v", err)
 	}
 }
 
 // loginCookie signs email in and returns its Cookie header value.
-func (h *harness) loginCookie(email string) string {
-	h.t.Helper()
-	return cookieHeader(h.t, h.signIn(email, "password123"))
+func (harness *harness) loginCookie(email string) string {
+	harness.test.Helper()
+	return cookieHeader(harness.test, harness.signIn(email, "password123"))
 }
 
 // changeLinks maps each new address to the token of its change-email link.
-func (h *harness) changeLinks() map[string]string {
-	h.t.Helper()
+func (harness *harness) changeLinks() map[string]string {
+	harness.test.Helper()
 	links := map[string]string{}
-	for _, m := range h.mails() {
-		if m.kind == "verification" && strings.Contains(m.url, "token=") {
-			links[m.to] = mustQuery(h.t, m.url, "token")
+	for _, mail := range harness.mails() {
+		if mail.kind == "verification" && strings.Contains(mail.url, "token=") {
+			links[mail.to] = mustQuery(harness.test, mail.url, "token")
 		}
 	}
 	return links
 }
 
-func TestChangeEmailLinksAreBoundToTheirUserAndRequest(t *testing.T) {
-	t.Parallel()
-	h := newHarness(t, nil)
+func TestChangeEmailLinksAreBoundToTheirUserAndRequest(test *testing.T) {
+	test.Parallel()
+	harness := newHarness(test, nil)
 	ctx := context.Background()
-	a, b, c := uniqueEmail(t), uniqueEmail(t), uniqueEmail(t)
-	wantStatus(t, h.signUp(a, "password123"), http.StatusOK)
-	x := h.userID(hdr{"Cookie": h.loginCookie(a)})
+	left, right, code := uniqueEmail(test), uniqueEmail(test), uniqueEmail(test)
+	wantStatus(test, harness.signUp(left, "password123"), http.StatusOK)
+	id := harness.userID(hdr{"Cookie": harness.loginCookie(left)})
 
 	// Attacker X keeps an A→B link, moves to C, and A is recycled by victim Y.
-	if err := h.a.ChangeEmail(ctx, x, b, ""); err != nil {
-		t.Fatal(err)
+	if err := harness.auth.ChangeEmail(ctx, id, right, ""); err != nil {
+		test.Fatal(err)
 	}
-	stale := h.changeLinks()[b]
-	if err := h.a.ChangeEmail(ctx, x, c, ""); err != nil {
-		t.Fatal(err)
+	stale := harness.changeLinks()[right]
+	if err := harness.auth.ChangeEmail(ctx, id, code, ""); err != nil {
+		test.Fatal(err)
 	}
-	if _, _, err := h.a.VerifyEmail(ctx, stale); !errors.Is(err, ErrInvalidToken) {
-		t.Fatalf("superseded link err = %v", err)
+	if _, _, err := harness.auth.VerifyEmail(ctx, stale); !errors.Is(err, ErrInvalidToken) {
+		test.Fatalf("superseded link err = %v", err)
 	}
-	if _, _, err := h.a.VerifyEmail(ctx, h.changeLinks()[c]); err != nil {
-		t.Fatal(err)
+	if _, _, err := harness.auth.VerifyEmail(ctx, harness.changeLinks()[code]); err != nil {
+		test.Fatal(err)
 	}
-	wantStatus(t, h.signUp(a, "password123"), http.StatusOK)
-	victim := h.userID(hdr{"Cookie": h.loginCookie(a)})
-	if user, _, err := h.a.VerifyEmail(ctx, stale); !errors.Is(err, ErrInvalidToken) {
-		t.Fatalf("stale link hit %s (victim %s): %v", user.ID, victim, err)
+	wantStatus(test, harness.signUp(left, "password123"), http.StatusOK)
+	victim := harness.userID(hdr{"Cookie": harness.loginCookie(left)})
+	if user, _, err := harness.auth.VerifyEmail(ctx, stale); !errors.Is(err, ErrInvalidToken) {
+		test.Fatalf("stale link hit %s (victim %s): %v", user.ID, victim, err)
 	}
 
 	// A→B→A: the first link cannot be replayed after moving back.
-	if err := h.a.ChangeEmail(ctx, victim, b, ""); err != nil {
-		t.Fatal(err)
+	if err := harness.auth.ChangeEmail(ctx, victim, right, ""); err != nil {
+		test.Fatal(err)
 	}
-	toB := h.changeLinks()[b]
-	if _, _, err := h.a.VerifyEmail(ctx, toB); err != nil {
-		t.Fatal(err)
+	toB := harness.changeLinks()[right]
+	if _, _, err := harness.auth.VerifyEmail(ctx, toB); err != nil {
+		test.Fatal(err)
 	}
-	if err := h.a.ChangeEmail(ctx, victim, a, ""); err != nil {
-		t.Fatal(err)
+	if err := harness.auth.ChangeEmail(ctx, victim, left, ""); err != nil {
+		test.Fatal(err)
 	}
-	if _, _, err := h.a.VerifyEmail(ctx, h.changeLinks()[a]); err != nil {
-		t.Fatal(err)
+	if _, _, err := harness.auth.VerifyEmail(ctx, harness.changeLinks()[left]); err != nil {
+		test.Fatal(err)
 	}
-	if _, _, err := h.a.VerifyEmail(ctx, toB); !errors.Is(err, ErrInvalidToken) {
-		t.Fatalf("replayed A→B link err = %v", err)
+	if _, _, err := harness.auth.VerifyEmail(ctx, toB); !errors.Is(err, ErrInvalidToken) {
+		test.Fatalf("replayed A→B link err = %v", err)
 	}
 
 	// A link opened in a browser signed in as someone else does not switch accounts.
-	if err := h.a.ChangeEmail(ctx, victim, b, "/done"); err != nil {
-		t.Fatal(err)
+	if err := harness.auth.ChangeEmail(ctx, victim, right, "/done"); err != nil {
+		test.Fatal(err)
 	}
-	link := h.changeLinks()[b]
-	stranger := cookieHeader(t, h.signUp(uniqueEmail(t), "password123"))
-	rec := h.do("GET", BasePath+"/verify-email?callbackURL=/done&token="+link, nil, hdr{"Cookie": stranger})
+	link := harness.changeLinks()[right]
+	stranger := cookieHeader(test, harness.signUp(uniqueEmail(test), "password123"))
+	rec := harness.do("GET", BasePath+"/verify-email?callbackURL=/done&token="+link, nil, hdr{"Cookie": stranger})
 	if loc := rec.Header().Get("Location"); loc != "/done?error=INVALID_USER" || sessionCookie(rec) != nil {
-		t.Fatalf("other user's browser: %d %q", rec.Code, loc)
+		test.Fatalf("other user's browser: %d %q", rec.Code, loc)
 	}
 	// The JSON form returns the updated user, as Better Auth does.
-	rec = h.do("GET", BasePath+"/verify-email?token="+link, nil, nil)
-	wantStatus(t, rec, http.StatusOK)
-	if u := jsonBody(t, rec)["user"].(map[string]any); u["email"] != b || u["emailVerified"] != true {
-		t.Fatalf("user = %v", u)
+	rec = harness.do("GET", BasePath+"/verify-email?token="+link, nil, nil)
+	wantStatus(test, rec, http.StatusOK)
+	if lookup := jsonBody(test, rec)["user"].(map[string]any); lookup["email"] != right || lookup["emailVerified"] != true {
+		test.Fatalf("user = %v", lookup)
 	}
 }
 
-func TestPendingEmailChangeIsCancelledByRecovery(t *testing.T) {
-	t.Parallel()
+func TestPendingEmailChangeIsCancelledByRecovery(test *testing.T) {
+	test.Parallel()
 	ctx := context.Background()
 	// Each recovery fails the subtest that runs it (h.t), not the parent.
-	for name, recover := range map[string]func(h *harness, userID, email string){
-		"change password": func(h *harness, userID, _ string) {
-			if err := h.a.ChangePassword(ctx, userID, "password123", "new-password", false, ""); err != nil {
-				h.t.Fatal(err)
+	for name, recover := range map[string]func(fixture *harness, userID, email string){
+		"change password": func(harness *harness, userID, _ string) {
+			if err := harness.auth.ChangePassword(ctx, userID, "password123", "new-password", false, ""); err != nil {
+				harness.test.Fatal(err)
 			}
 		},
-		"revoke other sessions": func(h *harness, userID, _ string) {
-			if err := h.a.RevokeOtherSessions(ctx, userID, ""); err != nil {
-				h.t.Fatal(err)
+		"revoke other sessions": func(harness *harness, userID, _ string) {
+			if err := harness.auth.RevokeOtherSessions(ctx, userID, ""); err != nil {
+				harness.test.Fatal(err)
 			}
 		},
-		"password reset": func(h *harness, _, email string) {
-			if err := h.a.RequestPasswordReset(ctx, email, "/r"); err != nil {
-				h.t.Fatal(err)
+		"password reset": func(harness *harness, _, email string) {
+			if err := harness.auth.RequestPasswordReset(ctx, email, "/r"); err != nil {
+				harness.test.Fatal(err)
 			}
 			var link string
-			for _, m := range h.mails() {
-				if m.kind == "reset" {
-					link = m.url
+			for _, mail := range harness.mails() {
+				if mail.kind == "reset" {
+					link = mail.url
 				}
 			}
-			if err := h.a.ResetPassword(ctx, mustQuery(h.t, link, "token"), "new-password"); err != nil {
-				h.t.Fatal(err)
+			if err := harness.auth.ResetPassword(ctx, mustQuery(harness.test, link, "token"), "new-password"); err != nil {
+				harness.test.Fatal(err)
 			}
 		},
 	} {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-			h := newHarness(t, nil)
-			email, attacker := uniqueEmail(t), uniqueEmail(t)
-			wantStatus(t, h.signUp(email, "password123"), http.StatusOK)
-			id := h.userID(hdr{"Cookie": h.loginCookie(email)})
-			if err := h.a.ChangeEmail(ctx, id, attacker, ""); err != nil {
-				t.Fatal(err)
+		test.Run(name, func(test *testing.T) {
+			test.Parallel()
+			harness := newHarness(test, nil)
+			email, attacker := uniqueEmail(test), uniqueEmail(test)
+			wantStatus(test, harness.signUp(email, "password123"), http.StatusOK)
+			id := harness.userID(hdr{"Cookie": harness.loginCookie(email)})
+			if err := harness.auth.ChangeEmail(ctx, id, attacker, ""); err != nil {
+				test.Fatal(err)
 			}
-			link := h.changeLinks()[attacker]
-			recover(h, id, email)
-			if _, _, err := h.a.VerifyEmail(ctx, link); !errors.Is(err, ErrInvalidToken) {
-				t.Fatalf("pending change survived: %v", err)
+			link := harness.changeLinks()[attacker]
+			recover(harness, id, email)
+			if _, _, err := harness.auth.VerifyEmail(ctx, link); !errors.Is(err, ErrInvalidToken) {
+				test.Fatalf("pending change survived: %v", err)
 			}
 		})
 	}
 }
 
-func TestChangeEmailNeedsAFreshSession(t *testing.T) {
-	t.Parallel()
-	h := newHarness(t, nil)
-	email := uniqueEmail(t)
-	cookie := hdr{"Cookie": cookieHeader(t, h.signUp(email, "password123")), "Origin": testBase}
-	h.clock.Advance(DefaultFreshAge + time.Minute)
-	rec := h.do("POST", BasePath+"/change-email", map[string]any{"newEmail": uniqueEmail(t)}, cookie)
-	wantCode(t, rec, http.StatusForbidden, "SESSION_NOT_FRESH")
+func TestChangeEmailNeedsAFreshSession(test *testing.T) {
+	test.Parallel()
+	harness := newHarness(test, nil)
+	email := uniqueEmail(test)
+	cookie := hdr{"Cookie": cookieHeader(test, harness.signUp(email, "password123")), "Origin": testBase}
+	harness.clock.Advance(DefaultFreshAge + time.Minute)
+	rec := harness.do("POST", BasePath+"/change-email", map[string]any{"newEmail": uniqueEmail(test)}, cookie)
+	wantCode(test, rec, http.StatusForbidden, "SESSION_NOT_FRESH")
 	// Signing in again gives a fresh session.
-	fresh := hdr{"Cookie": h.loginCookie(email), "Origin": testBase}
-	wantStatus(t, h.do("POST", BasePath+"/change-email", map[string]any{"newEmail": uniqueEmail(t)}, fresh), http.StatusOK)
+	fresh := hdr{"Cookie": harness.loginCookie(email), "Origin": testBase}
+	wantStatus(test, harness.do("POST", BasePath+"/change-email", map[string]any{"newEmail": uniqueEmail(test)}, fresh), http.StatusOK)
 }
 
-func TestChangePasswordConcurrencyAndPerUserLimit(t *testing.T) {
-	t.Parallel()
-	h := newHarness(t, nil)
+func TestChangePasswordConcurrencyAndPerUserLimit(test *testing.T) {
+	test.Parallel()
+	harness := newHarness(test, nil)
 	ctx := context.Background()
-	email := uniqueEmail(t)
-	wantStatus(t, h.signUp(email, "password123"), http.StatusOK)
-	id := h.userID(hdr{"Cookie": h.loginCookie(email)})
+	email := uniqueEmail(test)
+	wantStatus(test, harness.signUp(email, "password123"), http.StatusOK)
+	id := harness.userID(hdr{"Cookie": harness.loginCookie(email)})
 
 	var wg sync.WaitGroup
 	results := make([]error, 6)
-	for i := range results {
+	for index := range results {
 		wg.Go(func() {
-			results[i] = h.a.ChangePassword(ctx, id, "password123", "new-password-"+string(rune('a'+i)), true, "")
+			results[index] = harness.auth.ChangePassword(ctx, id, "password123", "new-password-"+string(rune('a'+index)), true, "")
 		})
 	}
 	wg.Wait()
@@ -381,146 +381,146 @@ func TestChangePasswordConcurrencyAndPerUserLimit(t *testing.T) {
 		if err == nil {
 			won++
 		} else if !errors.Is(err, ErrInvalidPassword) {
-			t.Fatalf("unexpected error: %v", err)
+			test.Fatalf("unexpected error: %v", err)
 		}
 	}
 	if won != 1 {
-		t.Fatalf("%d concurrent password changes succeeded, want 1", won)
+		test.Fatalf("%d concurrent password changes succeeded, want 1", won)
 	}
 
 	// The per-user budget holds even when every attempt comes from a new IP.
-	limited := newHarness(t, func(c *Config) { c.RateLimiter = NewMemoryRateLimiter(); c.ClientIPHeader = "X-Real-IP" })
-	victim := uniqueEmail(t)
-	cookie := cookieHeader(t, limited.signUp(victim, "password123"))
+	limited := newHarness(test, func(config *Config) { config.RateLimiter = NewMemoryRateLimiter(); config.ClientIPHeader = "X-Real-IP" })
+	victim := uniqueEmail(test)
+	cookie := cookieHeader(test, limited.signUp(victim, "password123"))
 	codes := []int{}
-	for i := range 4 {
+	for index := range 4 {
 		rec := limited.do("POST", BasePath+"/change-password", map[string]any{"currentPassword": "guess-guess", "newPassword": "new-password"},
-			hdr{"Cookie": cookie, "Origin": testBase, "X-Real-IP": "203.0.113." + string(rune('1'+i))})
+			hdr{"Cookie": cookie, "Origin": testBase, "X-Real-IP": "203.0.113." + string(rune('1'+index))})
 		codes = append(codes, rec.Code)
 	}
 	if !slices.Equal(codes, []int{400, 400, 400, 429}) {
-		t.Fatalf("codes = %v, want three guesses then 429", codes)
+		test.Fatalf("codes = %v, want three guesses then 429", codes)
 	}
 }
 
-func TestChangeEmailHidesTakenAddressWhenVerificationRequired(t *testing.T) {
-	t.Parallel()
-	h := newHarness(t, func(c *Config) { c.RequireEmailVerification = true })
+func TestChangeEmailHidesTakenAddressWhenVerificationRequired(test *testing.T) {
+	test.Parallel()
+	harness := newHarness(test, func(config *Config) { config.RequireEmailVerification = true })
 	ctx := context.Background()
-	owner, taken := uniqueEmail(t), uniqueEmail(t)
-	for _, e := range []string{owner, taken} {
-		wantStatus(t, h.signUp(e, "password123"), http.StatusOK)
-		rec := h.do("GET", pathOf(t, h.mails()[len(h.mails())-1].url), nil, nil)
-		wantStatus(t, rec, http.StatusFound)
+	owner, taken := uniqueEmail(test), uniqueEmail(test)
+	for _, email := range []string{owner, taken} {
+		wantStatus(test, harness.signUp(email, "password123"), http.StatusOK)
+		rec := harness.do("GET", pathOf(test, harness.mails()[len(harness.mails())-1].url), nil, nil)
+		wantStatus(test, rec, http.StatusFound)
 	}
-	sent := len(h.mails())
-	user, _, err := h.a.SignInEmail(ctx, SignInInput{Email: owner, Password: "password123"})
+	sent := len(harness.mails())
+	user, _, err := harness.auth.SignInEmail(ctx, SignInInput{Email: owner, Password: "password123"})
 	if err != nil {
-		t.Fatal(err)
+		test.Fatal(err)
 	}
-	if err := h.a.ChangeEmail(ctx, user.ID, taken, ""); err != nil {
-		t.Fatalf("taken address revealed: %v", err)
+	if err := harness.auth.ChangeEmail(ctx, user.ID, taken, ""); err != nil {
+		test.Fatalf("taken address revealed: %v", err)
 	}
-	if n := len(h.mails()); n != sent {
-		t.Fatalf("taken address got mail (%d new)", n-sent)
+	if count := len(harness.mails()); count != sent {
+		test.Fatalf("taken address got mail (%d new)", count-sent)
 	}
 }
 
-func TestSessionsListAndRevoke(t *testing.T) {
-	t.Parallel()
-	h := newHarness(t, nil)
+func TestSessionsListAndRevoke(test *testing.T) {
+	test.Parallel()
+	harness := newHarness(test, nil)
 	ctx := context.Background()
-	email, otherEmail := uniqueEmail(t), uniqueEmail(t)
-	rec := h.signUp(email, "password123")
-	cookie := hdr{"Cookie": cookieHeader(t, rec), "Origin": testBase}
-	cookieID := h.getSession(cookie)["session"].(map[string]any)["id"].(string)
-	b, bID := h.session(email, "password123")
-	c, cID := h.session(email, "password123")
-	wantStatus(t, h.signUp(otherEmail, "password123"), http.StatusOK)
-	stranger, strangerID := h.session(otherEmail, "password123")
-	userID := h.userID(cookie)
+	email, otherEmail := uniqueEmail(test), uniqueEmail(test)
+	rec := harness.signUp(email, "password123")
+	cookie := hdr{"Cookie": cookieHeader(test, rec), "Origin": testBase}
+	cookieID := harness.getSession(cookie)["session"].(map[string]any)["id"].(string)
+	sessionB, bID := harness.session(email, "password123")
+	sessionC, cID := harness.session(email, "password123")
+	wantStatus(test, harness.signUp(otherEmail, "password123"), http.StatusOK)
+	stranger, strangerID := harness.session(otherEmail, "password123")
+	userID := harness.userID(cookie)
 
 	// list-sessions: own sessions only, newest first, never a token.
-	wantCode(t, h.do("GET", BasePath+"/list-sessions", nil, nil), http.StatusUnauthorized, "UNAUTHORIZED")
-	rec = h.do("GET", BasePath+"/list-sessions", nil, c)
-	wantStatus(t, rec, http.StatusOK)
+	wantCode(test, harness.do("GET", BasePath+"/list-sessions", nil, nil), http.StatusUnauthorized, "UNAUTHORIZED")
+	rec = harness.do("GET", BasePath+"/list-sessions", nil, sessionC)
+	wantStatus(test, rec, http.StatusOK)
 	if strings.Contains(rec.Body.String(), `"token"`) {
-		t.Fatalf("list-sessions exposes tokens: %s", rec.Body)
+		test.Fatalf("list-sessions exposes tokens: %s", rec.Body)
 	}
-	sessions, err := h.a.ListSessions(ctx, userID)
+	sessions, err := harness.auth.ListSessions(ctx, userID)
 	if err != nil {
-		t.Fatal(err)
+		test.Fatal(err)
 	}
 	var ids []string
-	for _, s := range sessions {
-		if s.Token != "" || s.UserID != userID {
-			t.Fatalf("session %+v", s)
+	for _, session := range sessions {
+		if session.Token != "" || session.UserID != userID {
+			test.Fatalf("session %+v", session)
 		}
-		ids = append(ids, s.ID)
+		ids = append(ids, session.ID)
 	}
 	if len(ids) != 3 || !slices.Contains(ids, cookieID) || !slices.Contains(ids, bID) || !slices.Contains(ids, cID) || slices.Contains(ids, strangerID) {
-		t.Fatalf("ids = %v", ids)
+		test.Fatalf("ids = %v", ids)
 	}
 	if !sessions[0].CreatedAt.After(sessions[2].CreatedAt) && !sessions[0].CreatedAt.Equal(sessions[2].CreatedAt) {
-		t.Fatalf("not newest first: %v", sessions)
+		test.Fatalf("not newest first: %v", sessions)
 	}
 
 	revoke := func(headers hdr, body map[string]any) *httpResult {
-		rec := h.do("POST", BasePath+"/revoke-session", body, headers)
+		rec := harness.do("POST", BasePath+"/revoke-session", body, headers)
 		return &httpResult{rec.Code, rec.Body.String()}
 	}
 	// Someone else's session cannot be revoked, by id or by token.
-	if r := revoke(c, map[string]any{"id": strangerID}); r.code != 404 || !strings.Contains(r.body, "SESSION_NOT_FOUND") {
-		t.Fatalf("revoke stranger: %+v", r)
+	if result := revoke(sessionC, map[string]any{"id": strangerID}); result.code != 404 || !strings.Contains(result.body, "SESSION_NOT_FOUND") {
+		test.Fatalf("revoke stranger: %+v", result)
 	}
-	if r := revoke(c, map[string]any{"token": strings.TrimPrefix(stranger["Authorization"], "Bearer ")}); r.code != 404 {
-		t.Fatalf("revoke stranger by token: %+v", r)
+	if result := revoke(sessionC, map[string]any{"token": strings.TrimPrefix(stranger["Authorization"], "Bearer ")}); result.code != 404 {
+		test.Fatalf("revoke stranger by token: %+v", result)
 	}
-	if err := h.a.RevokeSession(ctx, userID, strangerID); !errors.Is(err, ErrSessionNotFound) {
-		t.Fatalf("service revoke stranger err = %v", err)
+	if err := harness.auth.RevokeSession(ctx, userID, strangerID); !errors.Is(err, ErrSessionNotFound) {
+		test.Fatalf("service revoke stranger err = %v", err)
 	}
-	if r := revoke(c, map[string]any{}); r.code != 404 {
-		t.Fatalf("revoke nothing: %+v", r)
+	if result := revoke(sessionC, map[string]any{}); result.code != 404 {
+		test.Fatalf("revoke nothing: %+v", result)
 	}
-	if h.getSession(stranger) == nil {
-		t.Fatal("stranger's session was revoked")
+	if harness.getSession(stranger) == nil {
+		test.Fatal("stranger's session was revoked")
 	}
-	if r := revoke(hdr{"Cookie": cookie["Cookie"], "Origin": "https://evil.test"}, map[string]any{"id": bID}); r.code != 403 {
-		t.Fatalf("cross-origin revoke: %+v", r)
+	if result := revoke(hdr{"Cookie": cookie["Cookie"], "Origin": "https://evil.test"}, map[string]any{"id": bID}); result.code != 403 {
+		test.Fatalf("cross-origin revoke: %+v", result)
 	}
 
 	// Revoking one of my sessions signs only that one out.
-	if r := revoke(c, map[string]any{"id": bID}); r.code != 200 {
-		t.Fatalf("revoke b: %+v", r)
+	if result := revoke(sessionC, map[string]any{"id": bID}); result.code != 200 {
+		test.Fatalf("revoke b: %+v", result)
 	}
-	if h.getSession(b) != nil || h.getSession(c) == nil || h.getSession(cookie) == nil {
-		t.Fatal("wrong sessions after revoking b")
+	if harness.getSession(sessionB) != nil || harness.getSession(sessionC) == nil || harness.getSession(cookie) == nil {
+		test.Fatal("wrong sessions after revoking b")
 	}
 	// Revoking the current cookie session also clears the cookie.
-	rec = h.do("POST", BasePath+"/revoke-session", map[string]any{"id": cookieID}, cookie)
-	wantStatus(t, rec, http.StatusOK)
+	rec = harness.do("POST", BasePath+"/revoke-session", map[string]any{"id": cookieID}, cookie)
+	wantStatus(test, rec, http.StatusOK)
 	if ck := sessionCookie(rec); ck == nil || ck.MaxAge >= 0 {
-		t.Fatal("cookie not cleared when revoking the current session")
+		test.Fatal("cookie not cleared when revoking the current session")
 	}
-	if h.getSession(cookie) != nil {
-		t.Fatal("current session survived")
+	if harness.getSession(cookie) != nil {
+		test.Fatal("current session survived")
 	}
 
 	// revoke-other-sessions keeps the caller's session only.
-	d, _ := h.session(email, "password123")
-	e, _ := h.session(email, "password123")
-	wantStatus(t, h.do("POST", BasePath+"/revoke-other-sessions", nil, c), http.StatusOK)
-	if h.getSession(c) == nil || h.getSession(d) != nil || h.getSession(e) != nil || h.getSession(stranger) == nil {
-		t.Fatal("revoke-other-sessions revoked the wrong sessions")
+	sessionD, _ := harness.session(email, "password123")
+	sessionE, _ := harness.session(email, "password123")
+	wantStatus(test, harness.do("POST", BasePath+"/revoke-other-sessions", nil, sessionC), http.StatusOK)
+	if harness.getSession(sessionC) == nil || harness.getSession(sessionD) != nil || harness.getSession(sessionE) != nil || harness.getSession(stranger) == nil {
+		test.Fatal("revoke-other-sessions revoked the wrong sessions")
 	}
-	if sessions, _ := h.a.ListSessions(ctx, userID); len(sessions) != 1 || sessions[0].ID != cID {
-		t.Fatalf("remaining = %+v", sessions)
+	if sessions, _ := harness.auth.ListSessions(ctx, userID); len(sessions) != 1 || sessions[0].ID != cID {
+		test.Fatalf("remaining = %+v", sessions)
 	}
-	wantCode(t, h.do("POST", BasePath+"/revoke-other-sessions", nil, nil), http.StatusUnauthorized, "UNAUTHORIZED")
+	wantCode(test, harness.do("POST", BasePath+"/revoke-other-sessions", nil, nil), http.StatusUnauthorized, "UNAUTHORIZED")
 
 	// Expired sessions are not listed.
-	h.clock.Advance(DefaultSessionTTL + time.Minute)
-	if sessions, _ := h.a.ListSessions(ctx, userID); len(sessions) != 0 {
-		t.Fatalf("expired sessions listed: %+v", sessions)
+	harness.clock.Advance(DefaultSessionTTL + time.Minute)
+	if sessions, _ := harness.auth.ListSessions(ctx, userID); len(sessions) != 0 {
+		test.Fatalf("expired sessions listed: %+v", sessions)
 	}
 }

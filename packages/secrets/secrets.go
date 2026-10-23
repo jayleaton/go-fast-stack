@@ -44,43 +44,43 @@ const redacted = "[redacted]"
 // Secret is a secret value. Every way of printing it (fmt verbs, slog, JSON,
 // text marshalling) yields "[redacted]". No method returns the value, so no
 // interface can reach it either: reveal.Value is the only way to read it.
-type Secret struct{ v string }
+type Secret struct{ value string }
 
 func init() {
-	access.Reveal = func(x any) (string, bool) {
-		s, ok := x.(Secret)
-		return s.v, ok
+	access.Reveal = func(input any) (string, bool) {
+		secret, ok := input.(Secret)
+		return secret.value, ok
 	}
 }
 
 // NewSecret wraps v.
-func NewSecret(v string) Secret { return Secret{v} }
+func NewSecret(value string) Secret { return Secret{value} }
 
 // Len is the length of the value in bytes, for validation (minimum lengths)
 // without revealing it.
-func (s Secret) Len() int { return len(s.v) }
+func (secret Secret) Len() int { return len(secret.value) }
 
 // TrimSpace returns the secret without leading and trailing white space.
-func (s Secret) TrimSpace() Secret { return Secret{strings.TrimSpace(s.v)} }
+func (secret Secret) TrimSpace() Secret { return Secret{strings.TrimSpace(secret.value)} }
 
 // IsZero reports whether the secret is empty (unset or removed upstream).
-func (s Secret) IsZero() bool { return s.v == "" }
+func (secret Secret) IsZero() bool { return secret.value == "" }
 
 // Equal compares two secrets in constant time.
-func (s Secret) Equal(o Secret) bool {
-	return subtle.ConstantTimeCompare([]byte(s.v), []byte(o.v)) == 1
+func (secret Secret) Equal(other Secret) bool {
+	return subtle.ConstantTimeCompare([]byte(secret.value), []byte(other.value)) == 1
 }
 
 // Fingerprint identifies the value in logs without revealing it: the first
 // 4 bytes of an HMAC-SHA256 under a random per-process key, so it shows when a
 // value changed within one process but cannot be compared across processes
 // or brute-forced offline. "none" for an empty secret.
-func (s Secret) Fingerprint() string {
-	if s.v == "" {
+func (secret Secret) Fingerprint() string {
+	if secret.value == "" {
 		return "none"
 	}
 	mac := hmac.New(sha256.New, fingerprintKey)
-	mac.Write([]byte(s.v))
+	mac.Write([]byte(secret.value))
 	return "fp:" + hex.EncodeToString(mac.Sum(nil)[:4])
 }
 
@@ -89,23 +89,23 @@ func (s Secret) Fingerprint() string {
 const fingerprintKeyBytes = 32
 
 var fingerprintKey = func() []byte {
-	k := make([]byte, fingerprintKeyBytes)
-	_, _ = rand.Read(k) // never fails on supported platforms (crypto/rand docs)
-	return k
+	data := make([]byte, fingerprintKeyBytes)
+	_, _ = rand.Read(data) // never fails on supported platforms (crypto/rand docs)
+	return data
 }()
 
 // Format implements fmt.Formatter for every verb, so %v, %s, %d, %x and %#v
 // all print "[redacted]".
-func (s Secret) Format(f fmt.State, _ rune) { _, _ = io.WriteString(f, redacted) }
+func (secret Secret) Format(state fmt.State, _ rune) { _, _ = io.WriteString(state, redacted) }
 
 // String returns "[redacted]".
-func (s Secret) String() string { return redacted }
+func (secret Secret) String() string { return redacted }
 
 // LogValue implements slog.LogValuer.
-func (s Secret) LogValue() slog.Value { return slog.StringValue(redacted) }
+func (secret Secret) LogValue() slog.Value { return slog.StringValue(redacted) }
 
 // MarshalText implements encoding.TextMarshaler (and so JSON).
-func (s Secret) MarshalText() ([]byte, error) { return []byte(redacted), nil }
+func (secret Secret) MarshalText() ([]byte, error) { return []byte(redacted), nil }
 
 // Snapshot is every secret a provider returned for one fetch. It is immutable.
 type Snapshot struct {
@@ -116,38 +116,38 @@ type Snapshot struct {
 // NewSnapshot copies values into a Snapshot. revision is the provider's
 // version of the whole set (an ETag) or "" when it has none.
 func NewSnapshot(values map[string]string, revision string) Snapshot {
-	s := Snapshot{values: make(map[string]Secret, len(values)), revision: revision}
-	for k, v := range values {
-		s.values[k] = Secret{v}
+	snapshot := Snapshot{values: make(map[string]Secret, len(values)), revision: revision}
+	for key, value := range values {
+		snapshot.values[key] = Secret{value}
 	}
-	return s
+	return snapshot
 }
 
 // Format prints names and revision only: fmt cannot reach Secret's own
 // redaction through the unexported map, so Snapshot redacts itself.
-func (s Snapshot) Format(f fmt.State, _ rune) {
-	_, _ = fmt.Fprintf(f, "secrets.Snapshot{names: %v, revision: %q}", s.Names(), s.revision)
+func (snapshot Snapshot) Format(state fmt.State, _ rune) {
+	_, _ = fmt.Fprintf(state, "secrets.Snapshot{names: %v, revision: %q}", snapshot.Names(), snapshot.revision)
 }
 
 // LogValue implements slog.LogValuer with names and revision only.
-func (s Snapshot) LogValue() slog.Value {
-	return slog.GroupValue(slog.Any("names", s.Names()), slog.String("revision", s.revision))
+func (snapshot Snapshot) LogValue() slog.Value {
+	return slog.GroupValue(slog.Any("names", snapshot.Names()), slog.String("revision", snapshot.revision))
 }
 
 // Get returns the named secret and whether the snapshot has it.
-func (s Snapshot) Get(name string) (Secret, bool) {
-	v, ok := s.values[name]
-	return v, ok
+func (snapshot Snapshot) Get(name string) (Secret, bool) {
+	secret, ok := snapshot.values[name]
+	return secret, ok
 }
 
 // Names returns the secret names, sorted. Names are not secret.
-func (s Snapshot) Names() []string { return slices.Sorted(maps.Keys(s.values)) }
+func (snapshot Snapshot) Names() []string { return slices.Sorted(maps.Keys(snapshot.values)) }
 
 // Len is the number of secrets.
-func (s Snapshot) Len() int { return len(s.values) }
+func (snapshot Snapshot) Len() int { return len(snapshot.values) }
 
 // Revision is the provider's version of the set, "" if it has none.
-func (s Snapshot) Revision() string { return s.revision }
+func (snapshot Snapshot) Revision() string { return snapshot.revision }
 
 // Provider fetches the full set of secrets for one service and environment.
 // Implementations must not put secret values, tokens or response bodies in

@@ -55,7 +55,7 @@ const (
 
 // Load reads and validates config; every problem is reported at once.
 func Load(getenv func(string) string) (Config, error) {
-	get := func(k string) string { return strings.TrimSpace(getenv(k)) }
+	get := func(key string) string { return strings.TrimSpace(getenv(key)) }
 	var errs []error
 	cfg := Config{
 		Production: get("APP_ENV") == "production",
@@ -85,11 +85,11 @@ func Load(getenv func(string) string) (Config, error) {
 		errs = append(errs, err)
 	}
 	opts := secrets.BootstrapOptions{Keys: liveSecrets, Validate: validateLive(cfg.Store.Dir != ""), Production: cfg.Production}
-	m, problems := secrets.Bootstrap(get, opts)
+	manager, problems := secrets.Bootstrap(get, opts)
 	errs = append(errs, problems...)
 	// A manager starts once; every run builds its own (same, validated
 	// bootstrap), so each run reads the provider's current values.
-	cfg.Secrets = Secrets{provider: m.Provider(), fresh: func() *secrets.Manager { m, _ := secrets.Bootstrap(get, opts); return m }}
+	cfg.Secrets = Secrets{provider: manager.Provider(), fresh: func() *secrets.Manager { manager, _ := secrets.Bootstrap(get, opts); return manager }}
 	if len(errs) > 0 {
 		return Config{}, fmt.Errorf("invalid backup config: %w", errors.Join(errs...))
 	}
@@ -102,13 +102,13 @@ func validateLive(localDir bool) func(get func(string) string) []error {
 		if get(secretDatabaseURL) == "" {
 			errs = append(errs, errors.New("DATABASE_URL (the app database) is required"))
 		}
-		k := secrets.ParseKeyring(get, secretEncryption)
-		if k.Current.Len() < backup.MinKeyLength {
+		keyring := secrets.ParseKeyring(get, secretEncryption)
+		if keyring.Current.Len() < backup.MinKeyLength {
 			errs = append(errs, errors.New("BACKUP_ENCRYPTION_KEY must be at least 32 characters (openssl rand -base64 32); keep a copy outside Railway"))
 		}
-		for i, v := range k.Previous {
-			if v.Len() < backup.MinKeyLength {
-				errs = append(errs, fmt.Errorf("BACKUP_ENCRYPTION_KEY_PREVIOUS entry %d must be at least 32 characters", i+1))
+		for index, secret := range keyring.Previous {
+			if secret.Len() < backup.MinKeyLength {
+				errs = append(errs, fmt.Errorf("BACKUP_ENCRYPTION_KEY_PREVIOUS entry %d must be at least 32 characters", index+1))
 			}
 		}
 		if !localDir && (get(secretAccessKeyID) == "" || get(secretSecretAccessKey) == "") {
@@ -127,26 +127,26 @@ type Secrets struct {
 
 // Load fetches the current values (a run is short: no polling). Call it
 // once per run: values rotated upstream apply to the next run.
-func (s Secrets) Load(ctx context.Context) (Values, error) {
-	m := s.fresh()
-	if err := m.Start(ctx); err != nil {
+func (accessors Secrets) Load(ctx context.Context) (Values, error) {
+	manager := accessors.fresh()
+	if err := manager.Start(ctx); err != nil {
 		return Values{}, err
 	}
-	defer m.Stop()
-	get := func(name string) secrets.Secret { v, _ := m.Get(name); return v.TrimSpace() }
-	k, err := m.Keyring(secretEncryption)
+	defer manager.Stop()
+	get := func(name string) secrets.Secret { secret, _ := manager.Get(name); return secret.TrimSpace() }
+	keyring, err := manager.Keyring(secretEncryption)
 	if err != nil {
 		return Values{}, err
 	}
 	return Values{
 		DatabaseURL: get(secretDatabaseURL), AdminDatabaseURL: get(secretAdminDatabaseURL),
 		AccessKeyID: get(secretAccessKeyID), SecretAccessKey: get(secretSecretAccessKey),
-		Encryption: k,
+		Encryption: keyring,
 	}, nil
 }
 
 // Provider is SECRETS_PROVIDER.
-func (s Secrets) Provider() string { return s.provider }
+func (accessors Secrets) Provider() string { return accessors.provider }
 
 // Values are one run's credentials.
 type Values struct {
@@ -162,27 +162,27 @@ func parseCount(key, raw string, fallback, maxN int) (int, error) {
 	if raw == "" {
 		return fallback, nil
 	}
-	n, err := strconv.Atoi(raw)
-	if err != nil || n < 0 || n > maxN {
+	count, err := strconv.Atoi(raw)
+	if err != nil || count < 0 || count > maxN {
 		return fallback, fmt.Errorf("%s must be a number from 0 to %d, got %q", key, maxN, raw)
 	}
-	return n, nil
+	return count, nil
 }
 
 func parseBool(key, raw string) (bool, error) {
 	if raw == "" {
 		return false, nil
 	}
-	b, err := strconv.ParseBool(raw)
+	flag, err := strconv.ParseBool(raw)
 	if err != nil {
 		return false, fmt.Errorf("%s must be true or false, got %q", key, raw)
 	}
-	return b, nil
+	return flag, nil
 }
 
-func or(v, fallback string) string {
-	if v == "" {
+func or(value, fallback string) string {
+	if value == "" {
 		return fallback
 	}
-	return v
+	return value
 }

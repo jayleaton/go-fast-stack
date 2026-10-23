@@ -13,32 +13,32 @@ import (
 	"time"
 )
 
-func TestMigrateIsIdempotent(t *testing.T) {
-	t.Parallel()
-	pool := newDatabase(t) // already migrated (a clone of the template)
+func TestMigrateIsIdempotent(test *testing.T) {
+	test.Parallel()
+	pool := newDatabase(test) // already migrated (a clone of the template)
 	ctx := context.Background()
 	if err := Migrate(ctx, pool); err != nil {
-		t.Fatal(err)
+		test.Fatal(err)
 	}
 	var version int64
 	if err := pool.QueryRow(ctx, `SELECT max(version_id) FROM goose_auth`).Scan(&version); err != nil {
-		t.Fatal(err)
+		test.Fatal(err)
 	}
 	files, _ := fs.Glob(Migrations, "*.sql")
 	if version != int64(len(files)) {
-		t.Fatalf("goose_auth version = %d, want %d", version, len(files))
+		test.Fatalf("goose_auth version = %d, want %d", version, len(files))
 	}
 	for _, table := range []string{"user", "session", "account", "verification"} {
 		var exists bool
 		if err := pool.QueryRow(ctx, `SELECT to_regclass($1) IS NOT NULL`, `"`+table+`"`).Scan(&exists); err != nil || !exists {
-			t.Fatalf("table %q missing (err %v)", table, err)
+			test.Fatalf("table %q missing (err %v)", table, err)
 		}
 	}
 }
 
-func TestNewValidatesConfig(t *testing.T) {
-	t.Parallel()
-	needDB(t)
+func TestNewValidatesConfig(test *testing.T) {
+	test.Parallel()
+	needDB(test)
 	cases := map[string]Config{
 		"short secret":          {Secret: "short", BaseURL: testBase},
 		"no base url":           {Secret: testSecret},
@@ -52,89 +52,89 @@ func TestNewValidatesConfig(t *testing.T) {
 	}
 	for name, cfg := range cases {
 		if _, err := New(cfg, testPool, &captureMailer{}); err == nil {
-			t.Errorf("%s: New succeeded, want error", name)
+			test.Errorf("%s: New succeeded, want error", name)
 		}
 	}
 	if _, err := New(Config{Secret: testSecret, BaseURL: testBase}, testPool, nil); err == nil {
-		t.Error("nil mailer accepted")
+		test.Error("nil mailer accepted")
 	}
 	if _, err := New(Config{Secret: testSecret, BaseURL: testBase}, nil, &captureMailer{}); err == nil {
-		t.Error("nil pool accepted")
+		test.Error("nil pool accepted")
 	}
 }
 
-func TestCookieSessionLifecycle(t *testing.T) {
-	t.Parallel()
-	h := newHarness(t, nil)
-	email := uniqueEmail(t)
+func TestCookieSessionLifecycle(test *testing.T) {
+	test.Parallel()
+	harness := newHarness(test, nil)
+	email := uniqueEmail(test)
 
-	rec := h.signUp(email, "correct horse")
-	wantStatus(t, rec, http.StatusOK)
-	body := jsonBody(t, rec)
+	rec := harness.signUp(email, "correct horse")
+	wantStatus(test, rec, http.StatusOK)
+	body := jsonBody(test, rec)
 	user := body["user"].(map[string]any)
 	if body["token"] == nil || user["email"] != email || user["emailVerified"] != false {
-		t.Fatalf("sign-up body = %v", body)
+		test.Fatalf("sign-up body = %v", body)
 	}
-	c := sessionCookie(rec)
-	if c == nil || c.Name != "better-auth.session_token" || !c.HttpOnly || c.Secure || c.SameSite != http.SameSiteLaxMode || c.Path != "/" {
-		t.Fatalf("session cookie = %+v", c)
+	issued := sessionCookie(rec)
+	if issued == nil || issued.Name != "better-auth.session_token" || !issued.HttpOnly || issued.Secure || issued.SameSite != http.SameSiteLaxMode || issued.Path != "/" {
+		test.Fatalf("session cookie = %+v", issued)
 	}
-	if c.MaxAge < int((7*24*time.Hour).Seconds())-5 {
-		t.Fatalf("cookie MaxAge = %d, want ~7 days", c.MaxAge)
+	if issued.MaxAge < int((7*24*time.Hour).Seconds())-5 {
+		test.Fatalf("cookie MaxAge = %d, want ~7 days", issued.MaxAge)
 	}
 	if rec.Header().Get("Set-Auth-Token") == "" {
-		t.Fatal("set-auth-token header missing")
+		test.Fatal("set-auth-token header missing")
 	}
-	cookie := cookieHeader(t, rec)
+	cookie := cookieHeader(test, rec)
 
-	got := h.getSession(hdr{"Cookie": cookie})
+	got := harness.getSession(hdr{"Cookie": cookie})
 	if got == nil || got["user"].(map[string]any)["email"] != email {
-		t.Fatalf("get-session = %v", got)
+		test.Fatalf("get-session = %v", got)
 	}
 	sess := got["session"].(map[string]any)
 	if sess["token"] != body["token"] || sess["userId"] != user["id"] || sess["ipAddress"] != "192.0.2.1" {
-		t.Fatalf("session = %v", sess)
+		test.Fatalf("session = %v", sess)
 	}
 
 	// Sign-out with cookies needs a trusted origin.
-	rec = h.do("POST", BasePath+"/sign-out", nil, hdr{"Cookie": cookie, "Origin": testBase})
-	wantStatus(t, rec, http.StatusOK)
-	if jsonBody(t, rec)["success"] != true {
-		t.Fatalf("sign-out body = %s", rec.Body)
+	rec = harness.do("POST", BasePath+"/sign-out", nil, hdr{"Cookie": cookie, "Origin": testBase})
+	wantStatus(test, rec, http.StatusOK)
+	if jsonBody(test, rec)["success"] != true {
+		test.Fatalf("sign-out body = %s", rec.Body)
 	}
-	if c := sessionCookie(rec); c == nil || c.MaxAge >= 0 {
-		t.Fatalf("sign-out did not clear the cookie: %+v", c)
+	if cookie := sessionCookie(rec); cookie == nil || cookie.MaxAge >= 0 {
+		test.Fatalf("sign-out did not clear the cookie: %+v", cookie)
 	}
 	// The old cookie is dead immediately (no cookie cache).
-	if got := h.getSession(hdr{"Cookie": cookie}); got != nil {
-		t.Fatalf("session survived sign-out: %v", got)
+	if got := harness.getSession(hdr{"Cookie": cookie}); got != nil {
+		test.Fatalf("session survived sign-out: %v", got)
 	}
-	var n int
-	_ = testPool.QueryRow(context.Background(), `SELECT count(*) FROM "session" WHERE "token" = $1`, body["token"]).Scan(&n)
-	if n != 0 {
-		t.Fatalf("session row still present")
+	var count int
+	_ = testPool.QueryRow(context.Background(), `SELECT count(*) FROM "session" WHERE "token" = $1`, body["token"]).Scan(&count)
+	if count != 0 {
+		test.Fatalf("session row still present")
 	}
 
 	// Sign back in with the same password.
-	rec = h.signIn(email, "correct horse")
-	wantStatus(t, rec, http.StatusOK)
-	if b := jsonBody(t, rec); b["redirect"] != false || b["token"] == "" {
-		t.Fatalf("sign-in body = %v", b)
+	rec = harness.signIn(email, "correct horse")
+	wantStatus(test, rec, http.StatusOK)
+	if body := jsonBody(test, rec); body["redirect"] != false || body["token"] == "" {
+		test.Fatalf("sign-in body = %v", body)
 	}
 }
 
-func TestBearerSession(t *testing.T) {
-	t.Parallel()
-	h := newHarness(t, nil)
-	email := uniqueEmail(t)
-	wantStatus(t, h.signUp(email, "password123"), http.StatusOK)
+func TestBearerSession(test *testing.T) {
+	test.Parallel()
+	harness := newHarness(test, nil)
+	email := uniqueEmail(test)
+	wantStatus(test, harness.signUp(email, "password123"), http.StatusOK)
 
-	rec := h.signIn(email, "password123")
-	wantStatus(t, rec, http.StatusOK)
-	token := jsonBody(t, rec)["token"].(string)
+	rec := harness.signIn(email, "password123")
+	wantStatus(test, rec, http.StatusOK)
+	token := jsonBody(test, rec)["token"].(string)
 	signed := rec.Header().Get("Set-Auth-Token")
 	if !strings.HasPrefix(signed, token+".") {
-		t.Fatalf("set-auth-token = %q, want signed %q", signed, token)
+		test.Fatalf("set-auth-token = %q, want signed %q", signed, token)
 	}
 
 	for name, value := range map[string]string{
@@ -144,8 +144,8 @@ func TestBearerSession(t *testing.T) {
 		"lowercase scheme":  "bearer " + token,
 		"surrounding space": "Bearer   " + token + " ",
 	} {
-		if got := h.getSession(hdr{"Authorization": value}); got == nil {
-			t.Errorf("%s: no session", name)
+		if got := harness.getSession(hdr{"Authorization": value}); got == nil {
+			test.Errorf("%s: no session", name)
 		}
 	}
 	for name, value := range map[string]string{
@@ -154,270 +154,270 @@ func TestBearerSession(t *testing.T) {
 		"basic scheme":       "Basic " + token,
 		"empty":              "Bearer ",
 	} {
-		if got := h.getSession(hdr{"Authorization": value}); got != nil {
-			t.Errorf("%s: got a session", name)
+		if got := harness.getSession(hdr{"Authorization": value}); got != nil {
+			test.Errorf("%s: got a session", name)
 		}
 	}
 
 	// A bearer request carries no cookies, so sign-out needs no origin.
-	rec = h.do("POST", BasePath+"/sign-out", nil, hdr{"Authorization": "Bearer " + token})
-	wantStatus(t, rec, http.StatusOK)
-	if got := h.getSession(hdr{"Authorization": "Bearer " + token}); got != nil {
-		t.Fatal("bearer session survived sign-out")
+	rec = harness.do("POST", BasePath+"/sign-out", nil, hdr{"Authorization": "Bearer " + token})
+	wantStatus(test, rec, http.StatusOK)
+	if got := harness.getSession(hdr{"Authorization": "Bearer " + token}); got != nil {
+		test.Fatal("bearer session survived sign-out")
 	}
 }
 
-func TestSignInRejectsBadCredentials(t *testing.T) {
-	t.Parallel()
-	h := newHarness(t, nil)
-	email := uniqueEmail(t)
-	wantStatus(t, h.signUp(email, "password123"), http.StatusOK)
+func TestSignInRejectsBadCredentials(test *testing.T) {
+	test.Parallel()
+	harness := newHarness(test, nil)
+	email := uniqueEmail(test)
+	wantStatus(test, harness.signUp(email, "password123"), http.StatusOK)
 
-	wantCode(t, h.signIn(email, "wrong-password"), http.StatusUnauthorized, "INVALID_EMAIL_OR_PASSWORD")
-	wantCode(t, h.signIn(uniqueEmail(t), "password123"), http.StatusUnauthorized, "INVALID_EMAIL_OR_PASSWORD")
-	wantCode(t, h.signIn(strings.ToUpper(email), "wrong-password"), http.StatusUnauthorized, "INVALID_EMAIL_OR_PASSWORD")
-	wantStatus(t, h.signIn(strings.ToUpper(email), "password123"), http.StatusOK) // emails are case-insensitive
-	wantCode(t, h.signIn("not-an-email", "password123"), http.StatusBadRequest, "INVALID_EMAIL")
-	wantCode(t, h.signIn(email, strings.Repeat("a", 129)), http.StatusBadRequest, "PASSWORD_TOO_LONG")
+	wantCode(test, harness.signIn(email, "wrong-password"), http.StatusUnauthorized, "INVALID_EMAIL_OR_PASSWORD")
+	wantCode(test, harness.signIn(uniqueEmail(test), "password123"), http.StatusUnauthorized, "INVALID_EMAIL_OR_PASSWORD")
+	wantCode(test, harness.signIn(strings.ToUpper(email), "wrong-password"), http.StatusUnauthorized, "INVALID_EMAIL_OR_PASSWORD")
+	wantStatus(test, harness.signIn(strings.ToUpper(email), "password123"), http.StatusOK) // emails are case-insensitive
+	wantCode(test, harness.signIn("not-an-email", "password123"), http.StatusBadRequest, "INVALID_EMAIL")
+	wantCode(test, harness.signIn(email, strings.Repeat("a", 129)), http.StatusBadRequest, "PASSWORD_TOO_LONG")
 }
 
-func TestSignUpValidation(t *testing.T) {
-	t.Parallel()
-	h := newHarness(t, nil)
-	wantCode(t, h.signUp(uniqueEmail(t), "short"), http.StatusBadRequest, "PASSWORD_TOO_SHORT")
-	wantCode(t, h.signUp(uniqueEmail(t), strings.Repeat("é", 129)), http.StatusBadRequest, "PASSWORD_TOO_LONG")
-	wantStatus(t, h.signUp(uniqueEmail(t), strings.Repeat("é", 128)), http.StatusOK)
+func TestSignUpValidation(test *testing.T) {
+	test.Parallel()
+	harness := newHarness(test, nil)
+	wantCode(test, harness.signUp(uniqueEmail(test), "short"), http.StatusBadRequest, "PASSWORD_TOO_SHORT")
+	wantCode(test, harness.signUp(uniqueEmail(test), strings.Repeat("é", 129)), http.StatusBadRequest, "PASSWORD_TOO_LONG")
+	wantStatus(test, harness.signUp(uniqueEmail(test), strings.Repeat("é", 128)), http.StatusOK)
 	for _, bad := range []string{"", "plain", "a@b", "Name <a@example.com>", "a@example.com\n"} {
-		wantCode(t, h.signUp(bad, "password123"), http.StatusBadRequest, "INVALID_EMAIL")
+		wantCode(test, harness.signUp(bad, "password123"), http.StatusBadRequest, "INVALID_EMAIL")
 	}
 
-	rec := h.do("POST", BasePath+"/sign-up/email", nil, hdr{"Content-Type": "text/plain"})
-	wantCode(t, rec, http.StatusUnsupportedMediaType, "UNSUPPORTED_MEDIA_TYPE")
-	req := h.do("POST", BasePath+"/sign-up/email", "not an object", nil)
-	wantCode(t, req, http.StatusBadRequest, "INVALID_REQUEST_BODY")
+	rec := harness.do("POST", BasePath+"/sign-up/email", nil, hdr{"Content-Type": "text/plain"})
+	wantCode(test, rec, http.StatusUnsupportedMediaType, "UNSUPPORTED_MEDIA_TYPE")
+	req := harness.do("POST", BasePath+"/sign-up/email", "not an object", nil)
+	wantCode(test, req, http.StatusBadRequest, "INVALID_REQUEST_BODY")
 
-	email := uniqueEmail(t)
-	wantStatus(t, h.signUp(email, "password123"), http.StatusOK)
-	wantCode(t, h.signUp(email, "password123"), http.StatusUnprocessableEntity, "USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL")
-	wantCode(t, h.signUp(strings.ToUpper(email), "password123"), http.StatusUnprocessableEntity, "USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL")
+	email := uniqueEmail(test)
+	wantStatus(test, harness.signUp(email, "password123"), http.StatusOK)
+	wantCode(test, harness.signUp(email, "password123"), http.StatusUnprocessableEntity, "USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL")
+	wantCode(test, harness.signUp(strings.ToUpper(email), "password123"), http.StatusUnprocessableEntity, "USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL")
 }
 
-func TestEmailVerificationFlow(t *testing.T) {
-	t.Parallel()
-	h := newHarness(t, func(c *Config) { c.RequireEmailVerification = true })
-	email := uniqueEmail(t)
+func TestEmailVerificationFlow(test *testing.T) {
+	test.Parallel()
+	harness := newHarness(test, func(config *Config) { config.RequireEmailVerification = true })
+	email := uniqueEmail(test)
 
-	rec := h.do("POST", BasePath+"/sign-up/email", map[string]any{
+	rec := harness.do("POST", BasePath+"/sign-up/email", map[string]any{
 		"name": "V", "email": email, "password": "password123", "callbackURL": "/auth/verify-email/success",
 	}, nil)
-	wantStatus(t, rec, http.StatusOK)
-	if b := jsonBody(t, rec); b["token"] != nil || sessionCookie(rec) != nil {
-		t.Fatalf("sign-up signed in before verification: %v", b)
+	wantStatus(test, rec, http.StatusOK)
+	if body := jsonBody(test, rec); body["token"] != nil || sessionCookie(rec) != nil {
+		test.Fatalf("sign-up signed in before verification: %v", body)
 	}
-	mails := h.mails()
+	mails := harness.mails()
 	if len(mails) != 1 || mails[0].kind != "verification" || mails[0].to != email {
-		t.Fatalf("mails = %+v", mails)
+		test.Fatalf("mails = %+v", mails)
 	}
 	link := mails[0].url
 	if !strings.HasPrefix(link, testBase+"/api/auth/verify-email?token=") || !strings.Contains(link, "callbackURL=%2Fauth%2Fverify-email%2Fsuccess") {
-		t.Fatalf("verification link = %s", link)
+		test.Fatalf("verification link = %s", link)
 	}
 
 	// Unverified: right password is blocked, wrong password stays generic.
-	wantCode(t, h.signIn(email, "password123"), http.StatusForbidden, "EMAIL_NOT_VERIFIED")
-	wantCode(t, h.signIn(email, "wrong-password"), http.StatusUnauthorized, "INVALID_EMAIL_OR_PASSWORD")
+	wantCode(test, harness.signIn(email, "password123"), http.StatusForbidden, "EMAIL_NOT_VERIFIED")
+	wantCode(test, harness.signIn(email, "wrong-password"), http.StatusUnauthorized, "INVALID_EMAIL_OR_PASSWORD")
 
 	// A duplicate sign-up of the unverified account gets the same generic
 	// response; it resets the password and sends a new link that replaces
 	// the first one.
-	rec = h.do("POST", BasePath+"/sign-up/email", map[string]any{
+	rec = harness.do("POST", BasePath+"/sign-up/email", map[string]any{
 		"name": "V", "email": email, "password": "password123", "callbackURL": "/auth/verify-email/success",
 	}, nil)
-	wantStatus(t, rec, http.StatusOK)
-	if b := jsonBody(t, rec); b["token"] != nil {
-		t.Fatalf("duplicate sign-up = %v", b)
+	wantStatus(test, rec, http.StatusOK)
+	if body := jsonBody(test, rec); body["token"] != nil {
+		test.Fatalf("duplicate sign-up = %v", body)
 	}
-	if mails = h.mails(); len(mails) != 2 {
-		t.Fatalf("mails = %+v", mails)
+	if mails = harness.mails(); len(mails) != 2 {
+		test.Fatalf("mails = %+v", mails)
 	}
-	wantCode(t, h.do("GET", BasePath+"/verify-email?token="+mustQuery(t, link, "token"), nil, nil), http.StatusUnauthorized, "INVALID_TOKEN")
+	wantCode(test, harness.do("GET", BasePath+"/verify-email?token="+mustQuery(test, link, "token"), nil, nil), http.StatusUnauthorized, "INVALID_TOKEN")
 	link = mails[1].url
 
 	// Following the link verifies, signs in and redirects to the callback.
-	rec = h.do("GET", pathOf(t, link), nil, nil)
-	wantStatus(t, rec, http.StatusFound)
+	rec = harness.do("GET", pathOf(test, link), nil, nil)
+	wantStatus(test, rec, http.StatusFound)
 	if loc := rec.Header().Get("Location"); loc != "/auth/verify-email/success" {
-		t.Fatalf("redirect = %q", loc)
+		test.Fatalf("redirect = %q", loc)
 	}
-	cookie := cookieHeader(t, rec)
-	got := h.getSession(hdr{"Cookie": cookie})
+	cookie := cookieHeader(test, rec)
+	got := harness.getSession(hdr{"Cookie": cookie})
 	if got == nil || got["user"].(map[string]any)["emailVerified"] != true {
-		t.Fatalf("after verification get-session = %v", got)
+		test.Fatalf("after verification get-session = %v", got)
 	}
 
 	// The used link no longer signs anyone in.
-	rec = h.do("GET", pathOf(t, link), nil, nil)
-	wantStatus(t, rec, http.StatusFound)
+	rec = harness.do("GET", pathOf(test, link), nil, nil)
+	wantStatus(test, rec, http.StatusFound)
 	if sessionCookie(rec) != nil {
-		t.Fatal("reused verification link issued a session")
+		test.Fatal("reused verification link issued a session")
 	}
-	wantStatus(t, h.signIn(email, "password123"), http.StatusOK)
+	wantStatus(test, harness.signIn(email, "password123"), http.StatusOK)
 }
 
-func TestVerifyEmailRejectsBadTokens(t *testing.T) {
-	t.Parallel()
-	h := newHarness(t, func(c *Config) { c.RequireEmailVerification = true })
-	email := uniqueEmail(t)
-	wantStatus(t, h.signUp(email, "password123"), http.StatusOK)
-	link := h.mails()[0].url
-	token := mustQuery(t, link, "token")
+func TestVerifyEmailRejectsBadTokens(test *testing.T) {
+	test.Parallel()
+	harness := newHarness(test, func(config *Config) { config.RequireEmailVerification = true })
+	email := uniqueEmail(test)
+	wantStatus(test, harness.signUp(email, "password123"), http.StatusOK)
+	link := harness.mails()[0].url
+	token := mustQuery(test, link, "token")
 
-	wantCode(t, h.do("GET", BasePath+"/verify-email?token="+token+"x", nil, nil), http.StatusUnauthorized, "INVALID_TOKEN")
-	wantCode(t, h.do("GET", BasePath+"/verify-email", nil, nil), http.StatusUnauthorized, "INVALID_TOKEN")
+	wantCode(test, harness.do("GET", BasePath+"/verify-email?token="+token+"x", nil, nil), http.StatusUnauthorized, "INVALID_TOKEN")
+	wantCode(test, harness.do("GET", BasePath+"/verify-email", nil, nil), http.StatusUnauthorized, "INVALID_TOKEN")
 	other := unitAuthWith(strings.Repeat("z", 40))
-	wantCode(t, h.do("GET", BasePath+"/verify-email?token="+other.signVerificationToken(email, "", time.Hour), nil, nil), http.StatusUnauthorized, "INVALID_TOKEN")
-	wantCode(t, h.do("GET", BasePath+"/verify-email?token="+h.a.signVerificationToken(uniqueEmail(t), "", time.Hour), nil, nil), http.StatusUnauthorized, "USER_NOT_FOUND")
-	wantCode(t, h.do("GET", BasePath+"/verify-email?token="+token+"&callbackURL=https://evil.test/", nil, nil), http.StatusForbidden, "INVALID_CALLBACK_URL")
+	wantCode(test, harness.do("GET", BasePath+"/verify-email?token="+other.signVerificationToken(email, "", time.Hour), nil, nil), http.StatusUnauthorized, "INVALID_TOKEN")
+	wantCode(test, harness.do("GET", BasePath+"/verify-email?token="+harness.auth.signVerificationToken(uniqueEmail(test), "", time.Hour), nil, nil), http.StatusUnauthorized, "USER_NOT_FOUND")
+	wantCode(test, harness.do("GET", BasePath+"/verify-email?token="+token+"&callbackURL=https://evil.test/", nil, nil), http.StatusForbidden, "INVALID_CALLBACK_URL")
 
-	h.clock.Advance(VerificationTokenTTL + time.Minute)
-	wantCode(t, h.do("GET", BasePath+"/verify-email?token="+token, nil, nil), http.StatusUnauthorized, "TOKEN_EXPIRED")
-	rec := h.do("GET", pathOf(t, link), nil, nil)
-	wantStatus(t, rec, http.StatusFound)
+	harness.clock.Advance(VerificationTokenTTL + time.Minute)
+	wantCode(test, harness.do("GET", BasePath+"/verify-email?token="+token, nil, nil), http.StatusUnauthorized, "TOKEN_EXPIRED")
+	rec := harness.do("GET", pathOf(test, link), nil, nil)
+	wantStatus(test, rec, http.StatusFound)
 	if loc := rec.Header().Get("Location"); loc != "/?error=TOKEN_EXPIRED" {
-		t.Fatalf("expired redirect = %q", loc)
+		test.Fatalf("expired redirect = %q", loc)
 	}
 	if sessionCookie(rec) != nil {
-		t.Fatal("expired token issued a session")
+		test.Fatal("expired token issued a session")
 	}
-	wantCode(t, h.signIn(email, "password123"), http.StatusForbidden, "EMAIL_NOT_VERIFIED")
+	wantCode(test, harness.signIn(email, "password123"), http.StatusForbidden, "EMAIL_NOT_VERIFIED")
 }
 
-func TestSendVerificationEmail(t *testing.T) {
-	t.Parallel()
-	h := newHarness(t, func(c *Config) { c.RequireEmailVerification = true })
-	unverified := uniqueEmail(t)
-	wantStatus(t, h.signUp(unverified, "password123"), http.StatusOK)
+func TestSendVerificationEmail(test *testing.T) {
+	test.Parallel()
+	harness := newHarness(test, func(config *Config) { config.RequireEmailVerification = true })
+	unverified := uniqueEmail(test)
+	wantStatus(test, harness.signUp(unverified, "password123"), http.StatusOK)
 	send := func(email string, headers hdr) int {
-		return h.do("POST", BasePath+"/send-verification-email", map[string]any{"email": email, "callbackURL": "/done"}, headers).Code
+		return harness.do("POST", BasePath+"/send-verification-email", map[string]any{"email": email, "callbackURL": "/done"}, headers).Code
 	}
 
 	if code := send(unverified, nil); code != http.StatusOK {
-		t.Fatalf("resend status %d", code)
+		test.Fatalf("resend status %d", code)
 	}
-	if code := send(uniqueEmail(t), nil); code != http.StatusOK {
-		t.Fatalf("unknown email status %d", code)
+	if code := send(uniqueEmail(test), nil); code != http.StatusOK {
+		test.Fatalf("unknown email status %d", code)
 	}
-	mails := h.mails()
+	mails := harness.mails()
 	// Sends run in the background, so look the resend up rather than rely on order.
-	resent := slices.IndexFunc(mails, func(m sentMail) bool { return strings.Contains(m.url, "callbackURL=%2Fdone") })
+	resent := slices.IndexFunc(mails, func(mail sentMail) bool { return strings.Contains(mail.url, "callbackURL=%2Fdone") })
 	if len(mails) != 2 || resent < 0 || mails[resent].to != unverified {
-		t.Fatalf("mails = %+v", mails)
+		test.Fatalf("mails = %+v", mails)
 	}
 
 	// Verify, then a signed-in resend is refused and a signed-out one is silent.
-	rec := h.do("GET", pathOf(t, mails[resent].url), nil, nil)
-	cookie := cookieHeader(t, rec)
-	wantCode(t, h.do("POST", BasePath+"/send-verification-email", map[string]any{"email": unverified}, hdr{"Cookie": cookie, "Origin": testBase}), http.StatusBadRequest, "EMAIL_ALREADY_VERIFIED")
-	wantCode(t, h.do("POST", BasePath+"/send-verification-email", map[string]any{"email": uniqueEmail(t)}, hdr{"Cookie": cookie, "Origin": testBase}), http.StatusBadRequest, "EMAIL_MISMATCH")
+	rec := harness.do("GET", pathOf(test, mails[resent].url), nil, nil)
+	cookie := cookieHeader(test, rec)
+	wantCode(test, harness.do("POST", BasePath+"/send-verification-email", map[string]any{"email": unverified}, hdr{"Cookie": cookie, "Origin": testBase}), http.StatusBadRequest, "EMAIL_ALREADY_VERIFIED")
+	wantCode(test, harness.do("POST", BasePath+"/send-verification-email", map[string]any{"email": uniqueEmail(test)}, hdr{"Cookie": cookie, "Origin": testBase}), http.StatusBadRequest, "EMAIL_MISMATCH")
 	if code := send(unverified, nil); code != http.StatusOK {
-		t.Fatalf("verified resend status %d", code)
+		test.Fatalf("verified resend status %d", code)
 	}
-	if got := len(h.mails()); got != 2 {
-		t.Fatalf("verified user got another email (%d total)", got)
+	if got := len(harness.mails()); got != 2 {
+		test.Fatalf("verified user got another email (%d total)", got)
 	}
 }
 
-func TestPasswordResetFlow(t *testing.T) {
-	t.Parallel()
-	h := newHarness(t, nil)
-	email := uniqueEmail(t)
-	wantStatus(t, h.signUp(email, "old-password"), http.StatusOK)
-	cookieA := cookieHeader(t, h.signIn(email, "old-password"))
-	tokenB := jsonBody(t, h.signIn(email, "old-password"))["token"].(string)
+func TestPasswordResetFlow(test *testing.T) {
+	test.Parallel()
+	harness := newHarness(test, nil)
+	email := uniqueEmail(test)
+	wantStatus(test, harness.signUp(email, "old-password"), http.StatusOK)
+	cookieA := cookieHeader(test, harness.signIn(email, "old-password"))
+	tokenB := jsonBody(test, harness.signIn(email, "old-password"))["token"].(string)
 
 	request := func(email string) map[string]any {
-		rec := h.do("POST", BasePath+"/request-password-reset", map[string]any{"email": email, "redirectTo": "/auth/reset-password"}, nil)
-		wantStatus(t, rec, http.StatusOK)
-		return jsonBody(t, rec)
+		rec := harness.do("POST", BasePath+"/request-password-reset", map[string]any{"email": email, "redirectTo": "/auth/reset-password"}, nil)
+		wantStatus(test, rec, http.StatusOK)
+		return jsonBody(test, rec)
 	}
-	known, unknown := request(email), request(uniqueEmail(t))
+	known, unknown := request(email), request(uniqueEmail(test))
 	if known["status"] != true || known["message"] != unknown["message"] || unknown["status"] != true {
-		t.Fatalf("responses differ: %v vs %v", known, unknown)
+		test.Fatalf("responses differ: %v vs %v", known, unknown)
 	}
-	mails := h.mails()
+	mails := harness.mails()
 	if len(mails) != 1 || mails[0].kind != "reset" || mails[0].to != email {
-		t.Fatalf("mails = %+v", mails)
+		test.Fatalf("mails = %+v", mails)
 	}
 	// A relative redirectTo is linked directly, with the token.
 	link := mails[0].url
-	token := mustQuery(t, link, "token")
+	token := mustQuery(test, link, "token")
 	if !strings.HasPrefix(link, testBase+"/auth/reset-password?token=") || token == "" {
-		t.Fatalf("reset link = %s", link)
+		test.Fatalf("reset link = %s", link)
 	}
 	// The API callback still accepts the token (absolute and deep-link targets use it).
 	apiLink := BasePath + "/reset-password/" + token + "?callbackURL=/auth/reset-password"
-	if loc := h.do("GET", apiLink, nil, nil).Header().Get("Location"); loc != "/auth/reset-password?token="+token {
-		t.Fatalf("callback redirect = %q", loc)
+	if loc := harness.do("GET", apiLink, nil, nil).Header().Get("Location"); loc != "/auth/reset-password?token="+token {
+		test.Fatalf("callback redirect = %q", loc)
 	}
 
-	wantCode(t, h.do("POST", BasePath+"/reset-password", map[string]any{"token": token, "newPassword": "short"}, nil), http.StatusBadRequest, "PASSWORD_TOO_SHORT")
-	rec := h.do("POST", BasePath+"/reset-password", map[string]any{"token": token, "newPassword": "new-password"}, nil)
-	wantStatus(t, rec, http.StatusOK)
+	wantCode(test, harness.do("POST", BasePath+"/reset-password", map[string]any{"token": token, "newPassword": "short"}, nil), http.StatusBadRequest, "PASSWORD_TOO_SHORT")
+	rec := harness.do("POST", BasePath+"/reset-password", map[string]any{"token": token, "newPassword": "new-password"}, nil)
+	wantStatus(test, rec, http.StatusOK)
 
 	// Every existing session is revoked, the old password is dead.
-	if h.getSession(hdr{"Cookie": cookieA}) != nil || h.getSession(hdr{"Authorization": "Bearer " + tokenB}) != nil {
-		t.Fatal("sessions survived the password reset")
+	if harness.getSession(hdr{"Cookie": cookieA}) != nil || harness.getSession(hdr{"Authorization": "Bearer " + tokenB}) != nil {
+		test.Fatal("sessions survived the password reset")
 	}
-	wantCode(t, h.signIn(email, "old-password"), http.StatusUnauthorized, "INVALID_EMAIL_OR_PASSWORD")
-	wantStatus(t, h.signIn(email, "new-password"), http.StatusOK)
+	wantCode(test, harness.signIn(email, "old-password"), http.StatusUnauthorized, "INVALID_EMAIL_OR_PASSWORD")
+	wantStatus(test, harness.signIn(email, "new-password"), http.StatusOK)
 
 	// Single use: the token and its link are spent.
-	wantCode(t, h.do("POST", BasePath+"/reset-password", map[string]any{"token": token, "newPassword": "third-password"}, nil), http.StatusBadRequest, "INVALID_TOKEN")
-	rec = h.do("GET", apiLink, nil, nil)
+	wantCode(test, harness.do("POST", BasePath+"/reset-password", map[string]any{"token": token, "newPassword": "third-password"}, nil), http.StatusBadRequest, "INVALID_TOKEN")
+	rec = harness.do("GET", apiLink, nil, nil)
 	if loc := rec.Header().Get("Location"); loc != "/auth/reset-password?error=INVALID_TOKEN" {
-		t.Fatalf("spent link redirect = %q", loc)
+		test.Fatalf("spent link redirect = %q", loc)
 	}
-	wantCode(t, h.do("POST", BasePath+"/reset-password", map[string]any{"newPassword": "third-password"}, nil), http.StatusBadRequest, "INVALID_TOKEN")
-	wantCode(t, h.do("POST", BasePath+"/reset-password?token=bad%20token", map[string]any{"newPassword": "third-password"}, nil), http.StatusBadRequest, "INVALID_TOKEN")
+	wantCode(test, harness.do("POST", BasePath+"/reset-password", map[string]any{"newPassword": "third-password"}, nil), http.StatusBadRequest, "INVALID_TOKEN")
+	wantCode(test, harness.do("POST", BasePath+"/reset-password?token=bad%20token", map[string]any{"newPassword": "third-password"}, nil), http.StatusBadRequest, "INVALID_TOKEN")
 }
 
-func TestPasswordResetTokenExpires(t *testing.T) {
-	t.Parallel()
-	h := newHarness(t, nil)
-	email := uniqueEmail(t)
-	wantStatus(t, h.signUp(email, "old-password"), http.StatusOK)
-	if err := h.a.RequestPasswordReset(context.Background(), email, testBase+"/reset"); err != nil {
-		t.Fatal(err)
+func TestPasswordResetTokenExpires(test *testing.T) {
+	test.Parallel()
+	harness := newHarness(test, nil)
+	email := uniqueEmail(test)
+	wantStatus(test, harness.signUp(email, "old-password"), http.StatusOK)
+	if err := harness.auth.RequestPasswordReset(context.Background(), email, testBase+"/reset"); err != nil {
+		test.Fatal(err)
 	}
-	link := h.mails()[0].url
-	token := strings.TrimPrefix(pathOf(t, link), BasePath+"/reset-password/")
+	link := harness.mails()[0].url
+	token := strings.TrimPrefix(pathOf(test, link), BasePath+"/reset-password/")
 	token = token[:strings.IndexByte(token, '?')]
 
-	h.clock.Advance(ResetPasswordTokenTTL + time.Second)
-	rec := h.do("GET", pathOf(t, link), nil, nil)
+	harness.clock.Advance(ResetPasswordTokenTTL + time.Second)
+	rec := harness.do("GET", pathOf(test, link), nil, nil)
 	if loc := rec.Header().Get("Location"); loc != testBase+"/reset?error=INVALID_TOKEN" {
-		t.Fatalf("expired link redirect = %q", loc)
+		test.Fatalf("expired link redirect = %q", loc)
 	}
-	if err := h.a.ResetPassword(context.Background(), token, "new-password"); !errors.Is(err, ErrInvalidToken) {
-		t.Fatalf("expired reset err = %v", err)
+	if err := harness.auth.ResetPassword(context.Background(), token, "new-password"); !errors.Is(err, ErrInvalidToken) {
+		test.Fatalf("expired reset err = %v", err)
 	}
-	wantStatus(t, h.signIn(email, "old-password"), http.StatusOK)
+	wantStatus(test, harness.signIn(email, "old-password"), http.StatusOK)
 }
 
-func TestPasswordResetTokenIsSingleUseUnderConcurrency(t *testing.T) {
-	t.Parallel()
-	h := newHarness(t, nil)
-	email := uniqueEmail(t)
-	wantStatus(t, h.signUp(email, "old-password"), http.StatusOK)
-	if err := h.a.RequestPasswordReset(context.Background(), email, "/reset"); err != nil {
-		t.Fatal(err)
+func TestPasswordResetTokenIsSingleUseUnderConcurrency(test *testing.T) {
+	test.Parallel()
+	harness := newHarness(test, nil)
+	email := uniqueEmail(test)
+	wantStatus(test, harness.signUp(email, "old-password"), http.StatusOK)
+	if err := harness.auth.RequestPasswordReset(context.Background(), email, "/reset"); err != nil {
+		test.Fatal(err)
 	}
-	token := mustQuery(t, h.mails()[0].url, "token")
+	token := mustQuery(test, harness.mails()[0].url, "token")
 
 	var wg sync.WaitGroup
 	results := make([]error, 8)
-	for i := range results {
-		wg.Go(func() { results[i] = h.a.ResetPassword(context.Background(), token, "new-password") })
+	for index := range results {
+		wg.Go(func() { results[index] = harness.auth.ResetPassword(context.Background(), token, "new-password") })
 	}
 	wg.Wait()
 	ok := 0
@@ -425,47 +425,47 @@ func TestPasswordResetTokenIsSingleUseUnderConcurrency(t *testing.T) {
 		if err == nil {
 			ok++
 		} else if !errors.Is(err, ErrInvalidToken) {
-			t.Fatalf("unexpected error: %v", err)
+			test.Fatalf("unexpected error: %v", err)
 		}
 	}
 	if ok != 1 {
-		t.Fatalf("%d resets succeeded with one token, want 1", ok)
+		test.Fatalf("%d resets succeeded with one token, want 1", ok)
 	}
 }
 
-func TestRedirectTargetsMustBeTrusted(t *testing.T) {
-	t.Parallel()
-	h := newHarness(t, nil)
-	email := uniqueEmail(t)
-	wantStatus(t, h.signUp(email, "password123"), http.StatusOK)
+func TestRedirectTargetsMustBeTrusted(test *testing.T) {
+	test.Parallel()
+	harness := newHarness(test, nil)
+	email := uniqueEmail(test)
+	wantStatus(test, harness.signUp(email, "password123"), http.StatusOK)
 
 	for _, target := range []string{"https://evil.test/reset", "//evil.test/reset", "/\\evil.test", "javascript:alert(1)"} {
-		rec := h.do("POST", BasePath+"/request-password-reset", map[string]any{"email": email, "redirectTo": target}, nil)
-		wantCode(t, rec, http.StatusForbidden, "INVALID_REDIRECT_URL")
-		rec = h.do("POST", BasePath+"/sign-in/email", map[string]any{"email": email, "password": "password123", "callbackURL": target}, nil)
-		wantCode(t, rec, http.StatusForbidden, "INVALID_CALLBACK_URL")
+		rec := harness.do("POST", BasePath+"/request-password-reset", map[string]any{"email": email, "redirectTo": target}, nil)
+		wantCode(test, rec, http.StatusForbidden, "INVALID_REDIRECT_URL")
+		rec = harness.do("POST", BasePath+"/sign-in/email", map[string]any{"email": email, "password": "password123", "callbackURL": target}, nil)
+		wantCode(test, rec, http.StatusForbidden, "INVALID_CALLBACK_URL")
 	}
-	if got := len(h.mails()); got != 0 {
-		t.Fatalf("untrusted redirect sent %d mails", got)
+	if got := len(harness.mails()); got != 0 {
+		test.Fatalf("untrusted redirect sent %d mails", got)
 	}
-	rec := h.do("GET", BasePath+"/reset-password/abc?callbackURL=https://evil.test", nil, nil)
-	wantCode(t, rec, http.StatusForbidden, "INVALID_CALLBACK_URL")
-	rec = h.do("GET", BasePath+"/reset-password/abc", nil, nil)
-	wantCode(t, rec, http.StatusBadRequest, "INVALID_TOKEN")
+	rec := harness.do("GET", BasePath+"/reset-password/abc?callbackURL=https://evil.test", nil, nil)
+	wantCode(test, rec, http.StatusForbidden, "INVALID_CALLBACK_URL")
+	rec = harness.do("GET", BasePath+"/reset-password/abc", nil, nil)
+	wantCode(test, rec, http.StatusBadRequest, "INVALID_TOKEN")
 
-	rec = h.do("POST", BasePath+"/sign-in/email", map[string]any{"email": email, "password": "password123", "callbackURL": "betterstack://home"}, nil)
-	wantStatus(t, rec, http.StatusOK)
-	if b := jsonBody(t, rec); b["redirect"] != true || b["url"] != "betterstack://home" || rec.Header().Get("Location") != "betterstack://home" {
-		t.Fatalf("sign-in with callback = %v", b)
+	rec = harness.do("POST", BasePath+"/sign-in/email", map[string]any{"email": email, "password": "password123", "callbackURL": "betterstack://home"}, nil)
+	wantStatus(test, rec, http.StatusOK)
+	if body := jsonBody(test, rec); body["redirect"] != true || body["url"] != "betterstack://home" || rec.Header().Get("Location") != "betterstack://home" {
+		test.Fatalf("sign-in with callback = %v", body)
 	}
 }
 
-func TestOriginCheck(t *testing.T) {
-	t.Parallel()
-	h := newHarness(t, nil)
-	email := uniqueEmail(t)
-	cookie := cookieHeader(t, h.signUp(email, "password123"))
-	signOut := func(headers hdr) int { return h.do("POST", BasePath+"/sign-out", nil, headers).Code }
+func TestOriginCheck(test *testing.T) {
+	test.Parallel()
+	harness := newHarness(test, nil)
+	email := uniqueEmail(test)
+	cookie := cookieHeader(test, harness.signUp(email, "password123"))
+	signOut := func(headers hdr) int { return harness.do("POST", BasePath+"/sign-out", nil, headers).Code }
 
 	// Cookie-carrying requests need a trusted Origin (or Referer / expo-origin).
 	cases := []struct {
@@ -487,41 +487,41 @@ func TestOriginCheck(t *testing.T) {
 		{"null same-origin", hdr{"Cookie": cookie, "Origin": "null", "Sec-Fetch-Site": "same-origin"}, http.StatusOK},
 		{"null cross-site", hdr{"Cookie": cookie, "Origin": "null", "Sec-Fetch-Site": "cross-site"}, http.StatusForbidden},
 	}
-	for _, c := range cases {
-		if got := signOut(c.headers); got != c.want {
-			t.Errorf("%s: status %d, want %d", c.name, got, c.want)
+	for _, testCase := range cases {
+		if got := signOut(testCase.headers); got != testCase.want {
+			test.Errorf("%s: status %d, want %d", testCase.name, got, testCase.want)
 		}
 	}
 
 	// exp:// is only trusted outside production.
-	prod := newHarness(t, func(c *Config) { c.TrustedOrigins = MobileTrustedOrigins(true) })
+	prod := newHarness(test, func(config *Config) { config.TrustedOrigins = MobileTrustedOrigins(true) })
 	if got := prod.do("POST", BasePath+"/sign-out", nil, hdr{"Cookie": cookie, "Origin": "exp://192.168.1.20:8081"}).Code; got != http.StatusForbidden {
-		t.Errorf("production accepted exp:// (status %d)", got)
+		test.Errorf("production accepted exp:// (status %d)", got)
 	}
 
 	// Sign-in/up without cookies: browsers are identified by Fetch Metadata.
 	body := map[string]any{"email": email, "password": "password123"}
 	signIn := func(headers hdr) *httpResult {
-		rec := h.do("POST", BasePath+"/sign-in/email", body, headers)
+		rec := harness.do("POST", BasePath+"/sign-in/email", body, headers)
 		return &httpResult{rec.Code, rec.Body.String()}
 	}
-	if r := signIn(hdr{"Sec-Fetch-Site": "cross-site", "Sec-Fetch-Mode": "navigate", "Origin": testBase}); r.code != http.StatusForbidden || !strings.Contains(r.body, "CROSS_SITE_NAVIGATION_LOGIN_BLOCKED") {
-		t.Errorf("cross-site navigation: %+v", r)
+	if result := signIn(hdr{"Sec-Fetch-Site": "cross-site", "Sec-Fetch-Mode": "navigate", "Origin": testBase}); result.code != http.StatusForbidden || !strings.Contains(result.body, "CROSS_SITE_NAVIGATION_LOGIN_BLOCKED") {
+		test.Errorf("cross-site navigation: %+v", result)
 	}
-	if r := signIn(hdr{"Sec-Fetch-Site": "cross-site", "Sec-Fetch-Mode": "cors", "Origin": "https://evil.test"}); r.code != http.StatusForbidden || !strings.Contains(r.body, "INVALID_ORIGIN") {
-		t.Errorf("cross-site fetch: %+v", r)
+	if result := signIn(hdr{"Sec-Fetch-Site": "cross-site", "Sec-Fetch-Mode": "cors", "Origin": "https://evil.test"}); result.code != http.StatusForbidden || !strings.Contains(result.body, "INVALID_ORIGIN") {
+		test.Errorf("cross-site fetch: %+v", result)
 	}
-	if r := signIn(hdr{"Sec-Fetch-Site": "same-origin", "Sec-Fetch-Mode": "cors"}); r.code != http.StatusForbidden || !strings.Contains(r.body, "MISSING_OR_NULL_ORIGIN") {
-		t.Errorf("browser without origin: %+v", r)
+	if result := signIn(hdr{"Sec-Fetch-Site": "same-origin", "Sec-Fetch-Mode": "cors"}); result.code != http.StatusForbidden || !strings.Contains(result.body, "MISSING_OR_NULL_ORIGIN") {
+		test.Errorf("browser without origin: %+v", result)
 	}
-	if r := signIn(hdr{"Sec-Fetch-Site": "same-origin", "Sec-Fetch-Mode": "cors", "Origin": testBase}); r.code != http.StatusOK {
-		t.Errorf("same-origin fetch: %+v", r)
+	if result := signIn(hdr{"Sec-Fetch-Site": "same-origin", "Sec-Fetch-Mode": "cors", "Origin": testBase}); result.code != http.StatusOK {
+		test.Errorf("same-origin fetch: %+v", result)
 	}
-	if r := signIn(hdr{"Cookie": "unrelated=1", "Origin": "https://evil.test"}); r.code != http.StatusForbidden {
-		t.Errorf("sign-in with cookies from evil origin: %+v", r)
+	if result := signIn(hdr{"Cookie": "unrelated=1", "Origin": "https://evil.test"}); result.code != http.StatusForbidden {
+		test.Errorf("sign-in with cookies from evil origin: %+v", result)
 	}
-	if r := signIn(nil); r.code != http.StatusOK {
-		t.Errorf("native client: %+v", r)
+	if result := signIn(nil); result.code != http.StatusOK {
+		test.Errorf("native client: %+v", result)
 	}
 }
 
@@ -530,350 +530,354 @@ type httpResult struct {
 	body string
 }
 
-func TestSessionRefreshAndExpiry(t *testing.T) {
-	t.Parallel()
-	h := newHarness(t, nil)
-	rec := h.signUp(uniqueEmail(t), "password123")
-	cookie := cookieHeader(t, rec)
-	token := jsonBody(t, rec)["token"].(string)
+func TestSessionRefreshAndExpiry(test *testing.T) {
+	test.Parallel()
+	harness := newHarness(test, nil)
+	rec := harness.signUp(uniqueEmail(test), "password123")
+	cookie := cookieHeader(test, rec)
+	token := jsonBody(test, rec)["token"].(string)
 	expiresAt := func() time.Time {
 		var at time.Time
 		if err := testPool.QueryRow(context.Background(), `SELECT "expiresAt" FROM "session" WHERE "token" = $1`, token).Scan(&at); err != nil {
-			t.Fatal(err)
+			test.Fatal(err)
 		}
 		return at
 	}
 	initial := expiresAt()
 
 	// Within the update age nothing changes.
-	h.clock.Advance(23 * time.Hour)
-	rec = h.do("GET", BasePath+"/get-session", nil, hdr{"Cookie": cookie})
+	harness.clock.Advance(23 * time.Hour)
+	rec = harness.do("GET", BasePath+"/get-session", nil, hdr{"Cookie": cookie})
 	if sessionCookie(rec) != nil || !expiresAt().Equal(initial) {
-		t.Fatal("session refreshed before the update age")
+		test.Fatal("session refreshed before the update age")
 	}
 
 	// After a day of use the session is extended to now + 7 days.
-	h.clock.Advance(2 * time.Hour)
-	rec = h.do("GET", BasePath+"/get-session", nil, hdr{"Cookie": cookie})
+	harness.clock.Advance(2 * time.Hour)
+	rec = harness.do("GET", BasePath+"/get-session", nil, hdr{"Cookie": cookie})
 	if sessionCookie(rec) == nil {
-		t.Fatal("refreshed session did not reset the cookie")
+		test.Fatal("refreshed session did not reset the cookie")
 	}
-	if want := h.clock.Now().Add(DefaultSessionTTL); expiresAt().Sub(want).Abs() > time.Millisecond {
-		t.Fatalf("expiresAt = %v, want %v", expiresAt(), want)
+	if want := harness.clock.Now().Add(DefaultSessionTTL); expiresAt().Sub(want).Abs() > time.Millisecond {
+		test.Fatalf("expiresAt = %v, want %v", expiresAt(), want)
 	}
 	// Bearer refreshes too, without setting cookies.
-	h.clock.Advance(25 * time.Hour)
-	rec = h.do("GET", BasePath+"/get-session", nil, hdr{"Authorization": "Bearer " + token})
+	harness.clock.Advance(25 * time.Hour)
+	rec = harness.do("GET", BasePath+"/get-session", nil, hdr{"Authorization": "Bearer " + token})
 	if sessionCookie(rec) != nil {
-		t.Fatal("bearer request got a cookie")
+		test.Fatal("bearer request got a cookie")
 	}
 
 	// Past expiry the session is gone and its row deleted.
-	h.clock.Advance(DefaultSessionTTL + time.Second)
-	rec = h.do("GET", BasePath+"/get-session", nil, hdr{"Cookie": cookie})
+	harness.clock.Advance(DefaultSessionTTL + time.Second)
+	rec = harness.do("GET", BasePath+"/get-session", nil, hdr{"Cookie": cookie})
 	if strings.TrimSpace(rec.Body.String()) != "null" {
-		t.Fatalf("expired session returned %s", rec.Body)
+		test.Fatalf("expired session returned %s", rec.Body)
 	}
-	if c := sessionCookie(rec); c == nil || c.MaxAge >= 0 {
-		t.Fatal("expired session cookie not cleared")
+	if cookie := sessionCookie(rec); cookie == nil || cookie.MaxAge >= 0 {
+		test.Fatal("expired session cookie not cleared")
 	}
-	var n int
-	_ = testPool.QueryRow(context.Background(), `SELECT count(*) FROM "session" WHERE "token" = $1`, token).Scan(&n)
-	if n != 0 {
-		t.Fatal("expired session row not deleted")
+	var count int
+	_ = testPool.QueryRow(context.Background(), `SELECT count(*) FROM "session" WHERE "token" = $1`, token).Scan(&count)
+	if count != 0 {
+		test.Fatal("expired session row not deleted")
 	}
 	if rec.Header().Get("Cache-Control") != "no-store" {
-		t.Fatal("get-session is cacheable")
+		test.Fatal("get-session is cacheable")
 	}
 }
 
-func TestRequireUserAndUserFrom(t *testing.T) {
-	t.Parallel()
-	h := newHarness(t, func(c *Config) { c.LoginPath = "/sign-in" })
-	email := uniqueEmail(t)
-	cookie := cookieHeader(t, h.signUp(email, "password123"))
+func TestRequireUserAndUserFrom(test *testing.T) {
+	test.Parallel()
+	harness := newHarness(test, func(config *Config) { config.LoginPath = "/sign-in" })
+	email := uniqueEmail(test)
+	cookie := cookieHeader(test, harness.signUp(email, "password123"))
 
-	protected := h.a.RequireUser(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		user, sess, ok := UserFrom(r.Context())
+	protected := harness.auth.RequireUser(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		user, sess, ok := UserFrom(request.Context())
 		if !ok || user.Email != email || sess.UserID != user.ID {
-			t.Errorf("UserFrom = %v %v %v", user, sess, ok)
+			test.Errorf("UserFrom = %v %v %v", user, sess, ok)
 		}
-		w.WriteHeader(http.StatusNoContent)
+		writer.WriteHeader(http.StatusNoContent)
 	}))
 
-	rec := h.serve(protected, "GET", "/api/core/v1/users", nil, nil)
-	wantStatus(t, rec, http.StatusUnauthorized)
+	rec := harness.serve(protected, "GET", "/api/core/v1/users", nil, nil)
+	wantStatus(test, rec, http.StatusUnauthorized)
 	if strings.TrimSpace(rec.Body.String()) != `{"data":null,"error":"Unauthorized"}` {
-		t.Fatalf("401 body = %s", rec.Body)
+		test.Fatalf("401 body = %s", rec.Body)
 	}
-	rec = h.serve(protected, "GET", "/dashboard", nil, hdr{"Accept": "text/html,application/xhtml+xml"})
-	wantStatus(t, rec, http.StatusSeeOther)
+	rec = harness.serve(protected, "GET", "/dashboard", nil, hdr{"Accept": "text/html,application/xhtml+xml"})
+	wantStatus(test, rec, http.StatusSeeOther)
 	if rec.Header().Get("Location") != "/sign-in" {
-		t.Fatalf("redirect = %q", rec.Header().Get("Location"))
+		test.Fatalf("redirect = %q", rec.Header().Get("Location"))
 	}
-	wantStatus(t, h.serve(protected, "GET", "/dashboard", nil, hdr{"Cookie": cookie}), http.StatusNoContent)
+	wantStatus(test, harness.serve(protected, "GET", "/dashboard", nil, hdr{"Cookie": cookie}), http.StatusNoContent)
 	// Middleware applied twice loads the session once and still works.
-	wantStatus(t, h.serve(h.a.Middleware(protected), "GET", "/dashboard", nil, hdr{"Cookie": cookie}), http.StatusNoContent)
+	wantStatus(test, harness.serve(harness.auth.Middleware(protected), "GET", "/dashboard", nil, hdr{"Cookie": cookie}), http.StatusNoContent)
 
 	if _, _, ok := UserFrom(context.Background()); ok {
-		t.Fatal("UserFrom on an empty context reported a user")
+		test.Fatal("UserFrom on an empty context reported a user")
 	}
 	// A forged cookie is ignored (and not even looked up).
-	wantStatus(t, h.serve(protected, "GET", "/x", nil, hdr{"Cookie": sessionCookieName + "=forged.value"}), http.StatusUnauthorized)
+	wantStatus(test, harness.serve(protected, "GET", "/x", nil, hdr{"Cookie": sessionCookieName + "=forged.value"}), http.StatusUnauthorized)
 }
 
-func TestServiceMethodsForHTMLTransport(t *testing.T) {
-	t.Parallel()
-	h := newHarness(t, nil)
+func TestServiceMethodsForHTMLTransport(test *testing.T) {
+	test.Parallel()
+	harness := newHarness(test, nil)
 	ctx := context.Background()
-	email := uniqueEmail(t)
+	email := uniqueEmail(test)
 
-	user, sess, err := h.a.SignUpEmail(ctx, SignUpInput{Name: "HTML", Email: email, Password: "password123"})
+	user, sess, err := harness.auth.SignUpEmail(ctx, SignUpInput{Name: "HTML", Email: email, Password: "password123"})
 	if err != nil || sess.Token == "" || user.Email != email {
-		t.Fatalf("SignUpEmail = %v %v %v", user, sess, err)
+		test.Fatalf("SignUpEmail = %v %v %v", user, sess, err)
 	}
-	if _, _, err := h.a.SignInEmail(ctx, SignInInput{Email: email, Password: "nope-nope"}); !errors.Is(err, ErrInvalidEmailOrPassword) {
-		t.Fatalf("wrong password err = %v", err)
+	if _, _, err := harness.auth.SignInEmail(ctx, SignInInput{Email: email, Password: "nope-nope"}); !errors.Is(err, ErrInvalidEmailOrPassword) {
+		test.Fatalf("wrong password err = %v", err)
 	}
-	_, sess, err = h.a.SignInEmail(ctx, SignInInput{Email: email, Password: "password123"})
+	_, sess, err = harness.auth.SignInEmail(ctx, SignInInput{Email: email, Password: "password123"})
 	if err != nil {
-		t.Fatal(err)
+		test.Fatal(err)
 	}
-	rec := h.serve(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { h.a.SetSessionCookie(w, sess) }), "GET", "/", nil, nil)
-	cookie := cookieHeader(t, rec)
-	if h.getSession(hdr{"Cookie": cookie}) == nil {
-		t.Fatal("SetSessionCookie cookie not accepted")
+	rec := harness.serve(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) { harness.auth.SetSessionCookie(writer, sess) }), "GET", "/", nil, nil)
+	cookie := cookieHeader(test, rec)
+	if harness.getSession(hdr{"Cookie": cookie}) == nil {
+		test.Fatal("SetSessionCookie cookie not accepted")
 	}
-	if err := h.a.SignOut(ctx, sess.Token); err != nil {
-		t.Fatal(err)
+	if err := harness.auth.SignOut(ctx, sess.Token); err != nil {
+		test.Fatal(err)
 	}
-	if err := h.a.SignOut(ctx, ""); err != nil {
-		t.Fatal(err)
+	if err := harness.auth.SignOut(ctx, ""); err != nil {
+		test.Fatal(err)
 	}
-	if h.getSession(hdr{"Cookie": cookie}) != nil {
-		t.Fatal("SignOut did not revoke")
+	if harness.getSession(hdr{"Cookie": cookie}) != nil {
+		test.Fatal("SignOut did not revoke")
 	}
-	rec = h.serve(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { h.a.ClearSessionCookie(w) }), "GET", "/", nil, nil)
-	if c := sessionCookie(rec); c == nil || c.MaxAge >= 0 {
-		t.Fatal("ClearSessionCookie did not expire the cookie")
+	rec = harness.serve(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) { harness.auth.ClearSessionCookie(writer) }), "GET", "/", nil, nil)
+	if cookie := sessionCookie(rec); cookie == nil || cookie.MaxAge >= 0 {
+		test.Fatal("ClearSessionCookie did not expire the cookie")
 	}
 	// An already-expired session clears instead of setting.
-	rec = h.serve(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		h.a.SetSessionCookie(w, Session{Token: "x", ExpiresAt: h.clock.Now().Add(-time.Minute)})
+	rec = harness.serve(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		harness.auth.SetSessionCookie(writer, Session{Token: "x", ExpiresAt: harness.clock.Now().Add(-time.Minute)})
 	}), "GET", "/", nil, nil)
-	if c := sessionCookie(rec); c == nil || c.MaxAge >= 0 {
-		t.Fatal("expired session set a live cookie")
+	if cookie := sessionCookie(rec); cookie == nil || cookie.MaxAge >= 0 {
+		test.Fatal("expired session set a live cookie")
 	}
-	if _, _, err := h.a.VerifyEmail(ctx, "garbage"); !errors.Is(err, ErrInvalidToken) {
-		t.Fatalf("VerifyEmail garbage err = %v", err)
+	if _, _, err := harness.auth.VerifyEmail(ctx, "garbage"); !errors.Is(err, ErrInvalidToken) {
+		test.Fatalf("VerifyEmail garbage err = %v", err)
 	}
 }
 
 // HostOnlyCookies: on https every cookie of the instance is __Host- (Path=/,
 // no Domain, Secure), and the __Secure- name is not read.
-func TestHostOnlyCookies(t *testing.T) {
-	t.Parallel()
-	h := newHarness(t, func(c *Config) { c.BaseURL = "https://admin.test"; c.CookiePrefix = "admin"; c.HostOnlyCookies = true })
-	rec := h.signUp(uniqueEmail(t), "password123")
-	c := sessionCookie(rec)
-	if c == nil || c.Name != "__Host-admin.session_token" || !c.Secure || !c.HttpOnly || c.Path != "/" || c.Domain != "" {
-		t.Fatalf("cookie = %+v", c)
+func TestHostOnlyCookies(test *testing.T) {
+	test.Parallel()
+	harness := newHarness(test, func(config *Config) {
+		config.BaseURL = "https://admin.test"
+		config.CookiePrefix = "admin"
+		config.HostOnlyCookies = true
+	})
+	rec := harness.signUp(uniqueEmail(test), "password123")
+	cookie := sessionCookie(rec)
+	if cookie == nil || cookie.Name != "__Host-admin.session_token" || !cookie.Secure || !cookie.HttpOnly || cookie.Path != "/" || cookie.Domain != "" {
+		test.Fatalf("cookie = %+v", cookie)
 	}
-	if h.getSession(hdr{"Cookie": c.Name + "=" + c.Value}) == nil {
-		t.Fatal("own __Host- cookie rejected")
+	if harness.getSession(hdr{"Cookie": cookie.Name + "=" + cookie.Value}) == nil {
+		test.Fatal("own __Host- cookie rejected")
 	}
-	if h.getSession(hdr{"Cookie": "__Secure-admin.session_token=" + c.Value}) != nil {
-		t.Fatal("__Secure- cookie name accepted with HostOnlyCookies")
+	if harness.getSession(hdr{"Cookie": "__Secure-admin.session_token=" + cookie.Value}) != nil {
+		test.Fatal("__Secure- cookie name accepted with HostOnlyCookies")
 	}
 	// Plain http (dev) keeps the bare name: prefixes need https.
-	dev := newHarness(t, func(c *Config) { c.CookiePrefix = "admin"; c.HostOnlyCookies = true })
-	if c := sessionCookie(dev.signUp(uniqueEmail(t), "password123")); c == nil || c.Name != "admin.session_token" {
-		t.Fatalf("http cookie = %+v", c)
+	dev := newHarness(test, func(config *Config) { config.CookiePrefix = "admin"; config.HostOnlyCookies = true })
+	if cookie := sessionCookie(dev.signUp(uniqueEmail(test), "password123")); cookie == nil || cookie.Name != "admin.session_token" {
+		test.Fatalf("http cookie = %+v", cookie)
 	}
 }
 
-func TestSecureCookieOnHTTPS(t *testing.T) {
-	t.Parallel()
-	h := newHarness(t, func(c *Config) { c.BaseURL = "https://app.test" })
-	rec := h.signUp(uniqueEmail(t), "password123")
-	c := sessionCookie(rec)
-	if c == nil || c.Name != "__Secure-better-auth.session_token" || !c.Secure || !c.HttpOnly {
-		t.Fatalf("cookie = %+v", c)
+func TestSecureCookieOnHTTPS(test *testing.T) {
+	test.Parallel()
+	harness := newHarness(test, func(config *Config) { config.BaseURL = "https://app.test" })
+	rec := harness.signUp(uniqueEmail(test), "password123")
+	cookie := sessionCookie(rec)
+	if cookie == nil || cookie.Name != "__Secure-better-auth.session_token" || !cookie.Secure || !cookie.HttpOnly {
+		test.Fatalf("cookie = %+v", cookie)
 	}
 	// The unprefixed cookie name is not read on https.
-	if h.getSession(hdr{"Cookie": sessionCookieName + "=" + c.Value}) != nil {
-		t.Fatal("non-secure cookie name accepted on https")
+	if harness.getSession(hdr{"Cookie": sessionCookieName + "=" + cookie.Value}) != nil {
+		test.Fatal("non-secure cookie name accepted on https")
 	}
-	if h.getSession(hdr{"Cookie": c.Name + "=" + c.Value}) == nil {
-		t.Fatal("secure cookie rejected")
+	if harness.getSession(hdr{"Cookie": cookie.Name + "=" + cookie.Value}) == nil {
+		test.Fatal("secure cookie rejected")
 	}
 }
 
-func TestRateLimitedEndpoints(t *testing.T) {
-	t.Parallel()
-	h := newHarness(t, func(c *Config) { c.RateLimiter = NewMemoryRateLimiter() })
-	email := uniqueEmail(t)
-	for i := range 3 {
-		if code := h.signIn(email, "password123").Code; code != http.StatusUnauthorized {
-			t.Fatalf("attempt %d: status %d", i, code)
+func TestRateLimitedEndpoints(test *testing.T) {
+	test.Parallel()
+	harness := newHarness(test, func(config *Config) { config.RateLimiter = NewMemoryRateLimiter() })
+	email := uniqueEmail(test)
+	for index := range 3 {
+		if code := harness.signIn(email, "password123").Code; code != http.StatusUnauthorized {
+			test.Fatalf("attempt %d: status %d", index, code)
 		}
 	}
-	rec := h.signIn(email, "password123")
-	wantCode(t, rec, http.StatusTooManyRequests, "TOO_MANY_REQUESTS")
+	rec := harness.signIn(email, "password123")
+	wantCode(test, rec, http.StatusTooManyRequests, "TOO_MANY_REQUESTS")
 	if ra := rec.Header().Get("X-Retry-After"); ra == "" || ra == "0" {
-		t.Fatalf("X-Retry-After = %q", ra)
+		test.Fatalf("X-Retry-After = %q", ra)
 	}
 	// Other endpoints and other clients have their own budget.
-	wantStatus(t, h.signUp(email, "password123"), http.StatusOK)
-	rec = h.do("POST", BasePath+"/sign-in/email", map[string]any{"email": email, "password": "password123"}, nil)
-	wantStatus(t, rec, http.StatusTooManyRequests)
+	wantStatus(test, harness.signUp(email, "password123"), http.StatusOK)
+	rec = harness.do("POST", BasePath+"/sign-in/email", map[string]any{"email": email, "password": "password123"}, nil)
+	wantStatus(test, rec, http.StatusTooManyRequests)
 	for range 3 {
-		wantStatus(t, h.do("POST", BasePath+"/request-password-reset", map[string]any{"email": email, "redirectTo": "/r"}, nil), http.StatusOK)
+		wantStatus(test, harness.do("POST", BasePath+"/request-password-reset", map[string]any{"email": email, "redirectTo": "/r"}, nil), http.StatusOK)
 	}
-	wantStatus(t, h.do("POST", BasePath+"/request-password-reset", map[string]any{"email": email, "redirectTo": "/r"}, nil), http.StatusTooManyRequests)
+	wantStatus(test, harness.do("POST", BasePath+"/request-password-reset", map[string]any{"email": email, "redirectTo": "/r"}, nil), http.StatusTooManyRequests)
 
 	// Service calls outside Middleware have no client IP and are not limited.
 	for range 5 {
-		if _, _, err := h.a.SignInEmail(context.Background(), SignInInput{Email: email, Password: "password123"}); err != nil {
-			t.Fatal(err)
+		if _, _, err := harness.auth.SignInEmail(context.Background(), SignInInput{Email: email, Password: "password123"}); err != nil {
+			test.Fatal(err)
 		}
 	}
 }
 
-func TestClientIPFromTrustedProxyHeader(t *testing.T) {
-	t.Parallel()
-	h := newHarness(t, func(c *Config) { c.ClientIPHeader = "X-Forwarded-For" })
-	rec := h.do("POST", BasePath+"/sign-up/email", map[string]any{"name": "ip", "email": uniqueEmail(t), "password": "password123"},
+func TestClientIPFromTrustedProxyHeader(test *testing.T) {
+	test.Parallel()
+	harness := newHarness(test, func(config *Config) { config.ClientIPHeader = "X-Forwarded-For" })
+	rec := harness.do("POST", BasePath+"/sign-up/email", map[string]any{"name": "ip", "email": uniqueEmail(test), "password": "password123"},
 		hdr{"X-Forwarded-For": "6.6.6.6, 203.0.113.9", "User-Agent": "test-agent"})
-	wantStatus(t, rec, http.StatusOK)
-	sess := h.getSession(hdr{"Cookie": cookieHeader(t, rec)})["session"].(map[string]any)
+	wantStatus(test, rec, http.StatusOK)
+	sess := harness.getSession(hdr{"Cookie": cookieHeader(test, rec)})["session"].(map[string]any)
 	if sess["ipAddress"] != "203.0.113.9" || sess["userAgent"] != "test-agent" {
-		t.Fatalf("session client = %v / %v", sess["ipAddress"], sess["userAgent"])
+		test.Fatalf("session client = %v / %v", sess["ipAddress"], sess["userAgent"])
 	}
 }
 
-func TestOKEndpoint(t *testing.T) {
-	t.Parallel()
-	h := newHarness(t, nil)
-	rec := h.do("GET", BasePath+"/ok", nil, nil)
-	wantStatus(t, rec, http.StatusOK)
-	wantStatus(t, h.do("GET", BasePath+"/sign-in/email", nil, nil), http.StatusMethodNotAllowed)
+func TestOKEndpoint(test *testing.T) {
+	test.Parallel()
+	harness := newHarness(test, nil)
+	rec := harness.do("GET", BasePath+"/ok", nil, nil)
+	wantStatus(test, rec, http.StatusOK)
+	wantStatus(test, harness.do("GET", BasePath+"/sign-in/email", nil, nil), http.StatusMethodNotAllowed)
 }
 
-func mustQuery(t *testing.T, link, key string) string {
-	t.Helper()
-	u, err := url.Parse(link)
+func mustQuery(test *testing.T, link, key string) string {
+	test.Helper()
+	address, err := url.Parse(link)
 	if err != nil {
-		t.Fatal(err)
+		test.Fatal(err)
 	}
-	return u.Query().Get(key)
+	return address.Query().Get(key)
 }
 
 // betterAuthHash is hashPassword("hunter2hunter2") from @better-auth/utils
 // (scrypt N=16384 r=16 p=1, salt "0123…cdef"), generated with Node.
 const betterAuthHash = "0123456789abcdef0123456789abcdef:79729cb5bb1f0806ff13d495dfbe112886f07473fd22165fdad4415930961e224a5c3911b65af1d06f9d38cca6b0eb1a39717181f0abf4f30ff2ddb3bfc5d985"
 
-func TestImportedBetterAuthUserSignsInAndIsRehashed(t *testing.T) {
-	t.Parallel()
-	h := newHarness(t, nil)
+func TestImportedBetterAuthUserSignsInAndIsRehashed(test *testing.T) {
+	test.Parallel()
+	harness := newHarness(test, nil)
 	ctx := context.Background()
-	email := uniqueEmail(t)
+	email := uniqueEmail(test)
 	id := generateID(32)
 	// Rows as the original app's Better Auth wrote them.
 	if _, err := testPool.Exec(ctx, `INSERT INTO "user" ("id","name","email","emailVerified") VALUES ($1,'Imported',$2,true)`, id, email); err != nil {
-		t.Fatal(err)
+		test.Fatal(err)
 	}
 	if _, err := testPool.Exec(ctx, `INSERT INTO "account" ("id","accountId","providerId","userId","password") VALUES ($1,$2,'credential',$2,$3)`, generateID(32), id, betterAuthHash); err != nil {
-		t.Fatal(err)
+		test.Fatal(err)
 	}
 
-	wantCode(t, h.signIn(email, "hunter2hunter3"), http.StatusUnauthorized, "INVALID_EMAIL_OR_PASSWORD")
-	wantStatus(t, h.signIn(email, "hunter2hunter2"), http.StatusOK)
+	wantCode(test, harness.signIn(email, "hunter2hunter3"), http.StatusUnauthorized, "INVALID_EMAIL_OR_PASSWORD")
+	wantStatus(test, harness.signIn(email, "hunter2hunter2"), http.StatusOK)
 
 	var stored string
 	if err := testPool.QueryRow(ctx, `SELECT "password" FROM "account" WHERE "userId" = $1`, id).Scan(&stored); err != nil {
-		t.Fatal(err)
+		test.Fatal(err)
 	}
 	if !strings.HasPrefix(stored, "$argon2id$") {
-		t.Fatalf("hash not upgraded: %q", stored)
+		test.Fatalf("hash not upgraded: %q", stored)
 	}
-	wantStatus(t, h.signIn(email, "hunter2hunter2"), http.StatusOK)
+	wantStatus(test, harness.signIn(email, "hunter2hunter2"), http.StatusOK)
 }
 
-func TestSquattedSignUpIsReclaimedByEmailOwner(t *testing.T) {
-	t.Parallel()
-	h := newHarness(t, func(c *Config) { c.RequireEmailVerification = true })
-	victim := uniqueEmail(t)
-	link := func(i int) string { return pathOf(t, h.mails()[i].url) }
+func TestSquattedSignUpIsReclaimedByEmailOwner(test *testing.T) {
+	test.Parallel()
+	harness := newHarness(test, func(config *Config) { config.RequireEmailVerification = true })
+	victim := uniqueEmail(test)
+	link := func(index int) string { return pathOf(test, harness.mails()[index].url) }
 
 	// An attacker registers the victim's address first; the link goes to the victim.
-	wantStatus(t, h.signUp(victim, "attacker-pass"), http.StatusOK)
+	wantStatus(test, harness.signUp(victim, "attacker-pass"), http.StatusOK)
 	attackerLink := link(0)
 	// The victim signs up too: same generic response, their password wins,
 	// and they get a fresh link.
-	wantStatus(t, h.signUp(victim, "victim-pass"), http.StatusOK)
-	if n := len(h.mails()); n != 2 {
-		t.Fatalf("mails = %d, want 2", n)
+	wantStatus(test, harness.signUp(victim, "victim-pass"), http.StatusOK)
+	if count := len(harness.mails()); count != 2 {
+		test.Fatalf("mails = %d, want 2", count)
 	}
 	// The link issued for the attacker's password is void.
-	if rec := h.do("GET", attackerLink, nil, nil); rec.Header().Get("Location") != "/?error=INVALID_TOKEN" || sessionCookie(rec) != nil {
-		t.Fatalf("attacker link: %d %q", rec.Code, rec.Header().Get("Location"))
+	if rec := harness.do("GET", attackerLink, nil, nil); rec.Header().Get("Location") != "/?error=INVALID_TOKEN" || sessionCookie(rec) != nil {
+		test.Fatalf("attacker link: %d %q", rec.Code, rec.Header().Get("Location"))
 	}
 	victimLink := ""
-	for _, m := range h.mails()[1:] {
-		victimLink = pathOf(t, m.url)
+	for _, testCase := range harness.mails()[1:] {
+		victimLink = pathOf(test, testCase.url)
 	}
-	rec := h.do("GET", victimLink, nil, nil)
-	wantStatus(t, rec, http.StatusFound)
+	rec := harness.do("GET", victimLink, nil, nil)
+	wantStatus(test, rec, http.StatusFound)
 	if sessionCookie(rec) == nil {
-		t.Fatal("verification did not sign the owner in")
+		test.Fatal("verification did not sign the owner in")
 	}
-	wantCode(t, h.signIn(victim, "attacker-pass"), http.StatusUnauthorized, "INVALID_EMAIL_OR_PASSWORD")
-	wantStatus(t, h.signIn(victim, "victim-pass"), http.StatusOK)
+	wantCode(test, harness.signIn(victim, "attacker-pass"), http.StatusUnauthorized, "INVALID_EMAIL_OR_PASSWORD")
+	wantStatus(test, harness.signIn(victim, "victim-pass"), http.StatusOK)
 
 	// Once verified, a sign-up with the address changes nothing.
-	wantStatus(t, h.signUp(victim, "attacker-again"), http.StatusOK)
-	wantCode(t, h.signIn(victim, "attacker-again"), http.StatusUnauthorized, "INVALID_EMAIL_OR_PASSWORD")
-	if n := len(h.mails()); n != 2 {
-		t.Fatalf("verified duplicate sent mail (%d total)", n)
+	wantStatus(test, harness.signUp(victim, "attacker-again"), http.StatusOK)
+	wantCode(test, harness.signIn(victim, "attacker-again"), http.StatusUnauthorized, "INVALID_EMAIL_OR_PASSWORD")
+	if count := len(harness.mails()); count != 2 {
+		test.Fatalf("verified duplicate sent mail (%d total)", count)
 	}
 }
 
-func TestResetRevokesOtherResetLinks(t *testing.T) {
-	t.Parallel()
-	h := newHarness(t, nil)
-	email := uniqueEmail(t)
-	wantStatus(t, h.signUp(email, "old-password"), http.StatusOK)
+func TestResetRevokesOtherResetLinks(test *testing.T) {
+	test.Parallel()
+	harness := newHarness(test, nil)
+	email := uniqueEmail(test)
+	wantStatus(test, harness.signUp(email, "old-password"), http.StatusOK)
 	ctx := context.Background()
 	for range 2 {
-		if err := h.a.RequestPasswordReset(ctx, email, "/r"); err != nil {
-			t.Fatal(err)
+		if err := harness.auth.RequestPasswordReset(ctx, email, "/r"); err != nil {
+			test.Fatal(err)
 		}
 	}
 	var tokens []string
-	for _, m := range h.mails() {
-		tokens = append(tokens, mustQuery(t, m.url, "token"))
+	for _, mail := range harness.mails() {
+		tokens = append(tokens, mustQuery(test, mail.url, "token"))
 	}
-	if err := h.a.ResetPassword(ctx, tokens[0], "new-password"); err != nil {
-		t.Fatal(err)
+	if err := harness.auth.ResetPassword(ctx, tokens[0], "new-password"); err != nil {
+		test.Fatal(err)
 	}
-	if err := h.a.ResetPassword(ctx, tokens[1], "attacker-password"); !errors.Is(err, ErrInvalidToken) {
-		t.Fatalf("second outstanding link still works: %v", err)
+	if err := harness.auth.ResetPassword(ctx, tokens[1], "attacker-password"); !errors.Is(err, ErrInvalidToken) {
+		test.Fatalf("second outstanding link still works: %v", err)
 	}
-	if err := h.a.RequestPasswordReset(ctx, email, ""); !errors.Is(err, ErrInvalidRedirectURL) {
-		t.Fatalf("empty redirectTo err = %v", err)
+	if err := harness.auth.RequestPasswordReset(ctx, email, ""); !errors.Is(err, ErrInvalidRedirectURL) {
+		test.Fatalf("empty redirectTo err = %v", err)
 	}
 }
 
-func TestSignOutWithBearerAndCookieRevokesBoth(t *testing.T) {
-	t.Parallel()
-	h := newHarness(t, nil)
-	email := uniqueEmail(t)
-	cookie := cookieHeader(t, h.signUp(email, "password123"))
-	token := jsonBody(t, h.signIn(email, "password123"))["token"].(string)
-	rec := h.do("POST", BasePath+"/sign-out", nil, hdr{"Authorization": "Bearer " + token, "Cookie": cookie, "Origin": testBase})
-	wantStatus(t, rec, http.StatusOK)
-	if h.getSession(hdr{"Cookie": cookie}) != nil || h.getSession(hdr{"Authorization": "Bearer " + token}) != nil {
-		t.Fatal("a session survived sign-out")
+func TestSignOutWithBearerAndCookieRevokesBoth(test *testing.T) {
+	test.Parallel()
+	harness := newHarness(test, nil)
+	email := uniqueEmail(test)
+	cookie := cookieHeader(test, harness.signUp(email, "password123"))
+	token := jsonBody(test, harness.signIn(email, "password123"))["token"].(string)
+	rec := harness.do("POST", BasePath+"/sign-out", nil, hdr{"Authorization": "Bearer " + token, "Cookie": cookie, "Origin": testBase})
+	wantStatus(test, rec, http.StatusOK)
+	if harness.getSession(hdr{"Cookie": cookie}) != nil || harness.getSession(hdr{"Authorization": "Bearer " + token}) != nil {
+		test.Fatal("a session survived sign-out")
 	}
 }

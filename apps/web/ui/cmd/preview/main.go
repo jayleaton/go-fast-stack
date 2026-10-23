@@ -39,21 +39,21 @@ func main() {
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	store := NewStore()
 	store.RequireEmailVerification = *verify
-	store.OnMail = func(m Mail) {
-		log.Info("email (not sent)", "kind", m.Kind, "to", m.To, "link", m.URL)
+	store.OnMail = func(mail Mail) {
+		log.Info("email (not sent)", "kind", mail.Kind, "to", mail.To, "link", mail.URL)
 	}
 	demo := store.AddUser("Demo User", "demo@example.com", "password123", true)
 	// Two other devices so the Account page has sessions to revoke.
 	store.NewSession(demo.ID, "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1", "192.0.2.24", phoneSessionAge)
 	store.NewSession(demo.ID, "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36 Edg/141.0.0.0", "198.51.100.7", desktopSessionAge)
 
-	fakeAuth := Auth{S: store}
+	fakeAuth := Auth{Store: store}
 	// The real API endpoints over the fake service, behind a real gate.
 	gate := access.NewGate(access.FromContext(fakeAuth.Caller))
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET "+confirmEmailPath, store.ConfirmEmail)
 	mux.Handle("/", ui.New(ui.Deps{
-		API:      api.NewClient(api.NewUsers(Users{S: store}, gate), api.NewSessions(authenticator{fake: fakeAuth}, gate)),
+		API:      api.NewClient(api.NewUsers(Users{Store: store}, gate), api.NewSessions(authenticator{fake: fakeAuth}, gate)),
 		Gate:     gate,
 		Features: config.Features{EmailVerification: *verify, TemplateWelcome: *welcome},
 		Logger:   log,

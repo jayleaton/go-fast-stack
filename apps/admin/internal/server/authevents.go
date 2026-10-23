@@ -44,8 +44,8 @@ func NewAuditEvents(svc *services.AuthEventService, log *slog.Logger) auth.Event
 }
 
 // signInMethod maps auth's sign-in methods to the audit's.
-func signInMethod(m string) string {
-	switch m {
+func signInMethod(message string) string {
+	switch message {
 	case auth.SignInMethodTwoFactor:
 		return services.SignInTwoFactor
 	case auth.SignInMethodSetPassword:
@@ -53,6 +53,6 @@ func signInMethod(m string) string {
 	case auth.SignInMethodPassword:
 		return services.SignInPassword
 	default:
-		return m
+		return message
 	}
 }

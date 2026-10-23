@@ -58,7 +58,7 @@ func (ui *UI) login(writer http.ResponseWriter, request *http.Request, _ apiclie
 			// Like the original: send a fresh link and say so.
 			if err := ui.api.SendVerificationEmail(ctx, apiclient.CreateVerificationEmail{Email: in.Email, CallbackURL: config.AppRoutes.VerifyEmailSuccess}); err != nil {
 				ui.log.WarnContext(ctx, "ui: resend verification on login", "err", err)
-				msg = i18n.T(ctx, "pages.verifyEmail.checkEmail")
+				msg = i18n.Translate(ctx, "pages.verifyEmail.checkEmail")
 			}
 		}
 		ui.patch(writer, request, http.StatusUnprocessableEntity, LoginPage(AuthForm{Email: in.Email, Error: msg, Providers: ui.socialProviders(ctx)}), FormError(msg))
@@ -103,7 +103,7 @@ func (ui *UI) forgotPassword(writer http.ResponseWriter, request *http.Request, 
 	email := strings.TrimSpace(request.PostFormValue("email"))
 	if err := ui.api.RequestPasswordReset(ctx, apiclient.CreatePasswordReset{Email: email, RedirectTo: config.AppRoutes.ResetPassword}); err != nil {
 		ui.log.ErrorContext(ctx, "ui: request password reset", "err", err)
-		msg := i18n.T(ctx, "common.error")
+		msg := i18n.Translate(ctx, "common.error")
 		ui.patch(writer, request, http.StatusUnprocessableEntity, ForgotPasswordPage(AuthForm{Email: email, Error: msg}, false), FormError(msg))
 		return
 	}
@@ -120,7 +120,7 @@ func (ui *UI) resetPassword(writer http.ResponseWriter, request *http.Request, _
 	token := request.PostFormValue("token")
 	password := request.PostFormValue("password")
 	fail := func(key string) {
-		msg := i18n.T(ctx, key)
+		msg := i18n.Translate(ctx, key)
 		ui.patch(writer, request, http.StatusUnprocessableEntity, ResetPasswordPage(token, AuthForm{Error: msg}, false), FormError(msg))
 	}
 	if token == "" {
@@ -158,7 +158,7 @@ func (ui *UI) resendVerification(writer http.ResponseWriter, request *http.Reque
 	ctx := request.Context()
 	email := strings.TrimSpace(request.PostFormValue("email"))
 	state := ResendState{
-		Message:         i18n.T(ctx, "pages.verifyEmail.verificationEmailSent"),
+		Message:         i18n.Translate(ctx, "pages.verifyEmail.verificationEmailSent"),
 		CooldownSeconds: int(resendCooldown.Seconds()),
 	}
 	status := http.StatusOK
@@ -188,7 +188,7 @@ func (ui *UI) verifyEmail(writer http.ResponseWriter, request *http.Request, _ a
 	ctx := request.Context()
 	token, callback := request.PostFormValue("token"), request.PostFormValue("callbackURL")
 	if token == "" {
-		result := VerifyEmailFailed(i18n.T(ctx, "pages.verifyEmail.invalidToken"))
+		result := VerifyEmailFailed(i18n.Translate(ctx, "pages.verifyEmail.invalidToken"))
 		ui.patch(writer, request, http.StatusUnprocessableEntity, VerifyEmailSuccessPage(token, callback, result), result)
 		return
 	}
@@ -196,7 +196,7 @@ func (ui *UI) verifyEmail(writer http.ResponseWriter, request *http.Request, _ a
 	verified, err := ui.api.VerifyEmail(ctx, apiclient.VerifyEmail{Token: token})
 	switch {
 	case errors.Is(err, apiclient.ErrInvalidToken), errors.Is(err, apiclient.ErrTokenExpired):
-		result, status = VerifyEmailFailed(i18n.T(ctx, "pages.verifyEmail.invalidToken")), http.StatusUnprocessableEntity
+		result, status = VerifyEmailFailed(i18n.Translate(ctx, "pages.verifyEmail.invalidToken")), http.StatusUnprocessableEntity
 	case err != nil:
 		result, status = VerifyEmailFailed(ui.errorMessage(ctx, err)), http.StatusUnprocessableEntity
 	case verified.SignedIn:

@@ -76,7 +76,7 @@ func (secretsSource Secrets) SocialSecrets() (SocialSecrets, error) {
 		secretApplePrivateKey:    &out.ApplePrivateKey,
 		secretAppleKeyID:         &out.AppleKeyID,
 	} {
-		value, err := trimmed(secretsSource.m.Get(name))
+		value, err := trimmed(secretsSource.manager.Get(name))
 		*dst, errs = value, append(errs, err)
 	}
 	return out, errors.Join(errs...)
@@ -104,6 +104,6 @@ func (secretsSource Secrets) OnSocialSecrets(fn func(SocialSecrets) error) {
 		return nil
 	}
 	for _, name := range socialSecretNames {
-		secretsSource.m.OnChange(name, hook)
+		secretsSource.manager.OnChange(name, hook)
 	}
 }

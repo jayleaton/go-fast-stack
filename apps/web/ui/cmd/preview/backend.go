@@ -69,32 +69,32 @@ func NewStore() *Store {
 }
 
 // AddUser creates an account directly (seed data).
-func (s *Store) AddUser(name, email, password string, verified bool) auth.User {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	u := auth.User{ID: token(), Name: name, Email: email, EmailVerified: verified, CreatedAt: s.Now()}
-	s.accounts[u.ID] = &account{user: u, password: password}
-	return u
+func (store *Store) AddUser(name, email, password string, verified bool) auth.User {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	user := auth.User{ID: token(), Name: name, Email: email, EmailVerified: verified, CreatedAt: store.Now()}
+	store.accounts[user.ID] = &account{user: user, password: password}
+	return user
 }
 
 // NewSession signs a user in directly (tests).
-func (s *Store) NewSession(userID, userAgent, ip string, age time.Duration) auth.Session {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+func (store *Store) NewSession(userID, userAgent, ip string, age time.Duration) auth.Session {
+	store.mu.Lock()
+	defer store.mu.Unlock()
 	ctx := context.WithValue(context.Background(), metaKey{}, requestMeta{userAgent, ip})
-	sess := s.newSessionLocked(ctx, userID)
+	sess := store.newSessionLocked(ctx, userID)
 	sess.CreatedAt = sess.CreatedAt.Add(-age)
-	s.sessions[sess.Token] = sess
+	store.sessions[sess.Token] = sess
 	return sess
 }
 
-func (s *Store) newSessionLocked(ctx context.Context, userID string) auth.Session {
-	now := s.Now()
+func (store *Store) newSessionLocked(ctx context.Context, userID string) auth.Session {
+	now := store.Now()
 	sess := auth.Session{ID: token(), Token: token(), UserID: userID, CreatedAt: now, ExpiresAt: now.Add(SessionTTL)}
-	if m, ok := ctx.Value(metaKey{}).(requestMeta); ok {
-		sess.UserAgent, sess.IPAddress = &m.userAgent, &m.ip
+	if meta, ok := ctx.Value(metaKey{}).(requestMeta); ok {
+		sess.UserAgent, sess.IPAddress = &meta.userAgent, &meta.ip
 	}
-	s.sessions[sess.Token] = sess
+	store.sessions[sess.Token] = sess
 	return sess
 }
 
@@ -102,120 +102,120 @@ type metaKey struct{}
 
 type requestMeta struct{ userAgent, ip string }
 
-func (s *Store) byEmailLocked(email string) *account {
-	for _, a := range s.accounts {
-		if strings.EqualFold(a.user.Email, email) {
-			return a
+func (store *Store) byEmailLocked(email string) *account {
+	for _, account := range store.accounts {
+		if strings.EqualFold(account.user.Email, email) {
+			return account
 		}
 	}
 	return nil
 }
 
-func (s *Store) mailLocked(kind, to, path string, tok string) {
-	m := Mail{Kind: kind, To: to, URL: path + "?" + url.Values{"token": {tok}}.Encode()}
-	if s.OnMail != nil {
-		s.OnMail(m)
+func (store *Store) mailLocked(kind, to, path string, tok string) {
+	mail := Mail{Kind: kind, To: to, URL: path + "?" + url.Values{"token": {tok}}.Encode()}
+	if store.OnMail != nil {
+		store.OnMail(mail)
 	}
 }
 
 func token() string { return rand.Text() }
 
 // Auth implements ui.Auth.
-type Auth struct{ S *Store }
+type Auth struct{ Store *Store }
 
-func (a Auth) SignUpEmail(ctx context.Context, in auth.SignUpInput) (auth.User, auth.Session, error) {
-	s := a.S
-	s.mu.Lock()
-	defer s.mu.Unlock()
+func (fake Auth) SignUpEmail(ctx context.Context, in auth.SignUpInput) (auth.User, auth.Session, error) {
+	store := fake.Store
+	store.mu.Lock()
+	defer store.mu.Unlock()
 	if !strings.Contains(in.Email, "@") {
 		return auth.User{}, auth.Session{}, auth.ErrInvalidEmail
 	}
 	if err := checkPassword(in.Password); err != nil {
 		return auth.User{}, auth.Session{}, err
 	}
-	if existing := s.byEmailLocked(in.Email); existing != nil {
+	if existing := store.byEmailLocked(in.Email); existing != nil {
 		// Like auth: with verification on, a taken email looks like success.
-		if s.RequireEmailVerification {
+		if store.RequireEmailVerification {
 			return auth.User{Name: in.Name, Email: in.Email}, auth.Session{}, nil
 		}
 		return auth.User{}, auth.Session{}, auth.ErrUserAlreadyExists
 	}
-	u := auth.User{ID: token(), Name: in.Name, Email: in.Email, CreatedAt: s.Now()}
-	s.accounts[u.ID] = &account{user: u, password: in.Password}
-	if s.RequireEmailVerification {
+	user := auth.User{ID: token(), Name: in.Name, Email: in.Email, CreatedAt: store.Now()}
+	store.accounts[user.ID] = &account{user: user, password: in.Password}
+	if store.RequireEmailVerification {
 		tok := token()
-		s.verify[tok] = u.ID
-		s.mailLocked("verify", u.Email, in.CallbackURL, tok)
-		return u, auth.Session{}, nil
+		store.verify[tok] = user.ID
+		store.mailLocked("verify", user.Email, in.CallbackURL, tok)
+		return user, auth.Session{}, nil
 	}
-	return u, s.newSessionLocked(ctx, u.ID), nil
+	return user, store.newSessionLocked(ctx, user.ID), nil
 }
 
-func (a Auth) SignInEmail(ctx context.Context, in auth.SignInInput) (auth.User, auth.Session, error) {
-	s := a.S
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	acc := s.byEmailLocked(in.Email)
+func (fake Auth) SignInEmail(ctx context.Context, in auth.SignInInput) (auth.User, auth.Session, error) {
+	store := fake.Store
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	acc := store.byEmailLocked(in.Email)
 	if acc == nil || acc.password != in.Password {
 		return auth.User{}, auth.Session{}, auth.ErrInvalidEmailOrPassword
 	}
-	if s.RequireEmailVerification && !acc.user.EmailVerified {
+	if store.RequireEmailVerification && !acc.user.EmailVerified {
 		return auth.User{}, auth.Session{}, auth.ErrEmailNotVerified
 	}
-	return acc.user, s.newSessionLocked(ctx, acc.user.ID), nil
+	return acc.user, store.newSessionLocked(ctx, acc.user.ID), nil
 }
 
-func (a Auth) SignOut(_ context.Context, sessionToken string) error {
-	a.S.mu.Lock()
-	defer a.S.mu.Unlock()
-	delete(a.S.sessions, sessionToken)
+func (fake Auth) SignOut(_ context.Context, sessionToken string) error {
+	fake.Store.mu.Lock()
+	defer fake.Store.mu.Unlock()
+	delete(fake.Store.sessions, sessionToken)
 	return nil
 }
 
-func (a Auth) RequestPasswordReset(_ context.Context, email, redirectTo string) error {
-	s := a.S
-	s.mu.Lock()
-	defer s.mu.Unlock()
+func (fake Auth) RequestPasswordReset(_ context.Context, email, redirectTo string) error {
+	store := fake.Store
+	store.mu.Lock()
+	defer store.mu.Unlock()
 	// Unknown emails succeed silently, so the form does not reveal accounts.
-	if acc := s.byEmailLocked(email); acc != nil {
+	if acc := store.byEmailLocked(email); acc != nil {
 		tok := token()
-		s.reset[tok] = acc.user.ID
-		s.mailLocked("reset", email, redirectTo, tok)
+		store.reset[tok] = acc.user.ID
+		store.mailLocked("reset", email, redirectTo, tok)
 	}
 	return nil
 }
 
-func (a Auth) ResetPassword(_ context.Context, tok, newPassword string) error {
-	s := a.S
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	id, ok := s.reset[tok]
-	if !ok || s.accounts[id] == nil {
+func (fake Auth) ResetPassword(_ context.Context, tok, newPassword string) error {
+	store := fake.Store
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	id, ok := store.reset[tok]
+	if !ok || store.accounts[id] == nil {
 		return auth.ErrInvalidToken
 	}
 	if err := checkPassword(newPassword); err != nil {
 		return err
 	}
-	delete(s.reset, tok)
-	s.accounts[id].password = newPassword
+	delete(store.reset, tok)
+	store.accounts[id].password = newPassword
 	return nil
 }
 
-func (a Auth) VerifyEmail(ctx context.Context, tok string) (auth.User, auth.Session, error) {
-	s := a.S
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	id, ok := s.verify[tok]
-	if !ok || s.accounts[id] == nil {
+func (fake Auth) VerifyEmail(ctx context.Context, tok string) (auth.User, auth.Session, error) {
+	store := fake.Store
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	id, ok := store.verify[tok]
+	if !ok || store.accounts[id] == nil {
 		return auth.User{}, auth.Session{}, auth.ErrInvalidToken
 	}
-	delete(s.verify, tok)
-	acc := s.accounts[id]
+	delete(store.verify, tok)
+	acc := store.accounts[id]
 	if acc.user.EmailVerified {
 		return acc.user, auth.Session{}, nil
 	}
 	acc.user.EmailVerified = true
-	return acc.user, s.newSessionLocked(ctx, id), nil
+	return acc.user, store.newSessionLocked(ctx, id), nil
 }
 
 // CheckCallbackURL trusts this site's paths only: the preview has no mobile app.
@@ -226,20 +226,20 @@ func (Auth) CheckCallbackURL(callbackURL string) error {
 	return errors.New("untrusted callback")
 }
 
-func (a Auth) SendVerificationEmail(_ context.Context, email, callbackURL string) error {
-	s := a.S
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if acc := s.byEmailLocked(email); acc != nil && !acc.user.EmailVerified {
+func (fake Auth) SendVerificationEmail(_ context.Context, email, callbackURL string) error {
+	store := fake.Store
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	if acc := store.byEmailLocked(email); acc != nil && !acc.user.EmailVerified {
 		tok := token()
-		s.verify[tok] = acc.user.ID
-		s.mailLocked("verify", email, callbackURL, tok)
+		store.verify[tok] = acc.user.ID
+		store.mailLocked("verify", email, callbackURL, tok)
 	}
 	return nil
 }
 
-func (a Auth) SetSessionCookie(w http.ResponseWriter, sess auth.Session) {
-	http.SetCookie(w, &http.Cookie{
+func (fake Auth) SetSessionCookie(writer http.ResponseWriter, sess auth.Session) {
+	http.SetCookie(writer, &http.Cookie{
 		Name:     CookieName,
 		Value:    sess.Token,
 		Path:     "/",
@@ -249,8 +249,8 @@ func (a Auth) SetSessionCookie(w http.ResponseWriter, sess auth.Session) {
 	})
 }
 
-func (a Auth) ClearSessionCookie(w http.ResponseWriter) {
-	http.SetCookie(w, &http.Cookie{Name: CookieName, Value: "", Path: "/", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteLaxMode})
+func (fake Auth) ClearSessionCookie(writer http.ResponseWriter) {
+	http.SetCookie(writer, &http.Cookie{Name: CookieName, Value: "", Path: "/", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteLaxMode})
 }
 
 type sessionKey struct{}
@@ -274,58 +274,58 @@ func (fake Auth) Caller(ctx context.Context) (access.Caller, bool) {
 }
 
 // Middleware loads the session from the cookie, like auth.Middleware.
-func (a Auth) Middleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ip, _, _ := strings.Cut(r.RemoteAddr, ":")
-		r = r.WithContext(context.WithValue(r.Context(), metaKey{}, requestMeta{r.UserAgent(), ip}))
-		if c, err := r.Cookie(CookieName); err == nil {
-			s := a.S
-			s.mu.Lock()
-			sess, ok := s.sessions[c.Value]
+func (fake Auth) Middleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		ip, _, _ := strings.Cut(request.RemoteAddr, ":")
+		request = request.WithContext(context.WithValue(request.Context(), metaKey{}, requestMeta{request.UserAgent(), ip}))
+		if cookie, err := request.Cookie(CookieName); err == nil {
+			store := fake.Store
+			store.mu.Lock()
+			sess, ok := store.sessions[cookie.Value]
 			var acc *account
-			if ok && sess.ExpiresAt.After(s.Now()) {
-				acc = s.accounts[sess.UserID]
+			if ok && sess.ExpiresAt.After(store.Now()) {
+				acc = store.accounts[sess.UserID]
 			}
 			var cur current
 			if acc != nil {
 				cur = current{user: acc.user, session: sess}
 			}
-			s.mu.Unlock()
+			store.mu.Unlock()
 			if acc != nil {
-				r = r.WithContext(context.WithValue(r.Context(), sessionKey{}, cur))
+				request = request.WithContext(context.WithValue(request.Context(), sessionKey{}, cur))
 			}
 		}
-		next.ServeHTTP(w, r)
+		next.ServeHTTP(writer, request)
 	})
 }
 
 // Users implements api.UserService with services.UserService's rules; the
 // preview serves the real API endpoints over it.
-type Users struct{ S *Store }
+type Users struct{ Store *Store }
 
 var _ api.UserService = Users{}
 
 // own locks the store and returns the actor's account, or the service error.
-func (u Users) own(actor services.Actor, userID string) (*account, func(), error) {
+func (users Users) own(actor services.Actor, userID string) (*account, func(), error) {
 	if actor.UserID == "" || actor.UserID != userID {
 		return nil, nil, services.ErrForbidden
 	}
-	u.S.mu.Lock()
-	acc := u.S.accounts[userID]
+	users.Store.mu.Lock()
+	acc := users.Store.accounts[userID]
 	if acc == nil {
-		u.S.mu.Unlock()
+		users.Store.mu.Unlock()
 		return nil, nil, services.ErrUserNotFound
 	}
-	return acc, u.S.mu.Unlock, nil
+	return acc, users.Store.mu.Unlock, nil
 }
 
-func toService(a *account) services.User {
-	x := a.user
-	return services.User{ID: x.ID, Name: x.Name, Email: x.Email, EmailVerified: x.EmailVerified, Image: x.Image, CreatedAt: x.CreatedAt, UpdatedAt: x.UpdatedAt}
+func toService(account *account) services.User {
+	user := account.user
+	return services.User{ID: user.ID, Name: user.Name, Email: user.Email, EmailVerified: user.EmailVerified, Image: user.Image, CreatedAt: user.CreatedAt, UpdatedAt: user.UpdatedAt}
 }
 
-func (u Users) GetProfile(_ context.Context, actor services.Actor, userID string) (services.User, error) {
-	acc, unlock, err := u.own(actor, userID)
+func (users Users) GetProfile(_ context.Context, actor services.Actor, userID string) (services.User, error) {
+	acc, unlock, err := users.own(actor, userID)
 	if err != nil {
 		return services.User{}, err
 	}
@@ -333,8 +333,8 @@ func (u Users) GetProfile(_ context.Context, actor services.Actor, userID string
 	return toService(acc), nil
 }
 
-func (u Users) UpdateProfile(_ context.Context, actor services.Actor, userID string, in validate.UpdateUserSettings) (services.User, error) {
-	acc, unlock, err := u.own(actor, userID)
+func (users Users) UpdateProfile(_ context.Context, actor services.Actor, userID string, in validate.UpdateUserSettings) (services.User, error) {
+	acc, unlock, err := users.own(actor, userID)
 	if err != nil {
 		return services.User{}, err
 	}
@@ -345,12 +345,12 @@ func (u Users) UpdateProfile(_ context.Context, actor services.Actor, userID str
 	if in.Image.Set {
 		acc.user.Image = in.Image.Value
 	}
-	acc.user.UpdatedAt = u.S.Now()
+	acc.user.UpdatedAt = users.Store.Now()
 	return toService(acc), nil
 }
 
-func (u Users) RequestEmailChange(_ context.Context, actor services.Actor, userID string, in validate.UpdateUserEmail) error {
-	acc, unlock, err := u.own(actor, userID)
+func (users Users) RequestEmailChange(_ context.Context, actor services.Actor, userID string, in validate.UpdateUserEmail) error {
+	acc, unlock, err := users.own(actor, userID)
 	if err != nil {
 		return err
 	}
@@ -358,17 +358,17 @@ func (u Users) RequestEmailChange(_ context.Context, actor services.Actor, userI
 	if strings.EqualFold(in.NewEmail, acc.user.Email) {
 		return services.ErrSameEmail
 	}
-	if other := u.S.byEmailLocked(in.NewEmail); other != nil {
+	if other := users.Store.byEmailLocked(in.NewEmail); other != nil {
 		return services.ErrEmailTaken
 	}
 	tok := token()
-	u.S.emailChanges[tok] = emailChange{userID: userID, email: in.NewEmail, callback: in.CallbackURL}
-	u.S.mailLocked("change-email", in.NewEmail, confirmEmailPath, tok)
+	users.Store.emailChanges[tok] = emailChange{userID: userID, email: in.NewEmail, callback: in.CallbackURL}
+	users.Store.mailLocked("change-email", in.NewEmail, confirmEmailPath, tok)
 	return nil
 }
 
-func (u Users) ChangePassword(_ context.Context, actor services.Actor, userID string, in validate.UpdateUserPassword) error {
-	acc, unlock, err := u.own(actor, userID)
+func (users Users) ChangePassword(_ context.Context, actor services.Actor, userID string, in validate.UpdateUserPassword) error {
+	acc, unlock, err := users.own(actor, userID)
 	if err != nil {
 		return err
 	}
@@ -384,29 +384,29 @@ func (u Users) ChangePassword(_ context.Context, actor services.Actor, userID st
 	}
 	acc.password = in.NewPassword
 	if in.RevokeOtherSessions {
-		u.S.revokeLocked(userID, actor.SessionID)
+		users.Store.revokeLocked(userID, actor.SessionID)
 	}
 	return nil
 }
 
-func (u Users) ListSessions(_ context.Context, actor services.Actor, userID string) ([]services.Session, error) {
-	_, unlock, err := u.own(actor, userID)
+func (users Users) ListSessions(_ context.Context, actor services.Actor, userID string) ([]services.Session, error) {
+	_, unlock, err := users.own(actor, userID)
 	if err != nil {
 		return nil, err
 	}
 	defer unlock()
 	out := []services.Session{}
-	for _, s := range u.S.sessions {
-		if s.UserID == userID {
-			out = append(out, services.Session{ID: s.ID, CreatedAt: s.CreatedAt, ExpiresAt: s.ExpiresAt, IPAddress: s.IPAddress, UserAgent: s.UserAgent, Current: s.ID == actor.SessionID})
+	for _, session := range users.Store.sessions {
+		if session.UserID == userID {
+			out = append(out, services.Session{ID: session.ID, CreatedAt: session.CreatedAt, ExpiresAt: session.ExpiresAt, IPAddress: session.IPAddress, UserAgent: session.UserAgent, Current: session.ID == actor.SessionID})
 		}
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
+	sort.Slice(out, func(index, inner int) bool { return out[index].CreatedAt.After(out[inner].CreatedAt) })
 	return out, nil
 }
 
-func (u Users) RevokeSession(_ context.Context, actor services.Actor, userID, sessionID string) error {
-	_, unlock, err := u.own(actor, userID)
+func (users Users) RevokeSession(_ context.Context, actor services.Actor, userID, sessionID string) error {
+	_, unlock, err := users.own(actor, userID)
 	if err != nil {
 		return err
 	}
@@ -414,45 +414,45 @@ func (u Users) RevokeSession(_ context.Context, actor services.Actor, userID, se
 	if sessionID == actor.SessionID {
 		return services.ErrCurrentSession
 	}
-	for tok, s := range u.S.sessions {
-		if s.UserID == userID && s.ID == sessionID {
-			delete(u.S.sessions, tok)
+	for tok, session := range users.Store.sessions {
+		if session.UserID == userID && session.ID == sessionID {
+			delete(users.Store.sessions, tok)
 			return nil
 		}
 	}
 	return services.ErrSessionNotFound
 }
 
-func (u Users) RevokeOtherSessions(_ context.Context, actor services.Actor, userID string) error {
-	_, unlock, err := u.own(actor, userID)
+func (users Users) RevokeOtherSessions(_ context.Context, actor services.Actor, userID string) error {
+	_, unlock, err := users.own(actor, userID)
 	if err != nil {
 		return err
 	}
 	defer unlock()
-	u.S.revokeLocked(userID, actor.SessionID)
+	users.Store.revokeLocked(userID, actor.SessionID)
 	return nil
 }
 
-func (u Users) DeleteAccount(_ context.Context, actor services.Actor, userID string) error {
-	_, unlock, err := u.own(actor, userID)
+func (users Users) DeleteAccount(_ context.Context, actor services.Actor, userID string) error {
+	_, unlock, err := users.own(actor, userID)
 	if err != nil {
 		return err
 	}
 	defer unlock()
-	delete(u.S.accounts, userID)
-	u.S.revokeLocked(userID, "")
+	delete(users.Store.accounts, userID)
+	users.Store.revokeLocked(userID, "")
 	return nil
 }
 
-func (u Users) DataSummary(_ context.Context, actor services.Actor, userID string) (services.UserDataSummary, error) {
-	acc, unlock, err := u.own(actor, userID)
+func (users Users) DataSummary(_ context.Context, actor services.Actor, userID string) (services.UserDataSummary, error) {
+	acc, unlock, err := users.own(actor, userID)
 	if err != nil {
 		return services.UserDataSummary{}, err
 	}
 	defer unlock()
 	sum := services.UserDataSummary{User: toService(acc)}
-	for _, s := range u.S.sessions {
-		if s.UserID == userID {
+	for _, session := range users.Store.sessions {
+		if session.UserID == userID {
 			sum.Sessions++
 		}
 	}
@@ -460,10 +460,10 @@ func (u Users) DataSummary(_ context.Context, actor services.Actor, userID strin
 }
 
 // revokeLocked deletes the user's sessions except keep.
-func (s *Store) revokeLocked(userID, keep string) {
-	for tok, sess := range s.sessions {
+func (store *Store) revokeLocked(userID, keep string) {
+	for tok, sess := range store.sessions {
 		if sess.UserID == userID && sess.ID != keep {
-			delete(s.sessions, tok)
+			delete(store.sessions, tok)
 		}
 	}
 }
@@ -475,29 +475,29 @@ type emailChange struct{ userID, email, callback string }
 
 // ConfirmEmail applies a pending email change and lands on its callbackURL,
 // like auth's verification link does.
-func (s *Store) ConfirmEmail(w http.ResponseWriter, r *http.Request) {
-	s.mu.Lock()
-	c, ok := s.emailChanges[r.URL.Query().Get("token")]
+func (store *Store) ConfirmEmail(writer http.ResponseWriter, request *http.Request) {
+	store.mu.Lock()
+	change, ok := store.emailChanges[request.URL.Query().Get("token")]
 	if ok {
-		delete(s.emailChanges, r.URL.Query().Get("token"))
-		if acc := s.accounts[c.userID]; acc != nil {
-			acc.user.Email = c.email
+		delete(store.emailChanges, request.URL.Query().Get("token"))
+		if acc := store.accounts[change.userID]; acc != nil {
+			acc.user.Email = change.email
 		}
 	}
-	s.mu.Unlock()
+	store.mu.Unlock()
 	if !ok {
-		http.Error(w, "invalid or used link", http.StatusBadRequest)
+		http.Error(writer, "invalid or used link", http.StatusBadRequest)
 		return
 	}
-	http.Redirect(w, r, c.callback, http.StatusSeeOther)
+	http.Redirect(writer, request, change.callback, http.StatusSeeOther)
 }
 
 // checkPassword applies auth's default length rules (8-128 characters).
-func checkPassword(p string) error {
-	switch n := len([]rune(p)); {
-	case n < auth.DefaultMinPasswordLength:
+func checkPassword(path string) error {
+	switch count := len([]rune(path)); {
+	case count < auth.DefaultMinPasswordLength:
 		return auth.ErrPasswordTooShort
-	case n > auth.DefaultMaxPasswordLength:
+	case count > auth.DefaultMaxPasswordLength:
 		return auth.ErrPasswordTooLong
 	}
 	return nil

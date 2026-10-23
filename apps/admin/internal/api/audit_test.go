@@ -19,18 +19,18 @@ var banEntry = services.AuditEntry{
 
 var auditRoutes = map[string]route{
 	"GET audit": {
-		method: "GET", path: r.Audit, invalidPath: r.Audit + "?offset=-1", field: "offset",
-		expect: func(m svcs, err error) {
-			m.audit.List(anyCtx, actor, validate.ListAuditLog{Limit: validate.DefaultLimit}).Return(services.AuditPage{Entries: []services.AuditEntry{banEntry}, Total: 1, Limit: 25}, err)
+		method: "GET", path: routes.Audit, invalidPath: routes.Audit + "?offset=-1", field: "offset",
+		expect: func(svcs svcs, err error) {
+			svcs.audit.List(anyCtx, actor, validate.ListAuditLog{Limit: validate.DefaultLimit}).Return(services.AuditPage{Entries: []services.AuditEntry{banEntry}, Total: 1, Limit: 25}, err)
 		},
-		check: func(t *testing.T, res apitest.Response) {
-			got := apitest.Data[services.AuditPage](t, res)
+		check: func(test *testing.T, res apitest.Response) {
+			got := apitest.Data[services.AuditPage](test, res)
 			if len(got.Entries) != 1 || got.Total != 1 || got.Limit != 25 {
-				t.Fatalf("data = %s", res.Data)
+				test.Fatalf("data = %s", res.Data)
 			}
-			e := got.Entries[0]
-			if e.ID != 7 || e.Action != "user.ban" || e.TargetLabel != banEntry.TargetLabel || e.Details["reason"] != "spam" || !e.CreatedAt.Equal(banEntry.CreatedAt) {
-				t.Errorf("entry = %+v", e)
+			entry := got.Entries[0]
+			if entry.ID != 7 || entry.Action != "user.ban" || entry.TargetLabel != banEntry.TargetLabel || entry.Details["reason"] != "spam" || !entry.CreatedAt.Equal(banEntry.CreatedAt) {
+				test.Errorf("entry = %+v", entry)
 			}
 		},
 	},
@@ -38,11 +38,11 @@ var auditRoutes = map[string]route{
 
 // TestListAuditLogQuery: filters are trimmed, the page size defaults, and the
 // bounds are inclusive.
-func TestListAuditLogQuery(t *testing.T) {
-	t.Parallel()
+func TestListAuditLogQuery(test *testing.T) {
+	test.Parallel()
 	cases := []struct {
-		q    url.Values
-		want validate.ListAuditLog
+		values url.Values
+		want   validate.ListAuditLog
 	}{
 		{url.Values{"limit": {"0"}}, validate.ListAuditLog{Limit: 25}},
 		{
@@ -54,20 +54,20 @@ func TestListAuditLogQuery(t *testing.T) {
 			validate.ListAuditLog{Action: strings.Repeat("a", 64), TargetID: strings.Repeat("t", 255), Limit: 1},
 		},
 	}
-	for _, c := range cases {
-		wantOK(t, "GET", r.Audit+"?"+c.q.Encode(), "", func(m svcs) {
-			m.audit.List(anyCtx, actor, c.want)
+	for _, testCase := range cases {
+		wantOK(test, "GET", routes.Audit+"?"+testCase.values.Encode(), "", func(svcs svcs) {
+			svcs.audit.List(anyCtx, actor, testCase.want)
 		})
 	}
 }
 
 // TestListAuditLogInvalid covers every ListAuditLog rule.
-func TestListAuditLogInvalid(t *testing.T) {
-	t.Parallel()
+func TestListAuditLogInvalid(test *testing.T) {
+	test.Parallel()
 	limit := map[string]string{"limit": "must be 1-100"}
 	cases := []struct {
-		q    string
-		want map[string]string
+		query string
+		want  map[string]string
 	}{
 		{"limit=1000", limit},
 		{"limit=101", limit},
@@ -81,7 +81,7 @@ func TestListAuditLogInvalid(t *testing.T) {
 			"action": "must be at most 64 characters", "targetId": "must be at most 255 characters", "limit": "must be 1-100", "offset": "must be 0 or more",
 		}},
 	}
-	for _, c := range cases {
-		wantInvalid(t, "GET", r.Audit+"?"+c.q, "", c.want)
+	for _, testCase := range cases {
+		wantInvalid(test, "GET", routes.Audit+"?"+testCase.query, "", testCase.want)
 	}
 }

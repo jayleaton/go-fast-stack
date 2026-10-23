@@ -23,9 +23,9 @@ type QRCode struct {
 }
 
 // ViewBox is the SVG viewBox of the code.
-func (q QRCode) ViewBox() string {
-	n := strconv.Itoa(q.Size)
-	return "0 0 " + n + " " + n
+func (code QRCode) ViewBox() string {
+	name := strconv.Itoa(code.Size)
+	return "0 0 " + name + " " + name
 }
 
 // grayMidpoint splits a QR module's gray level into dark (below) and light.
@@ -34,7 +34,7 @@ const grayMidpoint = 128
 // totpQR encodes an otpauth:// URI (anything else, like a value a plain post
 // sent back, is not encoded). ok is false when there is nothing to show; the
 // page keeps the manual key. The URI holds the secret: never log it.
-func totpQR(uri string) (q QRCode, ok bool) {
+func totpQR(uri string) (qrCode QRCode, ok bool) {
 	if otpLink(uri) == "" {
 		return QRCode{}, false
 	}
@@ -42,25 +42,25 @@ func totpQR(uri string) (q QRCode, ok bool) {
 	if err != nil {
 		return QRCode{}, false
 	}
-	b := code.Bounds()
-	dark := func(x, y int) bool {
-		return color.GrayModel.Convert(code.At(x, y)).(color.Gray).Y < grayMidpoint
+	rectangle := code.Bounds()
+	dark := func(left, right int) bool {
+		return color.GrayModel.Convert(code.At(left, right)).(color.Gray).Y < grayMidpoint
 	}
-	var p strings.Builder
-	for y := b.Min.Y; y < b.Max.Y; y++ {
-		for x := b.Min.X; x < b.Max.X; {
-			if !dark(x, y) {
-				x++
+	var builder strings.Builder
+	for row := rectangle.Min.Y; row < rectangle.Max.Y; row++ {
+		for value := rectangle.Min.X; value < rectangle.Max.X; {
+			if !dark(value, row) {
+				value++
 				continue
 			}
 			run := 1
-			for x+run < b.Max.X && dark(x+run, y) {
+			for value+run < rectangle.Max.X && dark(value+run, row) {
 				run++
 			}
-			w := strconv.Itoa(run)
-			p.WriteString("M" + strconv.Itoa(x-b.Min.X+qrQuietZone) + " " + strconv.Itoa(y-b.Min.Y+qrQuietZone) + "h" + w + "v1h-" + w + "z")
-			x += run
+			word := strconv.Itoa(run)
+			builder.WriteString("M" + strconv.Itoa(value-rectangle.Min.X+qrQuietZone) + " " + strconv.Itoa(row-rectangle.Min.Y+qrQuietZone) + "h" + word + "v1h-" + word + "z")
+			value += run
 		}
 	}
-	return QRCode{Size: b.Dx() + 2*qrQuietZone, Path: p.String()}, true
+	return QRCode{Size: rectangle.Dx() + 2*qrQuietZone, Path: builder.String()}, true
 }

@@ -1,0 +1,85 @@
+# Names the renamer cannot derive safely (see main.go). `<file>:<line>:<col> <name>`
+# for one declaration, `<file> <old> <name>` for every declaration of <old> in a file.
+apps/admin/cmd/admin/main.go:329:16 updated
+apps/admin/internal/config/secrets.go s accessors
+apps/admin/internal/config/secrets.go:73:52 trimmedURL
+apps/admin/internal/services/services_test.go:223:15 portMocks
+apps/admin/internal/services/services_test.go:224:15 portMocks
+apps/admin/internal/services/services_test.go:225:15 portMocks
+apps/admin/ui/i18n/i18n.go T Translate
+apps/admin/ui/i18n/i18n.go q quality
+apps/admin/ui/i18n/i18n.go:205:7 parsed
+apps/backup/internal/config/config.go s accessors
+apps/web/internal/config/secrets.go s accessors
+apps/web/ui/cmd/preview/backend.go S Store
+apps/web/ui/i18n/i18n.go T Translate
+apps/web/ui/i18n/i18n.go q quality
+apps/web/ui/i18n/i18n.go:204:7 parsed
+apps/web/ui/welcome/copy.go c content
+apps/web/ui/welcome/welcome_templ.go t content
+packages/auth/account_test.go:306:45 fixture
+packages/auth/account_test.go:437:2 sessionB
+packages/auth/account_test.go:438:2 sessionC
+packages/auth/account_test.go:510:2 sessionD
+packages/auth/account_test.go:511:2 sessionE
+packages/auth/admin.go:125:2 scanned
+packages/auth/admin_test.go:360:2 fixture
+packages/auth/links_test.go:124:2 fixture
+packages/auth/errors.go:75:5 authErr
+packages/auth/events.go:218:5 authErr
+packages/auth/handler.go:74:2 authErr
+packages/auth/handler.go:218:3 authErr
+packages/auth/flows_test.go:78:2 issued
+packages/auth/jwt.go N Modulus
+packages/auth/jwt.go E Exponent
+packages/auth/jwt.go X CurveX
+packages/auth/jwt.go Y CurveY
+packages/auth/keyring.go:165:2 rotation
+packages/auth/keyring.go:343:7 scanned
+packages/auth/service.go:308:29 txQuerier
+packages/auth/store.go:51:49 txQuerier
+packages/auth/session.go:114:2 verified
+packages/auth/store.go:167:6 banRow
+packages/auth/store.go:190:6 banRow
+packages/auth/store.go:255:7 raw
+packages/auth/twofactor_test.go:250:3 headers
+packages/database/pool.go c pgPool
+packages/secrets/redact.go:101:10 groupAttr
+packages/secrets/redact.go:116:6 group
+packages/secrets/redact.go:149:3 element
+packages/secrets/secrets.go:50:23 input
+packages/secrets/secrets.go:70:23 other
+scripts/testbudget/main.go:94:7 parsed
+scripts/testbudget/main.go:222:9 parsed
+scripts/testbudget/main.go:99:3 logKey
+scripts/testbudget/main.go:192:14 secs
+scripts/testbudget/main.go:214:4 handle
+scripts/testbudget/main.go:239:3 column
+apps/admin/internal/api/route_test.go:26:2 routes
+apps/web/internal/api/users_test.go:23:2 apiRoutes
+apps/admin/internal/api/route_test.go:70:32 deps
+apps/admin/internal/api/route_test.go:126:66 deps
+apps/admin/internal/api/route_test.go:128:2 deps
+apps/admin/internal/api/route_test.go:150:4 deps
+apps/admin/internal/api/route_test.go:171:5 deps
+apps/admin/internal/api/route_test.go:178:4 deps
+apps/admin/internal/api/route_test.go:224:3 deps
+apps/admin/internal/config/secrets.go:73:26 updated
+apps/web/internal/config/secrets.go:62:39 updated
+apps/web/internal/config/secrets.go:62:65 trimmedURL
+apps/web/ui/cmd/preview/backend.go:126:7 fake
+apps/web/ui/cmd/preview/backend.go:154:7 fake
+apps/web/ui/cmd/preview/backend.go:168:7 fake
+apps/web/ui/cmd/preview/backend.go:175:7 fake
+apps/web/ui/cmd/preview/backend.go:188:7 fake
+apps/web/ui/cmd/preview/backend.go:204:7 fake
+apps/web/ui/cmd/preview/backend.go:229:7 fake
+apps/web/ui/cmd/preview/backend.go:241:7 fake
+apps/web/ui/cmd/preview/backend.go:252:7 fake
+apps/web/ui/cmd/preview/backend.go:277:7 fake
+apps/admin/internal/api/route_test.go:87:9 routeTable
+packages/backup/s3.go:48:7 bucket
+packages/backup/s3.go:235:2 signingKey
+packages/auth/migrate.go:37:2 hasher
+packages/auth/totp.go:134:3 code
+packages/auth/tokens_test.go:206:6 unescaped

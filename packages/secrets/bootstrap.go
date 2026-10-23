@@ -31,18 +31,18 @@ type BootstrapOptions struct {
 // trimmed, "" when unset. This package never reads the environment itself.
 // It does no I/O. Every problem is returned at once; with the env provider
 // that includes Validate's findings on the boot values.
-func Bootstrap(get func(key string) string, o BootstrapOptions) (*Manager, []error) {
+func Bootstrap(get func(key string) string, options BootstrapOptions) (*Manager, []error) {
 	var errs []error
 	validate := func(get func(string) string) []error {
-		if o.Validate == nil {
+		if options.Validate == nil {
 			return nil
 		}
-		return o.Validate(get)
+		return options.Validate(get)
 	}
 	opts := Options{
-		Keys: o.Keys,
-		Validate: func(s Snapshot) error {
-			return errors.Join(validate(func(n string) string { v, _ := s.Get(n); return strings.TrimSpace(v.v) })...)
+		Keys: options.Keys,
+		Validate: func(snapshot Snapshot) error {
+			return errors.Join(validate(func(name string) string { secret, _ := snapshot.Get(name); return strings.TrimSpace(secret.value) })...)
 		},
 	}
 	var err error
@@ -57,35 +57,35 @@ func Bootstrap(get func(key string) string, o BootstrapOptions) (*Manager, []err
 		errs = append(errs, fmt.Errorf("SECRETS_MAX_STALENESS must be at least twice SECRETS_REFRESH_INTERVAL, got %s", opts.MaxStaleness))
 	}
 
-	var p Provider
+	var provider Provider
 	name := get("SECRETS_PROVIDER")
 	switch name {
 	case "", ProviderEnv:
 		values := map[string]string{}
-		for _, k := range o.Keys {
-			values[k] = get(k)
+		for _, key := range options.Keys {
+			values[key] = get(key)
 		}
-		errs = append(errs, validate(func(n string) string { return values[n] })...)
-		p = NewEnv(values)
+		errs = append(errs, validate(func(name string) string { return values[name] })...)
+		provider = NewEnv(values)
 	case ProviderDoppler:
-		d := NewDoppler(NewSecret(get("DOPPLER_TOKEN")))
-		if d.Token.IsZero() {
+		doppler := NewDoppler(NewSecret(get("DOPPLER_TOKEN")))
+		if doppler.Token.IsZero() {
 			errs = append(errs, errors.New("DOPPLER_TOKEN is required when SECRETS_PROVIDER=doppler (a read-only service token for this service's config)"))
 		}
-		if v := get("DOPPLER_API_URL"); v != "" {
-			d.APIURL = v
+		if value := get("DOPPLER_API_URL"); value != "" {
+			doppler.APIURL = value
 		}
-		if u, err := url.Parse(d.APIURL); err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" || u.User != nil {
+		if link, err := url.Parse(doppler.APIURL); err != nil || (link.Scheme != "https" && link.Scheme != "http") || link.Host == "" || link.User != nil {
 			errs = append(errs, errors.New("DOPPLER_API_URL must be an http(s) origin without credentials")) // value not echoed: it may hold some
-		} else if o.Production && u.Scheme != "https" {
+		} else if options.Production && link.Scheme != "https" {
 			errs = append(errs, errors.New("DOPPLER_API_URL must use https in production"))
 		}
-		p = d
+		provider = doppler
 	default:
 		errs = append(errs, fmt.Errorf("SECRETS_PROVIDER must be %s or %s, got %q", ProviderEnv, ProviderDoppler, name))
-		p = NewEnv(nil)
+		provider = NewEnv(nil)
 	}
-	return NewManager(p, opts), errs
+	return NewManager(provider, opts), errs
 }
 
 // ParseDuration reads an optional positive duration setting for an app's
@@ -94,9 +94,9 @@ func ParseDuration(key, raw string, fallback time.Duration) (time.Duration, erro
 	if raw == "" {
 		return fallback, nil
 	}
-	d, err := time.ParseDuration(strings.TrimSpace(raw))
-	if err != nil || d <= 0 {
+	duration, err := time.ParseDuration(strings.TrimSpace(raw))
+	if err != nil || duration <= 0 {
 		return fallback, fmt.Errorf("%s must be a positive duration like 60s or 15m, got %q", key, raw)
 	}
-	return d, nil
+	return duration, nil
 }

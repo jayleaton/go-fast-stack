@@ -39,63 +39,63 @@ var unavailable = svcErr{
 
 var userRoutes = map[string]route{
 	"GET users": {
-		method: "GET", path: r.Users, invalidPath: r.Users + "?limit=1000", field: "limit",
-		expect: func(m svcs, err error) {
-			m.users.ListUsers(anyCtx, actor, listDefaults).Return(services.UserPage{Users: []services.User{ada}, Total: 1, Limit: 25}, err)
+		method: "GET", path: routes.Users, invalidPath: routes.Users + "?limit=1000", field: "limit",
+		expect: func(svcs svcs, err error) {
+			svcs.users.ListUsers(anyCtx, actor, listDefaults).Return(services.UserPage{Users: []services.User{ada}, Total: 1, Limit: 25}, err)
 		},
-		check: func(t *testing.T, res apitest.Response) {
-			got := apitest.Data[services.UserPage](t, res)
+		check: func(test *testing.T, res apitest.Response) {
+			got := apitest.Data[services.UserPage](test, res)
 			if len(got.Users) != 1 || got.Users[0].Email != ada.Email || got.Total != 1 || got.Limit != 25 {
-				t.Errorf("data = %s", res.Data)
+				test.Errorf("data = %s", res.Data)
 			}
 		},
 	},
 	"GET user": {
 		method: "GET", path: config.UserPath("user 2", ""), errs: []svcErr{notFound},
-		expect: func(m svcs, err error) { // the path id arrives unescaped
-			m.users.GetUser(anyCtx, actor, "user 2").Return(services.UserDetail{User: ada, Sessions: []services.Session{{ID: "s1"}, {ID: "s2"}}}, err)
+		expect: func(svcs svcs, err error) { // the path id arrives unescaped
+			svcs.users.GetUser(anyCtx, actor, "user 2").Return(services.UserDetail{User: ada, Sessions: []services.Session{{ID: "s1"}, {ID: "s2"}}}, err)
 		},
-		check: func(t *testing.T, res apitest.Response) {
-			got := apitest.Data[services.UserDetail](t, res)
+		check: func(test *testing.T, res apitest.Response) {
+			got := apitest.Data[services.UserDetail](test, res)
 			if got.User.ID != "u2" || len(got.Sessions) != 2 || got.Sessions[1].ID != "s2" || strings.Contains(string(res.Data), "token") {
-				t.Errorf("data = %s", res.Data)
+				test.Errorf("data = %s", res.Data)
 			}
 		},
 	},
 	"POST user ban": {
 		method: "POST", path: config.UserPath("u2", "/ban"), body: `{"banReason":"  spam  ","banExpiresIn":3600}`,
 		invalidBody: `{"banReason":"   "}`, field: "banReason", errs: []svcErr{notFound, unavailable},
-		expect: func(m svcs, err error) {
-			m.users.BanUser(anyCtx, actor, "u2", validate.BanUser{BanReason: "spam", BanExpiresIn: ptr(int64(3600))}).Return(err)
+		expect: func(svcs svcs, err error) {
+			svcs.users.BanUser(anyCtx, actor, "u2", validate.BanUser{BanReason: "spam", BanExpiresIn: ptr(int64(3600))}).Return(err)
 		},
 		check: wantSuccess,
 	},
 	"POST user unban": {
 		method: "POST", path: config.UserPath("u2", "/unban"), errs: []svcErr{notFound, notBanned, unavailable},
-		expect: func(m svcs, err error) {
-			m.users.UnbanUser(anyCtx, actor, "u2").Return(err)
+		expect: func(svcs svcs, err error) {
+			svcs.users.UnbanUser(anyCtx, actor, "u2").Return(err)
 		},
 		check: wantSuccess,
 	},
 	"PUT user role": {
 		method: "PUT", path: config.UserPath("u2", "/role"), body: `{"role":" admin "}`,
 		invalidBody: `{"role":"Admin"}`, field: "role", errs: []svcErr{notFound, badRole, sameRole, unavailable},
-		expect: func(m svcs, err error) {
-			m.users.SetRole(anyCtx, actor, "u2", validate.SetUserRole{Role: "admin"}).Return(err)
+		expect: func(svcs svcs, err error) {
+			svcs.users.SetRole(anyCtx, actor, "u2", validate.SetUserRole{Role: "admin"}).Return(err)
 		},
 		check: wantSuccess,
 	},
 	"DELETE user sessions": {
 		method: "DELETE", path: config.UserPath("u2", "/sessions"), errs: []svcErr{notFound, unavailable},
-		expect: func(m svcs, err error) {
-			m.users.RevokeSessions(anyCtx, actor, "u2").Return(err)
+		expect: func(svcs svcs, err error) {
+			svcs.users.RevokeSessions(anyCtx, actor, "u2").Return(err)
 		},
 		check: wantSuccess,
 	},
 	"DELETE user session": {
 		method: "DELETE", path: config.UserSessionPath("u2", "s2"), errs: []svcErr{notFound, noSession, unavailable},
-		expect: func(m svcs, err error) {
-			m.users.RevokeSession(anyCtx, actor, "u2", "s2").Return(err)
+		expect: func(svcs svcs, err error) {
+			svcs.users.RevokeSession(anyCtx, actor, "u2", "s2").Return(err)
 		},
 		check: wantSuccess,
 	},
@@ -103,11 +103,11 @@ var userRoutes = map[string]route{
 
 // TestListUsersQuery: every query parameter is decoded, trimmed where it is
 // free text, and defaulted, and reaches the service as given.
-func TestListUsersQuery(t *testing.T) {
-	t.Parallel()
+func TestListUsersQuery(test *testing.T) {
+	test.Parallel()
 	cases := []struct {
-		q    url.Values
-		want validate.ListUsers
+		values url.Values
+		want   validate.ListUsers
 	}{
 		{url.Values{}, listDefaults},
 		{url.Values{"limit": {"0"}, "offset": {"0"}}, listDefaults},
@@ -131,22 +131,22 @@ func TestListUsersQuery(t *testing.T) {
 			validate.ListUsers{Search: strings.Repeat("é", 255), SearchField: "email", Role: strings.Repeat("r", 32), SortBy: "createdAt", SortDirection: "desc", Limit: 25},
 		},
 	}
-	for _, c := range cases {
-		wantOK(t, "GET", r.Users+"?"+c.q.Encode(), "", func(m svcs) {
-			m.users.ListUsers(anyCtx, actor, c.want)
+	for _, testCase := range cases {
+		wantOK(test, "GET", routes.Users+"?"+testCase.values.Encode(), "", func(svcs svcs) {
+			svcs.users.ListUsers(anyCtx, actor, testCase.want)
 		})
 	}
 }
 
 // TestListUsersInvalid covers every ListUsers rule: bad queries never reach
 // the service and name each failing parameter.
-func TestListUsersInvalid(t *testing.T) {
-	t.Parallel()
+func TestListUsersInvalid(test *testing.T) {
+	test.Parallel()
 	limit := map[string]string{"limit": "must be 1-100"}
-	whole := func(k string) map[string]string { return map[string]string{k: "must be a whole number"} }
+	whole := func(key string) map[string]string { return map[string]string{key: "must be a whole number"} }
 	cases := []struct {
-		q    string
-		want map[string]string
+		query string
+		want  map[string]string
 	}{
 		{"limit=1000", limit},
 		{"limit=101", limit},
@@ -166,14 +166,14 @@ func TestListUsersInvalid(t *testing.T) {
 		{"sortDirection=up", map[string]string{"sortDirection": "must be asc or desc"}},
 		{"sortBy=x&sortDirection=y&offset=-2", map[string]string{"sortBy": "must be createdAt, email or name", "sortDirection": "must be asc or desc", "offset": "must be 0 or more"}},
 	}
-	for _, c := range cases {
-		wantInvalid(t, "GET", r.Users+"?"+c.q, "", c.want)
+	for _, testCase := range cases {
+		wantInvalid(test, "GET", routes.Users+"?"+testCase.query, "", testCase.want)
 	}
 }
 
 // TestBanUserBody covers every BanUser rule and its boundaries.
-func TestBanUserBody(t *testing.T) {
-	t.Parallel()
+func TestBanUserBody(test *testing.T) {
+	test.Parallel()
 	path := config.UserPath("u2", "/ban")
 	for _, body := range []string{
 		`{}`,
@@ -181,12 +181,12 @@ func TestBanUserBody(t *testing.T) {
 		`{"banReason":" \t "}`,
 		`{"banReason":"` + strings.Repeat("é", 501) + `"}`,
 	} {
-		wantInvalid(t, "POST", path, body, map[string]string{"banReason": reasonRule})
+		wantInvalid(test, "POST", path, body, map[string]string{"banReason": reasonRule})
 	}
-	for _, s := range []int64{-1, 1, 59, validate.MaxBanSeconds + 1} {
-		wantInvalid(t, "POST", path, fmt.Sprintf(`{"banReason":"spam","banExpiresIn":%d}`, s), map[string]string{"banExpiresIn": expiryRule})
+	for _, size := range []int64{-1, 1, 59, validate.MaxBanSeconds + 1} {
+		wantInvalid(test, "POST", path, fmt.Sprintf(`{"banReason":"spam","banExpiresIn":%d}`, size), map[string]string{"banExpiresIn": expiryRule})
 	}
-	wantInvalid(t, "POST", path, `{"banExpiresIn":5}`, map[string]string{"banReason": reasonRule, "banExpiresIn": expiryRule})
+	wantInvalid(test, "POST", path, `{"banExpiresIn":5}`, map[string]string{"banReason": reasonRule, "banExpiresIn": expiryRule})
 
 	valid := []struct {
 		body string
@@ -199,17 +199,17 @@ func TestBanUserBody(t *testing.T) {
 		{fmt.Sprintf(`{"banReason":"spam","banExpiresIn":%d}`, validate.MaxBanSeconds), validate.BanUser{BanReason: "spam", BanExpiresIn: ptr(int64(validate.MaxBanSeconds))}},
 		{`{"banReason":"` + strings.Repeat("é", 500) + `"}`, validate.BanUser{BanReason: strings.Repeat("é", 500)}},
 	}
-	for _, c := range valid {
-		wantOK(t, "POST", path, c.body, func(m svcs) {
-			m.users.BanUser(anyCtx, actor, "u2", c.want)
+	for _, testCase := range valid {
+		wantOK(test, "POST", path, testCase.body, func(svcs svcs) {
+			svcs.users.BanUser(anyCtx, actor, "u2", testCase.want)
 		})
 	}
 }
 
 // TestSetUserRoleBody covers the role shape (which roles exist is the
 // service's rule, so any well-formed name reaches it).
-func TestSetUserRoleBody(t *testing.T) {
-	t.Parallel()
+func TestSetUserRoleBody(test *testing.T) {
+	test.Parallel()
 	path := config.UserPath("u2", "/role")
 	for _, body := range []string{
 		`{}`,
@@ -220,15 +220,15 @@ func TestSetUserRoleBody(t *testing.T) {
 		`{"role":"rôle"}`,
 		`{"role":"` + strings.Repeat("r", 33) + `"}`,
 	} {
-		wantInvalid(t, "PUT", path, body, map[string]string{"role": roleRule})
+		wantInvalid(test, "PUT", path, body, map[string]string{"role": roleRule})
 	}
 	for body, want := range map[string]string{
 		`{"role":" admin "}`:                         "admin",
 		`{"role":"super_user-2"}`:                    "super_user-2",
 		`{"role":"` + strings.Repeat("r", 32) + `"}`: strings.Repeat("r", 32),
 	} {
-		wantOK(t, "PUT", path, body, func(m svcs) {
-			m.users.SetRole(anyCtx, actor, "u2", validate.SetUserRole{Role: want})
+		wantOK(test, "PUT", path, body, func(svcs svcs) {
+			svcs.users.SetRole(anyCtx, actor, "u2", validate.SetUserRole{Role: want})
 		})
 	}
 }

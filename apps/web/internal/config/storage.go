@@ -48,7 +48,7 @@ func (credentials StorageCredentials) Fingerprint() string {
 func (store Secrets) Storage() (StorageCredentials, error) {
 	values := make(map[string]secrets.Secret, len(storageSecrets))
 	for _, name := range storageSecrets {
-		value, err := store.m.Get(name)
+		value, err := store.manager.Get(name)
 		if err != nil {
 			return StorageCredentials{}, err
 		}
@@ -83,7 +83,7 @@ func (store Secrets) OnStorage(apply func(StorageCredentials) error) {
 		return nil
 	}
 	for _, name := range storageSecrets {
-		store.m.OnChange(name, hook)
+		store.manager.OnChange(name, hook)
 	}
 }
 

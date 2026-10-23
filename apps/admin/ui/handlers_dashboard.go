@@ -105,7 +105,7 @@ func (ui *UI) adminAction(writer http.ResponseWriter, request *http.Request, cal
 		http.Redirect(writer, request, config.AppRoutes.Admins, http.StatusSeeOther)
 		return
 	}
-	st := Status{Message: i18n.T(ctx, doneKey)}
+	st := Status{Message: i18n.Translate(ctx, doneKey)}
 	admins, err := ui.api.ListAdmins(ctx)
 	if err != nil {
 		ui.log.WarnContext(ctx, "ui: reload admins after action", "err", err)
