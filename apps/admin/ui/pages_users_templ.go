@@ -9,8 +9,8 @@ import "github.com/a-h/templ"
 import templruntime "github.com/a-h/templ/runtime"
 
 import (
+	"github.com/jayleaton/go-fast-stack/apps/admin/internal/apiclient"
 	"github.com/jayleaton/go-fast-stack/apps/admin/internal/config"
-	"github.com/jayleaton/go-fast-stack/apps/admin/internal/services"
 	"github.com/jayleaton/go-fast-stack/apps/admin/ui/i18n"
 	"github.com/jayleaton/go-fast-stack/apps/admin/ui/routes"
 	"github.com/jayleaton/go-fast-stack/apps/admin/ui/view"
@@ -29,7 +29,7 @@ const (
 type UsersData struct {
 	Filters UserFilters
 	Sort    SortLinks
-	Users   []services.User
+	Users   []apiclient.User
 	Pager   Pager
 	Error   string
 }
@@ -47,7 +47,7 @@ type SortLink struct {
 
 // UserData is one user's page.
 type UserData struct {
-	Detail services.UserDetail
+	Detail apiclient.UserDetail
 	// Missing: the user could not be loaded; only Status renders.
 	Missing bool
 	Status  Status
@@ -992,7 +992,7 @@ func sortHeading(l SortLink, label string) templ.Component {
 }
 
 // banBadge is a user's state: banned (with when the ban ends) or active.
-func banBadge(usr services.User) templ.Component {
+func banBadge(usr apiclient.User) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -1235,7 +1235,7 @@ func UserStatus(s Status) templ.Component {
 }
 
 // UserProfile is the profile card with the role form.
-func UserProfile(usr services.User) templ.Component {
+func UserProfile(usr apiclient.User) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -1603,7 +1603,7 @@ func UserProfile(usr services.User) templ.Component {
 
 // UserBan shows the ban state with the ban form (behind a confirm dialog),
 // and unban when banned.
-func UserBan(usr services.User) templ.Component {
+func UserBan(usr apiclient.User) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -1863,7 +1863,7 @@ func UserBan(usr services.User) templ.Component {
 
 // UserSessions lists the active sessions, each with a revoke button, and
 // revoke-all behind a confirm dialog.
-func UserSessions(usr services.User, sessions []services.Session) templ.Component {
+func UserSessions(usr apiclient.User, sessions []apiclient.Session) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {

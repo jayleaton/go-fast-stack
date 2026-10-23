@@ -63,6 +63,7 @@ lint_go() {
   # deploy task lints at the same time (same cache, safe).
   golangci-lint run --allow-parallel-runners $DIRS
   ./scripts/check-test-boundaries.sh
+  ./scripts/check-ui-api-paths.sh
   if [ "$FULL" = true ]; then ./scripts/check-coverage.sh --exist; fi
 }
 

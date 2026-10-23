@@ -45,6 +45,16 @@ linters:
         - pattern: ^access\.Gate\.Admit$
           pkg: ^github\.com/jayleaton/go-fast-stack/apps/(web|admin)/internal/access$
           msg: "only the central route handler admits a request: register the route with api.Route / the UI's page or action and its access.Policy (docs/route-access.md)"
+        # UIs only (see exclusions): a page never links to, fetches or posts
+        # to the JSON API; forms post to the UI's own action routes.
+        - pattern: ^config\.APIRoutes$
+          pkg: ^github\.com/jayleaton/go-fast-stack/apps/(web|admin)/internal/config$
+          msg: "the browser never talks to the JSON API: post to a UI action route (config.AppRoutes, ui/routes) that calls apiclient.Client (AGENTS.md \"Architecture\")"
+        # UIs only (see exclusions): the UI makes no outbound HTTP calls; its
+        # API client is in-process.
+        - pattern: ^http\.(Client|DefaultClient|Get|Head|Post|PostForm)$
+          pkg: ^net/http$
+          msg: "the UI calls the API in-process through apiclient.Client; it never makes HTTP requests (AGENTS.md \"Architecture\")"
         # Tests only (see exclusions): a test that sleeps is slow and flaky.
         - pattern: ^time\.Sleep$
           msg: tests never sleep; wait on a channel or condition, or use testing/synctest for a fake clock (AGENTS.md "Fast tests")
@@ -82,7 +92,9 @@ linters:
               desc: services use repositories from packages/database
             - pkg: github.com/jayleaton/go-fast-stack/packages/database/sqlc
               desc: services use repositories, not sqlc output
-            - pkg: github.com/jayleaton/go-fast-stack/apps/web/internal/api
+            - pkg: github.com/jayleaton/go-fast-stack/apps/web/internal/api$
+              desc: services never import a transport
+            - pkg: github.com/jayleaton/go-fast-stack/apps/web/internal/api/
               desc: services never import a transport
             - pkg: github.com/jayleaton/go-fast-stack/apps/web/ui
               desc: services never import a transport
@@ -227,28 +239,79 @@ linters:
               desc: the Resolver in apps/*/internal/server adapts auth to access.Caller
             - pkg: github.com/jayleaton/go-fast-stack/packages/secrets
               desc: route access never sees secrets
-            - pkg: github.com/jayleaton/go-fast-stack/apps/web/internal/api
+            - pkg: github.com/jayleaton/go-fast-stack/apps/web/internal/api$
+              desc: both transports import access, never the other way round
+            - pkg: github.com/jayleaton/go-fast-stack/apps/web/internal/api/
               desc: both transports import access, never the other way round
             - pkg: github.com/jayleaton/go-fast-stack/apps/web/ui
               desc: both transports import access, never the other way round
-            - pkg: github.com/jayleaton/go-fast-stack/apps/admin/internal/api
+            - pkg: github.com/jayleaton/go-fast-stack/apps/admin/internal/api$
+              desc: both transports import access, never the other way round
+            - pkg: github.com/jayleaton/go-fast-stack/apps/admin/internal/api/
               desc: both transports import access, never the other way round
             - pkg: github.com/jayleaton/go-fast-stack/apps/admin/ui
               desc: both transports import access, never the other way round
-        # The browser UI never talks to or renders the JSON API: both
-        # transports call services in-process, side by side.
+        # UI -> API -> services -> repositories: the UI reaches data only
+        # through its app's API client (apiclient, in-process), so every read
+        # and write takes the API's access gate and validation. It never
+        # imports the services, validators, access internals or the API's
+        # handlers, and never renders an API path (check-ui-api-paths.sh).
+        # The preview command (ui/cmd) is wiring, like cmd/server.
         ui-not-api:
           files:
             - "**/apps/web/ui/**"
+            - "!**/apps/web/ui/cmd/**"
           deny:
-            - pkg: github.com/jayleaton/go-fast-stack/apps/web/internal/api
-              desc: the browser UI never talks to or renders the JSON API; call the service
+            - pkg: github.com/jayleaton/go-fast-stack/apps/web/internal/api$
+              desc: "the UI calls the API through apps/web/internal/apiclient (in-process), never its handlers; browsers never see the JSON API"
+            - pkg: github.com/jayleaton/go-fast-stack/apps/web/internal/api/
+              desc: "the UI calls the API through apps/web/internal/apiclient (in-process), never its handlers; browsers never see the JSON API"
+            - pkg: github.com/jayleaton/go-fast-stack/apps/web/internal/services
+              desc: "the UI reaches data only through the API: use apiclient.Client (UI -> API -> services)"
+            - pkg: github.com/jayleaton/go-fast-stack/apps/web/internal/validate
+              desc: "inputs are apiclient types and the API validates them; the UI never validates inline"
+            - pkg: github.com/jayleaton/go-fast-stack/apps/web/internal/access
+              desc: "the UI declares access with apiclient.Public / apiclient.SignedIn; the API's gate enforces it"
+        # The UI's API client is a contract only: the interface, aliases and
+        # errors. It has no HTTP implementation (the in-process one is
+        # api.Client) and no base URL, so the UI cannot reach the API over the
+        # network.
+        apiclient:
+          files:
+            - "**/apps/web/internal/apiclient/**"
+            - "**/apps/admin/internal/apiclient/**"
+          deny:
+            - pkg: net/http
+              desc: "the UI's API client is in-process only (api.Client); there is no HTTP client or API base URL for the UI"
+            - pkg: github.com/jackc/pgx
+              desc: apiclient is the API's contract; data comes through the API
+            - pkg: github.com/jayleaton/go-fast-stack/packages/database
+              desc: apiclient is the API's contract; data comes through the API
+            - pkg: github.com/jayleaton/go-fast-stack/packages/auth
+              desc: apiclient is the API's contract; auth stays behind the server's adapters
+            - pkg: github.com/jayleaton/go-fast-stack/apps/web/internal/api$
+              desc: api implements apiclient, never the other way round
+            - pkg: github.com/jayleaton/go-fast-stack/apps/web/internal/api/
+              desc: api implements apiclient, never the other way round
+            - pkg: github.com/jayleaton/go-fast-stack/apps/admin/internal/api$
+              desc: api implements apiclient, never the other way round
+            - pkg: github.com/jayleaton/go-fast-stack/apps/admin/internal/api/
+              desc: api implements apiclient, never the other way round
         admin-ui-not-api:
           files:
             - "**/apps/admin/ui/**"
+            - "!**/apps/admin/ui/cmd/**"
           deny:
-            - pkg: github.com/jayleaton/go-fast-stack/apps/admin/internal/api
-              desc: the browser UI never talks to or renders the JSON API; call the service
+            - pkg: github.com/jayleaton/go-fast-stack/apps/admin/internal/api$
+              desc: "the admin UI calls the API through apps/admin/internal/apiclient (in-process), never its handlers; browsers never see the JSON API"
+            - pkg: github.com/jayleaton/go-fast-stack/apps/admin/internal/api/
+              desc: "the admin UI calls the API through apps/admin/internal/apiclient (in-process), never its handlers; browsers never see the JSON API"
+            - pkg: github.com/jayleaton/go-fast-stack/apps/admin/internal/services
+              desc: "the admin UI reaches data only through the API: use apiclient.Client (UI -> API -> services)"
+            - pkg: github.com/jayleaton/go-fast-stack/apps/admin/internal/validate
+              desc: "inputs are apiclient types and the API validates them; the UI never validates inline"
+            - pkg: github.com/jayleaton/go-fast-stack/apps/admin/internal/access
+              desc: "the admin UI declares access with apiclient.Public / apiclient.SignedIn; the API's gate enforces it"
         admin-services:
           files:
             - "**/apps/admin/internal/services/**"
@@ -267,7 +330,9 @@ linters:
               desc: services use repositories, not sqlc output
             - pkg: github.com/jayleaton/go-fast-stack/packages/auth
               desc: services reach auth through ports; adapters live in apps/admin/internal/server
-            - pkg: github.com/jayleaton/go-fast-stack/apps/admin/internal/api
+            - pkg: github.com/jayleaton/go-fast-stack/apps/admin/internal/api$
+              desc: services never import a transport
+            - pkg: github.com/jayleaton/go-fast-stack/apps/admin/internal/api/
               desc: services never import a transport
             - pkg: github.com/jayleaton/go-fast-stack/apps/admin/ui
               desc: services never import a transport
@@ -287,7 +352,9 @@ linters:
               desc: service tests use the generated port mocks in services/mocks only (services re-export the model types)
             - pkg: github.com/jayleaton/go-fast-stack/packages/auth
               desc: service tests use the generated port mocks in services/mocks only
-            - pkg: github.com/jayleaton/go-fast-stack/apps/web/internal/api
+            - pkg: github.com/jayleaton/go-fast-stack/apps/web/internal/api$
+              desc: service tests use the generated port mocks in services/mocks only
+            - pkg: github.com/jayleaton/go-fast-stack/apps/web/internal/api/
               desc: service tests use the generated port mocks in services/mocks only
         handler-tests:
           files: # "/**/" needs a subdirectory, so list the package dir too
@@ -312,7 +379,9 @@ linters:
               desc: service tests use the generated port mocks in services/mocks only (services re-export the model types)
             - pkg: github.com/jayleaton/go-fast-stack/packages/auth
               desc: service tests use the generated port mocks in services/mocks only
-            - pkg: github.com/jayleaton/go-fast-stack/apps/admin/internal/api
+            - pkg: github.com/jayleaton/go-fast-stack/apps/admin/internal/api$
+              desc: service tests use the generated port mocks in services/mocks only
+            - pkg: github.com/jayleaton/go-fast-stack/apps/admin/internal/api/
               desc: service tests use the generated port mocks in services/mocks only
         admin-handler-tests:
           files: # "/**/" needs a subdirectory, so list the package dir too
@@ -361,6 +430,15 @@ linters:
       - path-except: _test\.go
         linters: [forbidigo]
         text: tests never sleep
+      - path-except: apps/(web|admin)/ui/
+        linters: [forbidigo]
+        text: the browser never talks to the JSON API
+      - path-except: apps/(web|admin)/ui/
+        linters: [forbidigo]
+        text: it never makes HTTP requests
+      - path: apps/(web|admin)/ui/cmd/
+        linters: [forbidigo]
+        text: it never makes HTTP requests
       - path: (apps/(web|admin)/internal/server|packages/auth)/
         linters: [forbidigo]
         text: the caller comes from the route's access policy

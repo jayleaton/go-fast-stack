@@ -9,8 +9,8 @@ import "github.com/a-h/templ"
 import templruntime "github.com/a-h/templ/runtime"
 
 import (
+	"github.com/jayleaton/go-fast-stack/apps/admin/internal/apiclient"
 	"github.com/jayleaton/go-fast-stack/apps/admin/internal/config"
-	"github.com/jayleaton/go-fast-stack/apps/admin/internal/services"
 	"github.com/jayleaton/go-fast-stack/apps/admin/ui/i18n"
 	"github.com/jayleaton/go-fast-stack/apps/admin/ui/routes"
 	"github.com/jayleaton/go-fast-stack/apps/admin/ui/view"
@@ -28,7 +28,7 @@ const (
 
 // AdminsData is the admins page.
 type AdminsData struct {
-	Admins []services.Admin
+	Admins []apiclient.Admin
 	// SelfID is the signed-in admin: their row has no actions.
 	SelfID string
 	Invite InviteState
@@ -47,14 +47,14 @@ type InviteState struct {
 // AuditData is the audit log page.
 type AuditData struct {
 	Filters AuditFilters
-	Entries []services.AuditEntry
+	Entries []apiclient.AuditEntry
 	Pager   Pager
 	Error   string
 }
 
 // AnalyticsData is the analytics placeholder page.
 type AnalyticsData struct {
-	Overview services.Overview
+	Overview apiclient.Overview
 	Error    string
 }
 
@@ -186,7 +186,7 @@ func AdminsStatus(s Status) templ.Component {
 
 // AdminsTable lists every admin, pending invites included, with the actions
 // another admin may take on each row; selfID's row gets none.
-func AdminsTable(admins []services.Admin, selfID string) templ.Component {
+func AdminsTable(admins []apiclient.Admin, selfID string) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -736,7 +736,7 @@ func AdminsTable(admins []services.Admin, selfID string) templ.Component {
 // reset (accepted invites), reset 2FA (enrolled admins), and remove. Resetting
 // 2FA and removing are asked first in a dialog with JS; a plain post acts
 // directly.
-func adminActions(admin services.Admin) templ.Component {
+func adminActions(admin apiclient.Admin) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {

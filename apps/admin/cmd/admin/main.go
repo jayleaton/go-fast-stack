@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/jayleaton/go-fast-stack/apps/admin/internal/access"
+	"github.com/jayleaton/go-fast-stack/apps/admin/internal/api"
 	"github.com/jayleaton/go-fast-stack/apps/admin/internal/config"
 	"github.com/jayleaton/go-fast-stack/apps/admin/internal/server"
 	"github.com/jayleaton/go-fast-stack/apps/admin/internal/services"
@@ -242,6 +243,9 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	analytics := services.NewAnalyticsService(adminrepo.NewStats(appPool), adminPolicy)
 	// One gate decides route access for both transports (docs/route-access.md).
 	gate := access.NewGate(server.NewCallers(admins).Resolve)
+	// The UI reaches data only through the API, in-process: the same
+	// endpoints, policies and validation a /api/admin/v1 request would take.
+	adminAPI := api.NewClient(api.NewUsers(users, gate), api.NewAdmins(adminSvc, gate), api.NewAudit(auditSvc, gate), api.NewAnalytics(analytics, gate))
 	reconciler := services.NewAuditReconciler(auditLog, server.NewUserDirectory(auth.NewUserAdmin(appPool)), server.NewAdminAccounts(admins, adminrepo.NewAdmins(adminPool)))
 	go reconcileAudit(ctx, reconciler, cfg.AuditReconcileAfter, log)
 
@@ -251,12 +255,13 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		DBs:     map[string]server.Pinger{"app": appPool, "admin": adminPool},
 		Secrets: cfg.Secrets,
 		Auth:    admins,
-		// No JSON API on the network: the UI calls the services in-process
-		// (sign-ins are audited through the admin auth instance's events). To let scripts call
-		// /api/admin/v1, pass api.NewUsers(users, gate) etc. as API;
-		// the audited auth endpoints come with it, hidden from browsers.
+		// No JSON API on the network: the UI calls it in-process through
+		// adminAPI (sign-ins are audited through the admin auth instance's
+		// events). To let scripts call /api/admin/v1, mount the same
+		// api.NewUsers(users, gate) etc. groups; the audited auth endpoints
+		// come with it, hidden from browsers.
 		UI: ui.New(ui.Deps{
-			Auth: server.NewUIAuth(admins), Users: users, Admins: adminSvc, Audit: auditSvc, Analytics: analytics,
+			Auth: server.NewUIAuth(admins), API: adminAPI,
 			Gate: gate, RequireTwoFactor: cfg.RequireTwoFactor, AppName: cfg.AppName,
 			SecureCookies: cfg.PublicURL.Scheme == "https", Logger: log,
 		}).Handler(),

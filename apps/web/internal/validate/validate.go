@@ -62,15 +62,21 @@ func Decode[T any, PT interface {
 	Validator
 }](r io.Reader) (T, error) {
 	var v T
-	dec := json.NewDecoder(r)
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&v); err != nil {
-		return v, &Error{Fields: map[string]string{"body": jsonMessage(err)}}
+	return v, DecodeInto(r, PT(&v))
+}
+
+// DecodeInto is Decode for a target only known as a Validator (the API's
+// generic endpoints): one JSON object into target, then target.Validate().
+func DecodeInto(reader io.Reader, target Validator) error {
+	decoder := json.NewDecoder(reader)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(target); err != nil {
+		return &Error{Fields: map[string]string{"body": jsonMessage(err)}}
 	}
-	if dec.More() {
-		return v, &Error{Fields: map[string]string{"body": "must be a single JSON object"}}
+	if decoder.More() {
+		return &Error{Fields: map[string]string{"body": "must be a single JSON object"}}
 	}
-	return v, PT(&v).Validate()
+	return target.Validate()
 }
 
 func jsonMessage(err error) string {

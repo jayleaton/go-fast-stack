@@ -5,13 +5,13 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/jayleaton/go-fast-stack/apps/admin/internal/access"
+	"github.com/jayleaton/go-fast-stack/apps/admin/internal/apiclient"
 	"github.com/jayleaton/go-fast-stack/apps/admin/internal/config"
 	"github.com/jayleaton/go-fast-stack/apps/admin/ui/i18n"
 	"github.com/jayleaton/go-fast-stack/packages/uikit"
 )
 
-func (ui *UI) home(w http.ResponseWriter, r *http.Request, caller access.Caller) {
+func (ui *UI) home(w http.ResponseWriter, r *http.Request, caller apiclient.Caller) {
 	if caller.SignedIn() {
 		http.Redirect(w, r, config.AppRoutes.Users, http.StatusSeeOther)
 		return
@@ -19,7 +19,7 @@ func (ui *UI) home(w http.ResponseWriter, r *http.Request, caller access.Caller)
 	http.Redirect(w, r, config.AppRoutes.Login, http.StatusSeeOther)
 }
 
-func (ui *UI) loginPage(w http.ResponseWriter, r *http.Request, caller access.Caller) {
+func (ui *UI) loginPage(w http.ResponseWriter, r *http.Request, caller apiclient.Caller) {
 	if caller.SignedIn() {
 		http.Redirect(w, r, config.AppRoutes.Users, http.StatusSeeOther)
 		return
@@ -27,7 +27,7 @@ func (ui *UI) loginPage(w http.ResponseWriter, r *http.Request, caller access.Ca
 	ui.render(w, r, http.StatusOK, LoginPage(AuthForm{}))
 }
 
-func (ui *UI) login(w http.ResponseWriter, r *http.Request, _ access.Caller) {
+func (ui *UI) login(w http.ResponseWriter, r *http.Request, _ apiclient.Caller) {
 	ctx := r.Context()
 	email := strings.TrimSpace(r.PostFormValue("email"))
 	s, err := ui.auth.SignIn(ctx, email, r.PostFormValue("password"))
@@ -60,26 +60,26 @@ func (ui *UI) challenge(w http.ResponseWriter, r *http.Request, err error) bool 
 	return true
 }
 
-func (ui *UI) setPasswordPage(writer http.ResponseWriter, request *http.Request, _ access.Caller) {
+func (ui *UI) setPasswordPage(writer http.ResponseWriter, request *http.Request, _ apiclient.Caller) {
 	ui.tokenPage(writer)
 	ui.render(writer, request, http.StatusOK, SetPasswordPage(inviteMode, request.URL.Query().Get("token"), AuthForm{}))
 }
 
-func (ui *UI) resetPasswordPage(writer http.ResponseWriter, request *http.Request, _ access.Caller) {
+func (ui *UI) resetPasswordPage(writer http.ResponseWriter, request *http.Request, _ apiclient.Caller) {
 	ui.tokenPage(writer)
 	ui.render(writer, request, http.StatusOK, SetPasswordPage(resetMode, request.URL.Query().Get("token"), AuthForm{}))
 }
 
 // setPassword finishes an invite: the admin picks a password and is signed
 // in, or continues into 2FA.
-func (ui *UI) setPassword(writer http.ResponseWriter, request *http.Request, _ access.Caller) {
+func (ui *UI) setPassword(writer http.ResponseWriter, request *http.Request, _ apiclient.Caller) {
 	ui.choosePassword(writer, request, inviteMode)
 }
 
 // resetPassword spends a reset link the same way (invite and reset links are
 // the same kind of token): every other session ends, and sign-in still goes
 // through 2FA.
-func (ui *UI) resetPassword(writer http.ResponseWriter, request *http.Request, _ access.Caller) {
+func (ui *UI) resetPassword(writer http.ResponseWriter, request *http.Request, _ apiclient.Caller) {
 	ui.choosePassword(writer, request, resetMode)
 }
 
@@ -114,7 +114,7 @@ func (ui *UI) choosePassword(writer http.ResponseWriter, request *http.Request, 
 	ui.redirect(writer, request, config.AppRoutes.Users)
 }
 
-func (ui *UI) forgotPasswordPage(writer http.ResponseWriter, request *http.Request, caller access.Caller) {
+func (ui *UI) forgotPasswordPage(writer http.ResponseWriter, request *http.Request, caller apiclient.Caller) {
 	if caller.SignedIn() {
 		http.Redirect(writer, request, config.AppRoutes.Users, http.StatusSeeOther)
 		return
@@ -124,7 +124,7 @@ func (ui *UI) forgotPasswordPage(writer http.ResponseWriter, request *http.Reque
 
 // forgotPassword asks for a reset link. The answer is the same whether or
 // not the email belongs to an admin; only rate limiting is reported.
-func (ui *UI) forgotPassword(writer http.ResponseWriter, request *http.Request, _ access.Caller) {
+func (ui *UI) forgotPassword(writer http.ResponseWriter, request *http.Request, _ apiclient.Caller) {
 	ctx := request.Context()
 	email := strings.TrimSpace(request.PostFormValue("email"))
 	if err := ui.auth.RequestPasswordReset(ctx, email); err != nil {
@@ -136,12 +136,12 @@ func (ui *UI) forgotPassword(writer http.ResponseWriter, request *http.Request, 
 	ui.patch(writer, request, http.StatusOK, ForgotPasswordPage(AuthForm{}, sent), ForgotPasswordBody(AuthForm{}, sent))
 }
 
-func (ui *UI) twoFactorPage(w http.ResponseWriter, r *http.Request, _ access.Caller) {
+func (ui *UI) twoFactorPage(w http.ResponseWriter, r *http.Request, _ apiclient.Caller) {
 	ui.render(w, r, http.StatusOK, TwoFactorPage(TwoFactorForm{}))
 }
 
 // twoFactor is the second sign-in step, with a TOTP or a backup code.
-func (ui *UI) twoFactor(w http.ResponseWriter, r *http.Request, _ access.Caller) {
+func (ui *UI) twoFactor(w http.ResponseWriter, r *http.Request, _ apiclient.Caller) {
 	ctx := r.Context()
 	in := VerifyTwoFactorInput{
 		Code:        strings.TrimSpace(r.PostFormValue("code")),
@@ -173,7 +173,7 @@ func (ui *UI) signIn(w http.ResponseWriter, r *http.Request, s Session, trustTok
 // twoFactorSetupPage has three states: signed out with a SetupRequired
 // challenge (enrol now, then sign in), signed in without 2FA (password
 // first), signed in with 2FA (nothing to do).
-func (ui *UI) twoFactorSetupPage(w http.ResponseWriter, r *http.Request, caller access.Caller) {
+func (ui *UI) twoFactorSetupPage(w http.ResponseWriter, r *http.Request, caller apiclient.Caller) {
 	ctx := r.Context()
 	if caller.SignedIn() {
 		w.Header().Set("Cache-Control", "no-store")
@@ -194,7 +194,7 @@ func (ui *UI) twoFactorSetupPage(w http.ResponseWriter, r *http.Request, caller 
 
 // enableTwoFactor is optional enrolment for a signed-in admin: check the
 // password, then show the secret and the code form.
-func (ui *UI) enableTwoFactor(w http.ResponseWriter, r *http.Request, caller access.Caller) {
+func (ui *UI) enableTwoFactor(w http.ResponseWriter, r *http.Request, caller apiclient.Caller) {
 	ctx := r.Context()
 	st := SetupState{SignedIn: true, Required: ui.requireTwoFactor}
 	setup, err := ui.auth.EnableTwoFactor(ctx, caller.Admin.ID, r.PostFormValue("password"))
@@ -210,7 +210,7 @@ func (ui *UI) enableTwoFactor(w http.ResponseWriter, r *http.Request, caller acc
 // twoFactorSetup checks the first code from the authenticator app. Signed
 // in, it confirms optional enrolment; signed out, it finishes the
 // SetupRequired challenge and signs in.
-func (ui *UI) twoFactorSetup(w http.ResponseWriter, r *http.Request, caller access.Caller) {
+func (ui *UI) twoFactorSetup(w http.ResponseWriter, r *http.Request, caller apiclient.Caller) {
 	ctx := r.Context()
 	code := strings.TrimSpace(r.PostFormValue("code"))
 	// A plain post re-renders the page, so the form carries the secret back
@@ -245,7 +245,7 @@ func (ui *UI) twoFactorSetup(w http.ResponseWriter, r *http.Request, caller acce
 	ui.patch(w, r, http.StatusOK, TwoFactorSetupPage(st), SetupBody(st))
 }
 
-func (ui *UI) logout(w http.ResponseWriter, r *http.Request, caller access.Caller) {
+func (ui *UI) logout(w http.ResponseWriter, r *http.Request, caller apiclient.Caller) {
 	ctx := r.Context()
 	if caller.SignedIn() {
 		if err := ui.auth.SignOut(ctx, caller.Session.Token); err != nil {
@@ -257,7 +257,7 @@ func (ui *UI) logout(w http.ResponseWriter, r *http.Request, caller access.Calle
 }
 
 // setLocale is the language switcher: store the choice, go back to the page.
-func (ui *UI) setLocale(w http.ResponseWriter, r *http.Request, _ access.Caller) {
+func (ui *UI) setLocale(w http.ResponseWriter, r *http.Request, _ apiclient.Caller) {
 	l, ok := i18n.Supported(r.PostFormValue("locale"))
 	if !ok {
 		l = i18n.DefaultLocale

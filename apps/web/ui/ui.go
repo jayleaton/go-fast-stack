@@ -14,9 +14,8 @@ import (
 	"github.com/a-h/templ"
 	"github.com/starfederation/datastar-go/datastar"
 
-	"github.com/jayleaton/go-fast-stack/apps/web/internal/access"
+	"github.com/jayleaton/go-fast-stack/apps/web/internal/apiclient"
 	"github.com/jayleaton/go-fast-stack/apps/web/internal/config"
-	"github.com/jayleaton/go-fast-stack/apps/web/internal/services"
 	"github.com/jayleaton/go-fast-stack/apps/web/ui/i18n"
 	"github.com/jayleaton/go-fast-stack/apps/web/ui/routes"
 	"github.com/jayleaton/go-fast-stack/apps/web/ui/static"
@@ -25,8 +24,8 @@ import (
 // UI serves the HTML pages and their Datastar actions.
 type UI struct {
 	auth     Auth
-	gate     *access.Gate
-	users    Users
+	gate     *apiclient.Gate
+	api      apiclient.Client
 	features config.Features
 	appName  string
 	secure   bool
@@ -37,15 +36,15 @@ type UI struct {
 	csrf     *http.CrossOriginProtection
 }
 
-// New builds the UI. Auth, Users and Gate are required.
+// New builds the UI. Auth, API and Gate are required.
 func New(deps Deps) *UI {
-	if deps.Auth == nil || deps.Users == nil || deps.Gate == nil {
-		panic("ui.New: Auth, Users and Gate are required")
+	if deps.Auth == nil || deps.API == nil || deps.Gate == nil {
+		panic("ui.New: Auth, API and Gate are required")
 	}
 	ui := &UI{
 		auth:     deps.Auth,
 		gate:     deps.Gate,
-		users:    deps.Users,
+		api:      deps.API,
 		features: deps.Features,
 		appName:  deps.AppName,
 		secure:   deps.SecureCookies,
@@ -76,16 +75,16 @@ type Mux interface {
 }
 
 // Routes mounts every page, action and static asset on mux. Each page and
-// action declares its access policy on its line (access.Public,
-// access.SignedIn, or your own); the gate in Deps enforces it. The auth
+// action declares its access policy on its line (apiclient.Public,
+// apiclient.SignedIn, or your own); the gate in Deps enforces it. The auth
 // middleware must wrap mux so the gate sees the session. Mount Handler
 // rather than Routes in production: it adds the security headers.
 func (ui *UI) Routes(mux Mux) {
-	page := func(policy access.Policy, pattern string, handler handlerFunc) {
+	page := func(policy apiclient.Policy, pattern string, handler handlerFunc) {
 		mux.Handle(pattern, ui.route(policy, handler))
 	}
 	// Actions also pass Go's cross-origin protection (Sec-Fetch-Site / Origin).
-	action := func(policy access.Policy, pattern string, handler handlerFunc) {
+	action := func(policy apiclient.Policy, pattern string, handler handlerFunc) {
 		mux.Handle(pattern, ui.csrf.Handler(ui.route(policy, handler)))
 	}
 
@@ -95,31 +94,31 @@ func (ui *UI) Routes(mux Mux) {
 		http.Redirect(writer, request, static.URL(static.FaviconFile), http.StatusMovedPermanently)
 	}))
 
-	page(access.Public, "GET /{$}", ui.home)
-	page(access.Public, "GET "+config.AppRoutes.Why, ui.why)
-	page(access.Public, "GET "+config.AppRoutes.Login, ui.loginPage)
-	action(access.Public, "POST "+config.AppRoutes.Login, ui.login)
-	page(access.Public, "GET "+config.AppRoutes.Signup, ui.signupPage)
-	action(access.Public, "POST "+config.AppRoutes.Signup, ui.signup)
-	page(access.Public, "GET "+config.AppRoutes.ForgotPassword, ui.forgotPasswordPage)
-	action(access.Public, "POST "+config.AppRoutes.ForgotPassword, ui.forgotPassword)
-	page(access.Public, "GET "+config.AppRoutes.ResetPassword, ui.resetPasswordPage)
-	action(access.Public, "POST "+config.AppRoutes.ResetPassword, ui.resetPassword)
-	page(access.Public, "GET "+config.AppRoutes.VerifyEmail, ui.verifyEmailPage)
-	action(access.Public, "POST "+config.AppRoutes.VerifyEmail, ui.resendVerification)
-	page(access.Public, "GET "+config.AppRoutes.VerifyEmailSuccess, ui.verifyEmailSuccessPage)
-	action(access.Public, "POST "+config.AppRoutes.VerifyEmailSuccess, ui.verifyEmail)
-	page(access.SignedIn, "GET "+config.AppRoutes.Dashboard, ui.dashboard)
-	page(access.SignedIn, "GET "+routes.DashboardLive, ui.dashboardLive)
-	page(access.SignedIn, "GET "+config.AppRoutes.Account, ui.accountPage)
-	action(access.SignedIn, "POST "+routes.AccountProfile, ui.updateProfile)
-	action(access.SignedIn, "POST "+routes.AccountEmail, ui.requestEmailChange)
-	action(access.SignedIn, "POST "+routes.AccountPassword, ui.changePassword)
-	action(access.SignedIn, "POST "+routes.AccountRevokeSession, ui.revokeSession)
-	action(access.SignedIn, "POST "+routes.AccountRevokeOthers, ui.revokeOtherSessions)
-	action(access.SignedIn, "POST "+routes.AccountDelete, ui.deleteAccount)
-	action(access.Public, "POST "+routes.Logout, ui.logout)
-	action(access.Public, "POST "+routes.Locale, ui.setLocale)
+	page(apiclient.Public, "GET /{$}", ui.home)
+	page(apiclient.Public, "GET "+config.AppRoutes.Why, ui.why)
+	page(apiclient.Public, "GET "+config.AppRoutes.Login, ui.loginPage)
+	action(apiclient.Public, "POST "+config.AppRoutes.Login, ui.login)
+	page(apiclient.Public, "GET "+config.AppRoutes.Signup, ui.signupPage)
+	action(apiclient.Public, "POST "+config.AppRoutes.Signup, ui.signup)
+	page(apiclient.Public, "GET "+config.AppRoutes.ForgotPassword, ui.forgotPasswordPage)
+	action(apiclient.Public, "POST "+config.AppRoutes.ForgotPassword, ui.forgotPassword)
+	page(apiclient.Public, "GET "+config.AppRoutes.ResetPassword, ui.resetPasswordPage)
+	action(apiclient.Public, "POST "+config.AppRoutes.ResetPassword, ui.resetPassword)
+	page(apiclient.Public, "GET "+config.AppRoutes.VerifyEmail, ui.verifyEmailPage)
+	action(apiclient.Public, "POST "+config.AppRoutes.VerifyEmail, ui.resendVerification)
+	page(apiclient.Public, "GET "+config.AppRoutes.VerifyEmailSuccess, ui.verifyEmailSuccessPage)
+	action(apiclient.Public, "POST "+config.AppRoutes.VerifyEmailSuccess, ui.verifyEmail)
+	page(apiclient.SignedIn, "GET "+config.AppRoutes.Dashboard, ui.dashboard)
+	page(apiclient.SignedIn, "GET "+routes.DashboardLive, ui.dashboardLive)
+	page(apiclient.SignedIn, "GET "+config.AppRoutes.Account, ui.accountPage)
+	action(apiclient.SignedIn, "POST "+routes.AccountProfile, ui.updateProfile)
+	action(apiclient.SignedIn, "POST "+routes.AccountEmail, ui.requestEmailChange)
+	action(apiclient.SignedIn, "POST "+routes.AccountPassword, ui.changePassword)
+	action(apiclient.SignedIn, "POST "+routes.AccountRevokeSession, ui.revokeSession)
+	action(apiclient.SignedIn, "POST "+routes.AccountRevokeOthers, ui.revokeOtherSessions)
+	action(apiclient.SignedIn, "POST "+routes.AccountDelete, ui.deleteAccount)
+	action(apiclient.Public, "POST "+routes.Logout, ui.logout)
+	action(apiclient.Public, "POST "+routes.Locale, ui.setLocale)
 }
 
 // Handler returns the UI for server.Deps.UI: Routes behind the browser
@@ -193,7 +192,7 @@ func (ui *UI) errorMessage(ctx context.Context, err error) string {
 
 // userFromService converts the service's user row; both describe the
 // auth-owned "user" table.
-func userFromService(session services.User) User {
+func userFromService(session apiclient.User) User {
 	return User(session)
 }
 

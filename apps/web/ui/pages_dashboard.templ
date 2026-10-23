@@ -4,7 +4,7 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/jayleaton/go-fast-stack/apps/web/internal/access"
+	"github.com/jayleaton/go-fast-stack/apps/web/internal/apiclient"
 	"github.com/jayleaton/go-fast-stack/apps/web/internal/config"
 	"github.com/jayleaton/go-fast-stack/apps/web/ui/i18n"
 	"github.com/jayleaton/go-fast-stack/apps/web/ui/routes"
@@ -142,7 +142,7 @@ templ LiveCard(tab string) {
 }
 
 // LiveBody is the fragment the stream patches every tick.
-templ LiveBody(now time.Time, session access.Session) {
+templ LiveBody(now time.Time, session apiclient.CallerSession) {
 	<div id={ liveBodyID } class="space-y-3 text-sm">
 		<span class="inline-flex items-center gap-1.5 rounded-full border border-success-border bg-success-soft px-2 py-0.5 text-xs font-medium text-success-soft-foreground">
 			<span class="size-1.5 rounded-full bg-success motion-safe:animate-pulse" aria-hidden="true"></span>

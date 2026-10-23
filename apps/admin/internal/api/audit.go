@@ -23,22 +23,22 @@ var _ AuditService = (*services.AuditService)(nil)
 type Audit struct {
 	svc  AuditService
 	gate *access.Gate
+
+	list Endpoint[validate.ListAuditLog, services.AuditPage]
 }
 
 // NewAudit returns the audit endpoint.
 func NewAudit(svc AuditService, gate *access.Gate) *Audit {
-	return &Audit{svc: svc, gate: gate}
+	audit := &Audit{svc: svc, gate: gate}
+	audit.list = Endpoint[validate.ListAuditLog, services.AuditPage]{"GET", config.APIRoutes.Audit, access.SignedIn, audit.listEntries}
+	return audit
 }
 
-// Routes registers the endpoint on mux with its access policy.
+// Routes registers the endpoint on mux.
 func (audit *Audit) Routes(mux *http.ServeMux) {
-	mux.Handle("GET "+config.APIRoutes.Audit, Route(audit.gate, access.SignedIn, audit.list))
+	mux.Handle(audit.list.Pattern(), audit.list.Serve(audit.gate))
 }
 
-func (audit *Audit) list(request *http.Request, caller access.Caller) (services.AuditPage, error) {
-	input, err := validate.DecodeQuery[validate.ListAuditLog](request.URL.Query())
-	if err != nil {
-		return services.AuditPage{}, err
-	}
+func (audit *Audit) listEntries(request *http.Request, caller access.Caller, input validate.ListAuditLog) (services.AuditPage, error) {
 	return audit.svc.List(request.Context(), caller.Actor(), input)
 }

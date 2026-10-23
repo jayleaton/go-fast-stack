@@ -12,10 +12,8 @@ import (
 	"github.com/a-h/templ"
 	"github.com/starfederation/datastar-go/datastar"
 
-	"github.com/jayleaton/go-fast-stack/apps/admin/internal/access"
+	"github.com/jayleaton/go-fast-stack/apps/admin/internal/apiclient"
 	"github.com/jayleaton/go-fast-stack/apps/admin/internal/config"
-	"github.com/jayleaton/go-fast-stack/apps/admin/internal/services"
-	"github.com/jayleaton/go-fast-stack/apps/admin/internal/validate"
 	"github.com/jayleaton/go-fast-stack/apps/admin/ui/i18n"
 	"github.com/jayleaton/go-fast-stack/apps/admin/ui/routes"
 	"github.com/jayleaton/go-fast-stack/apps/admin/ui/static"
@@ -25,11 +23,8 @@ import (
 // UI serves the admin pages and their Datastar actions.
 type UI struct {
 	auth             Auth
-	users            Users
-	admins           Admins
-	audit            Audit
-	analytics        Analytics
-	gate             *access.Gate
+	api              apiclient.Client
+	gate             *apiclient.Gate
 	requireTwoFactor bool
 	appName          string
 	secure           bool
@@ -37,17 +32,14 @@ type UI struct {
 	csrf             *http.CrossOriginProtection
 }
 
-// New builds the UI. Every port and Gate are required.
+// New builds the UI. Auth, API and Gate are required.
 func New(deps Deps) *UI {
-	if deps.Auth == nil || deps.Users == nil || deps.Admins == nil || deps.Audit == nil || deps.Analytics == nil || deps.Gate == nil {
-		panic("ui.New: Auth, Users, Admins, Audit, Analytics and Gate are required")
+	if deps.Auth == nil || deps.API == nil || deps.Gate == nil {
+		panic("ui.New: Auth, API and Gate are required")
 	}
 	ui := &UI{
 		auth:             deps.Auth,
-		users:            deps.Users,
-		admins:           deps.Admins,
-		audit:            deps.Audit,
-		analytics:        deps.Analytics,
+		api:              deps.API,
 		gate:             deps.Gate,
 		requireTwoFactor: deps.RequireTwoFactor,
 		appName:          deps.AppName,
@@ -70,16 +62,16 @@ type Mux interface {
 }
 
 // Routes mounts every page, action and static asset on mux. Each page and
-// action declares its access policy on its line (access.Public,
-// access.SignedIn, or your own); the gate in Deps enforces it. The auth
+// action declares its access policy on its line (apiclient.Public,
+// apiclient.SignedIn, or your own); the gate in Deps enforces it. The auth
 // middleware must wrap mux so the gate sees the session. Mount Handler
 // rather than Routes in production: it adds the security headers.
 func (ui *UI) Routes(mux Mux) {
-	page := func(policy access.Policy, pattern string, handler handlerFunc) {
+	page := func(policy apiclient.Policy, pattern string, handler handlerFunc) {
 		mux.Handle(pattern, ui.route(policy, handler))
 	}
 	// Actions also pass Go's cross-origin protection (Sec-Fetch-Site / Origin).
-	action := func(policy access.Policy, pattern string, handler handlerFunc) {
+	action := func(policy apiclient.Policy, pattern string, handler handlerFunc) {
 		mux.Handle(pattern, ui.csrf.Handler(ui.route(policy, handler)))
 	}
 	pages := config.AppRoutes
@@ -90,41 +82,41 @@ func (ui *UI) Routes(mux Mux) {
 		http.Redirect(writer, request, static.URL(static.FaviconFile), http.StatusMovedPermanently)
 	}))
 
-	page(access.Public, "GET /{$}", ui.home)
-	page(access.Public, "GET "+pages.Login, ui.loginPage)
-	action(access.Public, "POST "+pages.Login, ui.login)
-	page(access.Public, "GET "+pages.SetPassword, ui.setPasswordPage)
-	action(access.Public, "POST "+pages.SetPassword, ui.setPassword)
-	page(access.Public, "GET "+pages.ForgotPassword, ui.forgotPasswordPage)
-	action(access.Public, "POST "+pages.ForgotPassword, ui.forgotPassword)
-	page(access.Public, "GET "+pages.ResetPassword, ui.resetPasswordPage)
-	action(access.Public, "POST "+pages.ResetPassword, ui.resetPassword)
-	page(access.Public, "GET "+pages.TwoFactor, ui.twoFactorPage)
-	action(access.Public, "POST "+pages.TwoFactor, ui.twoFactor)
+	page(apiclient.Public, "GET /{$}", ui.home)
+	page(apiclient.Public, "GET "+pages.Login, ui.loginPage)
+	action(apiclient.Public, "POST "+pages.Login, ui.login)
+	page(apiclient.Public, "GET "+pages.SetPassword, ui.setPasswordPage)
+	action(apiclient.Public, "POST "+pages.SetPassword, ui.setPassword)
+	page(apiclient.Public, "GET "+pages.ForgotPassword, ui.forgotPasswordPage)
+	action(apiclient.Public, "POST "+pages.ForgotPassword, ui.forgotPassword)
+	page(apiclient.Public, "GET "+pages.ResetPassword, ui.resetPasswordPage)
+	action(apiclient.Public, "POST "+pages.ResetPassword, ui.resetPassword)
+	page(apiclient.Public, "GET "+pages.TwoFactor, ui.twoFactorPage)
+	action(apiclient.Public, "POST "+pages.TwoFactor, ui.twoFactor)
 	// Signed in (optional enrolment) or with a SetupRequired challenge.
-	page(access.Public, "GET "+pages.TwoFactorSetup, ui.twoFactorSetupPage)
-	action(access.Public, "POST "+pages.TwoFactorSetup, ui.twoFactorSetup)
-	action(access.SignedIn, "POST "+routes.EnableTwoFactor, ui.enableTwoFactor)
+	page(apiclient.Public, "GET "+pages.TwoFactorSetup, ui.twoFactorSetupPage)
+	action(apiclient.Public, "POST "+pages.TwoFactorSetup, ui.twoFactorSetup)
+	action(apiclient.SignedIn, "POST "+routes.EnableTwoFactor, ui.enableTwoFactor)
 
-	page(access.SignedIn, "GET "+pages.Users, ui.usersPage)
-	page(access.SignedIn, "GET "+pages.UserByID, ui.userPage)
-	action(access.SignedIn, "POST "+routes.UserBan, ui.banUser)
-	action(access.SignedIn, "POST "+routes.UserUnban, ui.unbanUser)
-	action(access.SignedIn, "POST "+routes.UserRole, ui.setRole)
-	action(access.SignedIn, "POST "+routes.UserSessions, ui.revokeSessions)
-	action(access.SignedIn, "POST "+routes.UserSession, ui.revokeSession)
-	page(access.SignedIn, "GET "+pages.Admins, ui.adminsPage)
-	action(access.SignedIn, "POST "+routes.AdminInvite, ui.inviteAdmin)
-	action(access.SignedIn, "POST "+routes.AdminDisable, ui.disableAdmin)
-	action(access.SignedIn, "POST "+routes.AdminEnable, ui.enableAdmin)
-	action(access.SignedIn, "POST "+routes.AdminRemove, ui.removeAdmin)
-	action(access.SignedIn, "POST "+routes.AdminPasswordReset, ui.sendAdminPasswordReset)
-	action(access.SignedIn, "POST "+routes.AdminResetTwoFactor, ui.resetAdminTwoFactor)
-	page(access.SignedIn, "GET "+pages.Audit, ui.auditPage)
-	page(access.SignedIn, "GET "+pages.Analytics, ui.analyticsPage)
+	page(apiclient.SignedIn, "GET "+pages.Users, ui.usersPage)
+	page(apiclient.SignedIn, "GET "+pages.UserByID, ui.userPage)
+	action(apiclient.SignedIn, "POST "+routes.UserBan, ui.banUser)
+	action(apiclient.SignedIn, "POST "+routes.UserUnban, ui.unbanUser)
+	action(apiclient.SignedIn, "POST "+routes.UserRole, ui.setRole)
+	action(apiclient.SignedIn, "POST "+routes.UserSessions, ui.revokeSessions)
+	action(apiclient.SignedIn, "POST "+routes.UserSession, ui.revokeSession)
+	page(apiclient.SignedIn, "GET "+pages.Admins, ui.adminsPage)
+	action(apiclient.SignedIn, "POST "+routes.AdminInvite, ui.inviteAdmin)
+	action(apiclient.SignedIn, "POST "+routes.AdminDisable, ui.disableAdmin)
+	action(apiclient.SignedIn, "POST "+routes.AdminEnable, ui.enableAdmin)
+	action(apiclient.SignedIn, "POST "+routes.AdminRemove, ui.removeAdmin)
+	action(apiclient.SignedIn, "POST "+routes.AdminPasswordReset, ui.sendAdminPasswordReset)
+	action(apiclient.SignedIn, "POST "+routes.AdminResetTwoFactor, ui.resetAdminTwoFactor)
+	page(apiclient.SignedIn, "GET "+pages.Audit, ui.auditPage)
+	page(apiclient.SignedIn, "GET "+pages.Analytics, ui.analyticsPage)
 
-	action(access.Public, "POST "+routes.Logout, ui.logout)
-	action(access.Public, "POST "+routes.Locale, ui.setLocale)
+	action(apiclient.Public, "POST "+routes.Logout, ui.logout)
+	action(apiclient.Public, "POST "+routes.Locale, ui.setLocale)
 }
 
 // Handler returns the UI for server.Deps.UI: Routes behind the browser
@@ -198,13 +190,19 @@ func (ui *UI) redirect(writer http.ResponseWriter, request *http.Request, to str
 	}
 }
 
-// needsTwoFactor sends the admin to enrolment when a service refused them
-// for lacking 2FA, and reports whether it did.
-func (ui *UI) needsTwoFactor(writer http.ResponseWriter, request *http.Request, err error) bool {
-	if !errors.Is(err, services.ErrTwoFactorRequired) {
+// handled answers an API error that is not a form message and reports
+// whether it did: an access refusal (signed out: the login page, denied:
+// 403, as for the page's own policy) or a refusal for lacking 2FA (the
+// enrolment page). Handlers check it after every API call.
+func (ui *UI) handled(writer http.ResponseWriter, request *http.Request, err error) bool {
+	switch {
+	case errors.Is(err, apiclient.ErrSignedOut), errors.Is(err, apiclient.ErrDenied):
+		ui.apiFailed(writer, request, err)
+	case errors.Is(err, apiclient.ErrTwoFactorRequired):
+		ui.redirect(writer, request, config.AppRoutes.TwoFactorSetup)
+	default:
 		return false
 	}
-	ui.redirect(writer, request, config.AppRoutes.TwoFactorSetup)
 	return true
 }
 
@@ -222,30 +220,30 @@ var errorKeys = []struct {
 	{ErrInvalidPassword, "errors.invalidPassword"},
 	{ErrChallengeExpired, "errors.challengeExpired"},
 	{ErrTooManyRequests, "errors.tooManyRequests"},
-	{services.ErrUserNotFound, "errors.userNotFound"},
-	{services.ErrSessionNotFound, "errors.sessionNotFound"},
-	{services.ErrInvalidRole, "errors.invalidRole"},
-	{services.ErrRoleUnchanged, "errors.roleUnchanged"},
-	{services.ErrUserNotBanned, "errors.userNotBanned"},
-	{services.ErrAdminExists, "errors.adminExists"},
-	{services.ErrAdminNotFound, "errors.adminNotFound"},
-	{services.ErrAdminSelf, "errors.adminSelf"},
-	{services.ErrLastAdmin, "errors.lastAdmin"},
-	{services.ErrAdminDisabled, "errors.adminDisabled"},
-	{services.ErrAdminNotDisabled, "errors.adminNotDisabled"},
-	{services.ErrAdminPending, "errors.adminPending"},
-	{services.ErrAdminNoTwoFactor, "errors.adminNoTwoFactor"},
-	{services.ErrAdminSelfReset, "errors.adminSelfReset"},
-	{services.ErrTwoFactorRequired, "errors.twoFactorRequired"},
-	{services.ErrAuditUnavailable, "errors.auditUnavailable"},
-	{services.ErrForbidden, "errors.forbidden"},
+	{apiclient.ErrUserNotFound, "errors.userNotFound"},
+	{apiclient.ErrSessionNotFound, "errors.sessionNotFound"},
+	{apiclient.ErrInvalidRole, "errors.invalidRole"},
+	{apiclient.ErrRoleUnchanged, "errors.roleUnchanged"},
+	{apiclient.ErrUserNotBanned, "errors.userNotBanned"},
+	{apiclient.ErrAdminExists, "errors.adminExists"},
+	{apiclient.ErrAdminNotFound, "errors.adminNotFound"},
+	{apiclient.ErrAdminSelf, "errors.adminSelf"},
+	{apiclient.ErrLastAdmin, "errors.lastAdmin"},
+	{apiclient.ErrAdminDisabled, "errors.adminDisabled"},
+	{apiclient.ErrAdminNotDisabled, "errors.adminNotDisabled"},
+	{apiclient.ErrAdminPending, "errors.adminPending"},
+	{apiclient.ErrAdminNoTwoFactor, "errors.adminNoTwoFactor"},
+	{apiclient.ErrAdminSelfReset, "errors.adminSelfReset"},
+	{apiclient.ErrTwoFactorRequired, "errors.twoFactorRequired"},
+	{apiclient.ErrAuditUnavailable, "errors.auditUnavailable"},
+	{apiclient.ErrForbidden, "errors.forbidden"},
 }
 
 // errorMessage translates an auth, service or validation error; unknown
 // errors are logged, and so is a refusal for an unavailable audit log (its
 // wrapped cause is the outage).
 func (ui *UI) errorMessage(ctx context.Context, err error) string {
-	if errors.Is(err, services.ErrAuditUnavailable) {
+	if errors.Is(err, apiclient.ErrAuditUnavailable) {
 		ui.log.ErrorContext(ctx, "ui: action refused", "err", err)
 	}
 	for _, entry := range errorKeys {
@@ -253,8 +251,8 @@ func (ui *UI) errorMessage(ctx context.Context, err error) string {
 			return i18n.T(ctx, entry.key)
 		}
 	}
-	var verr *validate.Error
-	if errors.As(err, &verr) || services.KindOf(err) == services.KindInvalid {
+	var verr *apiclient.ValidationError
+	if errors.As(err, &verr) || apiclient.KindOf(err) == apiclient.KindInvalid {
 		return i18n.T(ctx, "errors.invalidInput")
 	}
 	ui.log.ErrorContext(ctx, "ui: error", "err", err)
@@ -263,18 +261,18 @@ func (ui *UI) errorMessage(ctx context.Context, err error) string {
 
 // statusOf is the HTTP status of a page that failed with err.
 func statusOf(err error) int {
-	var verr *validate.Error
+	var verr *apiclient.ValidationError
 	if errors.As(err, &verr) {
 		return http.StatusBadRequest
 	}
-	switch services.KindOf(err) {
-	case services.KindInvalid:
+	switch apiclient.KindOf(err) {
+	case apiclient.KindInvalid:
 		return http.StatusBadRequest
-	case services.KindForbidden:
+	case apiclient.KindForbidden:
 		return http.StatusForbidden
-	case services.KindNotFound:
+	case apiclient.KindNotFound:
 		return http.StatusNotFound
-	case services.KindConflict:
+	case apiclient.KindConflict:
 		return http.StatusConflict
 	}
 	return http.StatusInternalServerError

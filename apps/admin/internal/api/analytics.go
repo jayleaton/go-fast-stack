@@ -22,18 +22,22 @@ var _ AnalyticsService = (*services.AnalyticsService)(nil)
 type Analytics struct {
 	svc  AnalyticsService
 	gate *access.Gate
+
+	overview Endpoint[NoInput, services.Overview]
 }
 
 // NewAnalytics returns the analytics endpoint.
 func NewAnalytics(svc AnalyticsService, gate *access.Gate) *Analytics {
-	return &Analytics{svc: svc, gate: gate}
+	analytics := &Analytics{svc: svc, gate: gate}
+	analytics.overview = Endpoint[NoInput, services.Overview]{"GET", config.APIRoutes.Analytics, access.SignedIn, analytics.getOverview}
+	return analytics
 }
 
-// Routes registers the endpoint on mux with its access policy.
+// Routes registers the endpoint on mux.
 func (analytics *Analytics) Routes(mux *http.ServeMux) {
-	mux.Handle("GET "+config.APIRoutes.Analytics, Route(analytics.gate, access.SignedIn, analytics.overview))
+	mux.Handle(analytics.overview.Pattern(), analytics.overview.Serve(analytics.gate))
 }
 
-func (analytics *Analytics) overview(request *http.Request, caller access.Caller) (services.Overview, error) {
+func (analytics *Analytics) getOverview(request *http.Request, caller access.Caller, _ NoInput) (services.Overview, error) {
 	return analytics.svc.Overview(request.Context(), caller.Actor())
 }

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/jayleaton/go-fast-stack/apps/web/internal/access"
+	"github.com/jayleaton/go-fast-stack/apps/web/internal/api"
 	"github.com/jayleaton/go-fast-stack/apps/web/internal/services"
 	"github.com/jayleaton/go-fast-stack/apps/web/internal/validate"
 	"github.com/jayleaton/go-fast-stack/apps/web/ui"
@@ -301,10 +302,11 @@ func (a Auth) Middleware(next http.Handler) http.Handler {
 	})
 }
 
-// Users implements ui.Users with services.UserService's rules.
+// Users implements api.UserService with services.UserService's rules; the
+// preview serves the real API endpoints over it.
 type Users struct{ S *Store }
 
-var _ ui.Users = Users{}
+var _ api.UserService = Users{}
 
 // own locks the store and returns the actor's account, or the service error.
 func (u Users) own(actor services.Actor, userID string) (*account, func(), error) {

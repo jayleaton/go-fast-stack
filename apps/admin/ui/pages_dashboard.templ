@@ -1,8 +1,8 @@
 package ui
 
 import (
+	"github.com/jayleaton/go-fast-stack/apps/admin/internal/apiclient"
 	"github.com/jayleaton/go-fast-stack/apps/admin/internal/config"
-	"github.com/jayleaton/go-fast-stack/apps/admin/internal/services"
 	"github.com/jayleaton/go-fast-stack/apps/admin/ui/i18n"
 	"github.com/jayleaton/go-fast-stack/apps/admin/ui/routes"
 	"github.com/jayleaton/go-fast-stack/apps/admin/ui/view"
@@ -20,7 +20,7 @@ const (
 
 // AdminsData is the admins page.
 type AdminsData struct {
-	Admins []services.Admin
+	Admins []apiclient.Admin
 	// SelfID is the signed-in admin: their row has no actions.
 	SelfID string
 	Invite InviteState
@@ -39,14 +39,14 @@ type InviteState struct {
 // AuditData is the audit log page.
 type AuditData struct {
 	Filters AuditFilters
-	Entries []services.AuditEntry
+	Entries []apiclient.AuditEntry
 	Pager   Pager
 	Error   string
 }
 
 // AnalyticsData is the analytics placeholder page.
 type AnalyticsData struct {
-	Overview services.Overview
+	Overview apiclient.Overview
 	Error    string
 }
 
@@ -74,7 +74,7 @@ templ AdminsStatus(s Status) {
 
 // AdminsTable lists every admin, pending invites included, with the actions
 // another admin may take on each row; selfID's row gets none.
-templ AdminsTable(admins []services.Admin, selfID string) {
+templ AdminsTable(admins []apiclient.Admin, selfID string) {
 	<div id={ adminsTableID }>
 		@uikit.TableWrap(i18n.T(ctx, "pages.admins.list")) {
 			<table class={ uikit.TableClass }>
@@ -130,7 +130,7 @@ templ AdminsTable(admins []services.Admin, selfID string) {
 // reset (accepted invites), reset 2FA (enrolled admins), and remove. Resetting
 // 2FA and removing are asked first in a dialog with JS; a plain post acts
 // directly.
-templ adminActions(admin services.Admin) {
+templ adminActions(admin apiclient.Admin) {
 	<div class="flex items-center justify-end gap-2">
 		if admin.Disabled {
 			<form method="post" action={ templ.SafeURL(routes.Admin(routes.AdminEnable, admin.ID)) } data-on:submit={ uikit.PostForm(routes.Admin(routes.AdminEnable, admin.ID)) } data-indicator:_enabling>

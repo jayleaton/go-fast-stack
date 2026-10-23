@@ -12,7 +12,7 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/jayleaton/go-fast-stack/apps/web/internal/access"
+	"github.com/jayleaton/go-fast-stack/apps/web/internal/apiclient"
 	"github.com/jayleaton/go-fast-stack/apps/web/internal/config"
 	"github.com/jayleaton/go-fast-stack/apps/web/ui/i18n"
 	"github.com/jayleaton/go-fast-stack/apps/web/ui/routes"
@@ -683,7 +683,7 @@ func LiveCard(tab string) templ.Component {
 }
 
 // LiveBody is the fragment the stream patches every tick.
-func LiveBody(now time.Time, session access.Session) templ.Component {
+func LiveBody(now time.Time, session apiclient.CallerSession) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {

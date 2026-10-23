@@ -3,8 +3,8 @@ package ui
 import (
 	"strconv"
 
+	"github.com/jayleaton/go-fast-stack/apps/web/internal/apiclient"
 	"github.com/jayleaton/go-fast-stack/apps/web/internal/config"
-	"github.com/jayleaton/go-fast-stack/apps/web/internal/services"
 	"github.com/jayleaton/go-fast-stack/apps/web/ui/i18n"
 	"github.com/jayleaton/go-fast-stack/apps/web/ui/routes"
 	"github.com/jayleaton/go-fast-stack/apps/web/ui/view"
@@ -27,8 +27,8 @@ const (
 // AccountData is everything the Account page renders.
 type AccountData struct {
 	User         User
-	Sessions     []services.Session
-	Summary      services.UserDataSummary
+	Sessions     []apiclient.Session
+	Summary      apiclient.UserDataSummary
 	EmailChanged bool
 	// LoadError is shown when sessions or the data summary failed to load.
 	LoadError string
@@ -148,8 +148,8 @@ templ PasswordCard(email string, s Status) {
 				<input type="email" name="username" autocomplete="username" value={ email } readonly hidden/>
 				@uikit.Input(uikit.Field{ID: "currentPassword", Type: "password", Label: i18n.T(ctx, "pages.account.password.current"), Autocomplete: "current-password"})
 				<div class="grid gap-5 sm:grid-cols-2">
-					@uikit.Input(uikit.Field{ID: "newPassword", Type: "password", Label: i18n.T(ctx, "pages.account.password.new"), Autocomplete: "new-password", MinLength: services.MinPasswordLength, MaxLength: services.MaxPasswordLength})
-					@uikit.Input(uikit.Field{ID: "confirmPassword", Type: "password", Label: i18n.T(ctx, "pages.account.password.confirm"), Autocomplete: "new-password", MinLength: services.MinPasswordLength, MaxLength: services.MaxPasswordLength})
+					@uikit.Input(uikit.Field{ID: "newPassword", Type: "password", Label: i18n.T(ctx, "pages.account.password.new"), Autocomplete: "new-password", MinLength: apiclient.MinPasswordLength, MaxLength: apiclient.MaxPasswordLength})
+					@uikit.Input(uikit.Field{ID: "confirmPassword", Type: "password", Label: i18n.T(ctx, "pages.account.password.confirm"), Autocomplete: "new-password", MinLength: apiclient.MinPasswordLength, MaxLength: apiclient.MaxPasswordLength})
 				</div>
 				@uikit.CheckboxField(uikit.Checkbox{ID: "revokeOtherSessions", Name: "revokeOtherSessions", Value: "on", Label: i18n.T(ctx, "pages.account.password.revokeOthers")})
 			</div>
@@ -161,7 +161,7 @@ templ PasswordCard(email string, s Status) {
 }
 
 // SessionsCard lists the user's sessions; every action re-renders it.
-templ SessionsCard(sessions []services.Session, s Status) {
+templ SessionsCard(sessions []apiclient.Session, s Status) {
 	@accountCard(sessionsCardID, "pages.account.sessions.title", "pages.account.sessions.description") {
 		<div class="px-5 pt-4 sm:px-6">
 			@StatusAlert(sessionsStatusID, s)
@@ -225,7 +225,7 @@ templ deviceIcon(mobile bool) {
 
 // DangerCard asks for confirmation in a local signal, then posts. Without
 // JS the confirm form stays hidden, so nothing deletes in one click.
-templ DangerCard(sum services.UserDataSummary) {
+templ DangerCard(sum apiclient.UserDataSummary) {
 	<section class="rounded-card border border-danger-border bg-surface shadow-card" data-signals="{_confirmDelete: false}">
 		<div class="flex flex-col items-start gap-4 p-5 sm:p-6 [&>#delete-error]:w-full">
 			<div>
