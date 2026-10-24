@@ -1,6 +1,6 @@
 module github.com/jayleaton/go-fast-stack/tools/actionlint
 
-go 1.26.8
+go 1.26.10
 
 tool github.com/rhysd/actionlint/cmd/actionlint
 

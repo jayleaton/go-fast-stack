@@ -5,7 +5,7 @@ Same architecture patterns, same feature set, rebuilt in Go for simpler maintena
 
 ## Decisions (JJ, 2026-10-22)
 
-- Language: Go (toolchain pinned in `mise.toml`, currently 1.26.8). **One Go module** at the repo root: `github.com/jayleaton/go-fast-stack`.
+- Language: Go (toolchain pinned in `mise.toml`, currently 1.26.10). **One Go module** at the repo root: `github.com/jayleaton/go-fast-stack`.
 - UI: server-rendered `templ` + **Datastar** (SSE-first; core library only, no Datastar Pro features) + Tailwind via the **standalone CLI** (no Node in the web toolchain).
 - Auth: **Go-native**, its own package `packages/auth`, modelled on Better Auth (table names, endpoint paths, flows) so Better Auth features can be ported later.
 - Database: Postgres 18, `pgx/v5`, `sqlc` for typed queries, `goose` migrations embedded in the binary.
