@@ -6,7 +6,7 @@
 #   docker build -f apps/backup/Dockerfile .
 # No RUN --mount=type=cache: Railway's builder rejects cache mounts without
 # an id tied to one service ID, and the go.mod layer below caches modules.
-FROM golang:1.26.8-alpine AS build
+FROM golang:1.26.10-alpine AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
