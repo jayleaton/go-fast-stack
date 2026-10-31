@@ -20,7 +20,7 @@ A push to `main` runs only `Deploy staging` (`deploy-staging.yml`), which deploy
 
 ### What to run
 
-Run what your change needs on the head you attest, and nothing more. `scripts/affected.sh` (`make affected`) prints the Go dirs and packages a change can affect; `make check-fast` is the seconds-long pass over them.
+Run what your change needs on the head you attest, and nothing more. **`make check-pr` is the default:** it runs the rows below that match the branch's changes (lint and `-race` tests on the affected packages, or `make ci` when a shared input changed), stops at the first failure, and prints the `make ci-local RAN="…"` line naming exactly what ran (`ARGS=--dry-run` only lists it). `scripts/affected.sh` (`make affected`) picks the Go dirs and packages: the changed packages and everything that imports them, or everything when go.mod, tooling, lint config, a migration or sqlc's config, queries or generated code changed. It fails, and so does everything built on it, when its selection does not match the diff: a changed Go file outside `deploy/` in no package, a changed package not selected, or Go changes and nothing selected. `make check-fast` is the seconds-long pre-push pass over the same packages.
 
 | Changed | Run |
 |---|---|
