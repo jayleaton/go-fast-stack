@@ -30,11 +30,18 @@ Run what your change needs on the head you attest, and nothing more. `scripts/af
 | A migration | `make check-migrations` |
 | `deploy/` or `deploy/platform.yaml` | `make deploy-check` (vet, lint and names in the `deploy/` module, then `make deploy-vars`) |
 | `.github/workflows/` or `.github/actions/` | `make actionlint` |
+| A `go.mod`/`go.sum` (any module), `package.json` or `pnpm-lock.yaml` | `make vulncheck` ([Known vulnerabilities](#known-vulnerabilities)) |
 | A Dockerfile, or code a Dockerfile builds | `make release-smoke` |
 | `apps/mobile-app`, or the route table its test reads (`apps/web/internal/config/routes.go`) | its pnpm checks in `apps/mobile-app`: `pnpm install --frozen-lockfile`, `tsc`, `expo lint`, `expo install --check`, `pnpm test` |
 | Tooling, the Makefile, lint config, or everything | `make ci` (every check on the checkout, the probes `make lint-layering lint-tests` included) |
 
 The probes (`make lint-layering`, `make lint-tests`) prove the layering and test rules still bite; run them when you change those rules or the scripts behind them. Say exactly what ran in the attestation: a reviewer reads the scope from it.
+
+### Known vulnerabilities
+
+`make vulncheck` (`scripts/vulncheck`) runs govulncheck, pinned in `tools/go.mod`, on every Go module (`.`, `deploy`, and the tool-only `tools` and `tools/actionlint` through their `tool` pattern), and `pnpm audit` on `apps/mobile-app/pnpm-lock.yaml`. It fails on every finding, called or not: govulncheck reports at symbol (our code calls it), package (imported) and module (required) level, and a fix that exists gets taken (`go get <module>@<fixed>` then `go mod tidy` in that module; a pnpm bump or `pnpm.overrides`). `make ci` always runs it; `make check-fast` runs it when a manifest or lockfile changed, and only warns when a scanner cannot run (exit 2: offline, or no pnpm). Lockpick's comment on each PR reports advisories published since against unchanged dependencies; fix those in their own PR off `main`.
+
+`scripts/vulncheck/allowlist.txt` is the only way past a finding: an advisory with no fix, or none its consumer can take, that we cannot reach. Each line is `<id> <package> <review-by> <reason>` (the GO- id for Go, the GHSA id for npm). The check fails on an entry past its review date, on an entry that no longer matches anything, and on a listed Go advisory that our code calls. Before adding a Go entry, prove the package is not imported (`go list -deps -test ./...` in each module).
 
 ## Local verification
 

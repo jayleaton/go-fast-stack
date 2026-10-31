@@ -2,8 +2,8 @@
 # The pre-push check (`make check-fast`, and the hook `make hooks` installs):
 # gofmt, go vet, golangci-lint and plain go test for only the packages this
 # checkout's changes can affect, the generators whose inputs changed, and the
-# deploy/ module when it changed, and the migration order when a migration
-# changed. "Changes" are everything that differs from
+# deploy/ module when it changed, the migration order when a migration
+# changed, and make vulncheck when a dependency manifest or lockfile changed. "Changes" are everything that differs from
 # the merge base with origin/main (scripts/branches.sh): commits, staged, unstaged and untracked
 # files. scripts/affected.sh maps them to packages (as make affected prints them), so a
 # change to a shared input (go.mod, tooling, lint config, migrations,
@@ -117,6 +117,21 @@ if [ "$sqlc" = true ] || [ "$templ" = true ] || [ -n "$generate" ]; then
     echo '  generated code was stale and has been regenerated: review `git status` and commit it'
     fail generate
   fi
+fi
+
+# Known vulnerabilities, when a dependency manifest, lockfile or the allowlist
+# changed (make ci runs it on every change). Exit 2 means a scanner could not
+# run (offline, no pnpm): a warning here, not a failed push.
+if printf '%s\n' "${changed[@]}" | grep -qE '(^|/)(go\.(mod|sum)|package\.json|pnpm-lock\.yaml)$|^scripts/vulncheck/'; then
+  step "vulncheck"
+  status=0
+  out=$("$GO" run ./scripts/vulncheck 2>&1) || status=$?
+  done_
+  case $status in
+  0) ;;
+  2) echo "$out" | sed 's/^/  /'; echo '  vulncheck could not run every scanner (warning only): run make vulncheck online before attesting' ;;
+  *) echo "$out" | sed 's/^/  /'; fail vulncheck ;;
+  esac
 fi
 
 if [ "${#pkgs[@]}" -gt 0 ]; then

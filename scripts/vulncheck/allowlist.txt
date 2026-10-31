@@ -1,0 +1,22 @@
+# Known vulnerabilities `make vulncheck` lets through (scripts/vulncheck).
+#
+# Only for an advisory with no fix, or none its consumer can take, that this
+# repository cannot reach. Anything with a usable fix gets bumped instead.
+# One entry per line:
+#
+#   <id> <package> <review-by YYYY-MM-DD> <reason>
+#
+# <id> is the GO- id for Go (govulncheck), the GHSA id for npm (pnpm audit).
+# <package> is the Go module or npm package the advisory names.
+# Past its review date an entry fails the check: re-check the advisory and the
+# reachability, then move the date (at most 3 months) or delete the entry.
+# An entry that matches nothing fails too: delete it. A Go entry whose symbol
+# our code calls fails even when listed.
+
+# Go
+
+# The advisory is the whole golang.org/x/crypto/openpgp package (deprecated,
+# unmaintained), so it matches every x/crypto version. No module imports it
+# (go list -deps -test ./... in each module; govulncheck: module level only).
+# We use argon2, scrypt, chacha20poly1305, hkdf and curve25519 from x/crypto.
+GO-2026-5932 golang.org/x/crypto 2027-01-31 openpgp is never imported; x/crypto is needed for argon2/scrypt and has no openpgp-free release
