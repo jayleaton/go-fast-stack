@@ -148,13 +148,22 @@ type Checks struct {
 }
 
 // ClassifyChecks sorts the newest result of each check (LatestChecks). A
-// job GitHub never started counts as not run. Without the gate, a head with
-// nothing failed is pending.
+// run with a job GitHub never started (Actions blocked) never ran at all:
+// its other jobs are skipped for want of their needs (ci.yml's checking job
+// waits on the claim), so none of its checks count. Without the gate, a head
+// with nothing failed is pending.
 func ClassifyChecks(rollup []Check) Checks {
 	var sorted Checks
 	gate, alwaysRuns := "", ""
-	for _, check := range LatestChecks(rollup) {
+	latest := LatestChecks(rollup)
+	blocked := map[int]bool{}
+	for _, check := range latest {
 		if check.NotStarted {
+			blocked[check.run()] = true
+		}
+	}
+	for _, check := range latest {
+		if check.Typename != "StatusContext" && blocked[check.run()] {
 			continue
 		}
 		name, result := check.CheckName(), check.result()
