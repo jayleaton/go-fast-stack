@@ -89,8 +89,8 @@ func (hub github) current(ctx context.Context, sha string) (*verify.Status, erro
 	return nil, nil
 }
 
-// verification is what GitHub holds for a head: the given body, the head's
-// statuses and those of each head the body reuses steps from.
+// verification is what GitHub holds for a head: the given body, the
+// head's `local-ci` in its combined status and every status ever posted on it.
 func (hub github) verification(ctx context.Context, body, head string) (verify.Verification, error) {
 	current, err := hub.current(ctx, head)
 	if err != nil {
@@ -100,13 +100,7 @@ func (hub github) verification(ctx context.Context, body, head string) (verify.V
 	if err != nil {
 		return verify.Verification{}, err
 	}
-	sources := map[string][]verify.Status{}
-	for _, source := range verify.ReusedSources(body) {
-		if sources[source], err = hub.statuses(ctx, source); err != nil {
-			return verify.Verification{}, err
-		}
-	}
-	return verify.Verification{Body: body, Head: head, Status: current, Statuses: statuses, Sources: sources}, nil
+	return verify.Verification{Body: body, Head: head, Status: current, Statuses: statuses}, nil
 }
 
 // pullRequest is the open pull request of a branch.
@@ -115,6 +109,7 @@ type pullRequest struct {
 	URL         string         `json:"url"`
 	Body        string         `json:"body"`
 	HeadRefOid  string         `json:"headRefOid"`
+	HeadRefName string         `json:"headRefName"`
 	BaseRefName string         `json:"baseRefName"`
 	State       string         `json:"state"`
 	IsDraft     bool           `json:"isDraft"`
@@ -122,7 +117,7 @@ type pullRequest struct {
 	Checks      []verify.Check `json:"statusCheckRollup"`
 }
 
-const pullFields = "number,url,body,headRefOid,baseRefName,state,isDraft,mergeable,statusCheckRollup"
+const pullFields = "number,url,body,headRefOid,headRefName,baseRefName,state,isDraft,mergeable,statusCheckRollup"
 
 // openPull is the branch's open pull request, or nil.
 func (hub github) openPull(ctx context.Context, branch string) (*pullRequest, error) {
@@ -264,8 +259,8 @@ func (hub github) attested(ctx context.Context, sha string) (string, []string, e
 
 var errNotVerified = errors.New("not verified")
 
-// Permissions of what the tool writes: its cache and report directories,
-// reports, bodies and copies, and the gitleaks binary.
+// Permissions of what the tool writes: its cache directory, PR bodies and
+// the secret scan's copies, and the gitleaks binary.
 const (
 	dirMode    = 0o750
 	fileMode   = 0o600

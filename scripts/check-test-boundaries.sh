@@ -11,7 +11,7 @@ boundaries=(
   apps/admin/internal/services # admin business logic, same rules
   apps/admin/internal/api      # admin route handlers, same rules
   packages/auth                # backend auth: its own suite against real Postgres
-  scripts/cilocal/verify       # local verification's rules: selection, reuse keys, refusals (pure)
+  scripts/cilocal/verify       # local verification's rules: the section, refusals, merge and staging verdicts (pure)
 )
 
 # No other tests: no UI, config, wiring, repository, secrets or deploy tests.

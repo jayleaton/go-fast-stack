@@ -6,8 +6,9 @@ name: Staging catch-up
 # attested main (cilocal attest), it dispatches "Deploy staging" on main. That
 # covers a missed, cancelled or failed deploy. It never deploys anything
 # itself. An unattested main fails the check rather than dispatching (the
-# deploy would refuse it too): run make ci-local on the merged pull request's
-# head, or ARGS="--commit <sha>" on main, then it catches up within the hour.
+# deploy would refuse it too): attest the merged pull request's head, or main
+# itself (make ci-local COMMIT=<sha> RAN="…" in a clean worktree of it), then
+# it catches up within the hour.
 #
 # Runner: the CI_RUNNER repository variable, as in ci.yml.
 on:

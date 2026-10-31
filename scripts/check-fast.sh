@@ -5,12 +5,12 @@
 # deploy/ module when it changed, and the migration order when a migration
 # changed. "Changes" are everything that differs from
 # the merge base with origin/main (scripts/branches.sh): commits, staged, unstaged and untracked
-# files. scripts/affected.sh maps them to packages exactly as make ci-local does, so a
+# files. scripts/affected.sh maps them to packages (as make affected prints them), so a
 # change to a shared input (go.mod, tooling, lint config, migrations,
 # generator config) checks everything.
 #
 # No -race and no Postgres: database tests skip unless TEST_DATABASE_URL is
-# set, and make ci-local still runs the full suite. It catches what fails it most often
+# set; make test runs -race against Postgres. It catches what fails it most often
 # (format, lint, vet, a broken test, stale generated code) in seconds.
 #
 # Usage: scripts/check-fast.sh   (CHECK_BASE=<ref> compares with another base)
@@ -164,4 +164,4 @@ if [ "${#failed[@]}" -gt 0 ]; then
   echo "check-fast: FAIL (${failed[*]}) in $total"
   exit 1
 fi
-echo "check-fast: ok in $total (make ci-local still runs -race, Postgres and the probes)"
+echo "check-fast: ok in $total (make test runs -race, Postgres and the coverage floors)"

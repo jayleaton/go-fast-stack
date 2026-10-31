@@ -20,7 +20,7 @@ import (
 
 // The secret scan (docs/CI.md, "Secret scan"): the files a change touches,
 // copied out and scanned with gitleaks (pinned, checksum-verified), using
-// .gitleaks.toml. make ci-local runs it on the branch's changed files; the
+// .gitleaks.toml. make secret-scan runs it on the branch's changed files; the
 // Secret scan job in ci.yml runs it on the pull request's file list, so it
 // does not depend on the agent's machine. A finding fails, printing the
 // rule, file and line with the value redacted.

@@ -12,34 +12,37 @@ import (
 var (
 	headSHA  = strings.Repeat("a", 40)
 	otherSHA = strings.Repeat("b", 40)
-	oldSHA   = strings.Repeat("c", 40)
 )
-
-func exitCode(code int) *int { return &code }
 
 func success(description string) verify.Status {
 	return verify.Status{Context: verify.StatusContext, State: "success", Description: description, CreatedAt: "2026-10-31T10:00:00Z"}
 }
 
-// passingReport is a run on headSHA where every selected step passed.
+// passingReport is an attestation of headSHA.
 func passingReport() verify.Report {
 	return verify.Report{
-		Head:         headSHA,
-		Tree:         strings.Repeat("d", 40),
-		MergeBase:    strings.Repeat("e", 40),
-		Base:         "origin/main",
-		Host:         "laptop",
-		Versions:     map[string]string{"go": "go1.26.10", "docker": "28.0"},
-		Areas:        []string{"go"},
-		ChangedFiles: 2,
-		Steps: []verify.StepResult{
-			{Step: verify.Step{Item: "secrets", Job: verify.JobSecrets, Name: "gitleaks"}, Exit: exitCode(0), DurationMS: 900},
-			{Step: verify.Step{Item: "build", Job: verify.JobGo, Name: "go build"}, InputHash: "1111111111111111", Exit: exitCode(0), DurationMS: 4000},
-			{Step: verify.Step{Item: "tests", Job: verify.JobGo, Name: "make test"}, InputHash: "2222222222222222", Exit: exitCode(0), DurationMS: 62000},
-		},
+		Head:       headSHA,
+		Tree:       strings.Repeat("d", 40),
+		Author:     "JJ Eaton",
+		Hostname:   "laptop",
 		FinishedAt: "2026-10-31T10:00:00Z",
-		DurationMS: 67000,
 		Result:     verify.Passed,
+		Ran:        "make lint test TEST_PKGS=./scripts/cilocal/verify",
+		Failed:     "",
+	}
+}
+
+// verified is a pull request whose head headSHA was attested and whose body
+// and status hold for it.
+func verified() verify.Verification {
+	report := passingReport()
+	section := verify.RenderSection(report)
+	status := success(verify.StatusDescription(report, section))
+	return verify.Verification{
+		Body:     verify.WithSection("## Problem\n", section),
+		Head:     headSHA,
+		Status:   &status,
+		Statuses: []verify.Status{status},
 	}
 }
 

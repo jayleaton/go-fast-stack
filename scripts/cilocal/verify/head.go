@@ -12,17 +12,16 @@ type Head struct {
 	SHA        string
 	Branch     string // empty when detached
 	Dirty      string // `git status --porcelain`, empty when clean
-	Commit     string // the resolved --commit sha, or empty
-	MainCommit bool   // attesting a commit of the base branch (--commit, or on it)
+	Commit     string // the resolved COMMIT sha, or empty
+	MainCommit bool   // attesting a commit of the base branch (COMMIT, or on it)
 	Pushed     string // the remote branch's head, or empty when it has none
 	OnBase     bool   // SHA is reachable from origin/<base>
-	Base       string // the branch it lands on: main, or dev where it exists
+	Base       string // the branch it lands on: main (scripts/branches.sh)
 }
 
 // Refusal is why make ci-local may not attest the head, or "": only a clean
-// checkout whose HEAD is exactly the pushed branch head (or, with --commit,
-// a commit of the base branch) is attested. The steps then run in a fresh
-// worktree of that commit.
+// checkout whose HEAD is exactly the pushed branch head (or, with COMMIT, a
+// commit of the base branch checked out detached) is attested.
 func (head Head) Refusal() string {
 	sha := Short(head.SHA)
 	if head.Dirty != "" {
@@ -33,7 +32,7 @@ func (head Head) Refusal() string {
 			return fmt.Sprintf("HEAD is %s, not %s; check it out in a clean worktree (git worktree add --detach <dir> %s)", sha, Short(head.Commit), Short(head.Commit))
 		}
 		if !head.OnBase {
-			return fmt.Sprintf("%s is not on origin/%s; --commit attests only a commit of the base branch", sha, head.Base)
+			return fmt.Sprintf("%s is not on origin/%s; COMMIT attests only a commit of the base branch", sha, head.Base)
 		}
 		return ""
 	}
@@ -46,27 +45,6 @@ func (head Head) Refusal() string {
 			pushed = Short(head.Pushed)
 		}
 		return fmt.Sprintf("origin/%s is %s, not HEAD %s; push first", head.Branch, pushed, sha)
-	}
-	return ""
-}
-
-// AttestedAncestorLimit is how far back a base-branch commit looks for an
-// attested ancestor to select against before refusing.
-const AttestedAncestorLimit = 50
-
-// SelectionBase is the commit a run selects against: a PR branch's
-// merge-base with origin/<base>, or for a base-branch commit the nearest of
-// its first-parent `ancestors` (nearest first) that the staging gate
-// accepts, so every unattested commit since then is in the diff. Empty when
-// none is.
-func SelectionBase(mainCommit bool, mergeBase string, ancestors []string, attested func(string) bool) string {
-	if !mainCommit {
-		return mergeBase
-	}
-	for _, ancestor := range ancestors {
-		if attested(ancestor) {
-			return ancestor
-		}
 	}
 	return ""
 }
@@ -92,7 +70,7 @@ func Attestation(sha, status string, pulls []PullAttestation) (string, []string)
 		reasons = append(reasons, fmt.Sprintf("%s has %s %s", sha, StatusContext, status))
 	}
 	for _, pull := range pulls {
-		problems := pull.Problems()
+		problems := LocalVerificationProblems(pull.Verification)
 		if len(problems) == 0 {
 			return fmt.Sprintf("%s on #%d's merged head %s", StatusContext, pull.Number, pull.Head), nil
 		}
@@ -102,6 +80,13 @@ func Attestation(sha, status string, pulls []PullAttestation) (string, []string)
 		reasons = append(reasons, fmt.Sprintf("%s has no passed %s status and no merged pull request (a direct push)", sha, StatusContext))
 	}
 	return "", reasons
+}
+
+// AttestNextStep is how to attest an unattested main commit, so the staging
+// gate passes it.
+func AttestNextStep(sha string) string {
+	return fmt.Sprintf("in a clean worktree of it (git worktree add --detach <dir> %s), run what the commits since the last attested main commit need, then make ci-local COMMIT=%s RAN=\"<what you ran>\" there: it posts local-ci on %s. Then dispatch Deploy staging (Staging catch-up also dispatches it within the hour)",
+		sha, sha, Short(sha))
 }
 
 var squashTitle = regexp.MustCompile(`\(#(\d+)\)$`)

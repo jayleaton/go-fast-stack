@@ -63,8 +63,8 @@ check-generated: generate ## Fail if generated code is out of date
 	@git diff --exit-code -- '*.go' || (echo 'generated code is stale: run make generate and commit' && exit 1)
 	@test -z "$$(git status --porcelain --untracked-files=all -- '*.go')" || (git status --short -- '*.go'; echo 'untracked generated files: run make generate and commit'; exit 1)
 
-# What lint and test cover: everything, or the affected packages make
-# ci-local passes (scripts/affected.sh's dirs and import paths).
+# What lint and test cover: everything, or the affected packages
+# (scripts/affected.sh's dirs and import paths).
 LINT_DIRS ?= ./...
 TEST_PKGS ?= ./...
 
@@ -108,7 +108,7 @@ endif
 	$(COVERAGE)
 
 .PHONY: ci
-ci: ## Every check, on this checkout as it is (make ci-local is what verifies a PR)
+ci: ## Every check, on this checkout as it is (make ci-local then attests a PR head)
 	$(GO) build ./...
 	$(MAKE) check-generated
 	$(MAKE) lint test
@@ -117,13 +117,21 @@ ci: ## Every check, on this checkout as it is (make ci-local is what verifies a 
 	$(MAKE) lint-tests PROFILE=.cache/coverage.out # the probes reuse make test's profile
 	$(MAKE) deploy-check
 
+# make ci-local's statements reach it unexpanded and as single arguments:
+# taken raw ($(value)), exported, and quoted by the shell, so a $, a quote
+# or a newline in RAN stays what you typed.
+override RAN := $(value RAN)
+override FAILED := $(value FAILED)
+override COMMIT := $(value COMMIT)
+export RAN FAILED COMMIT
+
 .PHONY: ci-local
-ci-local: ## Verify the pushed PR head: run what its diff selects in a clean worktree, post local-ci, fill the PR body (ARGS="--plan|--only tests|--davit|--keep-going|--publish|--commit <sha>")
-	$(GO) run ./scripts/cilocal run $(ARGS)
+ci-local: ## Attest the pushed PR head after running what it needs: make ci-local RAN="make lint test TEST_PKGS=./x" (FAILED="<what>", COMMIT=<main sha>); runs nothing, posts local-ci, fills the PR body
+	$(GO) run ./scripts/cilocal run $${RAN:+--ran "$$RAN"} $${FAILED:+--failed "$$FAILED"} $${COMMIT:+--commit "$$COMMIT"}
 
 .PHONY: pr-merge
-pr-merge: ## Squash-merge PRs verified on their exact head: make pr-merge PR="12 13" (ARGS="--dry-run|--require-actions")
-	@test -n "$(PR)" || (echo 'usage: make pr-merge PR="<number>..."' && exit 2)
+pr-merge: ## Squash-merge PRs attested on their exact head: make pr-merge PR="12 13" (ARGS="--dry-run|--any-base|--require-actions|--then-check-staging"); ARGS="--check-deploy <sha>|--check-staging" after a merge
+	@test -n "$(PR)$(ARGS)" || (echo 'usage: make pr-merge PR="<number>..." [ARGS=...], or ARGS="--check-deploy <sha>|--check-staging"' && exit 2)
 	$(GO) run ./scripts/cilocal merge $(ARGS) $(PR)
 
 .PHONY: secret-scan
@@ -150,7 +158,7 @@ hooks-remove: ## Remove the pre-push hook make hooks installed
 	./scripts/install-hooks.sh --uninstall
 
 .PHONY: affected
-affected: ## Show which packages make ci-local checks for this branch (packages affected vs origin/main)
+affected: ## Show which packages this branch affects vs origin/main (what to lint and test before make ci-local)
 	./scripts/affected.sh
 
 .PHONY: bench-devloop

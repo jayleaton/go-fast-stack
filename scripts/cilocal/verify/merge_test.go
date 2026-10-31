@@ -8,10 +8,10 @@ import (
 	"github.com/jayleaton/go-fast-stack/scripts/cilocal/verify"
 )
 
-func ciCheck(name string, run, status, conclusion string) verify.Check {
+func ciCheck(name, run, status, conclusion string) verify.Check {
 	return verify.Check{
-		Name: name, WorkflowName: verify.CIWorkflow, Status: status, Conclusion: conclusion,
-		DetailsURL: "https://github.com/jayleaton/go-fast-stack/actions/runs/" + run + "/job/1",
+		Typename: "CheckRun", Name: name, WorkflowName: verify.CIWorkflow, Status: status, Conclusion: conclusion,
+		DetailsURL: "https://github.com/jayleaton/go-fast-stack/actions/runs/" + run + "/job/1", StartedAt: "2026-10-31T10:00:00Z",
 	}
 }
 
@@ -19,6 +19,16 @@ func notStarted(name string) verify.Check {
 	check := ciCheck(name, "205", "COMPLETED", "FAILURE")
 	check.NotStarted = true
 	return check
+}
+
+// green is a PR run where every job passed.
+func green() []verify.Check {
+	return []verify.Check{
+		ciCheck(verify.AlwaysRuns, "205", "COMPLETED", "SUCCESS"),
+		ciCheck("Local verification claim", "205", "COMPLETED", "SUCCESS"),
+		ciCheck(verify.Gate, "205", "COMPLETED", "SUCCESS"),
+		{Typename: "StatusContext", Context: verify.StatusContext, State: "SUCCESS"},
+	}
 }
 
 func TestNotStartedReadsGitHubsAnnotationAndTheJobID(test *testing.T) {
@@ -35,91 +45,103 @@ func TestNotStartedReadsGitHubsAnnotationAndTheJobID(test *testing.T) {
 	if got := (verify.Check{DetailsURL: "https://github.com/o/r/pull/1#local-verification"}).JobID(); got != 0 {
 		test.Fatalf("JobID without a job = %d, want 0", got)
 	}
+	if got := (verify.Check{}).CheckName(); got != "unnamed check" {
+		test.Fatalf("CheckName of an empty check = %q", got)
+	}
 }
 
-func TestLatestCIChecksKeepsTheNewestRun(test *testing.T) {
+func TestLatestChecksKeepsTheNewestRunAndAttempt(test *testing.T) {
 	test.Parallel()
+	rerun := ciCheck("lint", "205", "COMPLETED", "SUCCESS")
+	rerun.StartedAt = "2026-10-31T11:00:00Z"
 	rollup := []verify.Check{
 		ciCheck("build", "100", "COMPLETED", "CANCELLED"),
 		ciCheck("build", "205", "COMPLETED", "SUCCESS"),
-		ciCheck("lint", "205", "IN_PROGRESS", ""),
+		ciCheck("lint", "205", "COMPLETED", "FAILURE"),
+		rerun,
 		ciCheck("lint", "99", "COMPLETED", "FAILURE"),
-		{Name: "deploy", WorkflowName: "Deploy", Status: "COMPLETED", DetailsURL: "https://github.com/o/r/actions/runs/999/job/1"},
-		{Name: "no url", WorkflowName: verify.CIWorkflow, Status: "COMPLETED"},
+		{Typename: "CheckRun", Name: "deploy", WorkflowName: "Deploy", Status: "COMPLETED", DetailsURL: "https://github.com/o/r/actions/runs/999/job/1"},
+		{Typename: "StatusContext", Context: verify.StatusContext, State: "SUCCESS"},
 	}
 	names := []string{}
-	for _, check := range verify.LatestCIChecks(rollup) {
-		names = append(names, check.Name+"@"+strings.Split(strings.Split(check.DetailsURL, "/runs/")[1], "/")[0])
+	for _, check := range verify.LatestChecks(rollup) {
+		names = append(names, check.CheckName()+":"+check.Conclusion+check.State)
 	}
-	if !slices.Equal(names, []string{"build@205", "lint@205"}) {
-		test.Fatalf("LatestCIChecks = %q", names)
+	if !slices.Equal(names, []string{"build:SUCCESS", "lint:SUCCESS", "deploy:", "local-ci:SUCCESS"}) {
+		test.Fatalf("LatestChecks = %q", names)
 	}
-	if got := verify.LatestCIChecks(nil); len(got) != 0 {
-		test.Fatalf("LatestCIChecks(nil) = %+v", got)
+	if got := verify.LatestChecks(nil); len(got) != 0 {
+		test.Fatalf("LatestChecks(nil) = %+v", got)
 	}
 }
 
-func TestMergeProblems(test *testing.T) {
+func TestDecide(test *testing.T) {
 	test.Parallel()
-	ready := verify.Pull{State: "OPEN", Mergeable: "MERGEABLE", Verification: verified()}
-	passed := []verify.Check{ciCheck("build", "205", "COMPLETED", "SUCCESS"), ciCheck("lint", "205", "COMPLETED", "SUCCESS")}
+	ready := verify.Pull{Number: 12, State: "OPEN", Base: verify.Main, Mergeable: "MERGEABLE", Checks: green(), Verification: verified()}
+	unattested := verified()
+	unattested.Status = nil
 	for _, testCase := range []struct {
-		name           string
-		pull           func(verify.Pull) verify.Pull
-		requireActions bool
-		want           []string // empty when it merges
-		note           string
+		name    string
+		pull    func(verify.Pull) verify.Pull
+		options verify.MergeOptions
+		action  string
+		reason  string // or the note, for a merge
+		next    string
 	}{
-		{"no CI checks merges on local-ci", func(pull verify.Pull) verify.Pull { return pull }, false, nil, "merging on local-ci alone"},
-		{"no CI checks but actions required", func(pull verify.Pull) verify.Pull { return pull }, true, []string{"no GitHub CI run on the head"}, ""},
-		{"CI checks passed", func(pull verify.Pull) verify.Pull { pull.Checks = passed; return pull }, true, nil, "2 GitHub CI checks on the head"},
-		{"older failed run ignored", func(pull verify.Pull) verify.Pull {
-			pull.Checks = append(slices.Clone(passed), ciCheck("build", "100", "COMPLETED", "FAILURE"))
+		{"green", func(pull verify.Pull) verify.Pull { return pull }, verify.MergeOptions{}, verify.ActionMerge, "GitHub's checks are green", ""},
+		{"merged", func(pull verify.Pull) verify.Pull { pull.State = "MERGED"; return pull }, verify.MergeOptions{}, verify.ActionDone, "already merged", ""},
+		{"closed", func(pull verify.Pull) verify.Pull { pull.State = "CLOSED"; return pull }, verify.MergeOptions{}, verify.ActionSkip, "is closed", "never reopen"},
+		{"draft", func(pull verify.Pull) verify.Pull { pull.Draft = true; return pull }, verify.MergeOptions{}, verify.ActionSkip, "is a draft", "gh pr ready 12"},
+		{"stacked", func(pull verify.Pull) verify.Pull { pull.Base = "feat/a"; return pull }, verify.MergeOptions{}, verify.ActionSkip, "is stacked on feat/a", "gh pr edit 12 --base main"},
+		{"stacked, any base", func(pull verify.Pull) verify.Pull { pull.Base = "feat/a"; return pull }, verify.MergeOptions{AnyBase: true}, verify.ActionMerge, "green", ""},
+		{"conflicting", func(pull verify.Pull) verify.Pull { pull.Mergeable = "CONFLICTING"; return pull }, verify.MergeOptions{}, verify.ActionSkip, "conflicts with main", "git rebase origin/main"},
+		{"unattested", func(pull verify.Pull) verify.Pull { pull.Verification = unattested; return pull }, verify.MergeOptions{}, verify.ActionSkip, "is not verified locally: no local-ci status", "make ci-local RAN="},
+		{"failed check", func(pull verify.Pull) verify.Pull {
+			pull.Checks = append(green(), ciCheck(verify.AlwaysRuns, "206", "COMPLETED", "FAILURE"))
 			return pull
-		}, false, nil, "2 GitHub CI checks"},
-		{"CI in progress", func(pull verify.Pull) verify.Pull {
-			pull.Checks = []verify.Check{ciCheck("lint", "205", "IN_PROGRESS", "")}
+		}, verify.MergeOptions{}, verify.ActionSkip, "has failing checks: Secret scan", "gh run rerun"},
+		{"hollow", func(pull verify.Pull) verify.Pull {
+			pull.Checks = []verify.Check{ciCheck(verify.AlwaysRuns, "205", "COMPLETED", "SKIPPED"), ciCheck(verify.Gate, "205", "COMPLETED", "SUCCESS")}
 			return pull
-		}, false, []string{"`lint` is still IN_PROGRESS"}, "1 GitHub CI checks"},
-		{"CI failed", func(pull verify.Pull) verify.Pull {
-			pull.Checks = []verify.Check{ciCheck("test", "205", "COMPLETED", "FAILURE")}
+		}, verify.MergeOptions{}, verify.ActionSkip, "skipped every job", "push a new commit"},
+		{"running", func(pull verify.Pull) verify.Pull {
+			pull.Checks = []verify.Check{ciCheck(verify.AlwaysRuns, "205", "IN_PROGRESS", ""), ciCheck(verify.Gate, "205", "COMPLETED", "SUCCESS")}
 			return pull
-		}, false, []string{"`test` is FAILURE: https://github.com/jayleaton/go-fast-stack/actions/runs/205/job/1"}, "1 GitHub CI checks"},
-		{"conflicting", func(pull verify.Pull) verify.Pull { pull.Mergeable = "CONFLICTING"; return pull }, false, []string{"it conflicts with its base"}, "local-ci alone"},
-		{"unknown mergeable", func(pull verify.Pull) verify.Pull { pull.Mergeable = "UNKNOWN"; return pull }, false, []string{"GitHub has not decided"}, "local-ci alone"},
-		{"draft", func(pull verify.Pull) verify.Pull { pull.Draft = true; return pull }, false, []string{"the pull request is a draft"}, "local-ci alone"},
-		{"closed", func(pull verify.Pull) verify.Pull { pull.State = "CLOSED"; pull.Draft = true; return pull }, false, []string{"the pull request is CLOSED"}, ""},
-		{"merged", func(pull verify.Pull) verify.Pull { pull.State = "MERGED"; return pull }, false, []string{"the pull request is MERGED"}, ""},
-		{"unverified head", func(pull verify.Pull) verify.Pull { pull.Status = nil; return pull }, false, []string{"no local-ci status"}, "local-ci alone"},
-		// SparkRack: billing-blocked Actions fail every job in seconds without
-		// starting it. Those jobs never ran, so local-ci decides.
+		}, verify.MergeOptions{}, verify.ActionSkip, "still running: Secret scan", "run this again"},
+		{"awaiting: no gate yet", func(pull verify.Pull) verify.Pull {
+			pull.Checks = []verify.Check{ciCheck(verify.AlwaysRuns, "205", "COMPLETED", "SUCCESS"), ciCheck("Awaiting make ci-local", "205", "COMPLETED", "SUCCESS")}
+			return pull
+		}, verify.MergeOptions{}, verify.ActionSkip, "still running: Local verification", ""},
+		{"unknown mergeable", func(pull verify.Pull) verify.Pull { pull.Mergeable = "UNKNOWN"; return pull }, verify.MergeOptions{}, verify.ActionSkip, "still being computed", "in a minute"},
+		{"no CI run merges on local-ci", func(pull verify.Pull) verify.Pull {
+			pull.Checks = []verify.Check{{Typename: "StatusContext", Context: verify.StatusContext, State: "SUCCESS"}}
+			return pull
+		}, verify.MergeOptions{}, verify.ActionMerge, "merging on local-ci alone", ""},
+		{"no CI run, actions required", func(pull verify.Pull) verify.Pull { pull.Checks = nil; return pull }, verify.MergeOptions{RequireActions: true}, verify.ActionSkip, "no GitHub CI job that ran", "--require-actions"},
+		// Billing-blocked Actions fail every job in seconds without starting
+		// it. Those jobs never ran, so local-ci decides.
 		{"jobs GitHub never started merge on local-ci", func(pull verify.Pull) verify.Pull {
-			pull.Checks = []verify.Check{notStarted("Secret scan"), notStarted("Local verification")}
+			pull.Checks = []verify.Check{notStarted(verify.AlwaysRuns), notStarted("Local verification claim")}
 			return pull
-		}, false, nil, "did not start the head's CI jobs"},
-		{"jobs never started but actions required", func(pull verify.Pull) verify.Pull {
-			pull.Checks = []verify.Check{notStarted("Secret scan")}
+		}, verify.MergeOptions{}, verify.ActionMerge, "merging on local-ci alone", ""},
+		{"jobs never started, actions required", func(pull verify.Pull) verify.Pull {
+			pull.Checks = []verify.Check{notStarted(verify.AlwaysRuns)}
 			return pull
-		}, true, []string{"GitHub did not start the head's CI jobs"}, ""},
+		}, verify.MergeOptions{RequireActions: true}, verify.ActionSkip, "no GitHub CI job that ran", ""},
 		{"a job that ran and failed still refuses beside one never started", func(pull verify.Pull) verify.Pull {
-			pull.Checks = []verify.Check{notStarted("Secret scan"), ciCheck("Local verification", "205", "COMPLETED", "FAILURE")}
+			pull.Checks = []verify.Check{notStarted(verify.AlwaysRuns), ciCheck(verify.Gate, "205", "COMPLETED", "FAILURE")}
 			return pull
-		}, false, []string{"`Local verification` is FAILURE"}, "1 GitHub CI checks"},
+		}, verify.MergeOptions{}, verify.ActionSkip, "has failing checks: Local verification", ""},
 	} {
 		test.Run(testCase.name, func(test *testing.T) {
 			test.Parallel()
-			problems, note := verify.MergeProblems(testCase.pull(ready), testCase.requireActions)
-			if len(testCase.want) == 0 {
-				requireNone(test, problems)
+			verdict := verify.Decide(testCase.pull(ready), testCase.options)
+			said := verdict.Reason
+			if verdict.Action == verify.ActionMerge {
+				said = verdict.Note
 			}
-			for _, want := range testCase.want {
-				requireMention(test, problems, want)
-			}
-			if len(testCase.want) > 0 && len(problems) != len(testCase.want) {
-				test.Fatalf("problems = %q, want only %q", problems, testCase.want)
-			}
-			if (testCase.note == "" && note != "") || !strings.Contains(note, testCase.note) {
-				test.Fatalf("note = %q, want %q", note, testCase.note)
+			if verdict.Action != testCase.action || !strings.Contains(said, testCase.reason) || !strings.Contains(verdict.Next, testCase.next) {
+				test.Fatalf("Decide = %+v, want %s %q next %q", verdict, testCase.action, testCase.reason, testCase.next)
 			}
 		})
 	}

@@ -3,32 +3,32 @@ package verify_test
 import (
 	"os"
 	"path/filepath"
-	"regexp"
-	"slices"
+	"strings"
 	"testing"
 
 	"github.com/jayleaton/go-fast-stack/scripts/cilocal/verify"
 )
 
-// The PR template lists the checklist make ci-local fills; a new item in
-// verify.Items that the template lacks would leave every new PR's section
-// short until its first run, and the other way round an item the checks
-// never tick.
-func TestTemplateListsEveryItem(test *testing.T) {
+// The PR template holds the section make ci-local fills, between its markers,
+// with a placeholder that claims no head: a new PR's Local verification job
+// then runs as "Awaiting make ci-local" (ClaimsHead) and its body problems
+// say how to attest.
+func TestTemplateHoldsAnUnattestedSection(test *testing.T) {
 	test.Parallel()
 	template, err := os.ReadFile(filepath.Join("..", "..", "..", ".github", "pull_request_template.md"))
 	if err != nil {
 		test.Fatal(err)
 	}
-	section, found := verify.SectionOf(string(template))
-	if !found {
-		test.Fatal("the PR template has no Local verification section")
+	body := string(template)
+	section, found := verify.SectionOf(body)
+	if !found || strings.Count(body, verify.SectionStart) != 1 || strings.Count(body, verify.SectionEnd) != 1 {
+		test.Fatal("the PR template has no single Local verification section between its markers")
 	}
-	listed := []string{}
-	for _, match := range regexp.MustCompile(`(?m)^- \[ \] \*\*([\w-]+)\*\*$`).FindAllStringSubmatch(section, -1) {
-		listed = append(listed, match[1])
+	if !strings.Contains(section, `make ci-local RAN=`) {
+		test.Errorf("the template's placeholder %q does not say how to attest", section)
 	}
-	if !slices.Equal(listed, verify.Items) {
-		test.Errorf("the template lists %v, verify.Items is %v", listed, verify.Items)
+	if verify.ClaimsHead(body, headSHA, nil) {
+		test.Error("the template's section claims a head")
 	}
+	requireMention(test, verify.BodyProblems(body, headSHA), "names no head")
 }

@@ -25,7 +25,7 @@ func TestHeadRefusal(test *testing.T) {
 		{"pushed elsewhere", func(head verify.Head) verify.Head { head.Pushed = otherSHA; return head }, branch, "origin/feat/x is bbbbbbbbbbbb, not HEAD aaaaaaaaaaaa"},
 		{"main commit on base", func(head verify.Head) verify.Head { return head }, mainCommit, ""},
 		{"main commit matching --commit", func(head verify.Head) verify.Head { head.Commit = headSHA; return head }, mainCommit, ""},
-		{"main commit not on base", func(head verify.Head) verify.Head { head.OnBase = false; head.Base = "dev"; return head }, mainCommit, "aaaaaaaaaaaa is not on origin/dev"},
+		{"main commit not on base", func(head verify.Head) verify.Head { head.OnBase = false; return head }, mainCommit, "aaaaaaaaaaaa is not on origin/main"},
 		{"--commit mismatch", func(head verify.Head) verify.Head { head.Commit = otherSHA; return head }, mainCommit, "HEAD is aaaaaaaaaaaa, not bbbbbbbbbbbb"},
 	} {
 		test.Run(testCase.name, func(test *testing.T) {
@@ -39,30 +39,6 @@ func TestHeadRefusal(test *testing.T) {
 			}
 			if !strings.Contains(got, testCase.want) {
 				test.Fatalf("Refusal = %q, want it to mention %q", got, testCase.want)
-			}
-		})
-	}
-}
-
-func TestSelectionBase(test *testing.T) {
-	test.Parallel()
-	attestedSet := map[string]bool{"m2": true, "m4": true}
-	isAttested := func(sha string) bool { return attestedSet[sha] }
-	for _, testCase := range []struct {
-		name       string
-		mainCommit bool
-		ancestors  []string
-		want       string
-	}{
-		{"branch uses merge-base", false, []string{"m2"}, "merge-base"},
-		{"nearest attested ancestor", true, []string{"m1", "m2", "m3", "m4"}, "m2"},
-		{"none attested", true, []string{"m1", "m3"}, ""},
-		{"no ancestors", true, nil, ""},
-	} {
-		test.Run(testCase.name, func(test *testing.T) {
-			test.Parallel()
-			if got := verify.SelectionBase(testCase.mainCommit, "merge-base", testCase.ancestors, isAttested); got != testCase.want {
-				test.Fatalf("SelectionBase = %q, want %q", got, testCase.want)
 			}
 		})
 	}
@@ -130,5 +106,15 @@ func TestTitledPull(test *testing.T) {
 				test.Fatalf("TitledPull(%q) = %d, want %d", testCase.message, got, testCase.want)
 			}
 		})
+	}
+}
+
+func TestAttestNextStep(test *testing.T) {
+	test.Parallel()
+	got := verify.AttestNextStep(headSHA)
+	for _, want := range []string{"git worktree add --detach <dir> " + headSHA, "make ci-local COMMIT=" + headSHA + ` RAN="<what you ran>"`, "dispatch Deploy staging"} {
+		if !strings.Contains(got, want) {
+			test.Fatalf("AttestNextStep = %q, want it to mention %q", got, want)
+		}
 	}
 }

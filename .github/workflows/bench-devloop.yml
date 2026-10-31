@@ -44,8 +44,8 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0 # the A/B base ref
-      # Read-only module cache (nothing saves it since PR checks moved to make
-      # ci-local; a miss downloads). Build and lint caches start empty on
+      # Read-only module cache (nothing saves it since PR checks moved to the
+      # agent's machine; a miss downloads). Build and lint caches start empty on
       # purpose; the bench measures cold and warm itself.
       - uses: actions/cache/restore@v6
         with:

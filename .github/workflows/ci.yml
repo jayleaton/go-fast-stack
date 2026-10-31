@@ -1,9 +1,9 @@
-# Pull requests only: every check runs in `make ci-local` on the agent's
-# machine before merge (docs/CI.md, "Local verification"), and main (and dev)
-# run no CI. This keeps the two small checks a ruleset can require: the
-# secret scan, and the check that make ci-local's record holds for the head.
-# A push to main is gated separately: Deploy staging deploys only a commit
-# make ci-local attested (deploy-staging.yml).
+# Pull requests only: the agent runs what its change needs before merge and
+# attests it with `make ci-local RAN="<what you ran>"` (docs/CI.md, "Local
+# verification"), and main runs no CI. This keeps the two small checks the
+# main ruleset requires: the secret scan, and the check that make ci-local's
+# attestation holds for the head. A push to main is gated separately: Deploy
+# staging deploys only a commit make ci-local attested (deploy-staging.yml).
 #
 # Runner: the CI_RUNNER repository variable, a JSON runs-on value such as
 # '["self-hosted","linux"]'; GitHub-hosted ubuntu-latest without it.
@@ -21,18 +21,18 @@ concurrency:
 on:
   pull_request:
     # Edits only: make ci-local posts local-ci, then fills the PR body, and
-    # that edit starts the run that checks both. A push or a new PR starts
-    # nothing, so until make ci-local runs on the head its required checks
-    # wait as "Expected", never red; a job skipped by `if` would count as
-    # passed, so the run itself must not start.
+    # that edit starts the run that checks both (docs/CI.md, "Local
+    # verification"). A push or a new PR starts nothing, and an edit before
+    # make ci-local claims the head runs Local verification under another
+    # name, so until it attests the required checks wait as "Expected",
+    # never red; a job skipped by `if` would count as passed.
     types: [edited]
 
 jobs:
   secrets:
     name: Secret scan
     # The pull request's changed files, docs included (docs/CI.md, "Secret
-    # scan"). make ci-local runs it too; this one does not depend on the
-    # agent's machine.
+    # scan"). It does not depend on the agent's machine.
     runs-on: ${{ fromJSON(vars.CI_RUNNER || '"ubuntu-latest"') }}
     timeout-minutes: 10
     permissions:
@@ -51,11 +51,45 @@ jobs:
           PR: ${{ github.event.pull_request.number }}
         run: go run ./scripts/cilocal secret-scan --pr "$PR"
 
+  claim:
+    name: Local verification claim
+    # Whether make ci-local has claimed this head: posted local-ci on it, or
+    # filled the section for it (verify.ClaimsHead). Until then the next job
+    # runs under another name, so the required check waits as "Expected".
+    runs-on: ${{ fromJSON(vars.CI_RUNNER || '"ubuntu-latest"') }}
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+      statuses: read
+    outputs:
+      claimed: ${{ steps.claim.outputs.claimed }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: scripts/cilocal # and the root files (cone mode)
+      # The tool imports only the standard library: no module downloads.
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: false
+      - id: claim
+        name: Has make ci-local attested this head
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: go run ./scripts/cilocal check --claim
+
   local:
-    name: Local verification
-    # A pull request's checks ran in make ci-local on the agent's machine
-    # (docs/CI.md, "Local verification"). This fails unless the local-ci
-    # status on the head and the PR body's section attest that run.
+    # The agent ran the PR's checks on its machine (docs/CI.md, "Local
+    # verification"). For a claimed head this is the required check, and
+    # fails unless the local-ci status on the head and the PR body's section
+    # attest them. For any other it passes under another name and posts
+    # nothing the ruleset reads.
+    name: ${{ needs.claim.outputs.claimed == 'true' && 'Local verification' || 'Awaiting make ci-local' }}
+    needs: claim
     runs-on: ${{ fromJSON(vars.CI_RUNNER || '"ubuntu-latest"') }}
     timeout-minutes: 5
     permissions:
@@ -70,10 +104,11 @@ jobs:
         with:
           go-version-file: go.mod
           cache: false
-      - name: make ci-local passed on this head
+      - name: make ci-local attested this head
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           PR: ${{ github.event.pull_request.number }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          CLAIMED: ${{ needs.claim.outputs.claimed }}
         run: go run ./scripts/cilocal check

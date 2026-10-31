@@ -15,16 +15,23 @@ type Status struct {
 }
 
 var (
-	sectionHead   = regexp.MustCompile("(?m)^Head `([0-9a-f]{40})`")
-	checklistLine = regexp.MustCompile(`(?m)^- \[([ xX])\] \*\*([\w-]+)\*\*`)
-	bodyDigest    = regexp.MustCompile(`body ([0-9a-f]{12})`)
-	ledgerDigest  = regexp.MustCompile(`ledger ([0-9a-f]{12})`)
+	sectionHead = regexp.MustCompile("(?m)^Head `([0-9a-f]{40})`")
+	ranLine     = regexp.MustCompile(`(?m)^\*\*Ran:\*\* \S`)
+	bodyDigest  = regexp.MustCompile(`body ([0-9a-f]{12})`)
 )
 
+// headOf is the head commit a section names, or "".
+func headOf(section string) string {
+	if match := sectionHead.FindStringSubmatch(section); match != nil {
+		return match[1]
+	}
+	return ""
+}
+
 // FailedBefore is the first failed `local-ci` among a commit's statuses, or
-// nil. A head that failed is never attested again: a failure is resolved by
-// a new commit (the fix, or a rebase on a fix merged off main), never by
-// running until green.
+// nil. A head whose author reported a failure is never attested again: a
+// failure is resolved by a new commit (the fix, or a rebase on a fix merged
+// off main), never by attesting until green.
 func FailedBefore(statuses []Status) *Status {
 	for index := range statuses {
 		status := statuses[index]
@@ -35,133 +42,73 @@ func FailedBefore(statuses []Status) *Status {
 	return nil
 }
 
-// FailedHeadRefusal is why make ci-local refuses to run on or attest `head`
-// again, or "" when no `local-ci` failed there.
+// FailedHeadRefusal is why make ci-local refuses to attest `head`, or ""
+// when no `local-ci` failed there.
 func FailedHeadRefusal(head string, statuses []Status) string {
 	failed := FailedBefore(statuses)
 	if failed == nil {
 		return ""
 	}
-	return fmt.Sprintf("%s already failed on %s (%s). A failed head is resolved by a new commit: fix it in this PR if the failure is in what it changed, otherwise fix it forward in its own PR off main with a regression test, rebase on it and run again. Never re-run a head until green.",
+	return fmt.Sprintf("%s already failed on %s (%s). A failed head is resolved by a new commit: fix it in this PR if the failure is in what it changed, otherwise fix it forward in its own PR off main with a regression test, rebase on it and attest again.",
 		StatusContext, Short(head), failed.CreatedAt)
 }
 
-// SourceProblem is why an earlier head's ledger may not lend a step, or "":
-// its statuses must hold a successful `local-ci` carrying this ledger's
-// digest, and no failed one. A failed head lends nothing.
-func SourceProblem(ledger Ledger, statuses []Status) string {
-	at := Short(ledger.Head)
-	if FailedBefore(statuses) != nil {
-		return fmt.Sprintf("%s failed on %s", StatusContext, at)
-	}
-	want := LedgerDigest(ledger)
+// ClaimsHead is whether make ci-local has claimed `head`: a `local-ci`
+// status was posted on it (`statuses`, every status ever posted there), or
+// the body's section names it. Until then nothing is attested, so ci.yml
+// names its checking job "Awaiting make ci-local" and the required check
+// `Local verification` stays "Expected" rather than red; once claimed, every
+// problem fails it (docs/CI.md, "What runs").
+func ClaimsHead(body, head string, statuses []Status) bool {
 	for _, status := range statuses {
-		if status.Context != StatusContext || status.State != "success" {
-			continue
-		}
-		if match := ledgerDigest.FindStringSubmatch(status.Description); match != nil && match[1] == want {
-			return ""
+		if status.Context == StatusContext {
+			return true
 		}
 	}
-	return fmt.Sprintf("no successful %s on %s attests the ledger the section carries for it", StatusContext, at)
+	section, _ := SectionOf(body)
+	return headOf(section) == head
 }
 
-// ReuseProblems is why the section's reused steps do not hold for `head`:
-// each must name an earlier head whose ledger the section carries, that
-// passed the step at the same input hash, and that `local-ci` attested there
-// (`sources`: that head's statuses).
-func ReuseProblems(section, head string, sources map[string][]Status) []string {
-	own, lent := Ledgers(section)
-	if own == nil {
-		return nil
-	}
-	problems := []string{}
-	if own.Head != head {
-		problems = append(problems, fmt.Sprintf("the ledger is for %s, not %s", Short(own.Head), Short(head)))
-	}
-	for _, step := range own.Steps {
-		if step.From == "" {
-			continue
-		}
-		var why string
-		source := findLedger(lent, step.From)
-		switch {
-		case source == nil:
-			why = "the section carries no ledger for " + Short(step.From)
-		case step.From == head:
-			why = "a head cannot lend to itself"
-		case !source.holds(step.ID, step.Hash):
-			why = fmt.Sprintf("it did not pass on %s with input hash %s", Short(step.From), step.Hash)
-		default:
-			why = SourceProblem(*source, sources[step.From])
-		}
-		if why != "" {
-			problems = append(problems, fmt.Sprintf("`%s` is reused from %s, but %s", step.ID, Short(step.From), why))
-		}
-	}
-	return problems
-}
-
-func findLedger(ledgers []Ledger, head string) *Ledger {
-	for index := range ledgers {
-		if ledgers[index].Head == head {
-			return &ledgers[index]
-		}
-	}
-	return nil
-}
-
-// BodyProblems is why the PR body's section does not attest `head`: missing,
-// for another head, or an item unticked or missing.
+// BodyProblems is why the PR body's section does not attest `head`:
+// missing, for another head, or no statement of what ran. Empty when it holds.
 func BodyProblems(body, head string) []string {
 	section, found := SectionOf(body)
 	if !found {
 		return []string{"the PR body has no Local verification section"}
 	}
 	problems := []string{}
-	match := sectionHead.FindStringSubmatch(section)
-	switch {
-	case match == nil:
+	switch named := headOf(section); {
+	case named == "":
 		problems = append(problems, "the Local verification section names no head")
-	case match[1] != head:
-		problems = append(problems, fmt.Sprintf("the Local verification section is for %s, not the PR head %s", Short(match[1]), Short(head)))
+	case named != head:
+		problems = append(problems, fmt.Sprintf("the Local verification section is for %s, not the PR head %s", Short(named), Short(head)))
 	}
-	ticked := map[string]bool{}
-	for _, line := range checklistLine.FindAllStringSubmatch(section, -1) {
-		ticked[line[2]] = line[1] != " "
-	}
-	for _, item := range Items {
-		done, listed := ticked[item]
-		switch {
-		case !listed:
-			problems = append(problems, "the checklist has no "+item+" item")
-		case !done:
-			problems = append(problems, item+" is not ticked")
-		}
+	if !ranLine.MatchString(section) {
+		problems = append(problems, "the Local verification section does not say what ran")
 	}
 	return problems
 }
 
 // Verification is what GitHub holds for a pull request's head: its body,
-// the `local-ci` status in the combined status (nil when there is none),
-// every status ever posted on the head, and those of each earlier head its
-// section reuses steps from.
+// the `local-ci` status in the combined status (nil when there is none) and
+// every status ever posted on the head.
 type Verification struct {
 	Body     string
 	Head     string
 	Status   *Status
 	Statuses []Status
-	Sources  map[string][]Status
 }
 
-// Problems is every reason a pull request is not verified on its exact
-// head; empty when it is. The Local verification job, the merge script and
-// the staging gate all decide with it.
-func (verification Verification) Problems() []string {
+// LocalVerificationProblems is every reason a head is not attested; empty
+// when it is: the section names the head and says what ran, `local-ci` is
+// success there with the section's digest, and no `local-ci` ever failed on
+// it. The Local verification job, the merge script and the staging gate all
+// decide with it. A head behind main is not a problem here.
+func LocalVerificationProblems(verification Verification) []string {
 	head := verification.Head
 	problems := BodyProblems(verification.Body, head)
 	if failed := FailedBefore(verification.Statuses); failed != nil {
-		problems = append(problems, fmt.Sprintf("%s failed on %s at %s: a failed head is resolved by a new commit (fix it here, or fix it forward off main and rebase), never by running again",
+		problems = append(problems, fmt.Sprintf("%s failed on %s at %s: a failed head is resolved by a new commit (fix it here, or fix it forward off main and rebase), never by attesting again",
 			StatusContext, Short(head), failed.CreatedAt))
 	}
 	section, found := SectionOf(verification.Body)
@@ -175,9 +122,6 @@ func (verification Verification) Problems() []string {
 		if match == nil || match[1] != SectionDigest(section) {
 			problems = append(problems, fmt.Sprintf("the Local verification section is not the one %s attested (edited by hand?)", StatusContext))
 		}
-	}
-	if found {
-		problems = append(problems, ReuseProblems(section, head, verification.Sources)...)
 	}
 	return problems
 }

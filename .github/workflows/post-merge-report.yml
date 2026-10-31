@@ -1,0 +1,50 @@
+# Reports a push-triggered workflow that failed on main to the PR whose merge
+# started it, so a failure after merge (a staging deploy) never sits
+# unnoticed. A green or cancelled run skips the job: no runner, no comment.
+# Every workflow that runs on a push to main belongs in the list below;
+# scripts/cilocal/verify's TestThePostMergeReportListsEveryPushToMainWorkflow
+# fails when one is missing.
+#
+# Runner: the CI_RUNNER repository variable, as in ci.yml.
+name: Post-merge report
+
+on:
+  workflow_run:
+    workflows:
+      - Deploy staging
+    types: [completed]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  report:
+    name: Report the failure on the merged PR
+    if: >-
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      contains(fromJSON('["failure","timed_out","startup_failure"]'), github.event.workflow_run.conclusion)
+    runs-on: ${{ fromJSON(vars.CI_RUNNER || '"ubuntu-latest"') }}
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+      WORKFLOW: ${{ github.event.workflow_run.name }}
+      CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+      SHA: ${{ github.event.workflow_run.head_sha }}
+      RUN_URL: ${{ github.event.workflow_run.html_url }}
+    steps:
+      - name: Comment on the merged pull request
+        run: |
+          pr=$(gh api "repos/$GITHUB_REPOSITORY/commits/$SHA/pulls" \
+            -q '[.[] | select(.merged_at != null)][0].number // empty')
+          short=$(printf '%s' "$SHA" | cut -c1-9)
+          line="❌ **$WORKFLOW** ended \`$CONCLUSION\` on \`$short\` after merge: $RUN_URL"
+          echo "$line${pr:+ (#$pr)}" >>"$GITHUB_STEP_SUMMARY"
+          echo "::error::$WORKFLOW ended $CONCLUSION on $short${pr:+ (#$pr)}: $RUN_URL"
+          if [ -z "$pr" ]; then
+            echo "No merged pull request for $short; nothing to comment on."
+            exit 0
+          fi
+          gh pr comment "$pr" -R "$GITHUB_REPOSITORY" \
+            --body "$line"$'\n\nFix it forward before merging more (AGENTS.md, "Environments: staging is always current").'
