@@ -43,6 +43,19 @@ The probes (`make lint-layering`, `make lint-tests`) prove the layering and test
 
 `scripts/vulncheck/allowlist.txt` is the only way past a finding: an advisory with no fix, or none its consumer can take, that we cannot reach, or reach only in dev tooling (expo CLI, eslint) or on one client device; the reason says which. Each line is `<id> <package> <review-by> <reason>` (the GO- id for Go, the GHSA id for npm). The check fails on an entry past its review date, on an entry that no longer matches anything, and on a listed Go advisory that our code calls. Before adding a Go entry, prove the package is not imported (`go list -deps -test ./...` in each module).
 
+### Nightly
+
+A pull request runs only what its change affects, so `make nightly` runs everything on `main` once a day: `make ci`, `make test-flaky` (`go test -race -count=5 -shuffle=on` against Postgres) and `make secret-scan ARGS=--all`, in a detached checkout of `origin/main` (`.cache/nightly`, scripts/nightly.sh).
+
+- **Green:** it attests the commit (`make ci-local COMMIT=<sha>`) when nothing has, so "Staging catch-up" can ship it.
+- **Red:** it opens a "Nightly failed on main" issue (or comments on the open one) with the failing step and the log's tail, keeps the checkout for a look, and exits 1. It never posts a failed `local-ci`: that is final for the commit, and a flake would keep it off staging. A failure is fixed forward like any other on `main`.
+
+It runs from cron on the dev box (the machine with Docker, `gh` and the `CI_RUNNER` runner), not as a workflow, so it needs no Actions minutes and runs where Actions is off:
+
+    0 3 * * * cd ~/src/go-fast-stack && make nightly >> ~/.cache/nightly.log 2>&1
+
+`NIGHTLY_REPORT=0 make nightly` runs it with no fetch and no GitHub calls (`NIGHTLY_COMMIT=<rev>` picks the commit).
+
 ## Local verification
 
 `make ci-local` (`scripts/cilocal run`) runs no checks: it tells the PR you ran what CI would have checked, and says what that was. Run what the change needs ([What to run](#what-to-run)), commit, push, then attest:
