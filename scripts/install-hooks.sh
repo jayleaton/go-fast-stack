@@ -4,7 +4,7 @@
 # repository's shared git directory, so one install covers every linked
 # worktree; a checkout without scripts/check-fast.sh (an older branch) skips
 # the check. A pre-push hook that this script did not write is left alone.
-# Skip the check for one push with `git push --no-verify`.
+# A failing check is fixed before the push, never skipped.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -29,7 +29,7 @@ cat >"$hook" <<EOF
 #!/bin/sh
 $marker
 # Runs scripts/check-fast.sh (make check-fast) before every push from any
-# checkout of this repository. Skip once: git push --no-verify.
+# checkout of this repository. A failure is fixed, never skipped.
 top=\$(git rev-parse --show-toplevel) || exit 1
 # Git exports repository env (GIT_DIR, GIT_INDEX_FILE, ...) to hooks; drop it
 # so the check, and the git and go commands it runs, see only this checkout.
@@ -42,4 +42,4 @@ fi
 exec scripts/check-fast.sh </dev/null
 EOF
 chmod +x "$hook"
-echo "installed $hook (runs make check-fast before every push; skip once with git push --no-verify)"
+echo "installed $hook (runs make check-fast before every push)"

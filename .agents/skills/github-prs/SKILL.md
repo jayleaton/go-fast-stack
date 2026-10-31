@@ -11,7 +11,7 @@ The rules on what may merge are in `AGENTS.md` ("Verifying", "Pull requests", "E
 
 ## 1. Before every commit
 
-- **Never skip the hooks.** `make hooks` installs the pre-push hook (`make check-fast`); never push with `--no-verify` except in an emergency, and say so.
+- **Never skip the hooks.** `make hooks` installs the pre-push hook (`make check-fast`); when it fails, fix what it found and push again; never skip it.
 - **Default: `make check-pr`.** It runs what the branch's changes need (the table is `docs/CI.md`, "What to run"), fails when the affected-package selection does not match the diff, and prints the `make ci-local RAN="…"` line to attest with. By hand: `make lint LINT_DIRS=<dirs>` and `make test TEST_PKGS=<pkgs>` for the Go packages it can affect (`scripts/affected.sh` prints them; `make check-fast` is the seconds-long pass), `make check-generated` for sqlc, templ or mock inputs, `make check-migrations` for a migration, `make deploy-check` for `deploy/`, `make actionlint` for workflows, `make release-smoke` for a Dockerfile or what it builds, `make ci` for a change to the tooling. Tests only at the test boundaries (`AGENTS.md`, "Test boundaries"); never a test in `deploy/` or the UI.
 - A change adds no lint or format findings, warnings included.
 - Add the paths you changed; never `git add -A` in an old worktree.
@@ -97,7 +97,7 @@ An unattested `main` is the top priority: both workflows fail and say why. Fix i
 | Staging deploys only an attested PR head or commit | `cilocal attest` in Deploy staging's plan, `verify.Attestation` and its test |
 | Merge every green PR at once; stacks survive | `make pr-merge` (no wait path, retargets children), `scripts/cilocal/verify/merge_test.go` |
 | A push workflow that fails on main is reported | `Post-merge report`; a verify test fails when a push-to-main workflow is missing from its list |
-| No `--no-verify`, no reopen, no `pgrep -f` | this skill only; add a check if an agent repeats one |
+| Never skip the pre-push hook, no reopen, no `pgrep -f` | this skill only; add a check if an agent repeats one |
 
 ## Done means
 
