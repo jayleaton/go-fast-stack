@@ -6,6 +6,8 @@ import path from 'node:path'
 
 import type { TestProject } from 'vitest/node'
 
+import { nativeFetch } from './nativeFetch'
+
 /**
  * Starts the real Go server for the contract tests:
  *
@@ -128,7 +130,7 @@ export default async function setup(project: TestProject) {
     await waitFor('the Go server /healthz', 30_000, async () => {
       if (exited) throw new Error('contract setup: server exited, see .contract/server.log')
       try {
-        return (await fetch(`${apiUrl}/healthz`)).ok
+        return (await nativeFetch(`${apiUrl}/healthz`)).ok
       } catch {
         return false
       }

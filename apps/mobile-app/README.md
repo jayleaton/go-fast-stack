@@ -76,8 +76,10 @@ port in development mode, and runs `contract/app.contract.test.ts`: sign-up,
 get-session, sign-out, wrong password, sign-in, `GET`/`PATCH /users/me`
 (including validation and the 403 for another user), `GET /users/me/sessions`,
 session restore on a cold launch, and `DELETE /users/me`. The app's real modules run in Node; only the
-native modules are stubbed (`contract/stubs/`). Server output goes to
-`.contract/server.log`.
+native modules are stubbed (`contract/stubs/`), and fetch is sent over
+`node:http` as the native app sends it (`contract/nativeFetch.ts`): Node's own
+fetch adds browser Fetch Metadata (`Sec-Fetch-Mode`), which the server's API
+gate answers with 404. Server output goes to `.contract/server.log`.
 
 It needs Go and Docker. Overrides:
 

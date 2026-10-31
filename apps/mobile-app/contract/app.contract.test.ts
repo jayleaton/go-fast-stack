@@ -106,11 +106,35 @@ describe('mobile app against the Go server', () => {
   })
 
   it('restores the session on the next launch from the keychain', async () => {
-    const relaunched = await launchApp()
-    // The splash screen waits on this atom: it is filled from the keychain
-    // cache before any request, then confirmed by get-session.
-    expect(relaunched.authClient.$store.atoms.session.get().data?.user.email).toBe(email)
-    const { data } = await relaunched.authClient.getSession()
+    // The splash screen waits on this atom. expoClient fills it from the
+    // keychain cache as the first get-session starts (better-auth 1.7: in that
+    // request's init, before it is sent), then get-session confirms it. Hold
+    // the auth client's requests back to prove the cached session is there
+    // without the network. The client keeps the fetch it was created with.
+    const sendFetch = globalThis.fetch
+    let release = () => {}
+    const held = new Promise<void>(resolve => (release = resolve))
+    let sent = 0
+    globalThis.fetch = async (input, init) => {
+      await held
+      sent++
+      return sendFetch(input, init)
+    }
+    let relaunched: Awaited<ReturnType<typeof launchApp>>
+    try {
+      relaunched = await launchApp()
+    } finally {
+      globalThis.fetch = sendFetch
+    }
+    const pending = relaunched.authClient.getSession()
+    try {
+      await vi.waitFor(() => expect(relaunched.authClient.$store.atoms.session.get().data?.user.email).toBe(email))
+      expect(sent).toBe(0)
+    } finally {
+      release()
+    }
+    const { data } = await pending
+    expect(sent).toBe(1)
     expect(data?.user.name).toBe('Ada Lovelace')
     expect((await relaunched.getCurrentUser()).data?.user.email).toBe(email)
     app = relaunched
