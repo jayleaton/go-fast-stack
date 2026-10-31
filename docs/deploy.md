@@ -18,6 +18,8 @@ The defaults come from the checkout: the project is named after your repo, and p
 
 **Code source.** With `repo: auto` (the default: this checkout's `origin`), Railway builds each environment from its own branch once its GitHub app can read the repo: production from `branch` (`main`), and staging and qa from `dev` (or `branches.<env>`), so a merge to `dev` ships to staging and a `dev` → `main` merge releases to production. A production-only project deploys `main`. Setup prints which environment deploys which branch, and if a branch does not exist on GitHub yet it says so and lists `git push origin main:dev` as a next step (Railway's trigger is set anyway and fires on the first push). Until then, setup still creates everything and deploys your checkout by upload (`railway up`), then prints the [Railway GitHub app](https://github.com/apps/railway-app) install link for your account. Install it, pick the repo, and re-run `make railway-setup` to switch every service to deploy-on-push (no duplicate services). With `repo: ""`, setup never connects GitHub: deploy new code with `make railway-up` (`PLATFORM_ENV=staging` for one environment).
 
+**Deploy only attested commits.** GitHub runs no verification on `dev` or `main`: pull requests are verified by `make ci-local` before they merge ([CI](CI.md)). The `Deploy gate` workflow passes a pushed commit only when `make ci-local` attested it. Turn on **Wait for CI** in each Railway service's deploy settings (Railway's IaC cannot set it yet) and Railway skips a deploy whose gate failed. Leave it off where GitHub Actions cannot run (docs/CI.md, "When Actions cannot run").
+
 ## Profiles
 
 | `environments:` | For | Services per environment |

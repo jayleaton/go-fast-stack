@@ -63,11 +63,16 @@ check-generated: generate ## Fail if generated code is out of date
 	@git diff --exit-code -- '*.go' || (echo 'generated code is stale: run make generate and commit' && exit 1)
 	@test -z "$$(git status --porcelain --untracked-files=all -- '*.go')" || (git status --short -- '*.go'; echo 'untracked generated files: run make generate and commit'; exit 1)
 
+# What lint and test cover: everything, or the affected packages make
+# ci-local passes (scripts/affected.sh's dirs and import paths).
+LINT_DIRS ?= ./...
+TEST_PKGS ?= ./...
+
 .PHONY: lint
 lint: ## gofmt + golangci-lint (incl. layering rules) + single-character names + test file locations
 	@test -z "$$(gofmt -l .)" || (gofmt -l . && echo 'gofmt: run gofmt -w .' && exit 1)
-	$(TOOL) golangci-lint run
-	$(GO) run ./scripts/namelint ./...
+	$(TOOL) golangci-lint run $(LINT_DIRS)
+	$(GO) run ./scripts/namelint $(LINT_DIRS)
 	./scripts/check-test-boundaries.sh
 	./scripts/check-ui-api-paths.sh
 
@@ -85,7 +90,9 @@ lint-tests: ## Prove misplaced test files, coverage drops and slow tests fail (P
 
 # go test -json through scripts/testbudget: plain go test output, the slowest
 # tests, and a failure when a package or test is over its time budget.
-GOTEST := set -o pipefail; $(GO) test -race -json -coverprofile=.cache/coverage.out ./... | $(GO) run ./scripts/testbudget
+GOTEST := set -o pipefail; $(GO) test -race -json -coverprofile=.cache/coverage.out $(TEST_PKGS) | $(GO) run ./scripts/testbudget
+# Coverage floors: all of them, or only those of the packages tested.
+COVERAGE := $(if $(filter ./...,$(TEST_PKGS)),,TESTED='$(TEST_PKGS)') ./scripts/check-coverage.sh .cache/coverage.out
 
 .PHONY: test
 test: ## go test -race against this checkout's throwaway Postgres (or TEST_DATABASE_URL), then time budgets and coverage floors
@@ -98,10 +105,10 @@ else
 	  echo "test db: 127.0.0.1:$$port (project $(COMPOSE_PROJECT_NAME))"; \
 	  TEST_DATABASE_URL="postgres://postgres:postgres@127.0.0.1:$$port/postgres?sslmode=disable" bash -c '$(GOTEST)'
 endif
-	./scripts/check-coverage.sh .cache/coverage.out
+	$(COVERAGE)
 
 .PHONY: ci
-ci: ## Run the same checks as CI
+ci: ## Every check, on this checkout as it is (make ci-local is what verifies a PR)
 	$(GO) build ./...
 	$(MAKE) check-generated
 	$(MAKE) lint test
@@ -109,6 +116,19 @@ ci: ## Run the same checks as CI
 	$(MAKE) lint-layering
 	$(MAKE) lint-tests PROFILE=.cache/coverage.out # the probes reuse make test's profile
 	$(MAKE) deploy-check
+
+.PHONY: ci-local
+ci-local: ## Verify the pushed PR head: run what its diff selects in a clean worktree, post local-ci, fill the PR body (ARGS="--plan|--only tests|--davit|--keep-going|--publish|--commit <sha>")
+	$(GO) run ./scripts/cilocal run $(ARGS)
+
+.PHONY: pr-merge
+pr-merge: ## Squash-merge PRs verified on their exact head: make pr-merge PR="12 13" (ARGS="--dry-run|--require-actions")
+	@test -n "$(PR)" || (echo 'usage: make pr-merge PR="<number>..."' && exit 2)
+	$(GO) run ./scripts/cilocal merge $(ARGS) $(PR)
+
+.PHONY: secret-scan
+secret-scan: ## gitleaks (pinned) on the files changed since the merge base, or every tracked file with ARGS=--all
+	$(GO) run ./scripts/cilocal secret-scan $(if $(ARGS),$(ARGS),--base $$(git merge-base HEAD $$(. scripts/branches.sh && landing_ref)))
 
 .PHONY: check-fast
 check-fast: ## Before every push: gofmt, vet, golangci-lint, plain tests for only what your changes vs origin/dev (else origin/main) affect (seconds)
@@ -130,7 +150,7 @@ hooks-remove: ## Remove the pre-push hook make hooks installed
 	./scripts/install-hooks.sh --uninstall
 
 .PHONY: affected
-affected: ## Show what CI checks for this branch (packages affected vs origin/dev, else origin/main)
+affected: ## Show which packages make ci-local checks for this branch (packages affected vs origin/dev, else origin/main)
 	./scripts/affected.sh
 
 .PHONY: bench-devloop

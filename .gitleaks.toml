@@ -1,0 +1,19 @@
+# gitleaks configuration for the secret scan (scripts/cilocal secret-scan,
+# docs/CI.md "Secret scan"): gitleaks' own rules, minus the paths that hold
+# credential-shaped fixtures on purpose: Go tests and testdata, the example
+# env file and the bench script's synthetic secrets. A real secret in one of
+# these paths is still a leak; review them as such. A new deliberate fixture goes under a test or
+# testdata path, or into this list; a real secret is removed and rotated,
+# because history keeps it.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Tests, testdata and the example env file hold synthetic credentials"
+paths = [
+  '''_test\.go$''',
+  '''(^|/)testdata/''',
+  '''(^|/)\.env\.example$''',
+  # Boots the binaries with synthetic secrets to time them.
+  '''^scripts/bench-devloop\.sh$''',
+]

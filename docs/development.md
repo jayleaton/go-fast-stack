@@ -42,7 +42,10 @@ Each checkout gets its own compose project and database ports, derived from its 
 | `make lint-layering` / `make lint-tests` | prove the layering, test-location, coverage and test-time rules still reject planted violations |
 | `make check-fast` | before every push: gofmt, vet, golangci-lint and plain tests for only what your changes vs origin/dev (else origin/main) affect (seconds) |
 | `make hooks` / `make hooks-remove` | install / remove a pre-push hook that runs `make check-fast` (covers every worktree) |
-| `make ci` | everything CI runs |
+| `make ci` | every check, on the checkout as it is |
+| `make ci-local` | verify the pushed PR head: the checks its diff selects, in a clean worktree, then the `local-ci` status and the PR body's "Local verification" section (see [CI](CI.md)) |
+| `make pr-merge PR="12 13"` | squash-merge PRs verified on their exact head |
+| `make secret-scan` | gitleaks (pinned) on what your branch changed; `ARGS=--all` for every tracked file |
 | `make generate` | sqlc, mocks (`go generate`) and templ code generation |
 | `make css` | rebuild both apps' `app.css` (pinned Tailwind standalone CLI) |
 | `make bench-devloop` | timing tables for the dev loop: build per binary (with size and cold start), generators, lint per linter, probes, tests per package with and without `-race`; `BENCH_COLD=1` adds cold caches, `BENCH_BASE=<ref>` an A/B of the test run against that ref on the same machine |
@@ -67,4 +70,4 @@ Go stdlib `net/http` · `templ` + Datastar + Tailwind (standalone CLI) · `pgx` 
 
 ## Working on it
 
-Read [AGENTS.md](../AGENTS.md) (architecture, test boundaries, how to add a service, PR rules) and [CONTEXT.md](../CONTEXT.md) (shared vocabulary).
+Read [AGENTS.md](../AGENTS.md) (architecture, test boundaries, how to add a service, PR rules), [CI](CI.md) (how a pull request is verified and merged) and [CONTEXT.md](../CONTEXT.md) (shared vocabulary).

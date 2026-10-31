@@ -97,6 +97,8 @@ cases=(
   "apps/admin/ui|$mod/packages/auth"
   "apps/web/internal/server|$mod/apps/web/ui"
   "apps/admin/internal/server|$mod/apps/admin/ui"
+  # Local verification's rules stay pure (scripts/cilocal runs the commands).
+  "scripts/cilocal/verify|os/exec"
 )
 
 # Test files. boundary dir | forbidden import

@@ -1,432 +1,78 @@
-# ci-ok, the single required check, is a commit status, not a job: jobs post
-# it (pending, then success/failure) on the commit they actually tested, so a
-# skipped or cancelled job can never satisfy it and a draft (which starts no
-# jobs) never gets it. Jobs bill rounded up to whole minutes, so CI is ONE job:
-# it checks the affected packages (all of them on pushes to dev and main, the
-# merge queue and manual runs) plus the mobile app and deploy/ module when
-# those change. Sharding is
-# an opt-in fallback only: a "ci:fanout" label on the PR or the fanout input
-# of a manual run.
+# Pull requests only: every check runs in `make ci-local` on the agent's
+# machine before merge (docs/CI.md, "Local verification"), and main (and dev)
+# run no CI. This keeps the two small checks a ruleset can require: the
+# secret scan, and the check that make ci-local's record holds for the head.
+# A push to a deployed branch is gated separately (deploy-gate.yml).
+#
+# Runner: the CI_RUNNER repository variable, a JSON runs-on value such as
+# '["self-hosted","linux"]'; GitHub-hosted ubuntu-latest without it.
 name: CI
+
+# Every job reads only, unless it asks for more itself.
+permissions:
+  contents: read
+
+# A newer edit of a pull request cancels the run it supersedes.
+concurrency:
+  group: ci-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-  workflow_dispatch:
-    inputs:
-      fanout:
-        description: Split the checks across two parallel jobs (faster wall time, more billed minutes)
-        type: boolean
-        default: false
-  # The deployed branches (scripts/branches.sh): dev deploys staging, main
-  # production. A repo without dev just never pushes it. PRs run whatever
-  # branch they target.
-  push:
-    branches: [dev, main]
-  merge_group:
-  # Refreshes the caches PRs restore (pushes that reuse a PR's result do not);
-  # runs on the default branch, skipped when it has not moved since the last
-  # saved cache.
-  schedule:
-    - cron: '17 */4 * * *'
-
-# PR runs: draft and real runs use separate groups, so a skipped draft run
-# (e.g. a push landing a second before "ready for review") never cancels the
-# real run, and a newer push cancels the older real run; a cancelled run's
-# ci-ok still runs and fails, so an old SHA never keeps a green required check.
-# Everything else (pushes to dev/main, merge queue, manual runs) gets a group
-# of its own: a shared group made pushes queue behind each other, and GitHub
-# cancels a pending run when a newer one joins its group.
-concurrency:
-  group: ${{ github.event_name == 'pull_request' && format('ci-{0}-{1}-{2}', github.workflow, github.ref, github.event.pull_request.draft && 'draft' || 'run') || format('ci-{0}-{1}', github.workflow, github.run_id) }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
-
-permissions:
-  contents: read
-  pull-requests: read # paths-filter lists PR files through the API
-  statuses: write # the ci-ok commit status
-  actions: read # the opt-in fan-out finaliser reads the other job's result; scheduled runs list caches
-
-env:
-  TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable
-  # A stalled cache download falls back to a cache miss after this long instead
-  # of hanging (default 10 min); restores take 2-12 s.
-  SEGMENT_DOWNLOAD_TIMEOUT_MINS: 1
+    # Edits only: make ci-local posts local-ci, then fills the PR body, and
+    # that edit starts the run that checks both. A push or a new PR starts
+    # nothing, so until make ci-local runs on the head its required checks
+    # wait as "Expected", never red; a job skipped by `if` would count as
+    # passed, so the run itself must not start.
+    types: [edited]
 
 jobs:
-  # Does all the work (unless fan-out was asked for). Drafts start no jobs:
-  # ready for review (or any push to a ready PR) runs CI.
-  ci:
-    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
-    runs-on: ubuntu-latest
-    # The ~2x-average timeouts sit on the steps that do the work (see
-    # "Timeouts" below): the job cannot know at start whether a run is full or
-    # cold. This is only a backstop just above the worst case (all packages,
-    # cold: ~5.5 min job, Check step capped at 11).
-    timeout-minutes: 13
-    outputs:
-      fanout: ${{ steps.plan.outputs.fanout }}
-      timeout: ${{ steps.timeouts.outputs.fanout }}
-      poll: ${{ steps.timeouts.outputs.poll }}
-      target: ${{ steps.target.outputs.sha }}
-      merge: ${{ steps.target.outputs.merge }}
-      tree: ${{ steps.target.outputs.tree }}
-      packages: ${{ steps.affected.outputs.packages }}
-      dirs: ${{ steps.affected.outputs.dirs }}
-      full: ${{ steps.affected.outputs.full }}
-      sqlc: ${{ steps.affected.outputs.sqlc }}
-      templ: ${{ steps.affected.outputs.templ }}
-      generate: ${{ steps.affected.outputs.generate }}
-      smoke: ${{ steps.affected.outputs.smoke }}
-      mobile: ${{ steps.scope.outputs.mobile }}
-      deploy: ${{ steps.scope.outputs.deploy }}
+  secrets:
+    name: Secret scan
+    # The pull request's changed files, docs included (docs/CI.md, "Secret
+    # scan"). make ci-local runs it too; this one does not depend on the
+    # agent's machine.
+    runs-on: ${{ fromJSON(vars.CI_RUNNER || '"ubuntu-latest"') }}
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
-      # PR events list changed files through the API (no checkout needed).
-      - uses: dorny/paths-filter@v4
-        if: github.event_name == 'pull_request'
-        id: go-pr
-        with:
-          predicate-quantifier: every
-          filters: |
-            go:
-              - '**'
-              - '!docs/**'
-              - '!apps/mobile-app/**'
-              - '!deploy/**' # its own module: the deploy checks
-              - '!*.md'
-              - '!.gitignore'
-              - '!.dockerignore'
-      - uses: dorny/paths-filter@v4
-        if: github.event_name == 'pull_request'
-        id: mobile-pr
-        with:
-          filters: &mobile-filter |
-            mobile:
-              - 'apps/mobile-app/**'
-              # The mobile route test reads the Go route table.
-              - 'apps/web/internal/config/routes.go'
-              # How CI runs it.
-              - '.github/workflows/ci.yml'
-              - '.github/actions/check/**'
-              - 'scripts/ci-check.sh'
-      - uses: dorny/paths-filter@v4
-        if: github.event_name == 'pull_request'
-        id: deploy-pr
-        with:
-          filters: &deploy-filter |
-            deploy:
-              - 'deploy/**'
-              - '.env.example' # make deploy-vars reads it
-              - 'Makefile'
-              - '.golangci.yml'
-              - 'tools/**' # the golangci-lint pin
-              - '.github/workflows/ci.yml'
-              - '.github/actions/check/**'
-              - 'scripts/ci-check.sh'
-
-      # Depth 2: a PR checkout is the merge commit (HEAD^1 = base, HEAD^2 = head).
       - uses: actions/checkout@v7
+      # The tool imports only the standard library: no module downloads.
+      - uses: actions/setup-go@v6
         with:
-          fetch-depth: 2
-
-      # A push to dev or main whose tree is identical to a PR merge commit that
-      # already passed CI is not tested again: ci-ok is posted from that
-      # result. Safe by construction: the PR's ci-ok must be a success posted by
-      # this workflow (github-actions[bot]) recording exactly this tree (see
-      # "ci-ok result"); if the branch moved in between (tree differs) or the result
-      # is missing or not success, the run checks everything as usual.
-      # A scheduled run is skipped when the cache for this commit already exists.
-      - name: Reuse or skip
-        id: reuse
-        if: github.event_name == 'push' || github.event_name == 'schedule'
+          go-version-file: go.mod
+          cache: false
+      - name: No secrets in the changed files
         env:
           GH_TOKEN: ${{ github.token }}
-          EVENT: ${{ github.event_name }}
-          MESSAGE: ${{ github.event.head_commit.message }}
-        run: ./scripts/ci-reuse.sh
-
-      - uses: dorny/paths-filter@v4
-        if: github.event_name == 'push'
-        id: mobile-push
-        with:
-          filters: *mobile-filter
-      - uses: dorny/paths-filter@v4
-        if: github.event_name == 'push'
-        id: deploy-push
-        with:
-          filters: *deploy-filter
-
-      - name: Scope
-        id: scope
-        env:
-          EVENT: ${{ github.event_name }}
-          GO_PR: ${{ steps.go-pr.outputs.go }}
-          MOBILE: ${{ steps.mobile-pr.outputs.mobile || steps.mobile-push.outputs.mobile }}
-          DEPLOY: ${{ steps.deploy-pr.outputs.deploy || steps.deploy-push.outputs.deploy }}
-          SKIP: ${{ steps.reuse.outputs.skip }}
-        run: |
-          go=true mobile=$MOBILE deploy=$DEPLOY
-          # PRs and pushes check mobile/ and deploy/ only when they (or how CI
-          # runs them) changed; the merge queue, manual and scheduled runs always.
-          if [ "$EVENT" = pull_request ]; then go=$GO_PR; fi
-          case $EVENT in merge_group | workflow_dispatch | schedule) mobile=true deploy=true ;; esac
-          if [ "$SKIP" = true ]; then go=false mobile=false deploy=false; fi
-          save=false
-          # Pushes only trigger on the deployed branches (dev, main).
-          case $EVENT in workflow_dispatch | schedule | push) save=true ;; esac
-          echo "go=$go" >> "$GITHUB_OUTPUT"; echo "mobile=${mobile:-false}" >> "$GITHUB_OUTPUT"
-          echo "deploy=${deploy:-false}" >> "$GITHUB_OUTPUT"; echo "save=$save" >> "$GITHUB_OUTPUT"
-          echo "skip=${SKIP:-false}" >> "$GITHUB_OUTPUT"
-
-      # The commit ci-ok is posted on: the PR head of the merge commit actually
-      # checked out (the event's head can be stale when a push and "ready for
-      # review" land together), else the PR's current head, else github.sha.
-      - name: Target commit
-        id: target
-        env:
-          GH_TOKEN: ${{ github.token }}
-          EVENT: ${{ github.event_name }}
           PR: ${{ github.event.pull_request.number }}
-        run: |
-          if [ "$EVENT" != pull_request ]; then
-            echo "sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"; echo "merge=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
-          else
-            echo "sha=$(git rev-parse HEAD^2)" >> "$GITHUB_OUTPUT"; echo "merge=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-          fi
-          # The tree tested (the merge commit's), recorded in ci-ok so a push
-          # to dev or main with exactly this tree can reuse the result.
-          echo "tree=$(git rev-parse HEAD^{tree})" >> "$GITHUB_OUTPUT"
+        run: go run ./scripts/cilocal secret-scan --pr "$PR"
 
-      - name: ci-ok pending
-        if: (steps.scope.outputs.go == 'true' || steps.scope.outputs.mobile == 'true' || steps.scope.outputs.deploy == 'true')
-        env:
-          GH_TOKEN: ${{ github.token }}
-          SHA: ${{ steps.target.outputs.sha }}
-        run: |
-          gh api "repos/$GITHUB_REPOSITORY/statuses/$SHA" -f state=pending -f context=ci-ok \
-            -f description="running" -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" >/dev/null
-
-      # Modules (and the go.mod toolchain) keyed by go.sum; zips and dependency
-      # testdata are trimmed before saving (see the fan-out job).
-      - uses: actions/cache/restore@v6
-        if: steps.scope.outputs.go == 'true'
-        id: mod-cache
-        timeout-minutes: 1
-        with:
-          path: ~/go/pkg/mod
-          key: v7-gomod-${{ runner.os }}-${{ hashFiles('go.sum') }}
-          restore-keys: v7-gomod-${{ runner.os }}-
-
-      # No setup-go: the runner's go switches to the go.mod version itself
-      # (GOTOOLCHAIN=auto); the toolchain lives in the module cache.
-      - name: Go toolchain
-        if: steps.scope.outputs.go == 'true'
-        # 1-5 s; ~10 s when the toolchain has to be downloaded.
-        timeout-minutes: 1
-        run: go version
-
-      # PRs check only what their changes can affect; shared inputs, pushes to
-      # dev/main, the merge queue and manual runs check everything.
-      - name: Affected packages
-        if: steps.scope.outputs.go == 'true'
-        id: affected
-        run: ./scripts/affected.sh HEAD^1
-        env:
-          AFFECTED_FULL: ${{ github.event_name != 'pull_request' && '1' || '' }}
-
-      # Opt-in only: one job is cheapest (jobs bill rounded up to minutes).
-      - name: Plan
-        if: steps.affected.outputs.packages != ''
-        id: plan
-        env:
-          FANOUT: ${{ contains(github.event.pull_request.labels.*.name, 'ci:fanout') || inputs.fanout == true }}
-        run: echo "fanout=$FANOUT" >> "$GITHUB_OUTPUT"
-
-      # Timeouts (minutes) for the Check step (the work), ~2x its measured
-      # average for the case, by whether the build cache is warm (a lookup-only
-      # probe, no download) and whether all packages are checked:
-      # (scripts/ci-check.sh runs the checks in parallel; measured 2026-10-22):
-      #   affected set:  warm 13-24 s -> 3;  cold ~2.5 min -> 6
-      #   all packages:  warm 36-66 s (with mobile + deploy) -> 5;  cold 228 s -> 11
-      #   mobile/deploy only (no Go packages): ~45 s -> 2
-      #   opt-in fan-out jobs: warm 59-97 s -> 3; cold 185-233 s -> 8
-      #   release smoke (in parallel; measured 2026-10-23): 37 s with cold
-      #   release builds, +11 s on the all-packages Check -> +1 either way
-      - uses: actions/cache/restore@v6
-        if: steps.affected.outputs.packages != ''
-        id: build-cache
-        timeout-minutes: 1
-        with:
-          lookup-only: true
-          path: ~/.cache/go-build
-          key: v7-go-${{ runner.os }}-${{ github.sha }}
-          restore-keys: v7-go-${{ runner.os }}-
-      - name: Timeouts
-        id: timeouts
-        env:
-          MATCHED: ${{ steps.build-cache.outputs.cache-matched-key }}
-          PACKAGES: ${{ steps.affected.outputs.packages }}
-          FULL: ${{ steps.affected.outputs.full }}
-          SMOKE: ${{ steps.affected.outputs.smoke }}
-        run: |
-          smoke_minutes=1 # the release smoke's release builds and boots
-          if [ -n "$MATCHED" ]; then
-            fanout=3; check=3; [ "$FULL" = true ] && check=5
-          else
-            fanout=8; check=6; [ "$FULL" = true ] && check=11
-          fi
-          [ -z "$PACKAGES" ] && check=2
-          if [ "$SMOKE" = true ]; then check=$((check + smoke_minutes)) fanout=$((fanout + smoke_minutes)); fi
-          echo "check=$check" >> "$GITHUB_OUTPUT"; echo "fanout=$fanout" >> "$GITHUB_OUTPUT"
-          echo "poll=$((fanout + 1))" >> "$GITHUB_OUTPUT"
-
-      - name: Check
-        if: steps.plan.outputs.fanout != 'true' && (steps.scope.outputs.go == 'true' || steps.scope.outputs.mobile == 'true' || steps.scope.outputs.deploy == 'true')
-        timeout-minutes: ${{ fromJSON(steps.timeouts.outputs.check || '3') }}
-        uses: ./.github/actions/check
-        with:
-          mode: all
-          packages: ${{ steps.affected.outputs.packages }}
-          dirs: ${{ steps.affected.outputs.dirs }}
-          full: ${{ steps.affected.outputs.full }}
-          sqlc: ${{ steps.affected.outputs.sqlc }}
-          templ: ${{ steps.affected.outputs.templ }}
-          generate: ${{ steps.affected.outputs.generate }}
-          smoke: ${{ steps.affected.outputs.smoke }}
-          mobile: ${{ steps.scope.outputs.mobile }}
-          deploy: ${{ steps.scope.outputs.deploy }}
-          save: ${{ steps.scope.outputs.save }}
-
-      # This job (lint) loads every package and its test imports, so it saves
-      # the module cache. Cache-path "!" exclusions did not apply, so trim
-      # explicitly: zips (~125 MB incl. the 71 MB toolchain zip) and testdata.
-      - name: Trim module cache
-        if: steps.scope.outputs.save == 'true' && steps.mod-cache.outcome == 'success' && steps.mod-cache.outputs.cache-hit != 'true'
-        run: |
-          chmod -R u+w ~/go/pkg/mod
-          find ~/go/pkg/mod/cache/download -name '*.zip' -delete
-          find ~/go/pkg/mod -mindepth 2 -type d -name testdata -prune -exec rm -rf {} +
-      - uses: actions/cache/save@v6
-        if: steps.scope.outputs.save == 'true' && steps.mod-cache.outcome == 'success' && steps.mod-cache.outputs.cache-hit != 'true'
-        with:
-          path: ~/go/pkg/mod
-          key: v7-gomod-${{ runner.os }}-${{ hashFiles('go.sum') }}
-
-      # This job's own result (docs-only PRs land here with nothing to check:
-      # success). With fan-out, the db job posts it instead.
-      # Last real step: every check ran before it (job.status covers them). The
-      # job/run can still show "in progress" a few seconds longer (post-step
-      # cleanup), or minutes when GitHub is slow to process Actions results.
-      - name: ci-ok result
-        if: always() && !cancelled() && steps.plan.outputs.fanout != 'true' && steps.target.outputs.sha != '' && steps.scope.outputs.skip != 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          SHA: ${{ steps.target.outputs.sha }}
-          TREE: ${{ steps.target.outputs.tree }}
-          STATUS: ${{ job.status }}
-        run: |
-          state=failure; [ "$STATUS" = success ] && state=success
-          gh api "repos/$GITHUB_REPOSITORY/statuses/$SHA" -f state=$state -f context=ci-ok \
-            -f description="$state tree=$TREE" -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" >/dev/null
-
-      # A run cancelled by a newer push can still report job.status success
-      # (seen on a superseded PR run), so a cancelled run only ever posts failure.
-      - name: ci-ok cancelled
-        if: cancelled() && steps.plan.outputs.fanout != 'true' && steps.target.outputs.sha != '' && steps.scope.outputs.skip != 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          SHA: ${{ steps.target.outputs.sha }}
-        run: |
-          gh api "repos/$GITHUB_REPOSITORY/statuses/$SHA" -f state=failure -f context=ci-ok \
-            -f description="cancelled" -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" >/dev/null
-
-  # Opt-in fallback ("ci:fanout" label, or the fanout input of a manual run):
-  # two parallel jobs for faster wall time at more billed minutes. "db" = lint
-  # + DB-backed tests, posts ci-ok once "other" (the rest + mobile/deploy) is done.
-  fanout:
-    name: ${{ matrix.mode == 'db' && 'lint + test (db)' || 'test (other)' }}
-    needs: ci
-    if: needs.ci.outputs.fanout == 'true'
-    strategy:
-      matrix:
-        mode: [db, other]
-    runs-on: ubuntu-latest
-    timeout-minutes: 12 # backstop; the Check step has the measured timeout
+  local:
+    name: Local verification
+    # A pull request's checks ran in make ci-local on the agent's machine
+    # (docs/CI.md, "Local verification"). This fails unless the local-ci
+    # status on the head and the PR body's section attest that run.
+    runs-on: ${{ fromJSON(vars.CI_RUNNER || '"ubuntu-latest"') }}
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+      statuses: read
     steps:
-      # First thing, so it is up before the DB tests run.
-      - name: Start Postgres
-        if: matrix.mode == 'db'
-        run: |
-          nohup docker run -d --name pg -p 5432:5432 -e POSTGRES_PASSWORD=postgres \
-            --tmpfs /var/lib/postgresql postgres:18-alpine \
-            -c fsync=off -c synchronous_commit=off -c full_page_writes=off -c max_connections=200 \
-            > "$RUNNER_TEMP/pg.log" 2>&1 &
-
       - uses: actions/checkout@v7
         with:
-          ref: ${{ needs.ci.outputs.merge }}
-          fetch-depth: 2
-      - uses: actions/cache/restore@v6
-        timeout-minutes: 1
-        id: mod-cache
+          sparse-checkout: scripts/cilocal # and the root files (cone mode)
+      - uses: actions/setup-go@v6
         with:
-          path: ~/go/pkg/mod
-          key: v7-gomod-${{ runner.os }}-${{ hashFiles('go.sum') }}
-          restore-keys: v7-gomod-${{ runner.os }}-
-      - name: Go toolchain
-        # 1-5 s; ~10 s when the toolchain has to be downloaded.
-        timeout-minutes: 1
-        run: go version
-
-      - name: Check
-        timeout-minutes: ${{ fromJSON(needs.ci.outputs.timeout || '8') }}
-        uses: ./.github/actions/check
-        with:
-          mode: ${{ matrix.mode }}
-          packages: ${{ needs.ci.outputs.packages }}
-          dirs: ${{ needs.ci.outputs.dirs }}
-          full: ${{ needs.ci.outputs.full }}
-          sqlc: ${{ needs.ci.outputs.sqlc }}
-          templ: ${{ needs.ci.outputs.templ }}
-          generate: ${{ needs.ci.outputs.generate }}
-          smoke: ${{ matrix.mode == 'other' && needs.ci.outputs.smoke || 'false' }}
-          mobile: ${{ matrix.mode == 'other' && needs.ci.outputs.mobile || 'false' }}
-          deploy: ${{ matrix.mode == 'other' && needs.ci.outputs.deploy || 'false' }}
-          save: 'false'
-
-      # Waits for "other", then posts ci-ok for both. Two jobs are named
-      # "test (other)" (this matrix leg; the full-run job): the one that ran is
-      # the one not skipped. Also runs when this job
-      # failed or the run was cancelled (posts failure: never green untested).
-      - name: ci-ok result
-        if: always() && !cancelled() && matrix.mode == 'db'
-        timeout-minutes: ${{ fromJSON(needs.ci.outputs.poll || '9') }}
+          go-version-file: go.mod
+          cache: false
+      - name: make ci-local passed on this head
         env:
           GH_TOKEN: ${{ github.token }}
-          SHA: ${{ needs.ci.outputs.target }}
-          TREE: ${{ needs.ci.outputs.tree }}
-          STATUS: ${{ job.status }}
-          POLL_MIN: ${{ needs.ci.outputs.poll || '9' }}
-        run: |
-          other=""
-          for _ in $(seq 1 $(( (${POLL_MIN:-9}) * 30 ))); do
-            other=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs" \
-              --jq '[.jobs[] | select(.name == "test (other)" and .conclusion != "skipped")] | if length == 1 and .[0].status == "completed" then .[0].conclusion else "" end')
-            [ -n "$other" ] && break
-            sleep 2
-          done
-          echo "db=$STATUS other=${other:-unfinished}"
-          state=failure; [ "$STATUS" = success ] && [ "$other" = success ] && state=success
-          gh api "repos/$GITHUB_REPOSITORY/statuses/$SHA" -f state=$state -f context=ci-ok \
-            -f description="$state tree=$TREE" -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" >/dev/null
-
-      # A run cancelled by a newer push can still report job.status success
-      # (seen on a superseded PR run), so a cancelled run only ever posts failure.
-      - name: ci-ok cancelled
-        if: cancelled() && matrix.mode == 'db'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          SHA: ${{ needs.ci.outputs.target }}
-        run: |
-          gh api "repos/$GITHUB_REPOSITORY/statuses/$SHA" -f state=failure -f context=ci-ok \
-            -f description="cancelled" -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" >/dev/null
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: go run ./scripts/cilocal check

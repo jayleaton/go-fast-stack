@@ -1,0 +1,43 @@
+# The staging gate (docs/CI.md, "Required checks and staging"): Railway
+# deploys each environment from its branch through its GitHub integration
+# (docs/deploy.md, "Code source"), and GitHub runs no verification on those
+# branches. This job passes a pushed commit only when make ci-local attested
+# it: `local-ci` passed on the commit itself, or on the exact head of the
+# pull request whose merge made it. With "Wait for CI" on in the Railway
+# service's settings, Railway deploys only commits this passed; a direct
+# push or an unattested head deploys nothing. Fix one forward: make ci-local
+# ARGS="--commit <sha>" in a clean worktree of it.
+#
+# Runner: the CI_RUNNER repository variable, as in ci.yml.
+name: Deploy gate
+
+permissions:
+  contents: read
+
+on:
+  # The deployed branches (scripts/branches.sh): dev deploys staging, main
+  # production. A repo without dev just never pushes it.
+  push:
+    branches: [dev, main]
+
+jobs:
+  attested:
+    name: Attested
+    runs-on: ${{ fromJSON(vars.CI_RUNNER || '"ubuntu-latest"') }}
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+      statuses: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: scripts/cilocal # and the root files (cone mode)
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: make ci-local attested this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: go run ./scripts/cilocal attest "$GITHUB_SHA"

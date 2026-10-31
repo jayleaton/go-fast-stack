@@ -17,6 +17,7 @@ floors=(
   "$mod/apps/admin/internal/services|90"
   "$mod/apps/admin/internal/api|85"
   "$mod/packages/auth|80" # measured 89.7% when set
+  "$mod/scripts/cilocal/verify|85"
 )
 
 # --exist: fail if a floor package no longer exists (CI shards check floors

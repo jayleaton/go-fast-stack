@@ -36,7 +36,7 @@ jobs:
       BENCH_BASE: ${{ inputs.base }}
       BENCH_ROUNDS: ${{ inputs.rounds || '3' }}
     steps:
-      # Same Postgres as CI's db shard.
+      # A throwaway Postgres on tmpfs, as make test's.
       - name: Start Postgres
         run: |
           docker run -d --name pg -p 5432:5432 -e POSTGRES_PASSWORD=postgres \
@@ -45,8 +45,9 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0 # the A/B base ref
-      # Read-only: the module cache CI saves. Build and lint caches start
-      # empty on purpose; the bench measures cold and warm itself.
+      # Read-only module cache (nothing saves it since PR checks moved to make
+      # ci-local; a miss downloads). Build and lint caches start empty on
+      # purpose; the bench measures cold and warm itself.
       - uses: actions/cache/restore@v6
         with:
           path: ~/go/pkg/mod
