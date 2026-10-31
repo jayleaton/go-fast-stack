@@ -95,6 +95,7 @@ func TestDecide(test *testing.T) {
 		{"stacked", func(pull verify.Pull) verify.Pull { pull.Base = "feat/a"; return pull }, verify.MergeOptions{}, verify.ActionSkip, "is stacked on feat/a", "gh pr edit 12 --base main"},
 		{"stacked, any base", func(pull verify.Pull) verify.Pull { pull.Base = "feat/a"; return pull }, verify.MergeOptions{AnyBase: true}, verify.ActionMerge, "green", ""},
 		{"conflicting", func(pull verify.Pull) verify.Pull { pull.Mergeable = "CONFLICTING"; return pull }, verify.MergeOptions{}, verify.ActionSkip, "conflicts with main", "git rebase origin/main"},
+		{"behind its base: the merged tree was never built", func(pull verify.Pull) verify.Pull { pull.Behind = 1; return pull }, verify.MergeOptions{}, verify.ActionSkip, "1 commit(s) behind main", "rebase onto origin/main and re-attest"},
 		{"unattested", func(pull verify.Pull) verify.Pull { pull.Verification = unattested; return pull }, verify.MergeOptions{}, verify.ActionSkip, "is not verified locally: no local-ci status", "make ci-local RAN="},
 		{"failed check", func(pull verify.Pull) verify.Pull {
 			pull.Checks = append(green(), ciCheck(verify.AlwaysRuns, "206", "COMPLETED", "FAILURE"))

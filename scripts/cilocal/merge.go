@@ -21,7 +21,8 @@ import (
 // (.claude/skills/github-prs). It never waits: a PR that is a draft, not
 // attested on its head, failing, pending or conflicting is reported with the
 // next step and left alone (verify.Decide), so one stuck PR never holds up
-// the others; a head behind main merges unless it conflicts. Before merging a
+// the others. A head behind its base is refused (rebase and re-attest), so
+// what merges is exactly the tree that was verified. Before merging a
 // PR it retargets to main every open PR stacked on its branch, so the stack
 // survives.
 //
@@ -137,9 +138,15 @@ func mergeOne(ctx context.Context, hub github, number int, opts mergeFlags) (ver
 	if err != nil {
 		return verify.Verdict{}, err
 	}
+	behind := 0
+	if pull.State == "OPEN" {
+		if behind, err = hub.behind(ctx, pull.BaseRefName, pull.HeadRefOid); err != nil {
+			return verify.Verdict{}, err
+		}
+	}
 	verdict := verify.Decide(verify.Pull{
 		Number: number, State: pull.State, Draft: pull.IsDraft, Base: pull.BaseRefName, Mergeable: pull.Mergeable,
-		Checks: pull.Checks, Verification: verification,
+		Behind: behind, Checks: pull.Checks, Verification: verification,
 	}, opts.options)
 	if verdict.Action != verify.ActionMerge {
 		return verdict, nil
@@ -150,6 +157,16 @@ func mergeOne(ctx context.Context, hub github, number int, opts mergeFlags) (ver
 	}
 	if opts.dryRun {
 		return verify.Verdict{Action: verify.ActionMerge, Reason: "would merge " + verify.Short(pull.HeadRefOid) + " (dry run)", Next: "", Note: ""}, nil
+	}
+	// The base may have moved since it was read: read it once more right
+	// before the merge, which leaves only GitHub's own instant for a race.
+	if behind, err := hub.behind(ctx, pull.BaseRefName, pull.HeadRefOid); err != nil {
+		return verify.Verdict{}, err
+	} else if behind > 0 {
+		return verify.Decide(verify.Pull{
+			Number: number, State: pull.State, Draft: pull.IsDraft, Base: pull.BaseRefName, Mergeable: pull.Mergeable,
+			Behind: behind, Checks: pull.Checks, Verification: verification,
+		}, opts.options), nil
 	}
 	// Squash exactly the head that was attested; never --delete-branch (it
 	// closes the PRs stacked on the branch).

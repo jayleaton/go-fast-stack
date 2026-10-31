@@ -66,6 +66,21 @@ func (hub github) api(ctx context.Context, path string, into any) error {
 	return nil
 }
 
+// behind is how many commits of the branch `base` the commit `head` lacks
+// (GitHub's compare): 0 when the head already contains the base.
+func (hub github) behind(ctx context.Context, base, head string) (int, error) {
+	var compare struct {
+		BehindBy *int `json:"behind_by"`
+	}
+	if err := hub.api(ctx, "compare/"+base+"..."+head, &compare); err != nil {
+		return 0, err
+	}
+	if compare.BehindBy == nil {
+		return 0, fmt.Errorf("gh api compare/%s...%s: no behind_by", base, head)
+	}
+	return *compare.BehindBy, nil
+}
+
 // statuses is every status ever posted on `sha`, newest first.
 func (hub github) statuses(ctx context.Context, sha string) ([]verify.Status, error) {
 	var statuses []verify.Status
