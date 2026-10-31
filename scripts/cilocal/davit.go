@@ -2,8 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -63,16 +61,16 @@ func (box *davitBox) remove(ctx context.Context) {
 // the payload, reading its markers.
 func (box *davitBox) run(ctx context.Context, work payload, module string) (results, error) {
 	empty := results{done: map[string]stepDone{}, tree: "", after: "", affected: "", failures: map[string]*verify.Failures{}}
-	encoded, err := json.Marshal(work)
+	encoded, err := encodePayload(work)
 	if err != nil {
-		return empty, fmt.Errorf("davit payload: %w", err)
+		return empty, err
 	}
 	memory := os.Getenv("CI_LOCAL_DAVIT_MEMORY")
 	if memory == "" {
 		memory = boxMemory
 	}
 	command := exec.CommandContext(ctx, "davit", "box", "run", box.name, "--wait", boxWait, "--memory", memory,
-		"-e", payloadEnv+"="+base64.StdEncoding.EncodeToString(encoded), "--", "go", "run", "./scripts/cilocal", "exec")
+		"-e", payloadEnv+"="+encoded, "--", "go", "run", "./scripts/cilocal", "exec")
 	command.Dir = box.dir
 	command.Stderr = os.Stderr
 	reader, err := command.StdoutPipe()
@@ -91,9 +89,10 @@ func (box *davitBox) run(ctx context.Context, work payload, module string) (resu
 
 // affected runs scripts/affected.sh in the box: a pure function of the tree
 // and the changed files, which the box gets as AFFECTED_FILES.
-func (box *davitBox) affected(ctx context.Context, tree string, env map[string]string) (string, error) {
+func (box *davitBox) affected(ctx context.Context, entries []verify.TreeEntry, env map[string]string) (string, error) {
 	logf("asking the Davit box %s which packages the change affects", box.name)
-	found, err := box.run(ctx, payload{Tree: tree, Steps: nil, Env: env, KeepGoing: false, Affected: true}, "")
+	tree := verify.TreeDigest(entries)
+	found, err := box.run(ctx, payload{Tree: tree, Steps: nil, Env: env, KeepGoing: false, Affected: true, Paths: pathsOf(entries)}, "")
 	if err != nil {
 		return "", err
 	}

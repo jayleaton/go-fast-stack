@@ -2,6 +2,8 @@ package main
 
 import (
 	"bufio"
+	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/sha1"
 	"encoding/base64"
@@ -40,6 +42,7 @@ type payload struct {
 	Env       map[string]string `json:"env"`
 	KeepGoing bool              `json:"keepGoing"`
 	Affected  bool              `json:"affected,omitempty"` // run scripts/affected.sh with Env instead of the steps
+	Paths     []string          `json:"paths,omitempty"`    // every file of the head's tree, for the box to prune what is not
 }
 
 // scrubbed are variables of the caller's shell that would point a step at
@@ -173,26 +176,90 @@ func fileEntry(file string) (verify.TreeEntry, bool, error) {
 	return verify.TreeEntry{Mode: mode, Blob: hex.EncodeToString(hash.Sum(nil)), Path: ""}, true, nil
 }
 
-// payloadEnv carries the payload into the box, base64 JSON, so nothing is
-// added to the synced tree.
+// payloadEnv carries the payload into the box, gzipped JSON in base64, so
+// nothing is added to the synced tree.
 const payloadEnv = "CILOCAL_PAYLOAD"
+
+func encodePayload(work payload) (string, error) {
+	encoded, err := json.Marshal(work)
+	if err != nil {
+		return "", fmt.Errorf("payload: %w", err)
+	}
+	var buffer bytes.Buffer
+	zipped := gzip.NewWriter(&buffer)
+	if _, err := zipped.Write(encoded); err != nil {
+		return "", fmt.Errorf("payload: %w", err)
+	}
+	if err := zipped.Close(); err != nil {
+		return "", fmt.Errorf("payload: %w", err)
+	}
+	return base64.StdEncoding.EncodeToString(buffer.Bytes()), nil
+}
+
+func decodePayload(text string) (payload, error) {
+	var work payload
+	raw, err := base64.StdEncoding.DecodeString(text)
+	if err != nil {
+		return work, fmt.Errorf("payload: %w", err)
+	}
+	zipped, err := gzip.NewReader(bytes.NewReader(raw))
+	if err != nil {
+		return work, fmt.Errorf("payload: %w", err)
+	}
+	if err := json.NewDecoder(zipped).Decode(&work); err != nil {
+		return work, fmt.Errorf("payload: %w", err)
+	}
+	return work, nil
+}
+
+// pruneStale deletes the files of `dir` that are not in the head's tree:
+// Davit's sync adds and updates files but never deletes, so a box made from
+// a project image built at an older commit still holds files the head
+// removed. It returns how many it deleted.
+func pruneStale(ctx context.Context, dir string, paths []string) (int, error) {
+	keep := map[string]bool{}
+	for _, file := range paths {
+		keep[file] = true
+	}
+	listed, err := git(ctx, dir, "ls-files", "-z", "--cached", "--others", "--exclude-standard")
+	if err != nil {
+		return 0, err
+	}
+	pruned := 0
+	for file := range strings.SplitSeq(listed, "\x00") {
+		if file == "" || keep[file] {
+			continue
+		}
+		if err := os.Remove(filepath.Join(dir, file)); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return pruned, fmt.Errorf("prune: %w", err)
+		}
+		if _, err := git(ctx, dir, "rm", "--cached", "--quiet", "--ignore-unmatch", "--", file); err != nil {
+			return pruned, err
+		}
+		pruned++
+	}
+	return pruned, nil
+}
 
 // execCommand is `cilocal exec`: the executor inside a Davit box. It refuses
 // to run anything unless the box's tree is the head's, runs the steps, then
 // reports the tree as it is afterwards (a step that rewrote a tracked file
 // is a failure the selecting side reports).
 func execCommand(ctx context.Context, _ []string) error {
-	raw, err := base64.StdEncoding.DecodeString(os.Getenv(payloadEnv))
+	work, err := decodePayload(os.Getenv(payloadEnv))
 	if err != nil {
-		return fmt.Errorf("payload: %w", err)
-	}
-	var work payload
-	if err := json.Unmarshal(raw, &work); err != nil {
-		return fmt.Errorf("payload: %w", err)
+		return err
 	}
 	dir, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("cwd: %w", err)
+	}
+	pruned, err := pruneStale(ctx, dir, work.Paths)
+	if err != nil {
+		return err
+	}
+	if pruned > 0 {
+		fmt.Fprintf(os.Stderr, "cilocal exec: removed %d files the head does not have (left by the box's image)\n", pruned)
 	}
 	before, err := worktreeDigest(ctx, dir)
 	if err != nil {

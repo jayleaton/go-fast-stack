@@ -343,7 +343,7 @@ func runSteps(ctx context.Context, hub github, found state, opts options, attest
 		env := affectedEnv(found.files, areas.Everything)
 		var lines string
 		if box != nil {
-			lines, err = box.affected(ctx, verify.TreeDigest(entries), env)
+			lines, err = box.affected(ctx, entries, env)
 		} else {
 			lines, err = affectedIn(ctx, work.dir, env)
 		}
@@ -454,7 +454,7 @@ func execution(ctx context.Context, work checkout, found state, steps []verify.S
 	if len(remote) == 0 || (!keepGoing && failedAny(ran)) {
 		return ran, hostname, ""
 	}
-	inBox, err := box.run(ctx, payload{Tree: digest, Steps: remote, Env: env, KeepGoing: keepGoing}, found.module)
+	inBox, err := box.run(ctx, payload{Tree: digest, Steps: remote, Env: env, KeepGoing: keepGoing, Affected: false, Paths: pathsOf(entries)}, found.module)
 	for id, done := range inBox.done {
 		ran.done[id] = done
 	}
@@ -716,4 +716,12 @@ func parseFloat(text string) (float64, error) {
 		return 0, fmt.Errorf("number: %w", err)
 	}
 	return value, nil
+}
+
+func pathsOf(entries []verify.TreeEntry) []string {
+	paths := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		paths = append(paths, entry.Path)
+	}
+	return paths
 }
