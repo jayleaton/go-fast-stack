@@ -122,6 +122,8 @@ func TestInputOfMatchesSelection(test *testing.T) {
 		{verify.JobWorkflows, ".github/workflows/ci.yml", true},
 		{verify.JobWorkflows, "apps/web/x.go", false},
 		{verify.JobSecrets, "docs/x.md", true},
+		{verify.JobBoundaries, "deploy/platform/config_test.go", true}, // a test file anywhere
+		{verify.JobBoundaries, "docs/x.md", true},
 	} {
 		test.Run(testCase.job+" "+testCase.file, func(test *testing.T) {
 			test.Parallel()

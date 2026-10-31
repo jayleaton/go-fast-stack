@@ -138,6 +138,7 @@ func TestPlanRunsTheSelectedSteps(test *testing.T) {
 		actionlint = "workflows › make actionlint"
 		deploy     = "deploy › make deploy-check"
 		mobile     = "mobile › mobile checks"
+		boundaries = "boundaries › test boundaries"
 	)
 	for _, testCase := range []struct {
 		name     string
@@ -145,15 +146,18 @@ func TestPlanRunsTheSelectedSteps(test *testing.T) {
 		affected string
 		want     []string
 	}{
-		{"docs only scans secrets", verify.SelectAreas([]string{"docs/CI.md"}), "", []string{gitleaks}},
-		{"go without packages builds nothing", verify.Areas{Go: true}, "full=false\npackages=\ndirs=\n", []string{gitleaks}},
+		{"docs only scans secrets and checks the boundaries", verify.SelectAreas([]string{"docs/CI.md"}), "", []string{gitleaks, boundaries}},
+		{"go without packages builds nothing", verify.Areas{Go: true}, "full=false\npackages=\ndirs=\n", []string{gitleaks, boundaries}},
 		{"go packages", verify.Areas{Go: true}, "packages=github.com/x/a\ndirs=./a\n", []string{gitleaks, build, lint, tests}},
-		{"generators only", verify.Areas{Go: true}, "templ=true\n", []string{gitleaks, generated}},
+		{"generators only", verify.Areas{Go: true}, "templ=true\n", []string{gitleaks, generated, boundaries}},
 		{"sqlc", verify.Areas{Go: true}, "sqlc=true\npackages=github.com/x/a\ndirs=./a", []string{gitleaks, build, lint, generated, tests}},
-		{"generate list", verify.Areas{Go: true}, "generate=./a\n", []string{gitleaks, generated}},
+		{"generate list", verify.Areas{Go: true}, "generate=./a\n", []string{gitleaks, generated, boundaries}},
 		{"full run probes", verify.Areas{Go: true}, "full=true\npackages=./...\ndirs=./...\n", []string{gitleaks, build, lint, tests, layering, lintTests, floors}},
-		{"smoke", verify.Areas{Go: true}, "smoke=true\n", []string{gitleaks, smoke}},
-		{"affected ignored without go", verify.Areas{Deploy: true}, "full=true\npackages=./...\nsmoke=true\n", []string{gitleaks, deploy}},
+		{"smoke", verify.Areas{Go: true}, "smoke=true\n", []string{gitleaks, smoke, boundaries}},
+		{"affected ignored without go", verify.Areas{Deploy: true}, "full=true\npackages=./...\nsmoke=true\n", []string{gitleaks, deploy, boundaries}},
+		// A deploy/-only change (its own module) maps to no root package, so
+		// make lint is not selected; a test file it adds is still refused.
+		{"deploy only checks the boundaries", verify.SelectAreas([]string{"deploy/platform/config_test.go"}), "", []string{gitleaks, deploy, boundaries}},
 		{"everything", verify.SelectAreas([]string{"Makefile", "apps/mobile-app/app.ts"}), "full=true\npackages=./...\ndirs=./...\nsqlc=true\nsmoke=true\n",
 			[]string{gitleaks, order, build, lint, generated, tests, layering, lintTests, floors, smoke, actionlint, deploy, mobile}},
 	} {
@@ -205,6 +209,7 @@ func TestOnlyFiltersByItemOrJob(test *testing.T) {
 		{"job", []string{"deploy"}, []string{"deploy › make deploy-check"}},
 		{"item and job", []string{"smoke", "workflows"}, []string{"go › make release-smoke", "workflows › make actionlint"}},
 		{"lint item spans jobs", []string{"lint"}, []string{"go › make lint", "go › make lint-layering", "workflows › make actionlint"}},
+		{"boundaries job", []string{"boundaries"}, []string{}},
 		{"unknown", []string{"nothing"}, []string{}},
 	} {
 		test.Run(testCase.name, func(test *testing.T) {

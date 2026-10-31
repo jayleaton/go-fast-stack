@@ -19,15 +19,15 @@ A push to `main` runs only `Deploy staging` (`deploy-staging.yml`), which deploy
 |---|---|---|
 | secrets | `cilocal secret-scan --base <merge-base>` (gitleaks) | always |
 | build | `go build <affected packages>` | Go inputs changed and `scripts/affected.sh` maps them to packages |
-| lint | `make lint LINT_DIRS=<affected dirs>`; `make lint-layering` on a full run; `make actionlint` | the same; the probes on a full run; actionlint when `.github/workflows/` or `.github/actions/` changed |
+| lint | `make lint LINT_DIRS=<affected dirs>` (golangci-lint, names, the test-boundary check); `make lint-layering` on a full run; `make actionlint`; `scripts/check-test-boundaries.sh` alone | the same; the probes on a full run; actionlint when `.github/workflows/` or `.github/actions/` changed; the boundary check alone whenever `make lint` is not selected, so a test file a `deploy/`-only or docs change adds is still refused |
 | generated | `make check-generated` | affected.sh reports sqlc, templ or `go:generate` inputs or outputs changed |
 | tests | `make test TEST_PKGS=<affected packages>` (`-race`, its own throwaway Postgres, time budgets, the tested packages' coverage floors); `make lint-tests` and `check-coverage.sh --exist` on a full run | Go inputs map to packages |
 | migrations | `scripts/check-migration-order.sh` against the tip of `origin/main` | a migration (`*/migrations/*.sql`) or the check changed |
 | smoke | `make release-smoke` | affected.sh's `smoke`: a Dockerfile, or a package one builds |
-| deploy | `make deploy-check`: vet, lint, names, the `deploy/platform` tests and `make deploy-vars` | `deploy/`, `.env.example`, `.golangci.yml`, `tools/` or `scripts/namelint/` |
+| deploy | `make deploy-check`: vet, golangci-lint and names in the `deploy/` module, then `make deploy-vars` | `deploy/`, `.env.example`, `.golangci.yml`, `tools/` or `scripts/namelint/` |
 | mobile | `pnpm install --frozen-lockfile`, `tsc`, `expo lint`, `expo install --check`, `pnpm test` in `apps/mobile-app` | `apps/mobile-app/` or the route table its test reads (`apps/web/internal/config/routes.go`) |
 
-Go inputs are every file except `docs/`, root Markdown, `apps/mobile-app/`, `deploy/` (its own checks), `.github/`, `.gitignore`, `.dockerignore` and `.gitleaks.toml`. A docs-only change runs only the secret scan. `scripts/cilocal/`, the `Makefile` and `mise.toml` decide how every step runs, so they select every step but the mobile app's, with affected.sh's full run (`AFFECTED_FULL=1`); so do an empty diff and 3,000 changed files or more. affected.sh's own full-run inputs (go.mod, tools, scripts, lint config, migrations, sqlc config) make the Go steps cover `./...`. `make ci-local ARGS=--plan` prints the selection and every command.
+Go inputs are every file except `docs/`, root Markdown, `apps/mobile-app/`, `deploy/` (its own checks), `.github/`, `.gitignore`, `.dockerignore` and `.gitleaks.toml`. A docs-only change runs only the secret scan and the test-boundary check. `scripts/cilocal/`, the `Makefile` and `mise.toml` decide how every step runs, so they select every step but the mobile app's, with affected.sh's full run (`AFFECTED_FULL=1`); so do an empty diff and 3,000 changed files or more. affected.sh's own full-run inputs (go.mod, tools, scripts, lint config, migrations, sqlc config) make the Go steps cover `./...`. `make ci-local ARGS=--plan` prints the selection and every command.
 
 `make ci` still runs every check on the checkout as it is, and `make check-fast` stays the seconds-long pre-push check; neither posts anything.
 

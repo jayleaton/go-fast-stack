@@ -11,6 +11,7 @@ package verify
 import (
 	"path"
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -165,6 +166,9 @@ const (
 	JobDeploy     = "deploy"
 	JobMobile     = "mobile"
 	JobWorkflows  = "workflows"
+	// JobBoundaries is the test-boundary check on its own: its input is
+	// every file, since a test file anywhere can break it.
+	JobBoundaries = "boundaries"
 )
 
 // Items is the PR body's checklist, in order (.github/pull_request_template.md
@@ -221,6 +225,12 @@ func Plan(areas Areas, affected Affected, base string) []Step {
 	}
 	if areas.Deploy {
 		steps = append(steps, Step{Item: "deploy", Job: JobDeploy, Name: "make deploy-check", Run: []string{"make", "deploy-check"}})
+	}
+	if !slices.ContainsFunc(steps, func(step Step) bool { return step.Name == "make lint" }) {
+		// make lint runs it; without make lint (a change outside the root
+		// module's packages, like deploy/) a misplaced test file would merge
+		// unchecked and fail the next full make lint on main.
+		steps = append(steps, Step{Item: "lint", Job: JobBoundaries, Name: "test boundaries", Run: []string{"./scripts/check-test-boundaries.sh"}})
 	}
 	if areas.Mobile {
 		steps = append(steps, Step{Item: "mobile", Job: JobMobile, Name: "mobile checks", Run: []string{"bash", "-c", mobileChecks}})
