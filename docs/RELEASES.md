@@ -58,7 +58,8 @@ deployment before the next:
 
 The services come from `deploy/cmd/deploy-services`, which reads
 `deploy/platform.yaml`. Then the readiness check: `<WEB_URL>/healthz` (and
-`<ADMIN_URL>/healthz` when set) must answer 200. `DRY_RUN=1` prints every
+`<ADMIN_URL>/healthz` when set) must answer 200 with
+`{"data":{"status":"ok"}}`. `DRY_RUN=1` prints every
 command instead of running it.
 
 The token is a Railway project token scoped to one environment, so no
@@ -114,8 +115,8 @@ can change:
 
 | Setting | What it admits | Why |
 |---|---|---|
-| Environment `production` | Branch `main`, tag pattern `v*`. Holds `RAILWAY_PRODUCTION_TOKEN` | A dispatch runs from `main` (reviewed through its ruleset); a release runs from its `v*` tag |
-| Environment `staging` | Branch `main` only. Holds `RAILWAY_STAGING_TOKEN` | `Deploy staging` runs from `main` (its push trigger and catch-up's dispatch both do), so no branch workflow can read the token or put branch code on staging |
+| Environment `production` | Branch `main`, tag pattern `v*`. Holds its `RAILWAY_TOKEN` (scoped to production) | A dispatch runs from `main` (reviewed through its ruleset); a release runs from its `v*` tag |
+| Environment `staging` | Branch `main` only. Holds its `RAILWAY_TOKEN` (scoped to staging) | `Deploy staging` runs from `main` (its push trigger and catch-up's dispatch both do), so no branch workflow can read the token or put branch code on staging |
 | Tag ruleset "Release tags" (`refs/tags/v*`) | Creation, update and deletion restricted; bypass: the repository Admin role | The environments admit `v*` tags, so only releasers may make one |
 
 The gate fails closed when an environment or the ruleset is missing or
@@ -156,9 +157,10 @@ production run stops at the gate with an error naming what is missing.
    bypass configured protection rules" off.
 3. **Secrets**, each a Railway project token created for that environment of
    the project (the token form's environment picker must say so):
-   `gh secret set RAILWAY_STAGING_TOKEN --env staging` and
-   `gh secret set RAILWAY_PRODUCTION_TOKEN --env production` (each reads the
-   value from stdin). Never as repository secrets, which every branch can read.
+   `gh secret set RAILWAY_TOKEN --env staging` and
+   `gh secret set RAILWAY_TOKEN --env production` (each reads the value from
+   stdin). The name is the same; the environment picks the token. Never as a
+   repository secret, which every branch can read.
 4. **Repository variables** (Settings → Secrets and variables → Actions →
    Variables):
    - `PRODUCTION_RELEASERS`: comma-separated GitHub logins who may publish a
@@ -168,6 +170,8 @@ production run stops at the gate with an error naming what is missing.
      `PRODUCTION_ADMIN_URL` with the admin app): the public origins
      `deploy-railway.sh` checks `/healthz` on.
    - `RAILWAY_DEPLOY` = `true` last, once the rest is in place.
+   - Optional: `RAILWAY_PROJECT_ID`, used only by a deploy without a token
+     (a person logged in locally); a project token names its project itself.
    - Optional: `CI_RUNNER` and `RELEASE_RUNNER`, a JSON runner label (default
      `"ubuntu-latest"`).
 

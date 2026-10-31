@@ -327,9 +327,9 @@ DEPLOY_READS := -reads 'web=*,!ADMIN_*,!BACKUP_*' \
 DEPLOY_KEEP ?=
 
 .PHONY: deploy-check
-deploy-check: ## vet and lint the deploy/ module (it has no tests), then deploy-vars
+deploy-check: ## vet, lint and test the deploy/ module, then deploy-vars
 	$(GO) build -o bin/namelint ./scripts/namelint
-	cd deploy && $(GO) vet ./... && (cd .railway && $(GO) vet railway.go) && $(GO) tool -modfile=../tools/go.mod golangci-lint run -c ../.golangci.yml ./... && ../bin/namelint ./...
+	cd deploy && $(GO) vet ./... && (cd .railway && $(GO) vet railway.go) && $(GO) tool -modfile=../tools/go.mod golangci-lint run -c ../.golangci.yml ./... && ../bin/namelint ./... && $(GO) test ./...
 	$(MAKE) --no-print-directory deploy-vars
 
 .PHONY: deploy-vars

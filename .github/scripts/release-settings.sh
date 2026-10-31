@@ -5,8 +5,8 @@
 # the refs each admits, and the tag ruleset that lets only administrators
 # create, move or delete a v* tag. production-gate.sh refuses every release
 # until these hold. Idempotent; run it with an administrator's gh login. It
-# never reads or writes a secret: add RAILWAY_STAGING_TOKEN and
-# RAILWAY_PRODUCTION_TOKEN to the environments yourself.
+# never reads or writes a secret: add each environment's
+# RAILWAY_TOKEN secret yourself.
 #
 #   sh .github/scripts/release-settings.sh [owner/repo]   # default: this checkout's GitHub repo
 set -eu

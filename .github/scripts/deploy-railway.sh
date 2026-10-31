@@ -62,7 +62,7 @@ fi
 
 if [ -z "${RAILWAY_TOKEN:-}" ] && [ -n "${GITHUB_ACTIONS:-}" ] && [ "$dry" = false ]; then
   upper=$(echo "$environment" | tr '[:lower:]' '[:upper:]')
-  echo "::error::RAILWAY_TOKEN is empty. Add a Railway project token scoped to $environment as the RAILWAY_${upper}_TOKEN secret of the $environment GitHub environment (docs/RELEASES.md); nothing was deployed"
+  echo "::error::RAILWAY_TOKEN is empty. Add a Railway project token scoped to $environment as the RAILWAY_TOKEN secret of the $environment GitHub environment (docs/RELEASES.md); nothing was deployed"
   exit 1
 fi
 
@@ -200,23 +200,27 @@ deploy() {
   wait_for "$svc" "$id"
 }
 
-# ready URL: GET URL until it answers 200, retried because readiness can lag
-# a successful deployment.
+# ready URL: GET URL until it answers 200 with {"data":{"status":"ok"}}
+# (the /healthz body), retried because readiness can lag a successful
+# deployment.
 ready() {
   if [ "$dry" = true ]; then
-    show curl -s -o /dev/null -m 10 -w '%{http_code}' "$1"
-    echo "  (retried up to ${READY_ATTEMPTS:-6} times, ${READY_INTERVAL:-30}s apart, until 200)"
+    show curl -s -m 10 -w '\n%{http_code}' "$1"
+    echo "  (retried up to ${READY_ATTEMPTS:-6} times, ${READY_INTERVAL:-30}s apart, until 200 and data.status ok)"
     return 0
   fi
   attempts=${READY_ATTEMPTS:-6}
   interval=${READY_INTERVAL:-30}
   attempt=1
   while :; do
-    code=$(curl -s -o /dev/null -m 10 -w '%{http_code}' "$1") || true
-    if [ "$code" = 200 ]; then
-      echo "$1 200"
+    answer=$(curl -s -m 10 -w '\n%{http_code}' "$1") || true
+    code=$(printf '%s\n' "$answer" | tail -n 1)
+    status=$(printf '%s\n' "$answer" | sed '$d' | jq -r '.data.status // empty' 2>/dev/null) || true
+    if [ "$code" = 200 ] && [ "$status" = ok ]; then
+      echo "$1 200 ok"
       return 0
     fi
+    [ "$code" = 200 ] && code="200 with data.status '${status}'"
     if [ "$attempt" -ge "$attempts" ]; then
       echo "::error::$1 answered $code after $attempts attempts"
       return 1

@@ -86,7 +86,7 @@ jobs:
     concurrency:
       group: deploy-staging-rollout
       cancel-in-progress: false
-    # Holds RAILWAY_STAGING_TOKEN and admits only main, so no branch workflow
+    # Holds its own RAILWAY_TOKEN (scoped to staging) and admits only main, so no branch workflow
     # can read the token or put branch code on staging.
     environment:
       name: staging
@@ -104,7 +104,7 @@ jobs:
         run: npm install --global @railway/cli@5.71.0
       - name: Deploy
         env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_STAGING_TOKEN }}
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
           WEB_URL: ${{ vars.STAGING_WEB_URL }}
           ADMIN_URL: ${{ vars.STAGING_ADMIN_URL }}
         run: sh .github/scripts/deploy-railway.sh staging "$DEPLOY_SHA"

@@ -24,7 +24,7 @@ A push to `main` runs only `Deploy staging` (`deploy-staging.yml`), which deploy
 | tests | `make test TEST_PKGS=<affected packages>` (`-race`, its own throwaway Postgres, time budgets, the tested packages' coverage floors); `make lint-tests` and `check-coverage.sh --exist` on a full run | Go inputs map to packages |
 | migrations | `scripts/check-migration-order.sh` against the tip of `origin/main` | a migration (`*/migrations/*.sql`) or the check changed |
 | smoke | `make release-smoke` | affected.sh's `smoke`: a Dockerfile, or a package one builds |
-| deploy | `make deploy-check` | `deploy/`, `.env.example`, `.golangci.yml`, `tools/` or `scripts/namelint/` |
+| deploy | `make deploy-check`: vet, lint, names, the `deploy/platform` tests and `make deploy-vars` | `deploy/`, `.env.example`, `.golangci.yml`, `tools/` or `scripts/namelint/` |
 | mobile | `pnpm install --frozen-lockfile`, `tsc`, `expo lint`, `expo install --check`, `pnpm test` in `apps/mobile-app` | `apps/mobile-app/` or the route table its test reads (`apps/web/internal/config/routes.go`) |
 
 Go inputs are every file except `docs/`, root Markdown, `apps/mobile-app/`, `deploy/` (its own checks), `.github/`, `.gitignore`, `.dockerignore` and `.gitleaks.toml`. A docs-only change runs only the secret scan. `scripts/cilocal/`, the `Makefile` and `mise.toml` decide how every step runs, so they select every step but the mobile app's, with affected.sh's full run (`AFFECTED_FULL=1`); so do an empty diff and 3,000 changed files or more. affected.sh's own full-run inputs (go.mod, tools, scripts, lint config, migrations, sqlc config) make the Go steps cover `./...`. `make ci-local ARGS=--plan` prints the selection and every command.

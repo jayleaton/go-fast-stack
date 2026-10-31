@@ -12,9 +12,10 @@ boundaries=(
   apps/admin/internal/api      # admin route handlers, same rules
   packages/auth                # backend auth: its own suite against real Postgres
   scripts/cilocal/verify       # local verification's rules: selection, reuse keys, refusals (pure)
+  deploy/platform              # platform.yaml's rules (the deploy/ module; make deploy-check tests it)
 )
 
-# No other tests: no UI, config, wiring, repository, secrets or deploy tests.
+# No other tests: no UI, config, wiring, repository, secrets or other deploy tests.
 # Repositories are exercised for real by migrations and the app; services see
 # them only through mocked ports.
 allow=()

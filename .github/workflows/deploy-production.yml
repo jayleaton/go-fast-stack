@@ -8,7 +8,7 @@ run-name: Deploy production ${{ github.event.release.tag_name || inputs.tag }}
 # later main commit and is healthy now, and that the publisher is in
 # PRODUCTION_RELEASERS. Publishing the release (or dispatching a redeploy) is
 # the explicit yes every production deploy needs. The deploy job runs in the
-# `production` environment, which holds RAILWAY_PRODUCTION_TOKEN and admits
+# `production` environment, which holds its own RAILWAY_TOKEN (scoped to production) and admits
 # only main and v* tags (.github/scripts/release-settings.sh). A dispatch
 # redeploys, or rolls back to, an existing release through the same gate.
 # Railway builds every service from the release's checkout
@@ -128,7 +128,7 @@ jobs:
         run: npm install --global @railway/cli@5.71.0
       - name: Deploy
         env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_PRODUCTION_TOKEN }}
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
           WEB_URL: ${{ vars.PRODUCTION_WEB_URL }}
           ADMIN_URL: ${{ vars.PRODUCTION_ADMIN_URL }}
         run: sh .github/scripts/deploy-railway.sh production "$SHA"
