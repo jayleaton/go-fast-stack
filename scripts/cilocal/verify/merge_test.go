@@ -128,8 +128,19 @@ func TestDecide(test *testing.T) {
 			pull.Checks = []verify.Check{notStarted(verify.AlwaysRuns)}
 			return pull
 		}, verify.MergeOptions{RequireActions: true}, verify.ActionSkip, "no GitHub CI job that ran", ""},
-		{"a job that ran and failed still refuses beside one never started", func(pull verify.Pull) verify.Pull {
-			pull.Checks = []verify.Check{notStarted(verify.AlwaysRuns), ciCheck(verify.Gate, "205", "COMPLETED", "FAILURE")}
+		// sparkrack #17: the claim and secret scan never started, so the
+		// checking job was skipped under its unevaluated name; the gate is
+		// missing because the whole run never ran, not because it is pending.
+		{"a blocked run's skipped checking job does not hold the merge", func(pull verify.Pull) verify.Pull {
+			pull.Checks = []verify.Check{
+				notStarted(verify.AlwaysRuns), notStarted("Local verification claim"),
+				ciCheck("${{ needs.claim.outputs.claimed == 'true' && 'Local verification' || 'Awaiting make ci-local' }}", "205", "COMPLETED", "SKIPPED"),
+				{Typename: "StatusContext", Context: verify.StatusContext, State: "SUCCESS"},
+			}
+			return pull
+		}, verify.MergeOptions{}, verify.ActionMerge, "merging on local-ci alone", ""},
+		{"a newer run that ran and failed refuses after a blocked one", func(pull verify.Pull) verify.Pull {
+			pull.Checks = []verify.Check{notStarted(verify.AlwaysRuns), ciCheck(verify.Gate, "206", "COMPLETED", "FAILURE")}
 			return pull
 		}, verify.MergeOptions{}, verify.ActionSkip, "has failing checks: Local verification", ""},
 	} {
