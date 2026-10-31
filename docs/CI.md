@@ -77,7 +77,7 @@ A pull request merges once `make ci-local` passed on its exact head, GitHub can 
 
 On a repository whose GitHub Actions do not start (a spent or blocked billing budget, or Actions turned off), no workflow runs: not `CI`, and not `Deploy staging` or `Deploy production`. Then:
 
-- `make pr-merge` merges on `local-ci` alone when the head has no CI run at all, and says so (`--require-actions` refuses instead). The checks it makes are the ones `Local verification` would have made, from the same code.
+- `make pr-merge` merges on `local-ci` alone when the head has no CI run at all, or only jobs GitHub never started, and says so (`--require-actions` refuses instead). A blocked account still gets runs: GitHub fails each job within seconds, with no runner and the annotation "The job was not started because recent account payments have failed or your spending limit needs to be increased". Those jobs are read as not run, never as a verdict. A job that did run and failed still refuses. The checks it makes are the ones `Local verification` would have made, from the same code.
 - Require the `local-ci` commit status in the ruleset (it is posted by `make ci-local`, not by Actions), not `Secret scan` or `Local verification`, which would wait forever.
 - Nothing deploys on its own. Deploy by hand with `make railway-up PLATFORM_ENV=staging` from a clean checkout of `main` after `go run ./scripts/cilocal attest <sha>` passes, and to production only a release staging ran ([deploy.md](deploy.md)). Do not turn Railway's GitHub auto-deploy back on to work around it: that deploys unattested commits.
 - `CI_RUNNER` pointed at a self-hosted runner brings every workflow back without hosted minutes (`RELEASE_RUNNER` overrides it for the release jobs).

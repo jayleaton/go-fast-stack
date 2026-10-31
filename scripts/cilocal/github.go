@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -151,7 +152,30 @@ func (hub github) pull(ctx context.Context, number int) (pullRequest, error) {
 	if err := json.Unmarshal([]byte(out), &pull); err != nil {
 		return pullRequest{}, fmt.Errorf("gh pr view: %w", err)
 	}
+	for index, check := range pull.Checks {
+		if check.WorkflowName != verify.CIWorkflow || check.Conclusion != "FAILURE" || check.JobID() == 0 {
+			continue
+		}
+		if pull.Checks[index].NotStarted, err = hub.notStarted(ctx, check.JobID()); err != nil {
+			return pullRequest{}, err
+		}
+	}
 	return pull, nil
+}
+
+// notStarted is whether GitHub failed the job without starting it: its
+// annotations say so (verify.NotStartedMessage).
+func (hub github) notStarted(ctx context.Context, job int) (bool, error) {
+	var annotations []annotation
+	if err := hub.api(ctx, "check-runs/"+strconv.Itoa(job)+"/annotations", &annotations); err != nil {
+		return false, err
+	}
+	return slices.ContainsFunc(annotations, func(note annotation) bool { return verify.NotStartedMessage(note.Message) }), nil
+}
+
+// annotation is one annotation of a check run.
+type annotation struct {
+	Message string `json:"message"`
 }
 
 func (hub github) postStatus(ctx context.Context, sha, state, description, target string) error {

@@ -137,7 +137,11 @@ func mergeOne(ctx context.Context, hub github, number int, dryRun, requireAction
 	}
 	problems, note := verify.MergeProblems(verify.Pull{State: pull.State, Draft: pull.IsDraft, Mergeable: pull.Mergeable, Checks: pull.Checks, Verification: verification}, requireActions)
 	if len(problems) > 0 {
-		return fmt.Errorf("not merging %s:\n  - %s\n  next: %s", verify.Short(pull.HeadRefOid), strings.Join(problems, "\n  - "), verify.NextStep)
+		next := "" // every other problem names its own fix
+		if len(verification.Problems()) > 0 {
+			next = "\n  next: " + verify.NextStep
+		}
+		return fmt.Errorf("not merging %s:\n  - %s%s", verify.Short(pull.HeadRefOid), strings.Join(problems, "\n  - "), next)
 	}
 	fmt.Printf("#%d: verified on %s (%s)\n", number, verify.Short(pull.HeadRefOid), note)
 	if dryRun {

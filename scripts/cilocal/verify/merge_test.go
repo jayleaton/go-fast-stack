@@ -15,6 +15,28 @@ func ciCheck(name string, run, status, conclusion string) verify.Check {
 	}
 }
 
+func notStarted(name string) verify.Check {
+	check := ciCheck(name, "205", "COMPLETED", "FAILURE")
+	check.NotStarted = true
+	return check
+}
+
+func TestNotStartedReadsGitHubsAnnotationAndTheJobID(test *testing.T) {
+	test.Parallel()
+	if !verify.NotStartedMessage("The job was not started because recent account payments have failed or your spending limit needs to be increased. Please check the 'Billing & plans' section in your settings") {
+		test.Fatal("the billing annotation is not recognised")
+	}
+	if verify.NotStartedMessage("Process completed with exit code 1.") {
+		test.Fatal("a job's own failure counts as not started")
+	}
+	if got := ciCheck("x", "205", "COMPLETED", "FAILURE").JobID(); got != 1 {
+		test.Fatalf("JobID = %d, want 1", got)
+	}
+	if got := (verify.Check{DetailsURL: "https://github.com/o/r/pull/1#local-verification"}).JobID(); got != 0 {
+		test.Fatalf("JobID without a job = %d, want 0", got)
+	}
+}
+
 func TestLatestCIChecksKeepsTheNewestRun(test *testing.T) {
 	test.Parallel()
 	rollup := []verify.Check{
@@ -69,6 +91,20 @@ func TestMergeProblems(test *testing.T) {
 		{"closed", func(pull verify.Pull) verify.Pull { pull.State = "CLOSED"; pull.Draft = true; return pull }, false, []string{"the pull request is CLOSED"}, ""},
 		{"merged", func(pull verify.Pull) verify.Pull { pull.State = "MERGED"; return pull }, false, []string{"the pull request is MERGED"}, ""},
 		{"unverified head", func(pull verify.Pull) verify.Pull { pull.Status = nil; return pull }, false, []string{"no local-ci status"}, "local-ci alone"},
+		// SparkRack: billing-blocked Actions fail every job in seconds without
+		// starting it. Those jobs never ran, so local-ci decides.
+		{"jobs GitHub never started merge on local-ci", func(pull verify.Pull) verify.Pull {
+			pull.Checks = []verify.Check{notStarted("Secret scan"), notStarted("Local verification")}
+			return pull
+		}, false, nil, "did not start the head's CI jobs"},
+		{"jobs never started but actions required", func(pull verify.Pull) verify.Pull {
+			pull.Checks = []verify.Check{notStarted("Secret scan")}
+			return pull
+		}, true, []string{"GitHub did not start the head's CI jobs"}, ""},
+		{"a job that ran and failed still refuses beside one never started", func(pull verify.Pull) verify.Pull {
+			pull.Checks = []verify.Check{notStarted("Secret scan"), ciCheck("Local verification", "205", "COMPLETED", "FAILURE")}
+			return pull
+		}, false, []string{"`Local verification` is FAILURE"}, "1 GitHub CI checks"},
 	} {
 		test.Run(testCase.name, func(test *testing.T) {
 			test.Parallel()
