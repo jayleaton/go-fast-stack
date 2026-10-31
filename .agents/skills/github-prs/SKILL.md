@@ -12,7 +12,7 @@ The rules on what may merge are in `AGENTS.md` ("Verifying", "Pull requests", "E
 ## 1. Before every commit
 
 - **Never skip the hooks.** `make hooks` installs the pre-push hook (`make check-fast`); never push with `--no-verify` except in an emergency, and say so.
-- Run what your change needs (the table is `docs/CI.md`, "What to run"): `make lint LINT_DIRS=<dirs>` and `make test TEST_PKGS=<pkgs>` for the Go packages it can affect (`scripts/affected.sh` prints them; `make check-fast` is the seconds-long pass), `make check-generated` for sqlc, templ or mock inputs, `make check-migrations` for a migration, `make deploy-check` for `deploy/`, `make actionlint` for workflows, `make release-smoke` for a Dockerfile or what it builds, `make ci` for a change to the tooling. Tests only at the test boundaries (`AGENTS.md`, "Test boundaries"); never a test in `deploy/` or the UI.
+- **Default: `make check-pr`.** It runs what the branch's changes need (the table is `docs/CI.md`, "What to run"), fails when the affected-package selection does not match the diff, and prints the `make ci-local RAN="…"` line to attest with. By hand: `make lint LINT_DIRS=<dirs>` and `make test TEST_PKGS=<pkgs>` for the Go packages it can affect (`scripts/affected.sh` prints them; `make check-fast` is the seconds-long pass), `make check-generated` for sqlc, templ or mock inputs, `make check-migrations` for a migration, `make deploy-check` for `deploy/`, `make actionlint` for workflows, `make release-smoke` for a Dockerfile or what it builds, `make ci` for a change to the tooling. Tests only at the test boundaries (`AGENTS.md`, "Test boundaries"); never a test in `deploy/` or the UI.
 - A change adds no lint or format findings, warnings included.
 - Add the paths you changed; never `git add -A` in an old worktree.
 
@@ -22,7 +22,8 @@ After **every** push or rebase, once you have run what the change needs:
 
 ```bash
 git push                                     # pushed head, clean worktree
-make ci-local RAN="make lint LINT_DIRS=./apps/web/... ; make test TEST_PKGS=./apps/web/internal/services"
+make check-pr                                # runs what the change needs, prints the RAN line
+make ci-local RAN="make lint LINT_DIRS='./apps/web/internal/services ...'; make test TEST_PKGS='...'; make secret-scan"
 ```
 
 - It runs nothing and takes seconds. It refuses a dirty worktree, a detached HEAD (except `COMMIT=<sha>` of a `main` commit), a head that is not the pushed branch head, or a head that already has a failed `local-ci`.

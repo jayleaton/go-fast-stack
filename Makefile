@@ -143,6 +143,10 @@ secret-scan: ## gitleaks (pinned) on the files changed since the merge base, or 
 vulncheck: ## Known vulnerabilities: govulncheck (pinned) on every Go module + pnpm audit on the mobile lockfile; exceptions in scripts/vulncheck/allowlist.txt (ARGS=-go-only)
 	$(GO) run ./scripts/vulncheck $(ARGS)
 
+.PHONY: check-pr
+check-pr: ## Before make ci-local: run what this branch's changes need (docs/CI.md "What to run"), then print the RAN line (ARGS=--dry-run: only say what)
+	./scripts/check-pr.sh $(ARGS)
+
 .PHONY: check-fast
 check-fast: ## Before every push: gofmt, golangci-lint (incl. govet), plain tests for only what your changes vs origin/main affect (seconds)
 	./scripts/check-fast.sh

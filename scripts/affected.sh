@@ -3,7 +3,15 @@
 # and the LINT_DIRS/TEST_PKGS to run before make ci-local): the Go packages whose own files changed plus every
 # package whose code or tests import them, transitively (Go's package graph
 # via `go list -test -deps`). Changes to shared inputs (go.mod/go.sum,
-# tooling, scripts, lint config, migrations, generator config) mean a full run.
+# tooling, scripts, lint config, migrations, sqlc's config, queries and
+# generated code) mean a full run: sqlc changes reach the database tests
+# through the schema, not only through imports.
+#
+# A guard fails (exit 3) when the selection does not match the diff: a
+# changed Go file outside deploy/ (its own module) that maps to no package, a
+# changed package missing from the selection, or Go changes and nothing
+# selected. A wrong selection would let make check-fast and make check-pr
+# pass on code they never checked.
 #
 # Usage: scripts/affected.sh [<base>]   (default: merge-base with origin/main,
 #        scripts/branches.sh)
@@ -38,6 +46,12 @@ out() {
   if [ -n "${GITHUB_OUTPUT:-}" ]; then printf '%s=%s\n' "$1" "$2" >>"$GITHUB_OUTPUT"; fi
 }
 
+# sqlc inputs and outputs: every queries:/out: path in sqlc.yaml (schemas are
+# migrations).
+sqlcdir=packages/database
+mapfile -t sqlcpaths < <(sed -nE 's/^[[:space:]]*(queries|out):[[:space:]]*([^[:space:]#]+).*/\2/p' "$sqlcdir/sqlc.yaml" |
+  while read -r p; do echo "$sqlcdir/${p%/}/"; done)
+
 # Shared inputs: anything here can change every package's result.
 # AFFECTED_FULL=1 forces a full run.
 full=false
@@ -45,12 +59,17 @@ full=false
 [ "$full" = true ] || for f in "${changed[@]}"; do
   case $f in
   go.mod | go.sum | mise.toml | Makefile | .golangci.yml | tools/* | scripts/* | \
-    */migrations/* | packages/database/sqlc.yaml)
+    */migrations/* | "$sqlcdir/sqlc.yaml")
     full=true
-    echo "full run: $f" >&2
-    break
     ;;
   esac
+  for p in "${sqlcpaths[@]}"; do
+    if [[ $f == "$p"* ]]; then full=true; fi
+  done
+  if [ "$full" = true ]; then
+    echo "full run: $f" >&2
+    break
+  fi
 done
 
 if [ "$full" = true ]; then
@@ -64,16 +83,9 @@ if [ "$full" = true ]; then
   exit 0
 fi
 
-# sqlc inputs and outputs: every queries:/out: path in sqlc.yaml (schemas are
-# migrations, which force a full run above).
-sqlcdir=packages/database
-mapfile -t sqlcpaths < <(sed -nE 's/^[[:space:]]*(queries|out):[[:space:]]*([^[:space:]#]+).*/\2/p' "$sqlcdir/sqlc.yaml" |
-  while read -r p; do echo "$sqlcdir/${p%/}/"; done)
+# sqlc changes ran everything above; templ inputs and outputs.
 sqlc=false templ=false
 for f in "${changed[@]}"; do
-  for p in "${sqlcpaths[@]}"; do
-    if [[ $f == "$p"* ]]; then sqlc=true; fi
-  done
   case $f in
   *.templ | *_templ.go) templ=true ;;
   esac
@@ -95,6 +107,7 @@ filemap=$(go list -e -f '{{$d := .Dir}}{{$p := .ImportPath}}{{range .GoFiles}}{{
 dirmap=$(go list -e -f '{{.Dir}} {{.ImportPath}}' ./... | sed "s|^$PWD/||")
 
 declare -A seeds=()
+unmapped=()
 for f in "${changed[@]}"; do
   p=$(awk -v f="$f" '$1 == f { print $2; exit }' <<<"$filemap")
   if [ -z "$p" ]; then
@@ -105,7 +118,13 @@ for f in "${changed[@]}"; do
       d=$(dirname "$d")
     done
   fi
-  if [ -n "$p" ]; then seeds[$p]=1; fi
+  if [ -n "$p" ]; then
+    seeds[$p]=1
+  elif [[ $f == *.go && $f != deploy/* && -e $f ]]; then
+    # A deleted file of a deleted package maps to nothing, and needs nothing:
+    # its importers changed too, or they no longer build.
+    unmapped+=("$f")
+  fi
 done
 
 declare -A affected=()
@@ -124,6 +143,25 @@ if [ "${#seeds[@]}" -gt 0 ]; then
 fi
 
 pkgs=$(printf '%s\n' "${!affected[@]}" | sed '/^$/d' | sort)
+
+# Guard: the selection must cover the diff.
+problems=()
+for f in "${unmapped[@]}"; do problems+=("$f is a changed Go file in no package of $mod"); done
+for p in "${!seeds[@]}"; do
+  [ -n "${affected[$p]:-}" ] || problems+=("$p changed but is not selected")
+done
+gochanged=false
+for f in "${changed[@]}"; do
+  # Existing files: a deleted one in a live package maps to it above, and a
+  # deleted package with no importers left needs nothing checked.
+  if [[ $f == *.go && $f != deploy/* && -e $f ]]; then gochanged=true; fi
+done
+if [ "$gochanged" = true ] && [ -z "$pkgs" ]; then problems+=("Go files changed but no package is selected"); fi
+if [ "${#problems[@]}" -gt 0 ]; then
+  echo "affected: the selection does not match the diff (run everything: AFFECTED_FULL=1, or make ci):" >&2
+  printf '  %s\n' "${problems[@]}" >&2
+  exit 3
+fi
 dirs=$(sed "s|^$mod|.|" <<<"$pkgs")
 
 # go:generate: packages whose directive source or -destination output changed.
