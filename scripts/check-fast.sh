@@ -105,7 +105,8 @@ if [ "$sqlc" = true ] || [ "$templ" = true ] || [ -n "$generate" ]; then
   before=$(fingerprint)
   if ! out=$({
     if [ "$sqlc" = true ]; then "$GO" tool -modfile=tools/go.mod sqlc generate -f packages/database/sqlc.yaml; fi
-    for p in $generate; do "$GO" generate "$p"; done
+    # shellcheck disable=SC2086 # $generate is a list of package dirs
+    if [ -n "$generate" ]; then GO=$GO ./scripts/go-generate.sh $generate; fi
     if [ "$templ" = true ]; then
       for ui in packages/uikit apps/web/ui apps/admin/ui; do [ ! -d "$ui" ] || "$GO" tool templ generate -path "$ui"; done
     fi

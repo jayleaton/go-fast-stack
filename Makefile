@@ -50,7 +50,7 @@ build: ## Build a static binary into bin/server
 .PHONY: generate
 generate: ## Regenerate sqlc, go:generate (mocks) and templ (shared uikit + web + admin UIs)
 	$(TOOL) sqlc generate -f packages/database/sqlc.yaml
-	$(GO) generate ./...
+	GO=$(GO) ./scripts/go-generate.sh
 	@for ui in packages/uikit apps/web/ui apps/admin/ui; do [ -d $$ui ] && $(GO) tool templ generate -path $$ui || true; done
 
 .PHONY: css
