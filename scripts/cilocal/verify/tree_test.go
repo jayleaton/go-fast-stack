@@ -60,3 +60,82 @@ func TestScanTargets(test *testing.T) {
 		}
 	}
 }
+
+// Randy's re-review of #134 (2f1cca7): with the base's .gitleaks.toml, a
+// synthetic credential failed the scan, and a child commit adding only
+// .gitleaksignore with that finding's fingerprint passed it, because
+// gitleaks loads .gitleaksignore from the root of the directory it scans.
+// Both heads must fail: the first on the finding, the second on the finding
+// (its .gitleaksignore is copied in as content, never as policy, and the
+// trusted ignore file sits outside the scanned directory) and on the policy
+// change it makes.
+func TestHeadPolicyIsNeverScannerPolicy(test *testing.T) {
+	test.Parallel()
+	base := []verify.TreeEntry{{Mode: "100644", Blob: "cfg", Path: ".gitleaks.toml"}, {Mode: "100644", Blob: "go", Path: "main.go"}}
+	credential := append(slices.Clone(base), verify.TreeEntry{Mode: "100644", Blob: "leak", Path: "credential.txt"})
+	ignored := append(slices.Clone(credential), verify.TreeEntry{Mode: "100644", Blob: "fingerprint", Path: ".gitleaksignore"})
+
+	requireNoPolicyChange := func(head []verify.TreeEntry) {
+		test.Helper()
+		if changed := verify.PolicyChanges(base, head); len(changed) != 0 || verify.PolicyProblem(changed) != "" {
+			test.Fatalf("PolicyChanges = %q, want none", changed)
+		}
+	}
+	requireNoPolicyChange(credential)
+
+	changed := verify.PolicyChanges(base, ignored)
+	if !slices.Equal(changed, []string{".gitleaksignore"}) {
+		test.Fatalf("PolicyChanges = %q, want [.gitleaksignore]", changed)
+	}
+	if problem := verify.PolicyProblem(changed); !strings.Contains(problem, "edits the secret scan's policy (.gitleaksignore)") {
+		test.Fatalf("PolicyProblem = %q", problem)
+	}
+	targets, problem := verify.ScanTargets(ignored, nil)
+	if problem != "" {
+		test.Fatal(problem)
+	}
+	for _, target := range targets {
+		if copied := verify.ScanCopyPath(target.Path); slices.Contains(verify.ScannerPolicy, copied) {
+			test.Errorf("%s is copied into the scan as %s, where gitleaks loads it as policy", target.Path, copied)
+		}
+	}
+
+	edited := slices.Clone(base)
+	edited[0].Blob = "allow everything"
+	removed := base[1:]
+	for name, head := range map[string][]verify.TreeEntry{"edited config": edited, "removed config": removed} {
+		if got := verify.PolicyChanges(base, head); !slices.Equal(got, []string{".gitleaks.toml"}) {
+			test.Errorf("%s: PolicyChanges = %q, want [.gitleaks.toml]", name, got)
+		}
+	}
+	nested := append(slices.Clone(base), verify.TreeEntry{Mode: "100644", Blob: "x", Path: "docs/.gitleaksignore"})
+	requireNoPolicyChange(nested) // gitleaks reads only the root's
+}
+
+func TestScanCopyPath(test *testing.T) {
+	test.Parallel()
+	for path, want := range map[string]string{
+		".gitleaksignore":      ".gitleaksignore.scanned",
+		".gitleaks.toml":       ".gitleaks.toml.scanned",
+		"sub/.gitleaksignore":  "sub/.gitleaksignore.scanned",
+		"main.go":              "main.go",
+		"docs/gitleaks.toml":   "docs/gitleaks.toml",
+		".gitleaksignore.orig": ".gitleaksignore.orig",
+	} {
+		if got := verify.ScanCopyPath(path); got != want {
+			test.Errorf("ScanCopyPath(%q) = %q, want %q", path, got, want)
+		}
+	}
+}
+
+// gitleaks gets the trusted config and ignore file by path and ignores
+// inline gitleaks:allow comments, which a change could add to its own lines.
+func TestGitleaksArgs(test *testing.T) {
+	test.Parallel()
+	args := strings.Join(verify.GitleaksArgs("/trusted/.gitleaks.toml", "/trusted/.gitleaksignore"), " ")
+	for _, want := range []string{"dir . ", "--config /trusted/.gitleaks.toml", "--gitleaks-ignore-path /trusted/.gitleaksignore", "--ignore-gitleaks-allow", "--redact", "--exit-code 1"} {
+		if !strings.Contains(args, want) {
+			test.Errorf("GitleaksArgs = %q, want %q", args, want)
+		}
+	}
+}

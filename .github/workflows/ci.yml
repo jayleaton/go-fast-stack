@@ -42,7 +42,8 @@ jobs:
     name: Secret scan
     # The pull request's changed files, docs included (docs/CI.md, "Secret
     # scan"), read from the head's objects and scanned with the base's
-    # scanner and .gitleaks.toml. It does not depend on the agent's machine.
+    # scanner and policy (.gitleaks.toml, .gitleaksignore); a head that edits
+    # that policy fails for review. It does not depend on the agent's machine.
     runs-on: ${{ fromJSON(vars.CI_RUNNER || '"ubuntu-latest"') }}
     timeout-minutes: 10
     permissions:

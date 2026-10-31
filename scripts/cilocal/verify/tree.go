@@ -2,7 +2,9 @@ package verify
 
 import (
 	"fmt"
+	pathpkg "path"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -54,4 +56,67 @@ func ScanTargets(entries []TreeEntry, wanted []string) ([]TreeEntry, string) {
 		}
 	}
 	return targets, ""
+}
+
+// ScannerPolicy are the files gitleaks reads as policy rather than content:
+// its config, and the ignore list it loads from the root of the directory it
+// scans whatever --gitleaks-ignore-path says (gitleaks 8.30.1). The scan
+// takes them from the trusted side only, written outside the scanned
+// directory, never from the change it scans.
+var ScannerPolicy = []string{".gitleaks.toml", ".gitleaksignore"}
+
+// scannedSuffix marks a policy-named file copied in as content.
+const scannedSuffix = ".scanned"
+
+// ScanCopyPath is where the scan copies a file of the change: a file named
+// like scanner policy, at any depth, gets scannedSuffix, so gitleaks scans
+// it as content and never loads it as policy.
+func ScanCopyPath(path string) string {
+	if slices.Contains(ScannerPolicy, pathpkg.Base(path)) {
+		return path + scannedSuffix
+	}
+	return path
+}
+
+// PolicyChanges is the scanner policy files (at the tree's root, where
+// gitleaks looks) that differ between the trusted tree and the scanned one:
+// added, removed or changed.
+func PolicyChanges(trusted, scanned []TreeEntry) []string {
+	blobs := func(entries []TreeEntry) map[string]string {
+		found := map[string]string{}
+		for _, entry := range entries {
+			if slices.Contains(ScannerPolicy, entry.Path) {
+				found[entry.Path] = entry.Blob
+			}
+		}
+		return found
+	}
+	before, after := blobs(trusted), blobs(scanned)
+	changed := []string{}
+	for _, name := range ScannerPolicy {
+		if before[name] != after[name] {
+			changed = append(changed, name)
+		}
+	}
+	return changed
+}
+
+// PolicyProblem is why a scan of a change that edits scanner policy fails
+// even when it finds nothing: the scan ran with the trusted policy, so the
+// new one is unchecked until someone reviews it.
+func PolicyProblem(changed []string) string {
+	if len(changed) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("the change edits the secret scan's policy (%s), which the scan never takes from the change it scans: it ran with the trusted base's. A maintainer reviews the policy change and merges it on its own (docs/CI.md, \"Secret scan\")",
+		strings.Join(changed, ", "))
+}
+
+// GitleaksArgs is the gitleaks command line for a scan of the current
+// directory: the trusted `config` and `ignore` file (outside the scanned
+// directory), and inline `gitleaks:allow` comments ignored, since they are
+// content of the change too.
+func GitleaksArgs(config, ignore string) []string {
+	return []string{"dir", ".", "--config", config, "--gitleaks-ignore-path", ignore, "--ignore-gitleaks-allow",
+		"--redact", "--no-banner", "--no-color", "--exit-code", "1", "--verbose"}
 }
