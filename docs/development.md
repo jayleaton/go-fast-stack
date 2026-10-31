@@ -43,8 +43,8 @@ Each checkout gets its own compose project and database ports, derived from its 
 | `make check-fast` | before every push: gofmt, vet, golangci-lint and plain tests for only what your changes vs origin/main affect (seconds) |
 | `make hooks` / `make hooks-remove` | install / remove a pre-push hook that runs `make check-fast` (covers every worktree) |
 | `make ci` | every check, on the checkout as it is |
-| `make ci-local` | verify the pushed PR head: the checks its diff selects, in a clean worktree, then the `local-ci` status and the PR body's "Local verification" section (see [CI](CI.md)) |
-| `make pr-merge PR="12 13"` | squash-merge PRs verified on their exact head |
+| `make ci-local RAN="<what you ran>"` | attest the pushed PR head after running what it needs: runs nothing, posts the `local-ci` status and fills the PR body's "Local verification" section (see [CI](CI.md)) |
+| `make pr-merge PR="12 13"` | squash-merge PRs attested on their exact head; `ARGS="--check-deploy <sha>"` after a merge |
 | `make secret-scan` | gitleaks (pinned) on what your branch changed; `ARGS=--all` for every tracked file |
 | `make generate` | sqlc, mocks (`go generate`) and templ code generation |
 | `make css` | rebuild both apps' `app.css` (pinned Tailwind standalone CLI) |

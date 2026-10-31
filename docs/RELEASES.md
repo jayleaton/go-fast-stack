@@ -12,7 +12,7 @@ GitHub auto-deploy stays off (`repo: ""`): only these workflows ship code.
 
 ## The flow
 
-1. **Merge to `main`.** `make ci-local` verified the PR's head
+1. **Merge to `main`.** `make ci-local` attested the PR's head
    ([CI.md](CI.md)), then `Deploy staging` checks that attestation and ships
    the commit to Railway staging (see [Railway rollout](#railway-rollout)).
 2. **Draft a release.** Actions → **Draft release** → Run workflow (`bump`
