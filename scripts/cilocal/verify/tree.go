@@ -38,24 +38,44 @@ const regularMode = "100"
 
 // ScanTargets is the files of a tree the secret scan copies out: the regular
 // files among `entries` named in `wanted`, or all of them when `wanted` is
-// nil. A path that would leave the scan's directory (absolute, or with a
-// `..` element) is a problem, not a file to skip: git never checks one out,
-// so only a crafted tree holds one, and the scan fails closed on it.
+// nil, less templ's generated Go (GeneratedTempl). A path that would leave
+// the scan's directory (absolute, or with a `..` element) is a problem, not
+// a file to skip: git never checks one out, so only a crafted tree holds
+// one, and the scan fails closed on it.
 func ScanTargets(entries []TreeEntry, wanted []string) ([]TreeEntry, string) {
 	named := map[string]bool{}
 	for _, file := range wanted {
 		named[file] = true
 	}
+	tree := map[string]bool{}
+	for _, entry := range entries {
+		tree[entry.Path] = true
+	}
+	has := func(path string) bool { return tree[path] }
 	targets := []TreeEntry{}
 	for _, entry := range entries {
 		if !filepath.IsLocal(filepath.FromSlash(entry.Path)) {
 			return nil, fmt.Sprintf("the head's tree has the path %q, which leaves the scan's directory", entry.Path)
 		}
-		if strings.HasPrefix(entry.Mode, regularMode) && (wanted == nil || named[entry.Path]) {
+		if strings.HasPrefix(entry.Mode, regularMode) && (wanted == nil || named[entry.Path]) && !GeneratedTempl(entry.Path, has) {
 			targets = append(targets, entry)
 		}
 	}
 	return targets, ""
+}
+
+// templOutput is the suffix templ gives the Go it generates from x.templ.
+const templOutput = "_templ.go"
+
+// GeneratedTempl is whether the secret scan skips `path`: templ's generated
+// Go (`x_templ.go`) for a `x.templ` the same tree holds (`has`). Its strings
+// are the source's, which the scan reads, and its generated identifiers
+// (`apiclient.X:` then `templ_7745c5c3_Err`) read to gitleaks as API keys. A
+// `_templ.go` with no `.templ` beside it is scanned like any file, and
+// make check-generated fails one that is not what templ generates.
+func GeneratedTempl(path string, has func(string) bool) bool {
+	source, found := strings.CutSuffix(path, templOutput)
+	return found && has(source+".templ")
 }
 
 // ScannerPolicy are the files gitleaks reads as policy rather than content:
