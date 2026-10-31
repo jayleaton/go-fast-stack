@@ -102,6 +102,8 @@ make dev        # http://<this-machine>:3000
 
 Then open the site and sign up. In development, verification and reset links are printed in the server log instead of emailed. To try the API with `curl`, see [docs/development.md](docs/development.md#try-the-api).
 
+A new project made from this template attests its first `main` commit once: `make ci`, then `make ci-local RAN="make ci"` on `main` ([docs/CI.md](docs/CI.md#local-verification)). After that every pull request is attested on its head.
+
 To deploy, run `make railway-setup`. It creates the whole Railway project from [`deploy/platform.yaml`](deploy/platform.yaml) and checks that it is healthy ([docs/deploy.md](docs/deploy.md)).
 
 ## Learn more

@@ -2,6 +2,7 @@ package main
 
 import (
 	"archive/tar"
+	"bufio"
 	"compress/gzip"
 	"context"
 	"crypto/sha256"
@@ -15,7 +16,10 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
+
+	"github.com/jayleaton/go-fast-stack/scripts/cilocal/verify"
 )
 
 // The secret scan (docs/CI.md, "Secret scan"): the files a change touches,
@@ -29,6 +33,11 @@ import (
 //	cilocal secret-scan --pr <number>     the pull request's files (GitHub's list)
 //	cilocal secret-scan --all             every tracked file
 //	cilocal secret-scan <file>...         just these files
+//
+// --head <sha> (the Secret scan job) reads those files from that commit's
+// objects instead of the checkout: the job checks out the base, so the
+// scanner and .gitleaks.toml are the base's and the pull request's head is
+// only data (verify.ScanTargets), never checked out or run.
 
 const gitleaksVersion = "8.30.1"
 
@@ -124,30 +133,37 @@ func untarOne(archive []byte, name, target string) error {
 	}
 }
 
-// scanFiles is which files the arguments name, or nil for every tracked file.
-func scanFiles(ctx context.Context, args []string) ([]string, error) {
+// scanFiles is which files the arguments name (nil for every tracked file),
+// and the commit to read them from ("" for the checkout).
+func scanFiles(ctx context.Context, args []string) ([]string, string, error) {
 	flags := flag.NewFlagSet("secret-scan", flag.ContinueOnError)
 	base := flags.String("base", "", "scan the files changed since this commit")
 	pull := flags.String("pr", "", "scan this pull request's files (GitHub's list)")
 	all := flags.Bool("all", false, "scan every tracked file")
+	head := flags.String("head", "", "read the files from this commit's objects, not the checkout")
 	if err := flags.Parse(args); err != nil {
-		return nil, fmt.Errorf("secret-scan: %w", err)
+		return nil, "", fmt.Errorf("secret-scan: %w", err)
 	}
+	files, err := namedFiles(ctx, flags, *base, *pull, *all)
+	return files, *head, err
+}
+
+func namedFiles(ctx context.Context, flags *flag.FlagSet, base, pull string, all bool) ([]string, error) {
 	switch {
-	case *all:
+	case all:
 		return nil, nil
-	case *base != "":
-		out, err := git(ctx, "", "diff", "--name-only", "--no-renames", "--diff-filter=d", *base, "HEAD")
+	case base != "":
+		out, err := git(ctx, "", "diff", "--name-only", "--no-renames", "--diff-filter=d", base, "HEAD")
 		if err != nil {
 			return nil, err
 		}
 		return strings.Fields(out), nil
-	case *pull != "":
+	case pull != "":
 		hub, err := newGitHub(ctx)
 		if err != nil {
 			return nil, err
 		}
-		out, err := output(ctx, "", "gh", "api", "--paginate", "repos/"+hub.repo+"/pulls/"+*pull+"/files?per_page=100",
+		out, err := output(ctx, "", "gh", "api", "--paginate", "repos/"+hub.repo+"/pulls/"+pull+"/files?per_page=100",
 			"-q", `.[] | select(.status != "removed") | .filename`)
 		files := strings.Split(out, "\n")
 		if err != nil || len(files) >= gitHubFileLimit {
@@ -163,18 +179,7 @@ func scanFiles(ctx context.Context, args []string) ([]string, error) {
 const gitHubFileLimit = 3000
 
 func secretScan(ctx context.Context, args []string) error {
-	files, err := scanFiles(ctx, args)
-	if err != nil {
-		return err
-	}
-	if files == nil {
-		out, err := git(ctx, "", "ls-files")
-		if err != nil {
-			return err
-		}
-		files = strings.Split(out, "\n")
-	}
-	root, err := git(ctx, "", "rev-parse", "--show-toplevel")
+	files, head, err := scanFiles(ctx, args)
 	if err != nil {
 		return err
 	}
@@ -183,6 +188,37 @@ func secretScan(ctx context.Context, args []string) error {
 		return fmt.Errorf("secret-scan: %w", err)
 	}
 	defer func() { _ = os.RemoveAll(scan) }()
+	copyFiles := copyCheckout
+	if head != "" {
+		copyFiles = func(ctx context.Context, files []string, scan string) (int, error) {
+			return copyCommit(ctx, head, files, scan)
+		}
+	}
+	copied, err := copyFiles(ctx, files, scan)
+	if err != nil {
+		return err
+	}
+	if copied == 0 {
+		fmt.Println("No changed files to scan.")
+		return nil
+	}
+	return runGitleaks(ctx, scan, copied)
+}
+
+// copyCheckout copies the named files (every tracked one when nil) from the
+// checkout into `scan`.
+func copyCheckout(ctx context.Context, files []string, scan string) (int, error) {
+	if files == nil {
+		out, err := git(ctx, "", "ls-files")
+		if err != nil {
+			return 0, err
+		}
+		files = strings.Split(out, "\n")
+	}
+	root, err := git(ctx, "", "rev-parse", "--show-toplevel")
+	if err != nil {
+		return 0, err
+	}
 	copied := 0
 	for _, file := range files {
 		if file == "" {
@@ -194,13 +230,102 @@ func secretScan(ctx context.Context, args []string) error {
 			continue
 		}
 		if err := copyFile(filepath.Join(root, file), filepath.Join(scan, file)); err != nil {
-			return err
+			return 0, err
 		}
 		copied++
 	}
-	if copied == 0 {
-		fmt.Println("No changed files to scan.")
-		return nil
+	return copied, nil
+}
+
+// copyCommit writes the named files (every one when nil) of commit `head`'s
+// tree into `scan`, from git's objects: the commit is fetched if the
+// checkout lacks it (a pull request's head, a fork's included, is reachable
+// from the base repository), and nothing of it is checked out.
+func copyCommit(ctx context.Context, head string, files []string, scan string) (int, error) {
+	if _, err := git(ctx, "", "cat-file", "-e", head+"^{commit}"); err != nil {
+		if _, err := git(ctx, "", "fetch", "--quiet", "--no-tags", "--depth=1", "origin", head); err != nil {
+			return 0, err
+		}
+	}
+	listing, err := git(ctx, "", "ls-tree", "-r", "-z", "--full-tree", head)
+	if err != nil {
+		return 0, err
+	}
+	targets, problem := verify.ScanTargets(verify.ParseTree(listing), files)
+	if problem != "" {
+		return 0, errors.New("secret-scan: " + problem)
+	}
+	if len(targets) == 0 {
+		return 0, nil
+	}
+	var request strings.Builder
+	for _, target := range targets {
+		request.WriteString(target.Blob + "\n")
+	}
+	command := exec.CommandContext(ctx, "git", "cat-file", "--batch")
+	command.Stdin = strings.NewReader(request.String())
+	out, err := command.StdoutPipe()
+	if err != nil {
+		return 0, fmt.Errorf("secret-scan: %w", err)
+	}
+	if err := command.Start(); err != nil {
+		return 0, fmt.Errorf("secret-scan: %w", err)
+	}
+	reader := bufio.NewReader(out)
+	for _, target := range targets {
+		if err := writeBlob(reader, target, filepath.Join(scan, filepath.FromSlash(target.Path))); err != nil {
+			_ = command.Wait()
+			return 0, err
+		}
+	}
+	if err := command.Wait(); err != nil {
+		return 0, fmt.Errorf("git cat-file: %w", err)
+	}
+	return len(targets), nil
+}
+
+// writeBlob reads one `git cat-file --batch` answer (`<sha> blob <size>`,
+// the content, a newline) into `to`.
+func writeBlob(reader *bufio.Reader, target verify.TreeEntry, to string) error {
+	header, err := reader.ReadString('\n')
+	if err != nil {
+		return fmt.Errorf("git cat-file: %w", err)
+	}
+	fields := strings.Fields(header)
+	const headerFields = 3 // sha, type, size
+	if len(fields) != headerFields || fields[0] != target.Blob || fields[1] != "blob" {
+		return fmt.Errorf("git cat-file: %q for %s", strings.TrimSpace(header), target.Path)
+	}
+	size, err := strconv.ParseInt(fields[2], 10, 64)
+	if err != nil {
+		return fmt.Errorf("git cat-file: %w", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(to), dirMode); err != nil {
+		return fmt.Errorf("secret-scan: %w", err)
+	}
+	file, err := os.OpenFile(to, os.O_CREATE|os.O_EXCL|os.O_WRONLY, fileMode)
+	if err != nil {
+		return fmt.Errorf("secret-scan: %w", err)
+	}
+	if _, err := io.CopyN(file, reader, size); err != nil {
+		_ = file.Close()
+		return fmt.Errorf("git cat-file: %w", err)
+	}
+	if err := file.Close(); err != nil {
+		return fmt.Errorf("secret-scan: %w", err)
+	}
+	if _, err := reader.Discard(1); err != nil { // the newline after the content
+		return fmt.Errorf("git cat-file: %w", err)
+	}
+	return nil
+}
+
+// runGitleaks scans the copies in `scan` with the pinned gitleaks and this
+// checkout's .gitleaks.toml (the base's, in the Secret scan job).
+func runGitleaks(ctx context.Context, scan string, copied int) error {
+	root, err := git(ctx, "", "rev-parse", "--show-toplevel")
+	if err != nil {
+		return err
 	}
 	binary, err := gitleaks(ctx)
 	if err != nil {

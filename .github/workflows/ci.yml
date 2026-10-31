@@ -5,6 +5,15 @@
 # attestation holds for the head. A push to main is gated separately: Deploy
 # staging deploys only a commit make ci-local attested (deploy-staging.yml).
 #
+# Trusted code only (docs/CI.md, "What runs"): pull_request_target runs this
+# file and checks out the code as they are on the base branch, never the pull
+# request's. The jobs read the head as data, through the API and git's
+# objects, and never run it, so a branch or a fork that rewrites
+# scripts/cilocal, .gitleaks.toml or this workflow changes nothing they do
+# until it merges. A fork's head fails Local verification. Never add a
+# checkout of the head, or an expression inside a run script
+# (verify.TrustProblems, tested in scripts/cilocal/verify).
+#
 # Runner: the CI_RUNNER repository variable, a JSON runs-on value such as
 # '["self-hosted","linux"]'; GitHub-hosted ubuntu-latest without it.
 name: CI
@@ -19,7 +28,7 @@ concurrency:
   cancel-in-progress: true
 
 on:
-  pull_request:
+  pull_request_target:
     # Edits only: make ci-local posts local-ci, then fills the PR body, and
     # that edit starts the run that checks both (docs/CI.md, "Local
     # verification"). A push or a new PR starts nothing, and an edit before
@@ -32,7 +41,8 @@ jobs:
   secrets:
     name: Secret scan
     # The pull request's changed files, docs included (docs/CI.md, "Secret
-    # scan"). It does not depend on the agent's machine.
+    # scan"), read from the head's objects and scanned with the base's
+    # scanner and .gitleaks.toml. It does not depend on the agent's machine.
     runs-on: ${{ fromJSON(vars.CI_RUNNER || '"ubuntu-latest"') }}
     timeout-minutes: 10
     permissions:
@@ -49,13 +59,15 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           PR: ${{ github.event.pull_request.number }}
-        run: go run ./scripts/cilocal secret-scan --pr "$PR"
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: go run ./scripts/cilocal secret-scan --pr "$PR" --head "$HEAD_SHA"
 
   claim:
     name: Local verification claim
     # Whether make ci-local has claimed this head: posted local-ci on it, or
-    # filled the section for it (verify.ClaimsHead). Until then the next job
-    # runs under another name, so the required check waits as "Expected".
+    # filled the section for it (verify.Claimed; a fork's head always is, so
+    # it fails). Until then the next job runs under another name, so the
+    # required check waits as "Expected".
     runs-on: ${{ fromJSON(vars.CI_RUNNER || '"ubuntu-latest"') }}
     timeout-minutes: 5
     permissions:
@@ -80,6 +92,7 @@ jobs:
           REPO: ${{ github.repository }}
           PR: ${{ github.event.pull_request.number }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
         run: go run ./scripts/cilocal check --claim
 
   local:
@@ -110,5 +123,6 @@ jobs:
           REPO: ${{ github.repository }}
           PR: ${{ github.event.pull_request.number }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
           CLAIMED: ${{ needs.claim.outputs.claimed }}
         run: go run ./scripts/cilocal check

@@ -78,7 +78,7 @@ make pr-merge PR=<PR> ARGS=--dry-run   # says what it would do
 
 `main` runs no CI. "Deploy staging" deploys a push to Railway staging only when `make ci-local` attested it (`cilocal attest`): the squash of an attested PR head, or a commit with its own `local-ci`. Two verified PRs merged together are not themselves verified; a clash surfaces on staging and is fixed forward. The hourly "Staging catch-up" deploys `main` whenever staging is behind and `main` is attested. Never wait for a deploy or for another PR to settle: merge each PR when its own head is attested and conflict-free, and stack the next at once; check its deploy afterwards (section 5); "Post-merge report" comments on the PR when a push workflow on its commit fails. A failed deploy is fixed forward in parallel and blocks no unrelated merge.
 
-An unattested `main` is the top priority: both workflows fail and say why. Fix it forward: `git worktree add --detach <dir> <sha>`, run what the commits since the last attested one need, then `make ci-local COMMIT=<sha> RAN="…"` there. It refuses a dirty tree, a commit off `origin/main` or one that already failed, and posts `local-ci` on the commit; then dispatch "Deploy staging".
+An unattested `main` is the top priority: both workflows fail and say why. Fix it forward: `git worktree add --detach <dir> <sha>`, run what the commits since the last attested one need (`make ci` when there is none, as in a new project's first attestation), then `make ci-local COMMIT=<sha> RAN="…"` there. It refuses a dirty tree, a commit off `origin/main` or one that already failed, and posts `local-ci` on the commit; then dispatch "Deploy staging".
 
 ## 8. Waiting without losing the work
 

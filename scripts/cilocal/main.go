@@ -67,8 +67,10 @@ func main() {
 
 // checkCommand is ci.yml's two Local verification jobs. It reads the PR body
 // and the head's statuses live from the API, not the event payload, so a
-// re-run after make ci-local sees what it posted. With --claim it writes
-// claimed=true|false to $GITHUB_OUTPUT (verify.ClaimsHead): ci.yml names the
+// re-run after make ci-local sees what it posted, and runs from the base's
+// checkout (pull_request_target), so the head is only data. HEAD_REPO is the
+// head's repository: a fork's head fails (verify.ForkOf). With --claim it
+// writes claimed=true|false to $GITHUB_OUTPUT (verify.Claimed): ci.yml names the
 // checking job "Local verification", the required check, only for a claimed
 // head. Run with CLAIMED other than true, it says what to run and passes
 // under its other name, so an unattested head's required check stays
@@ -76,13 +78,14 @@ func main() {
 func checkCommand(ctx context.Context, args []string) error {
 	claim := len(args) == 1 && args[0] == "--claim"
 	if len(args) > 0 && !claim {
-		return usageError{"usage: cilocal check [--claim] (env REPO, PR, HEAD_SHA; CLAIMED, GITHUB_OUTPUT)"}
+		return usageError{"usage: cilocal check [--claim] (env REPO, PR, HEAD_SHA, HEAD_REPO; CLAIMED, GITHUB_OUTPUT)"}
 	}
 	repo, number, head := os.Getenv("REPO"), os.Getenv("PR"), os.Getenv("HEAD_SHA")
 	if repo == "" || number == "" || head == "" {
 		return errors.New("check needs REPO, PR and HEAD_SHA")
 	}
 	hub := github{repo: repo}
+	fork := verify.ForkOf(repo, os.Getenv("HEAD_REPO"))
 	var pull struct {
 		Body string `json:"body"`
 	}
@@ -94,13 +97,13 @@ func checkCommand(ctx context.Context, args []string) error {
 		if err != nil {
 			return err
 		}
-		return writeClaim(head, verify.ClaimsHead(pull.Body, head, statuses))
+		return writeClaim(head, verify.Claimed(verify.Verification{Body: pull.Body, Head: head, Statuses: statuses, Fork: fork}))
 	}
 	if os.Getenv("CLAIMED") != "true" {
 		fmt.Printf("::notice::Awaiting make ci-local on this head: %s.\n", verify.NextStep)
 		return nil
 	}
-	verification, err := hub.verification(ctx, pull.Body, head)
+	verification, err := hub.verification(ctx, pull.Body, head, fork)
 	if err != nil {
 		return err
 	}

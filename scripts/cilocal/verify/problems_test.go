@@ -116,10 +116,46 @@ func TestLocalVerificationProblems(test *testing.T) {
 		}), "local-ci failed on aaaaaaaaaaaa at earlier"},
 		{"other head", edit(func(verification *verify.Verification) { verification.Head = otherSHA }), "not the PR head bbbbbbbbbbbb"},
 		{"no section", edit(func(verification *verify.Verification) { verification.Body = "## Problem" }), "has no Local verification section"},
+		// Randy's review of #134: a fork's author controls its body, so a
+		// section and status copied from an attested head must not pass.
+		{"fork", edit(func(verification *verify.Verification) { verification.Fork = "someone/go-fast-stack" }), "the head is in someone/go-fast-stack, not this repository"},
+		{"deleted fork", edit(func(verification *verify.Verification) { verification.Fork = verify.ForkGone }), "the head is in a deleted fork"},
 	} {
 		test.Run(testCase.name, func(test *testing.T) {
 			test.Parallel()
 			requireMention(test, verify.LocalVerificationProblems(testCase.verification), testCase.want)
 		})
+	}
+}
+
+func TestForkOf(test *testing.T) {
+	test.Parallel()
+	for _, testCase := range []struct{ headRepo, want string }{
+		{"acme/app", ""},
+		{"someone/app", "someone/app"},
+		{"", verify.ForkGone},
+	} {
+		if got := verify.ForkOf("acme/app", testCase.headRepo); got != testCase.want {
+			test.Errorf("ForkOf(acme/app, %q) = %q, want %q", testCase.headRepo, got, testCase.want)
+		}
+	}
+}
+
+// A fork's head is checked under the required name, so it fails red instead
+// of waiting as "Expected"; any other head is claimed as ClaimsHead says.
+func TestClaimed(test *testing.T) {
+	test.Parallel()
+	fork := verify.Verification{Body: "", Head: headSHA, Status: nil, Statuses: nil, Fork: "someone/app"}
+	if !verify.Claimed(fork) {
+		test.Error("a fork's unattested head is not claimed")
+	}
+	if problems := verify.LocalVerificationProblems(fork); !containsText(problems, "not this repository") {
+		test.Errorf("a fork's head passes: %q", problems)
+	}
+	if verify.Claimed(verify.Verification{Body: "", Head: headSHA, Status: nil, Statuses: nil, Fork: ""}) {
+		test.Error("an unattested branch head is claimed")
+	}
+	if !verify.Claimed(verified()) {
+		test.Error("an attested head is not claimed")
 	}
 }

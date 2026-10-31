@@ -90,23 +90,56 @@ func BodyProblems(body, head string) []string {
 }
 
 // Verification is what GitHub holds for a pull request's head: its body,
-// the `local-ci` status in the combined status (nil when there is none) and
-// every status ever posted on the head.
+// the `local-ci` status in the combined status (nil when there is none),
+// every status ever posted on the head, and the fork the head lives in.
 type Verification struct {
 	Body     string
 	Head     string
 	Status   *Status
 	Statuses []Status
+	// Fork is the repository of a head outside this one (owner/name, or
+	// ForkGone), "" for a branch of this repository.
+	Fork string
+}
+
+// ForkGone stands for the fork of a pull request whose fork was deleted.
+const ForkGone = "a deleted fork"
+
+// ForkOf is the fork a head lives in: "" when `headRepo` (owner/name) is
+// `repo` itself, ForkGone when GitHub names no repository.
+func ForkOf(repo, headRepo string) string {
+	switch headRepo {
+	case repo:
+		return ""
+	case "":
+		return ForkGone
+	}
+	return headRepo
+}
+
+// Claimed is whether the Local verification job checks this head under its
+// required name (ClaimsHead). A fork's head always is, so it fails red
+// rather than waiting as "Expected".
+func Claimed(verification Verification) bool {
+	return verification.Fork != "" || ClaimsHead(verification.Body, verification.Head, verification.Statuses)
 }
 
 // LocalVerificationProblems is every reason a head is not attested; empty
-// when it is: the section names the head and says what ran, `local-ci` is
-// success there with the section's digest, and no `local-ci` ever failed on
-// it. The Local verification job, the merge script and the staging gate all
-// decide with it. A head behind main is not a problem here.
+// when it is: the head is a branch of this repository, the section names the
+// head and says what ran, `local-ci` is success there with the section's
+// digest, and no `local-ci` ever failed on it. The Local verification job,
+// the merge script and the staging gate all decide with it. A head behind
+// main is not a problem here.
+//
+// A fork's head is never attested: make ci-local attests only a pushed
+// branch of this repository, and a fork's author controls its body, so a
+// section and status copied from another pull request must not pass.
 func LocalVerificationProblems(verification Verification) []string {
 	head := verification.Head
 	problems := BodyProblems(verification.Body, head)
+	if verification.Fork != "" {
+		problems = append(problems, fmt.Sprintf("the head is in %s, not this repository: make ci-local attests only branches pushed here (push the commits to a branch of this repository and open the PR from it)", verification.Fork))
+	}
 	if failed := FailedBefore(verification.Statuses); failed != nil {
 		problems = append(problems, fmt.Sprintf("%s failed on %s at %s: a failed head is resolved by a new commit (fix it here, or fix it forward off main and rebase), never by attesting again",
 			StatusContext, Short(head), failed.CreatedAt))

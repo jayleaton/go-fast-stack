@@ -90,8 +90,9 @@ func (hub github) current(ctx context.Context, sha string) (*verify.Status, erro
 }
 
 // verification is what GitHub holds for a head: the given body, the
-// head's `local-ci` in its combined status and every status ever posted on it.
-func (hub github) verification(ctx context.Context, body, head string) (verify.Verification, error) {
+// head's `local-ci` in its combined status and every status ever posted on
+// it, and `fork`, the repository of a head outside this one (verify.ForkOf).
+func (hub github) verification(ctx context.Context, body, head, fork string) (verify.Verification, error) {
 	current, err := hub.current(ctx, head)
 	if err != nil {
 		return verify.Verification{}, err
@@ -100,7 +101,7 @@ func (hub github) verification(ctx context.Context, body, head string) (verify.V
 	if err != nil {
 		return verify.Verification{}, err
 	}
-	return verify.Verification{Body: body, Head: head, Status: current, Statuses: statuses}, nil
+	return verify.Verification{Body: body, Head: head, Status: current, Statuses: statuses, Fork: fork}, nil
 }
 
 // pullRequest is the open pull request of a branch.
@@ -115,9 +116,30 @@ type pullRequest struct {
 	IsDraft     bool           `json:"isDraft"`
 	Mergeable   string         `json:"mergeable"`
 	Checks      []verify.Check `json:"statusCheckRollup"`
+	// A head in a fork: its repository and owner (null once it is deleted).
+	CrossRepository bool `json:"isCrossRepository"`
+	HeadRepository  *struct {
+		Name string `json:"name"`
+	} `json:"headRepository"`
+	HeadOwner *struct {
+		Login string `json:"login"`
+	} `json:"headRepositoryOwner"`
 }
 
-const pullFields = "number,url,body,headRefOid,headRefName,baseRefName,state,isDraft,mergeable,statusCheckRollup"
+const pullFields = "number,url,body,headRefOid,headRefName,baseRefName,state,isDraft,mergeable,statusCheckRollup,isCrossRepository,headRepository,headRepositoryOwner"
+
+// fork is the repository the pull request's head lives in when it is not
+// `repo` (verify.ForkOf), or "".
+func (pull pullRequest) fork(repo string) string {
+	if !pull.CrossRepository {
+		return ""
+	}
+	headRepo := ""
+	if pull.HeadRepository != nil && pull.HeadOwner != nil {
+		headRepo = pull.HeadOwner.Login + "/" + pull.HeadRepository.Name
+	}
+	return verify.ForkOf(repo, headRepo)
+}
 
 // openPull is the branch's open pull request, or nil.
 func (hub github) openPull(ctx context.Context, branch string) (*pullRequest, error) {
@@ -132,10 +154,13 @@ func (hub github) openPull(ctx context.Context, branch string) (*pullRequest, er
 	if err := json.Unmarshal([]byte(out), &pulls); err != nil {
 		return nil, fmt.Errorf("gh pr list: %w", err)
 	}
-	if len(pulls) == 0 {
-		return nil, nil
+	// A fork's pull request can share the branch's name; it is not this branch's.
+	for index := range pulls {
+		if !pulls[index].CrossRepository {
+			return &pulls[index], nil
+		}
 	}
-	return &pulls[0], nil
+	return nil, nil
 }
 
 func (hub github) pull(ctx context.Context, number int) (pullRequest, error) {
@@ -222,7 +247,10 @@ func (hub github) attested(ctx context.Context, sha string) (string, []string, e
 		MergeCommitSHA string `json:"merge_commit_sha"`
 		Body           string `json:"body"`
 		Head           struct {
-			SHA string `json:"sha"`
+			SHA  string `json:"sha"`
+			Repo *struct {
+				FullName string `json:"full_name"`
+			} `json:"repo"`
 		} `json:"head"`
 	}
 	var pulls []mergedPull
@@ -247,7 +275,11 @@ func (hub github) attested(ctx context.Context, sha string) (string, []string, e
 	}
 	judged := []verify.PullAttestation{}
 	for _, pull := range merged {
-		verification, err := hub.verification(ctx, pull.Body, pull.Head.SHA)
+		headRepo := ""
+		if pull.Head.Repo != nil {
+			headRepo = pull.Head.Repo.FullName
+		}
+		verification, err := hub.verification(ctx, pull.Body, pull.Head.SHA, verify.ForkOf(hub.repo, headRepo))
 		if err != nil {
 			return "", nil, err
 		}

@@ -1,6 +1,7 @@
 package verify
 
 import (
+	"fmt"
 	"path"
 	"regexp"
 	"slices"
@@ -161,4 +162,90 @@ func ReportGaps(workflows map[string]string, report string) []string {
 	}
 	slices.Sort(gaps)
 	return gaps
+}
+
+// TrustedTrigger is the only event ci.yml runs on.
+const TrustedTrigger = "pull_request_target"
+
+// TrustProblems is why a pull request workflow (ci.yml) would let the pull
+// request decide its own required checks, or nothing. Its jobs are the gate,
+// so they run the base's code on the head as data:
+//
+//   - only on pull_request_target: on pull_request GitHub takes the workflow
+//     and its checkout from the pull request, so a branch or fork could
+//     rewrite the job, or the code it runs (an init() that exits 0);
+//   - no checkout of anything but the default, the base;
+//   - no expression inside a run script, where a branch name or title would
+//     run as shell; values go through env;
+//   - the secret scan reads the head's objects (--head), so it scans the
+//     head's files with the base's scanner and .gitleaks.toml;
+//   - the attestation check knows the head's repository (HEAD_REPO), so a
+//     fork's head fails closed.
+func TrustProblems(text string) []string {
+	lines := yamlLines(text)
+	problems := []string{}
+	if triggers := triggersOf(lines); !slices.Equal(triggers, []string{TrustedTrigger}) {
+		problems = append(problems, fmt.Sprintf("it runs on %v, not %s alone: on pull_request the pull request supplies the workflow and the code it runs", triggers, TrustedTrigger))
+	}
+	for at, line := range lines {
+		item, isItem := strings.CutPrefix(line.text, "- ")
+		if !isItem {
+			continue
+		}
+		step := append([]yamlLine{{indent: line.indent + len("- "), text: item}}, children(lines, at)...)
+		problems = append(problems, stepTrustProblems(step)...)
+	}
+	return problems
+}
+
+// triggersOf is the events under a workflow's top-level `on:`.
+func triggersOf(lines []yamlLine) []string {
+	for at, line := range lines {
+		match := onKey.FindStringSubmatch(line.text)
+		if line.indent != 0 || match == nil {
+			continue
+		}
+		if match[1] != "" {
+			return list(nil, 0, match[1])
+		}
+		events := []string{}
+		block := children(lines, at)
+		for _, event := range block {
+			if event.indent == block[0].indent {
+				name, _, _ := strings.Cut(event.text, ":")
+				events = append(events, unquote(name))
+			}
+		}
+		return events
+	}
+	return nil
+}
+
+func stepTrustProblems(step []yamlLine) []string {
+	problems := []string{}
+	text := func(prefix string) bool {
+		return slices.ContainsFunc(step, func(line yamlLine) bool { return strings.HasPrefix(line.text, prefix) })
+	}
+	mentions := func(fragment string) bool {
+		return slices.ContainsFunc(step, func(line yamlLine) bool { return strings.Contains(line.text, fragment) })
+	}
+	if mentions("uses: actions/checkout") && (text("ref:") || text("repository:")) {
+		problems = append(problems, "a checkout names a ref or repository: only the default checkout, the base, is trusted")
+	}
+	for at, line := range step {
+		if !strings.HasPrefix(line.text, "run:") {
+			continue
+		}
+		script := append([]yamlLine{line}, children(step, at)...)
+		if slices.ContainsFunc(script, func(line yamlLine) bool { return strings.Contains(line.text, "${{") }) {
+			problems = append(problems, fmt.Sprintf("%q puts an expression in its script: pass it through env", line.text))
+		}
+	}
+	if mentions("scripts/cilocal secret-scan") && !mentions("--head") {
+		problems = append(problems, "the secret scan does not read the head as data (--head)")
+	}
+	if mentions("scripts/cilocal check") && !text("HEAD_REPO:") {
+		problems = append(problems, "the attestation check is not told the head's repository (HEAD_REPO), so a fork's head would not fail closed")
+	}
+	return problems
 }

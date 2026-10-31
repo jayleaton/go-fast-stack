@@ -3,6 +3,7 @@ package verify
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -49,6 +50,69 @@ func (head Head) Refusal() string {
 	return ""
 }
 
+// PublishRefusal is why make ci-local may not post `report`, or "": it reads
+// the checkout again just before it posts (`head`, `tree`), and the report
+// must be for exactly that clean, pushed head and its tree. One rule for
+// every way a report is posted, so none can publish for a worktree that
+// changed or a HEAD that moved after the report was made.
+func PublishRefusal(report Report, head Head, tree string) string {
+	if refusal := head.Refusal(); refusal != "" {
+		return refusal
+	}
+	if report.Head != head.SHA {
+		return fmt.Sprintf("the report is for %s, but HEAD is now %s", Short(report.Head), Short(head.SHA))
+	}
+	if report.Tree != tree {
+		return fmt.Sprintf("the report is for tree %s, but HEAD's tree is %s", Short(report.Tree), Short(tree))
+	}
+	return ""
+}
+
+// AttestedAncestorLimit is how many first-parent ancestors of a main commit
+// make ci-local reads for the last attested one.
+const AttestedAncestorLimit = 50
+
+// LastAttested is the nearest of a main commit's first-parent `ancestors`
+// (nearest first) the staging gate accepts, or "" when none is: a new
+// project's first attestation, or a longer run of unattested commits.
+func LastAttested(ancestors []string, attested func(string) bool) string {
+	for _, ancestor := range ancestors {
+		if attested(ancestor) {
+			return ancestor
+		}
+	}
+	return ""
+}
+
+// FullCheck is the check over the whole tree a first attestation runs.
+const FullCheck = "make ci"
+
+// RanFullCheck is whether a statement names FullCheck: a command (parts
+// joined with `;` or `&&`) that runs make with the target ci, directly or
+// through a wrapper (`davit box run -- make ci`).
+func RanFullCheck(ran string) bool {
+	for _, part := range strings.FieldsFunc(strings.ReplaceAll(ran, "&&", ";"), func(char rune) bool { return char == ';' }) {
+		fields := strings.Fields(part)
+		for index, field := range fields {
+			if field == "make" && slices.Contains(fields[index+1:], "ci") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// FirstAttestationProblem is why a main commit's statement `ran` may not
+// attest it, or "": with no attested main commit before it (`last` empty)
+// nothing narrows what changed, so it must have run the whole check.
+func FirstAttestationProblem(sha, last, ran string) string {
+	if last != "" || RanFullCheck(ran) {
+		return ""
+	}
+	return fmt.Sprintf("no attested main commit among the %d before %s (a new project's first attestation, or a longer unattested run), so its statement covers the whole tree: run %s on it, then make ci-local COMMIT=%s RAN=%q",
+		AttestedAncestorLimit, Short(sha), FullCheck, Short(sha), FullCheck)
+}
+
 // PullAttestation is a merged pull request whose merge commit is the commit
 // being judged, with what GitHub holds for its merged head.
 type PullAttestation struct {
@@ -85,8 +149,8 @@ func Attestation(sha, status string, pulls []PullAttestation) (string, []string)
 // AttestNextStep is how to attest an unattested main commit, so the staging
 // gate passes it.
 func AttestNextStep(sha string) string {
-	return fmt.Sprintf("in a clean worktree of it (git worktree add --detach <dir> %s), run what the commits since the last attested main commit need, then make ci-local COMMIT=%s RAN=\"<what you ran>\" there: it posts local-ci on %s. Then dispatch Deploy staging (Staging catch-up also dispatches it within the hour)",
-		sha, sha, Short(sha))
+	return fmt.Sprintf("in a clean worktree of it (git worktree add --detach <dir> %s), run what the commits since the last attested main commit need (%s when there is none, as in a new project), then make ci-local COMMIT=%s RAN=\"<what you ran>\" there: it posts local-ci on %s. Then dispatch Deploy staging (Staging catch-up also dispatches it within the hour)",
+		sha, FullCheck, sha, Short(sha))
 }
 
 var squashTitle = regexp.MustCompile(`\(#(\d+)\)$`)

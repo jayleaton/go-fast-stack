@@ -141,6 +141,18 @@ func runCommand(ctx context.Context, args []string) error {
 	if why := verify.FailedHeadRefusal(found.head.SHA, statuses); why != "" {
 		return usageError{"refusing to attest: " + why}
 	}
+	if found.head.MainCommit && !opts.failedSet {
+		last, err := lastAttested(ctx, hub, found.head.SHA)
+		if err != nil {
+			return err
+		}
+		if why := verify.FirstAttestationProblem(found.head.SHA, last, ran); why != "" {
+			return usageError{"refusing to attest: " + why}
+		}
+		if last != "" {
+			logf("the last attested main commit is %s: the statement covers %s..%s", verify.Short(last), verify.Short(last), verify.Short(found.head.SHA))
+		}
+	}
 	author, _ := git(ctx, "", "config", "user.name")
 	if author == "" {
 		author = "unknown"
@@ -153,7 +165,7 @@ func runCommand(ctx context.Context, args []string) error {
 	if opts.failedSet {
 		report.Result = verify.Failed
 	}
-	if err := publish(ctx, hub, found, report); err != nil {
+	if err := publish(ctx, hub, opts, report); err != nil {
 		return err
 	}
 	if report.Result != verify.Passed {
@@ -162,11 +174,38 @@ func runCommand(ctx context.Context, args []string) error {
 	return nil
 }
 
-// publish posts the `local-ci` status on the head first, then the PR body's
-// section. The body edit starts the PR's CI run (`edited`), whose Local
-// verification job then reads both; when the body already holds this
-// section, the PR's newest CI run is re-run instead.
-func publish(ctx context.Context, hub github, found state, report verify.Report) error {
+// lastAttested is the nearest of a main commit's first-parent ancestors
+// (verify.AttestedAncestorLimit of them) the staging gate accepts, or "". A
+// root commit, or the first commit of a shallow clone, has none.
+func lastAttested(ctx context.Context, hub github, sha string) (string, error) {
+	list, err := git(ctx, "", "rev-list", "--first-parent", fmt.Sprintf("--max-count=%d", verify.AttestedAncestorLimit+1), sha)
+	if err != nil {
+		return "", err
+	}
+	ancestors := strings.Fields(list)[1:] // the first is the commit itself
+	var lookupErr error
+	last := verify.LastAttested(ancestors, func(ancestor string) bool {
+		by, _, err := hub.attested(ctx, ancestor)
+		lookupErr = err
+		return err != nil || by != ""
+	})
+	return last, lookupErr
+}
+
+// publish reads the checkout again and posts `report` only for exactly that
+// clean, pushed head and tree (verify.PublishRefusal): the `local-ci` status
+// on the head first, then the PR body's section. The body edit starts the
+// PR's CI run (`edited`), whose Local verification job then reads both; when
+// the body already holds this section, the PR's newest CI run is re-run
+// instead.
+func publish(ctx context.Context, hub github, opts options, report verify.Report) error {
+	found, err := repositoryState(ctx, hub, opts)
+	if err != nil {
+		return err
+	}
+	if why := verify.PublishRefusal(report, found.head, found.tree); why != "" {
+		return usageError{"refusing to attest: " + why}
+	}
 	passed := report.Result == verify.Passed
 	section := verify.RenderSection(report)
 	current := found.pull != nil && found.pull.HeadRefOid == report.Head
@@ -215,7 +254,7 @@ func publish(ctx context.Context, hub github, found state, report verify.Report)
 func rerunWaitingCI(ctx context.Context, hub github, head string) {
 	const attempts, pause = 40, 15 * time.Second
 	for attempt := range attempts {
-		out, err := output(ctx, "", "gh", "run", "list", "-R", hub.repo, "--workflow", "ci.yml", "--commit", head, "--event", "pull_request",
+		out, err := output(ctx, "", "gh", "run", "list", "-R", hub.repo, "--workflow", "ci.yml", "--commit", head, "--event", verify.TrustedTrigger,
 			"--limit", "1", "--json", "databaseId,status,conclusion,url")
 		var runs []struct {
 			DatabaseID int64  `json:"databaseId"`

@@ -118,3 +118,104 @@ func TestAttestNextStep(test *testing.T) {
 		}
 	}
 }
+
+// Randy's review of #134 (TestRejectedDirtyTreeReportCanBePublished): a run
+// refused for worktree changes still published its report as success. The
+// checkout is read again just before posting, and a report is posted only
+// for exactly that clean, pushed head and tree.
+func TestPublishRefusal(test *testing.T) {
+	test.Parallel()
+	report := passingReport()
+	tree := report.Tree
+	clean := verify.Head{SHA: headSHA, Branch: "feat/x", Pushed: headSHA, Base: "main"}
+	for _, testCase := range []struct {
+		name string
+		head func(verify.Head) verify.Head
+		tree string
+		want string // "" when it may post
+	}{
+		{"clean and unchanged", func(head verify.Head) verify.Head { return head }, tree, ""},
+		{"a file changed since the report", func(head verify.Head) verify.Head { head.Dirty = " M README.md"; return head }, tree, "uncommitted changes"},
+		{"HEAD moved", func(head verify.Head) verify.Head { head.SHA, head.Pushed = otherSHA, otherSHA; return head }, tree, "the report is for aaaaaaaaaaaa, but HEAD is now bbbbbbbbbbbb"},
+		{"not pushed any more", func(head verify.Head) verify.Head { head.Pushed = otherSHA; return head }, tree, "push first"},
+		{"another tree", func(head verify.Head) verify.Head { return head }, strings.Repeat("f", 40), "the report is for tree dddddddddddd, but HEAD's tree is ffffffffffff"},
+	} {
+		test.Run(testCase.name, func(test *testing.T) {
+			test.Parallel()
+			got := verify.PublishRefusal(report, testCase.head(clean), testCase.tree)
+			if testCase.want == "" {
+				if got != "" {
+					test.Fatalf("PublishRefusal = %q, want none", got)
+				}
+				return
+			}
+			if !strings.Contains(got, testCase.want) {
+				test.Fatalf("PublishRefusal = %q, want it to mention %q", got, testCase.want)
+			}
+		})
+	}
+}
+
+func TestLastAttested(test *testing.T) {
+	test.Parallel()
+	attestedSet := map[string]bool{"m2": true, "m4": true}
+	isAttested := func(sha string) bool { return attestedSet[sha] }
+	for _, testCase := range []struct {
+		name      string
+		ancestors []string
+		want      string
+	}{
+		{"nearest attested ancestor", []string{"m1", "m2", "m3", "m4"}, "m2"},
+		{"none attested", []string{"m1", "m3"}, ""},
+		{"a root commit", nil, ""},
+	} {
+		test.Run(testCase.name, func(test *testing.T) {
+			test.Parallel()
+			if got := verify.LastAttested(testCase.ancestors, isAttested); got != testCase.want {
+				test.Fatalf("LastAttested = %q, want %q", got, testCase.want)
+			}
+		})
+	}
+}
+
+func TestRanFullCheck(test *testing.T) {
+	test.Parallel()
+	for _, testCase := range []struct {
+		ran  string
+		want bool
+	}{
+		{"make ci", true},
+		{"make lint; make ci", true},
+		{"go build ./... && make ci", true},
+		{"davit box run -- make ci", true},
+		{"make -j4 ci", true},
+		{"make ci-local", false},
+		{"make lint test", false},
+		{"ci", false},
+		{"", false},
+	} {
+		if got := verify.RanFullCheck(testCase.ran); got != testCase.want {
+			test.Errorf("RanFullCheck(%q) = %v, want %v", testCase.ran, got, testCase.want)
+		}
+	}
+}
+
+// Randy's review of #134 (TestNoAttestedAncestorHasNoBootstrapBase): a new
+// project has no attested main commit, and the first attestation was
+// refused before anything ran. It is allowed, and it must cover the whole
+// tree: with no attested main commit before it, the statement names make ci.
+func TestFirstAttestationProblem(test *testing.T) {
+	test.Parallel()
+	if got := verify.FirstAttestationProblem(headSHA, "", "make ci"); got != "" {
+		test.Fatalf("a first attestation that ran make ci is refused: %q", got)
+	}
+	if got := verify.FirstAttestationProblem(headSHA, otherSHA, "make lint"); got != "" {
+		test.Fatalf("an attestation since an attested main commit is refused: %q", got)
+	}
+	got := verify.FirstAttestationProblem(headSHA, "", "make lint test")
+	for _, want := range []string{"no attested main commit among the 50 before aaaaaaaaaaaa", "run make ci on it", `make ci-local COMMIT=aaaaaaaaaaaa RAN="make ci"`} {
+		if !strings.Contains(got, want) {
+			test.Errorf("FirstAttestationProblem = %q, want it to mention %q", got, want)
+		}
+	}
+}

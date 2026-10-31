@@ -133,7 +133,7 @@ func mergeOne(ctx context.Context, hub github, number int, opts mergeFlags) (ver
 	if err != nil {
 		return verify.Verdict{}, err
 	}
-	verification, err := hub.verification(ctx, pull.Body, pull.HeadRefOid)
+	verification, err := hub.verification(ctx, pull.Body, pull.HeadRefOid, pull.fork(hub.repo))
 	if err != nil {
 		return verify.Verdict{}, err
 	}
