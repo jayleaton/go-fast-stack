@@ -10,7 +10,8 @@
 // Any finding fails, reachable or not: a published fix means bump to it.
 // The only way past a finding is an entry in scripts/vulncheck/allowlist.txt,
 // for an advisory with no fix (or none its consumer can take) that this
-// repository cannot reach; the reason says why. Go advisories are listed by
+// repository cannot reach (or reaches only in dev tooling or on one client
+// device); the reason says why. Go advisories are listed by
 // GO- id, npm ones by GHSA id. Each entry carries a reason and a review date; an
 // entry past its review date fails, an entry that no longer matches anything
 // fails (delete it), and a Go advisory our code calls fails even when listed.

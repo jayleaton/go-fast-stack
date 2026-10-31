@@ -37,7 +37,7 @@ describe('mobile app against the Go server', () => {
     const { data, error } = await app.signUp.email({ name: 'Ada', email, password })
     expect(error).toBeNull()
     expect(data?.user.email).toBe(email)
-    expect(app.authClient.getCookie()).toMatch(/^better-auth\.session_token=/)
+    expect(await app.authClient.getCookie()).toMatch(/^better-auth\.session_token=/)
   })
 
   it('gets the session with the stored cookie', async () => {
@@ -50,7 +50,7 @@ describe('mobile app against the Go server', () => {
   it('signs out, clearing the server session and the keychain', async () => {
     const { error } = await app.signOut()
     expect(error).toBeNull()
-    expect(app.authClient.getCookie()).toBe('')
+    expect(await app.authClient.getCookie()).toBe('')
     expect((await app.authClient.getSession()).data).toBeNull()
   })
 
@@ -132,7 +132,7 @@ describe('delete account', () => {
 
     const deleted = await app.deleteAccount()
     expect(deleted).toEqual({ data: { success: true }, error: null })
-    expect(app.authClient.getCookie()).toBe('')
+    expect(await app.authClient.getCookie()).toBe('')
     expect((await app.authClient.getSession()).data).toBeNull()
 
     const again = await app.signIn.email({ email, password })
