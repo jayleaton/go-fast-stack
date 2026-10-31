@@ -1,0 +1,112 @@
+name: Draft release
+run-name: Draft release ${{ inputs.version || format('(next {0})', inputs.bump) }}
+
+# Cuts a draft GitHub release at the commit staging runs now, with notes
+# generated from the pull requests merged since the last release. Nothing is
+# tagged or deployed here: publishing the draft creates the tag and starts
+# "Deploy production" (docs/RELEASES.md). A release made with the workflow
+# token could not start another workflow, which is why this stops at a draft.
+#
+# Runner: the RELEASE_RUNNER repository variable, else CI_RUNNER (ci.yml).
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Which part of the last vX.Y.Z to increase (the first release is v1.0.0)
+        required: true
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+      version:
+        description: Exact version instead (vX.Y.Z). Leave empty to use the bump.
+        required: false
+        type: string
+
+concurrency:
+  group: draft-release
+  cancel-in-progress: false
+
+permissions:
+  # gh release create
+  contents: write
+  # staging_ran / staging_commit read Deploy staging's runs and jobs.
+  actions: read
+
+jobs:
+  draft:
+    name: Draft a release of what staging runs
+    runs-on: ${{ fromJSON(vars.RELEASE_RUNNER || vars.CI_RUNNER || '"ubuntu-latest"') }}
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERSION: ${{ inputs.version }}
+      BUMP: ${{ inputs.bump }}
+      ACTOR: ${{ github.triggering_actor }}
+      RELEASERS: ${{ vars.PRODUCTION_RELEASERS }}
+      STAGING_WEB_URL: ${{ vars.STAGING_WEB_URL }}
+    steps:
+      - name: Checkout main with history
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Draft the release
+        run: |
+          . .github/scripts/release-lib.sh
+          if ! is_releaser "$ACTOR"; then
+            echo "::error::$ACTOR is not in the PRODUCTION_RELEASERS repository variable."
+            exit 1
+          fi
+          code=$(staging_ready)
+          if [ "$code" != 200 ]; then
+            echo "::error::$(staging_not_ready "$code") Fix staging before releasing."
+            exit 1
+          fi
+          if ! sha=$(staging_commit) || ! git merge-base --is-ancestor "$sha" origin/main; then
+            echo "::error::Cannot prove staging runs a commit on main (found '${sha:-}'). A dry run (RAILWAY_DEPLOY not true) deploys nothing, so it proves nothing."
+            exit 1
+          fi
+          run=$(staging_ran "$sha") || {
+            echo "::error::No successful Deploy staging run found for $sha."
+            exit 1
+          }
+
+          last=$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -1)
+          if [ -z "$VERSION" ]; then
+            if [ -z "$last" ]; then
+              VERSION=v1.0.0
+            else
+              rest=${last#v}
+              major=${rest%%.*}
+              rest=${rest#*.}
+              minor=${rest%%.*}
+              patch=${rest#*.}
+              case $BUMP in
+                major) VERSION="v$((major + 1)).0.0" ;;
+                minor) VERSION="v$major.$((minor + 1)).0" ;;
+                *) VERSION="v$major.$minor.$((patch + 1))" ;;
+              esac
+            fi
+          fi
+          if ! echo "$VERSION" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::'$VERSION' is not vX.Y.Z."
+            exit 1
+          fi
+          if git rev-parse -q --verify "refs/tags/$VERSION" >/dev/null || gh release view "$VERSION" >/dev/null 2>&1; then
+            echo "::error::$VERSION already exists as a tag or release."
+            exit 1
+          fi
+          if [ -n "$last" ] && [ "$(git rev-parse "$last^{commit}")" = "$sha" ]; then
+            echo "::error::$last already releases $sha, the commit staging runs. Nothing new to release."
+            exit 1
+          fi
+
+          url=$(gh release create "$VERSION" --draft --target "$sha" --title "$VERSION" --generate-notes \
+            --notes "Staging ran \`$sha\` and passed readiness ([Deploy staging run]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$run)).")
+          echo "Drafted $VERSION at $sha: $url"
+          {
+            echo "Drafted **$VERSION** at \`$sha\` (the commit staging runs)."
+            echo
+            echo "Review the notes, then **Publish release** at $url. Publishing tags $sha and deploys it to production through Deploy production's gate."
+          } >>"$GITHUB_STEP_SUMMARY"

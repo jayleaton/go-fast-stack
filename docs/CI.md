@@ -1,6 +1,6 @@
 # CI
 
-Every check runs in `make ci-local`, on the agent's machine, before a pull request merges ([Local verification](#local-verification)). GitHub runs no verification on `main` or `dev`, and on a pull request only two small jobs, once `make ci-local` has filled its body. Actions minutes are billed per job, rounded up to the whole minute, and a PR's checks now cost about two of them.
+Every check runs in `make ci-local`, on the agent's machine, before a pull request merges ([Local verification](#local-verification)). GitHub runs no verification on `main`, and on a pull request only two small jobs, once `make ci-local` has filled its body. Actions minutes are billed per job, rounded up to the whole minute, and a PR's checks now cost about two of them.
 
 ## What runs
 
@@ -11,9 +11,9 @@ Every check runs in `make ci-local`, on the agent's machine, before a pull reque
 
 A newer edit cancels the PR's older run (`ci-pr-<n>`). Both jobs run on the `CI_RUNNER` repository variable, a JSON `runs-on` value (`'["self-hosted","linux"]'`), or GitHub-hosted `ubuntu-latest` without it. They build `scripts/cilocal`, which imports only the standard library, so they download no modules.
 
-A push to `dev` or `main` runs only `Deploy gate` (`deploy-gate.yml`), which passes a commit `make ci-local` attested ([Required checks and staging](#required-checks-and-staging)). `Bench dev loop` still runs on `bench/**` pushes and by hand.
+A push to `main` runs only `Deploy staging` (`deploy-staging.yml`), which deploys a commit `make ci-local` attested to Railway staging ([Required checks and staging](#required-checks-and-staging)); production runs releases ([RELEASES.md](RELEASES.md)). `Bench dev loop` still runs on `bench/**` pushes and by hand.
 
-`make ci-local` selects from the diff against the merge-base with the PR's base branch (`origin/dev` or `origin/main`, [scripts/branches.sh](../scripts/branches.sh)), in `scripts/cilocal/verify` (`Classify`, `Plan`):
+`make ci-local` selects from the diff against the merge-base with the PR's base branch (`origin/main`, [scripts/branches.sh](../scripts/branches.sh)), in `scripts/cilocal/verify` (`Classify`, `Plan`):
 
 | Checklist item | Steps | Selected when |
 |---|---|---|
@@ -22,7 +22,7 @@ A push to `dev` or `main` runs only `Deploy gate` (`deploy-gate.yml`), which pas
 | lint | `make lint LINT_DIRS=<affected dirs>`; `make lint-layering` on a full run; `make actionlint` | the same; the probes on a full run; actionlint when `.github/workflows/` or `.github/actions/` changed |
 | generated | `make check-generated` | affected.sh reports sqlc, templ or `go:generate` inputs or outputs changed |
 | tests | `make test TEST_PKGS=<affected packages>` (`-race`, its own throwaway Postgres, time budgets, the tested packages' coverage floors); `make lint-tests` and `check-coverage.sh --exist` on a full run | Go inputs map to packages |
-| migrations | `scripts/check-migration-order.sh` against the tips of `origin/dev` and `origin/main` | a migration (`*/migrations/*.sql`) or the check changed |
+| migrations | `scripts/check-migration-order.sh` against the tip of `origin/main` | a migration (`*/migrations/*.sql`) or the check changed |
 | smoke | `make release-smoke` | affected.sh's `smoke`: a Dockerfile, or a package one builds |
 | deploy | `make deploy-check` | `deploy/`, `.env.example`, `.golangci.yml`, `tools/` or `scripts/namelint/` |
 | mobile | `pnpm install --frozen-lockfile`, `tsc`, `expo lint`, `expo install --check`, `pnpm test` in `apps/mobile-app` | `apps/mobile-app/` or the route table its test reads (`apps/web/internal/config/routes.go`) |
@@ -59,12 +59,12 @@ Where the `davit` CLI is set up, a run whose machine slot is taken runs its step
 
 The main ruleset should require `Secret scan` and `Local verification` from GitHub Actions on every pull request, and nothing else from CI (the old single check, `ci-ok`, is gone). It need not require a head to be up to date with its base, and neither does `make pr-merge`: only a conflict stops it. A repository whose Actions cannot run (billing, or turned off) requires the `local-ci` status itself instead ([below](#when-actions-cannot-run)).
 
-**A deployed branch deploys only what `make ci-local` attested.** Railway builds each environment from its branch through its GitHub integration (`main` for production, `dev` for staging and qa: [docs/deploy.md](deploy.md)), so there is no deploy workflow to gate. `Deploy gate` runs on every push to `dev` and `main`, and its `Attested` job (`cilocal attest <sha>`) passes when either:
+**Staging deploys only what `make ci-local` attested.** Railway's GitHub auto-deploy is off (`repo: ""` in `deploy/platform.yaml`): `Deploy staging` runs on every push to `main`, and its plan job (`cilocal attest <sha>`) lets the rollout start only when either:
 
 - the pushed commit itself has a successful `local-ci` status (`make ci-local ARGS="--commit <sha>"` in a clean worktree of it posts it), or
 - the pull request whose merge made it (by GitHub's commit-to-PR index, or its `(#NNN)` squash title) passed local verification on the merged head.
 
-Turn on **Wait for CI** in each Railway service's deploy settings (Railway's IaC has no field for it yet): Railway then waits for the commit's GitHub check suites and skips the deploy when `Deploy gate` fails. A direct push, or the merge of an unattested head, deploys nothing. **The merged tree of two verified PRs is not itself verified**: a head behind its base squashes into a tree nobody ran; a clash surfaces after the deploy and is fixed forward. An unattested `main` is the top priority: `git worktree add --detach <dir> <sha>`, then `make ci-local ARGS="--commit <sha>"` there, which selects against the last commit the gate accepts (`SelectionBase`, at most 50 back) and posts `local-ci` on it.
+A direct push, or the merge of an unattested head, deploys nothing, and the hourly `Staging catch-up` keeps refusing it until it is attested. Production takes only a release staging already ran ([RELEASES.md](RELEASES.md#what-is-gated)). **The merged tree of two verified PRs is not itself verified**: a head behind its base squashes into a tree nobody ran; a clash surfaces after the deploy and is fixed forward. An unattested `main` is the top priority: `git worktree add --detach <dir> <sha>`, then `make ci-local ARGS="--commit <sha>"` there, which selects against the last commit the gate accepts (`SelectionBase`, at most 50 back) and posts `local-ci` on it; then re-run `Deploy staging` (or wait for the catch-up).
 
 ## Merging on local verification
 
@@ -75,9 +75,9 @@ A pull request merges once `make ci-local` passed on its exact head, GitHub can 
 
 ### When Actions cannot run
 
-On a repository whose GitHub Actions do not start (a spent or blocked billing budget, or Actions turned off), `CI` and `Deploy gate` never run. Then:
+On a repository whose GitHub Actions do not start (a spent or blocked billing budget, or Actions turned off), no workflow runs: not `CI`, and not `Deploy staging` or `Deploy production`. Then:
 
 - `make pr-merge` merges on `local-ci` alone when the head has no CI run at all, and says so (`--require-actions` refuses instead). The checks it makes are the ones `Local verification` would have made, from the same code.
 - Require the `local-ci` commit status in the ruleset (it is posted by `make ci-local`, not by Actions), not `Secret scan` or `Local verification`, which would wait forever.
-- Leave Railway's **Wait for CI** off: with no check suite the gate cannot pass. Staging then deploys every merge, attested or not; `cilocal attest <sha>` still answers the question by hand.
-- `CI_RUNNER` pointed at a self-hosted runner brings both workflows back without hosted minutes.
+- Nothing deploys on its own. Deploy by hand with `make railway-up PLATFORM_ENV=staging` from a clean checkout of `main` after `go run ./scripts/cilocal attest <sha>` passes, and to production only a release staging ran ([deploy.md](deploy.md)). Do not turn Railway's GitHub auto-deploy back on to work around it: that deploys unattested commits.
+- `CI_RUNNER` pointed at a self-hosted runner brings every workflow back without hosted minutes (`RELEASE_RUNNER` overrides it for the release jobs).

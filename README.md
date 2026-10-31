@@ -64,7 +64,7 @@ Every test runs in parallel, and none may sleep. Lint enforces both, and `make t
 
 These figures come from idle usage measured on Railway on 2026-10-22. Traffic, egress and backups come on top. Nightly backups of a template-sized database cost fractions of a cent. Details: [docs/deploy.md](docs/deploy.md#cost) and [docs/backups.md](docs/backups.md).
 
-**CI minutes.** GitHub bills every job rounded up to a whole minute. The checks now run in `make ci-local`, so a PR costs two small jobs (`Secret scan` and `Local verification`, about a minute each) and a push to `dev` or `main` one (`Deploy gate`). Before that, one job per PR:
+**CI minutes.** GitHub bills every job rounded up to a whole minute. The checks now run in `make ci-local`, so a PR costs two small jobs (`Secret scan` and `Local verification`, about a minute each) and a merge to `main` the staging deploy (`Deploy staging`: [docs/RELEASES.md](docs/RELEASES.md)). Before that, one job per PR:
 
 | | Before | Now |
 |---|---:|---:|

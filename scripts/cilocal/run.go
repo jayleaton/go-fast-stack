@@ -79,7 +79,7 @@ func repositoryState(ctx context.Context, hub github, opts options) (state, erro
 	if found.pull, err = hub.openPull(ctx, branch); err != nil {
 		return found, err
 	}
-	base := landingBranch(ctx)
+	base := landingBranch
 	if found.pull != nil {
 		base = found.pull.BaseRefName
 	}
@@ -118,14 +118,9 @@ func repositoryState(ctx context.Context, hub github, opts options) (state, erro
 	return found, err
 }
 
-// landingBranch is the branch work lands on (scripts/branches.sh): dev when
-// origin has it, else main.
-func landingBranch(ctx context.Context) string {
-	if _, err := git(ctx, "", "rev-parse", "--verify", "--quiet", "refs/remotes/origin/dev"); err == nil {
-		return "dev"
-	}
-	return "main"
-}
+// landingBranch is the branch work lands on without a pull request
+// (scripts/branches.sh).
+const landingBranch = "main"
 
 func (found *state) selectAgainst(ctx context.Context, hub github) error {
 	mergeBase, err := git(ctx, "", "merge-base", "HEAD", "origin/"+found.head.Base)

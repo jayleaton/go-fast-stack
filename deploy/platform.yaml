@@ -14,29 +14,26 @@ project: auto
 # belong to more than one).
 workspace: ""
 
-# GitHub repo Railway builds on push. auto: this checkout's origin remote.
-# Until the Railway GitHub app can read the repo, setup deploys your
-# checkout by upload instead and prints the install link; the next make
-# railway-apply after installing switches to deploy-on-push.
-# "" never connects GitHub: deploy with make railway-up.
-repo: auto
-# The branch production deploys (and every environment, when production is
-# the only one).
+# How code reaches Railway. "" (the default): never through Railway's GitHub
+# integration. GitHub Actions deploy every environment by upload instead
+# (docs/RELEASES.md): Deploy staging ships each attested merge to main,
+# Deploy production ships a published release. By hand: make railway-up.
+# auto (this checkout's origin) or owner/repo turns Railway's own
+# deploy-on-push back on, from the branches below, beside the workflows;
+# leave it off so only attested commits deploy.
+repo: ""
+# With repo set: the branch production deploys, and per environment its own
+# (branches.<env>, default dev). Unused in upload mode.
 branch: main
-# With more environments than production, staging and qa deploy dev: merge
-# to dev to ship to staging, then dev -> main to release. Override per
-# environment (production may not share a branch with another environment):
-# branches:
-#   staging: develop
-#   qa: release
 
 # The admin dashboard (apps/admin) as its own service with its own small
 # Postgres. Adds two services per environment.
 admin: false
 
 # production | staging,production | staging,qa,production
-# Production-only is the cheapest start; teams usually want staging,production.
-environments: production
+# The release pipeline (docs/RELEASES.md) needs staging: staging always runs
+# the latest main, and production only takes a release staging already ran.
+environments: staging,production
 
 # Railway PR environments: a temporary copy of staging per pull request
 # (needs staging in environments; a preview never copies production). Off by

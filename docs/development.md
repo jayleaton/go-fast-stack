@@ -40,7 +40,7 @@ Each checkout gets its own compose project and database ports, derived from its 
 | `make test` | `go test -race ./...` (services, route handlers, and `packages/auth` against this checkout's throwaway tmpfs Postgres or `TEST_DATABASE_URL`), then per-package and per-test time budgets and per-boundary coverage floors |
 | `make lint` | gofmt + golangci-lint (layering and test-import rules) + test file locations |
 | `make lint-layering` / `make lint-tests` | prove the layering, test-location, coverage and test-time rules still reject planted violations |
-| `make check-fast` | before every push: gofmt, vet, golangci-lint and plain tests for only what your changes vs origin/dev (else origin/main) affect (seconds) |
+| `make check-fast` | before every push: gofmt, vet, golangci-lint and plain tests for only what your changes vs origin/main affect (seconds) |
 | `make hooks` / `make hooks-remove` | install / remove a pre-push hook that runs `make check-fast` (covers every worktree) |
 | `make ci` | every check, on the checkout as it is |
 | `make ci-local` | verify the pushed PR head: the checks its diff selects, in a clean worktree, then the `local-ci` status and the PR body's "Local verification" section (see [CI](CI.md)) |

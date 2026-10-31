@@ -1,10 +1,9 @@
-# The long-lived branches that deploy, staging first: dev deploys staging and
-# main deploys production (AGENTS.md "Branches and releases"). Either may be
-# missing (a fresh clone of the template has only main): everything here uses
-# the ones that exist. Sourced by the scripts that need a base (check-fast,
-# affected, check-migration-order, ci-check); the CI triggers in
-# .github/workflows/ci.yml list the same names.
-DEPLOY_BRANCHES=(dev main)
+# The long-lived branches that deploy: main, which Deploy staging ships to
+# staging on every attested merge; production runs releases cut from it
+# (AGENTS.md "Branches and releases", docs/RELEASES.md). Everything here uses
+# the ones this clone has fetched. Sourced by the scripts that need a base
+# (check-fast, affected, the bench A/B); scripts/cilocal names the same.
+DEPLOY_BRANCHES=(main)
 
 # deployed_refs prints origin/<branch> for each deployed branch this clone
 # has fetched, staging first.
@@ -15,9 +14,9 @@ deployed_refs() {
   done
 }
 
-# deployed_names prints "origin/dev origin/main" (for messages).
+# deployed_names prints "origin/main" (for messages).
 deployed_names() { printf 'origin/%s ' "${DEPLOY_BRANCHES[@]}" | sed 's/ $//'; }
 
-# landing_ref prints the ref work lands on and is compared with: origin/dev
-# when it exists, else origin/main. Empty when neither has been fetched.
+# landing_ref prints the ref work lands on and is compared with: origin/main.
+# Empty when it has not been fetched.
 landing_ref() { deployed_refs | head -n 1; }

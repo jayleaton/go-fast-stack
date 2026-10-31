@@ -16,19 +16,19 @@ const exitUnknownBase = 2
 // migrationOrder is `cilocal migration-order [BASE...]`
 // (scripts/check-migration-order.sh): each BASE is a ref whose migrations
 // count as deployed, by default the deployed branches origin has
-// (origin/dev and origin/main). "Added" means a migration in the working
+// (origin/main). "Added" means a migration in the working
 // tree (committed, staged or untracked) that no BASE has.
 func migrationOrder(ctx context.Context, args []string) error {
 	bases := args
 	if len(bases) == 0 {
-		for _, branch := range []string{"dev", "main"} { // scripts/branches.sh, staging first
+		for _, branch := range []string{"main"} { // scripts/branches.sh
 			if _, err := git(ctx, "", "rev-parse", "--verify", "--quiet", "refs/remotes/origin/"+branch); err == nil {
 				bases = append(bases, "origin/"+branch)
 			}
 		}
 	}
 	if len(bases) == 0 {
-		fmt.Fprintln(os.Stderr, "check-migration-order: none of origin/dev origin/main fetched to compare with (git fetch origin, or pass a ref)")
+		fmt.Fprintln(os.Stderr, "check-migration-order: origin/main is not fetched to compare with (git fetch origin, or pass a ref)")
 		os.Exit(exitUnknownBase)
 	}
 	baseFiles := []string{}

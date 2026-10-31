@@ -2,7 +2,8 @@
 # machine before merge (docs/CI.md, "Local verification"), and main (and dev)
 # run no CI. This keeps the two small checks a ruleset can require: the
 # secret scan, and the check that make ci-local's record holds for the head.
-# A push to a deployed branch is gated separately (deploy-gate.yml).
+# A push to main is gated separately: Deploy staging deploys only a commit
+# make ci-local attested (deploy-staging.yml).
 #
 # Runner: the CI_RUNNER repository variable, a JSON runs-on value such as
 # '["self-hosted","linux"]'; GitHub-hosted ubuntu-latest without it.

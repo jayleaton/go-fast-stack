@@ -4,15 +4,14 @@
 # the same machine (separate runs land on different machines; their noise
 # hides changes of tens of percent). The report is the run's summary page.
 # Run it by hand (Actions > Bench dev loop), or push a branch to bench/<name>
-# to compare it with the branch work lands on (dev, or main without one:
-# scripts/branches.sh).
+# to compare it with the branch work lands on (main: scripts/branches.sh).
 name: Bench dev loop
 
 on:
   workflow_dispatch:
     inputs:
       base:
-        description: Ref to compare against (A/B of the test run on the same machine; empty = origin/dev, else origin/main)
+        description: Ref to compare against (A/B of the test run on the same machine; empty = origin/main)
         default: ''
       rounds:
         description: Alternating A/B rounds (the median is compared)

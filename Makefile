@@ -77,7 +77,7 @@ lint: ## gofmt + golangci-lint (incl. layering rules) + single-character names +
 	./scripts/check-ui-api-paths.sh
 
 .PHONY: check-migrations
-check-migrations: ## Fail if a new migration is numbered at or below the highest on origin/dev or origin/main (check-fast and CI run it too)
+check-migrations: ## Fail if a new migration is numbered at or below the highest on origin/main (check-fast and CI run it too)
 	./scripts/check-migration-order.sh
 
 .PHONY: lint-layering
@@ -131,7 +131,7 @@ secret-scan: ## gitleaks (pinned) on the files changed since the merge base, or 
 	$(GO) run ./scripts/cilocal secret-scan $(if $(ARGS),$(ARGS),--base $$(git merge-base HEAD $$(. scripts/branches.sh && landing_ref)))
 
 .PHONY: check-fast
-check-fast: ## Before every push: gofmt, vet, golangci-lint, plain tests for only what your changes vs origin/dev (else origin/main) affect (seconds)
+check-fast: ## Before every push: gofmt, vet, golangci-lint, plain tests for only what your changes vs origin/main affect (seconds)
 	./scripts/check-fast.sh
 
 .PHONY: release-smoke
@@ -150,7 +150,7 @@ hooks-remove: ## Remove the pre-push hook make hooks installed
 	./scripts/install-hooks.sh --uninstall
 
 .PHONY: affected
-affected: ## Show which packages make ci-local checks for this branch (packages affected vs origin/dev, else origin/main)
+affected: ## Show which packages make ci-local checks for this branch (packages affected vs origin/main)
 	./scripts/affected.sh
 
 .PHONY: bench-devloop

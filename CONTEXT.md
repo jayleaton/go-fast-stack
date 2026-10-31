@@ -37,7 +37,8 @@ Use these words when talking about Go Fast Stack (this repo), in code review, co
 | test boundary | one of the only places tests may live (service, route handler, backend auth, local verification), each with fixed allowed dependencies and a coverage floor | AGENTS.md "Test boundaries" |
 | local verification | a pull request's checks run by `make ci-local` on the agent's machine, in a clean worktree of the exact pushed head, recorded as the `local-ci` commit status and the PR body's "Local verification" section | `scripts/cilocal/`, docs/CI.md |
 | `local-ci` | the commit status `make ci-local` posts on the head it verified; its description carries the digests of the section and the ledger | `scripts/cilocal/verify/section.go` |
-| attested | a commit `make ci-local` verified: `local-ci` success on it, or on the merged head of the pull request that made it. Only attested commits deploy (Deploy gate) | `cilocal attest`, docs/CI.md |
+| attested | a commit `make ci-local` verified: `local-ci` success on it, or on the merged head of the pull request that made it. Only attested commits deploy to staging (Deploy staging) | `cilocal attest`, docs/CI.md |
+| release | a published `vX.Y.Z` GitHub release on a `main` commit staging already ran; the only way code reaches production | `Deploy production`, docs/RELEASES.md |
 | failed head | a head with a failed `local-ci`: final, never re-run; the fix is a new commit | `verify.FailedHeadRefusal` |
 | ledger | the steps that passed on a head with their input hashes, carried in the section; a later head of the same PR reuses a step whose hash an attested ledger holds | `scripts/cilocal/verify/reuse.go` |
 | boundary test | a test at a test boundary, e.g. the four cases of a route test (401, 403, 400, 2xx) | `*_test.go` in a boundary dir |

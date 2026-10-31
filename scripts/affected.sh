@@ -5,8 +5,8 @@
 # via `go list -test -deps`). Changes to shared inputs (go.mod/go.sum,
 # tooling, scripts, lint config, migrations, generator config) mean a full run.
 #
-# Usage: scripts/affected.sh [<base>]   (default: merge-base with origin/dev,
-#        or origin/main when there is no dev: scripts/branches.sh)
+# Usage: scripts/affected.sh [<base>]   (default: merge-base with origin/main,
+#        scripts/branches.sh)
 #        AFFECTED_FILES="a.go b.md" scripts/affected.sh   (explicit file list)
 # Prints key=value lines (and appends them to $GITHUB_OUTPUT when set):
 #   full=true|false     run everything (./...)

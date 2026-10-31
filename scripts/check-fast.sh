@@ -4,8 +4,7 @@
 # checkout's changes can affect, the generators whose inputs changed, and the
 # deploy/ module when it changed, and the migration order when a migration
 # changed. "Changes" are everything that differs from
-# the merge base with origin/dev (origin/main when there is no dev; see
-# scripts/branches.sh): commits, staged, unstaged and untracked
+# the merge base with origin/main (scripts/branches.sh): commits, staged, unstaged and untracked
 # files. scripts/affected.sh maps them to packages exactly as make ci-local does, so a
 # change to a shared input (go.mod, tooling, lint config, migrations,
 # generator config) checks everything.

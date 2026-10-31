@@ -1,0 +1,160 @@
+name: Deploy production
+run-name: Deploy production ${{ github.event.release.tag_name || inputs.tag }}
+
+# Production is released, never pushed (docs/RELEASES.md). Publishing a
+# GitHub release for a vX.Y.Z tag starts this workflow. The gate
+# (.github/scripts/production-gate.sh) proves the tag's commit is on main,
+# that staging ran it and passed readiness, that staging still runs it or a
+# later main commit and is healthy now, and that the publisher is in
+# PRODUCTION_RELEASERS. Publishing the release (or dispatching a redeploy) is
+# the explicit yes every production deploy needs. The deploy job runs in the
+# `production` environment, which holds RAILWAY_PRODUCTION_TOKEN and admits
+# only main and v* tags (.github/scripts/release-settings.sh). A dispatch
+# redeploys, or rolls back to, an existing release through the same gate.
+# Railway builds every service from the release's checkout
+# (.github/scripts/deploy-railway.sh).
+#
+# Until the RAILWAY_DEPLOY repository variable is `true`, the deploy job is
+# skipped and "Dry run" prints the commands it would run instead.
+#
+# Runner: the RELEASE_RUNNER repository variable, else CI_RUNNER (ci.yml).
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to deploy (vX.Y.Z); use an older one to roll back
+        required: true
+        type: string
+
+# Never two production deploys at once, and never cancel one mid-flight. A run
+# queued behind another waits; GitHub keeps only the newest waiting run.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    name: Check the release may go to production
+    # Pre-releases are not deployed.
+    if: github.event_name == 'workflow_dispatch' || !github.event.release.prerelease
+    runs-on: ${{ fromJSON(vars.RELEASE_RUNNER || vars.CI_RUNNER || '"ubuntu-latest"') }}
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      # Deploy staging's runs and jobs: the proof that staging ran the commit.
+      actions: read
+    outputs:
+      tag: ${{ steps.resolve.outputs.tag }}
+      sha: ${{ steps.resolve.outputs.sha }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+    steps:
+      # A dispatch runs the workflow file from the ref it was started on, so
+      # only main's copy (with this gate in it) may deploy.
+      - name: Refuse a dispatch from anywhere but main
+        if: github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::Start Deploy production from main, not $GITHUB_REF. Pick the release with the tag input."
+          exit 1
+
+      - name: Checkout main with history
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Resolve the tag
+        id: resolve
+        run: |
+          if ! echo "$TAG" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::'$TAG' is not a vX.Y.Z release tag. Production deploys only release tags, never branches."
+            exit 1
+          fi
+          git fetch --no-tags origin "+refs/tags/$TAG:refs/tags/$TAG"
+          sha=$(git rev-parse --verify "refs/tags/$TAG^{commit}")
+          echo "$TAG is $sha"
+          echo "tag=$TAG" >>"$GITHUB_OUTPUT"
+          echo "sha=$sha" >>"$GITHUB_OUTPUT"
+
+      - name: Gate
+        env:
+          SHA: ${{ steps.resolve.outputs.sha }}
+          ACTOR: ${{ github.triggering_actor }}
+          RELEASERS: ${{ vars.PRODUCTION_RELEASERS }}
+          STAGING_WEB_URL: ${{ vars.STAGING_WEB_URL }}
+        run: sh .github/scripts/production-gate.sh
+
+  deploy:
+    name: Deploy release to Railway production
+    needs: gate
+    if: vars.RAILWAY_DEPLOY == 'true'
+    runs-on: ${{ fromJSON(vars.RELEASE_RUNNER || vars.CI_RUNNER || '"ubuntu-latest"') }}
+    timeout-minutes: 90
+    environment:
+      name: production
+      url: ${{ vars.PRODUCTION_WEB_URL }}
+    env:
+      TAG: ${{ needs.gate.outputs.tag }}
+      SHA: ${{ needs.gate.outputs.sha }}
+    steps:
+      - name: Checkout the release
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.gate.outputs.sha }}
+
+      # The deploy can start well after the gate (queued behind another run).
+      # If the tag was moved meanwhile, what was checked is not what would ship.
+      - name: Refuse a moved tag
+        run: |
+          git fetch --no-tags origin "+refs/tags/$TAG:refs/tags/$TAG"
+          now=$(git rev-parse --verify "refs/tags/$TAG^{commit}")
+          if [ "$now" != "$SHA" ]; then
+            echo "::error::$TAG moved from $SHA to $now after the gate ran. Start a new deploy."
+            exit 1
+          fi
+
+      # deploy-services reads deploy/platform.yaml.
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: deploy/go.mod
+          cache-dependency-path: deploy/go.sum
+      - name: Install the Railway CLI
+        run: npm install --global @railway/cli@5.71.0
+      - name: Deploy
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_PRODUCTION_TOKEN }}
+          WEB_URL: ${{ vars.PRODUCTION_WEB_URL }}
+          ADMIN_URL: ${{ vars.PRODUCTION_ADMIN_URL }}
+        run: sh .github/scripts/deploy-railway.sh production "$SHA"
+
+  dry-run:
+    name: Dry run (RAILWAY_DEPLOY is not true)
+    needs: gate
+    if: vars.RAILWAY_DEPLOY != 'true'
+    runs-on: ${{ fromJSON(vars.RELEASE_RUNNER || vars.CI_RUNNER || '"ubuntu-latest"') }}
+    timeout-minutes: 10
+    # No environment and no token: it prints the commands and deploys nothing.
+    steps:
+      - name: Checkout the release
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.gate.outputs.sha }}
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: deploy/go.mod
+          cache-dependency-path: deploy/go.sum
+      - name: Print the production deploy
+        env:
+          DRY_RUN: '1'
+          SHA: ${{ needs.gate.outputs.sha }}
+          WEB_URL: ${{ vars.PRODUCTION_WEB_URL }}
+          ADMIN_URL: ${{ vars.PRODUCTION_ADMIN_URL }}
+        run: |
+          echo "::notice::Dry run: set the RAILWAY_DEPLOY repository variable to true to deploy (docs/RELEASES.md)."
+          sh .github/scripts/deploy-railway.sh production "$SHA"

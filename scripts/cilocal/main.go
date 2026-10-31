@@ -7,7 +7,7 @@
 //	cilocal run [flags]          make ci-local: select, run, post (flags: run -h)
 //	cilocal check                ci.yml's Local verification job (REPO, PR, HEAD_SHA)
 //	cilocal merge <pr>...        make pr-merge: squash-merge verified PRs (--dry-run, --require-actions)
-//	cilocal attest <sha>         the staging gate: was this deployed-branch commit attested?
+//	cilocal attest <sha>         the staging gate (Deploy staging, Staging catch-up): was this main commit attested?
 //	cilocal secret-scan ...      gitleaks on changed files (secret-scan -h)
 //	cilocal migration-order ...  scripts/check-migration-order.sh
 //	cilocal exec                 the executor inside a Davit box
@@ -172,9 +172,10 @@ func retargetStack(ctx context.Context, hub github, number int, base string) err
 	return nil
 }
 
-// attestCommand is the staging gate (deploy-gate.yml): it passes a commit
-// of a deployed branch only when make ci-local attested it, on the commit
-// itself or on the exact head of the pull request whose merge made it.
+// attestCommand is the staging gate (deploy-staging.yml's plan, and
+// staging-catch-up.yml before it dispatches): it passes a commit of main only
+// when make ci-local attested it, on the commit itself or on the exact head of
+// the pull request whose merge made it.
 func attestCommand(ctx context.Context, args []string) error {
 	if len(args) != 1 {
 		return errors.New("usage: cilocal attest <sha>")
@@ -195,7 +196,7 @@ func attestCommand(ctx context.Context, args []string) error {
 	for _, reason := range reasons {
 		fmt.Printf("::error::%s\n", reason)
 	}
-	fmt.Printf("::error::Not deploying %s: in a clean worktree of it (git worktree add --detach <dir> %s), run make ci-local ARGS=\"--commit %s\": it selects against the last attested commit and posts local-ci on %s.\n",
-		sha, verify.Short(sha), sha, verify.Short(sha))
+	fmt.Printf("::error::Not deploying %s: run make ci-local on the merged pull request's head (or, for a direct push, make ci-local ARGS=\"--commit %s\" in a clean worktree of it: git worktree add --detach <dir> %s), then re-run or dispatch Deploy staging on main (Staging catch-up also dispatches it within the hour).\n",
+		sha, sha, verify.Short(sha))
 	return errNotVerified
 }
