@@ -435,6 +435,16 @@ linters:
               desc: those are port mocks; handler tests mock the SERVICE, never what is underneath it
             - pkg: github.com/jayleaton/go-fast-stack/packages/auth
               desc: handler tests mock the session; real auth is tested in packages/auth
+        # Local verification's rules stay pure: git, gh and HTTP run in
+        # scripts/cilocal, which passes their results in.
+        cilocal-verify:
+          files:
+            - "**/scripts/cilocal/verify/**"
+          deny:
+            - pkg: os/exec
+              desc: scripts/cilocal/verify is pure; run commands in scripts/cilocal and pass the results in
+            - pkg: net/http
+              desc: scripts/cilocal/verify is pure; call GitHub in scripts/cilocal and pass the results in
         no-test-helpers:
           files:
             - $all

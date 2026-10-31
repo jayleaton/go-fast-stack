@@ -1,0 +1,73 @@
+name: Staging catch-up
+
+# Staging always runs the latest main (docs/RELEASES.md). Every hour this
+# checks what staging last received, from the title of the latest successful
+# "Deploy staging" run. When that isn't the current main and make ci-local
+# attested main (cilocal attest), it dispatches "Deploy staging" on main. That
+# covers a missed, cancelled or failed deploy. It never deploys anything
+# itself. An unattested main fails the check rather than dispatching (the
+# deploy would refuse it too): attest the merged pull request's head, or main
+# itself (make ci-local COMMIT=<sha> RAN="…" in a clean worktree of it), then
+# it catches up within the hour.
+#
+# Runner: the CI_RUNNER repository variable, as in ci.yml.
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: staging-catch-up
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  # gh workflow run: a dispatch is the one event the workflow token may start.
+  actions: write
+  # cilocal attest
+  statuses: read
+  pull-requests: read
+
+jobs:
+  check:
+    name: Keep staging on main
+    runs-on: ${{ fromJSON(vars.CI_RUNNER || '"ubuntu-latest"') }}
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          sparse-checkout: scripts/cilocal # and the root files (cone mode)
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Dispatch a deploy when staging is behind main
+        run: |
+          main=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" -q .sha)
+          last=$(gh run list -R "$GITHUB_REPOSITORY" --workflow deploy-staging.yml \
+            --status success --limit 1 --json displayTitle -q '.[0].displayTitle // ""')
+          pending=$(gh run list -R "$GITHUB_REPOSITORY" --workflow deploy-staging.yml \
+            --limit 5 --json status,displayTitle \
+            -q "[.[] | select(.status != \"completed\" and (.displayTitle | contains(\"$main\")))] | length")
+          echo "main $main"
+          echo "last successful deploy: '$last'"
+          echo "deploys of main in progress: $pending"
+          case "$last" in
+            *"$main"*)
+              echo "Staging runs main."
+              exit 0
+              ;;
+          esac
+          if [ "$pending" != 0 ]; then
+            echo "A deploy of main is already running."
+            exit 0
+          fi
+          if ! go run ./scripts/cilocal attest "$main"; then
+            echo "::error::Staging is behind main, and main is not attested: the top priority, as a red main was."
+            exit 1
+          fi
+          echo "::warning::Staging is behind main. Dispatching Deploy staging on main."
+          gh workflow run deploy-staging.yml -R "$GITHUB_REPOSITORY" --ref main

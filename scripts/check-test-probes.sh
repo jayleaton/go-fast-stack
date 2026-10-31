@@ -39,6 +39,7 @@ planted=(
   packages/database/adminrepo/zz_probe_test.go
   packages/secrets/zz_probe_test.go
   deploy/platform/zz_probe_test.go
+  scripts/cilocal/zz_probe_test.go
 )
 for f in "${planted[@]}"; do
   d=$(dirname "$f")

@@ -65,8 +65,8 @@ clicked.
 (`apps/web/internal/config/routes.go`) from this checkout and fails if any
 path in `ApiRoutes` is missing there. `ApiRoutes` therefore uses the same
 patterns as Go (`/api/core/v1/users/{id}`); build concrete paths with the
-helpers in `routes.ts`. It runs in plain `pnpm test`, so CI catches a renamed
-endpoint without Docker. CI runs the mobile job when that Go file changes too.
+helpers in `routes.ts`. It runs in plain `pnpm test`, so the mobile checks catch a renamed
+endpoint without Docker. Run them before attesting a change to that Go file too (docs/CI.md, "What to run").
 
 ### Contract test
 

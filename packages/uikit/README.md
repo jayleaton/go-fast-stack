@@ -54,5 +54,5 @@ scripts, so pages stay CSP-clean.
 
 ## Building
 
-`make generate` runs `templ generate` here too (CI checks the output); `make css` rebuilds both apps' `app.css`, which
+`make generate` runs `templ generate` here too (`make check-generated` checks the output); `make css` rebuilds both apps' `app.css`, which
 include this package's classes through `base.css`'s `@source` lines.

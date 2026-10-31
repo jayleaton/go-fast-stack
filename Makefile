@@ -63,16 +63,21 @@ check-generated: generate ## Fail if generated code is out of date
 	@git diff --exit-code -- '*.go' || (echo 'generated code is stale: run make generate and commit' && exit 1)
 	@test -z "$$(git status --porcelain --untracked-files=all -- '*.go')" || (git status --short -- '*.go'; echo 'untracked generated files: run make generate and commit'; exit 1)
 
+# What lint and test cover: everything, or the affected packages
+# (scripts/affected.sh's dirs and import paths).
+LINT_DIRS ?= ./...
+TEST_PKGS ?= ./...
+
 .PHONY: lint
 lint: ## gofmt + golangci-lint (incl. layering rules) + single-character names + test file locations
 	@test -z "$$(gofmt -l .)" || (gofmt -l . && echo 'gofmt: run gofmt -w .' && exit 1)
-	$(TOOL) golangci-lint run
-	$(GO) run ./scripts/namelint ./...
+	$(TOOL) golangci-lint run $(LINT_DIRS)
+	$(GO) run ./scripts/namelint $(LINT_DIRS)
 	./scripts/check-test-boundaries.sh
 	./scripts/check-ui-api-paths.sh
 
 .PHONY: check-migrations
-check-migrations: ## Fail if a new migration is numbered at or below the highest on origin/dev or origin/main (check-fast and CI run it too)
+check-migrations: ## Fail if a new migration is numbered at or below the highest on origin/main (check-fast and CI run it too)
 	./scripts/check-migration-order.sh
 
 .PHONY: lint-layering
@@ -85,7 +90,9 @@ lint-tests: ## Prove misplaced test files, coverage drops and slow tests fail (P
 
 # go test -json through scripts/testbudget: plain go test output, the slowest
 # tests, and a failure when a package or test is over its time budget.
-GOTEST := set -o pipefail; $(GO) test -race -json -coverprofile=.cache/coverage.out ./... | $(GO) run ./scripts/testbudget
+GOTEST := set -o pipefail; $(GO) test -race -json -coverprofile=.cache/coverage.out $(TEST_PKGS) | $(GO) run ./scripts/testbudget
+# Coverage floors: all of them, or only those of the packages tested.
+COVERAGE := $(if $(filter ./...,$(TEST_PKGS)),,TESTED='$(TEST_PKGS)') ./scripts/check-coverage.sh .cache/coverage.out
 
 .PHONY: test
 test: ## go test -race against this checkout's throwaway Postgres (or TEST_DATABASE_URL), then time budgets and coverage floors
@@ -98,10 +105,10 @@ else
 	  echo "test db: 127.0.0.1:$$port (project $(COMPOSE_PROJECT_NAME))"; \
 	  TEST_DATABASE_URL="postgres://postgres:postgres@127.0.0.1:$$port/postgres?sslmode=disable" bash -c '$(GOTEST)'
 endif
-	./scripts/check-coverage.sh .cache/coverage.out
+	$(COVERAGE)
 
 .PHONY: ci
-ci: ## Run the same checks as CI
+ci: ## Every check, on this checkout as it is (make ci-local then attests a PR head)
 	$(GO) build ./...
 	$(MAKE) check-generated
 	$(MAKE) lint test
@@ -110,8 +117,29 @@ ci: ## Run the same checks as CI
 	$(MAKE) lint-tests PROFILE=.cache/coverage.out # the probes reuse make test's profile
 	$(MAKE) deploy-check
 
+# make ci-local's statements reach it unexpanded and as single arguments:
+# taken raw ($(value)), exported, and quoted by the shell, so a $, a quote
+# or a newline in RAN stays what you typed.
+override RAN := $(value RAN)
+override FAILED := $(value FAILED)
+override COMMIT := $(value COMMIT)
+export RAN FAILED COMMIT
+
+.PHONY: ci-local
+ci-local: ## Attest the pushed PR head after running what it needs: make ci-local RAN="make lint test TEST_PKGS=./x" (FAILED="<what>", COMMIT=<main sha>); runs nothing, posts local-ci, fills the PR body
+	$(GO) run ./scripts/cilocal run $${RAN:+--ran "$$RAN"} $${FAILED:+--failed "$$FAILED"} $${COMMIT:+--commit "$$COMMIT"}
+
+.PHONY: pr-merge
+pr-merge: ## Squash-merge PRs attested on their exact head: make pr-merge PR="12 13" (ARGS="--dry-run|--any-base|--require-actions|--then-check-staging"); ARGS="--check-deploy <sha>|--check-staging" after a merge
+	@test -n "$(PR)$(ARGS)" || (echo 'usage: make pr-merge PR="<number>..." [ARGS=...], or ARGS="--check-deploy <sha>|--check-staging"' && exit 2)
+	$(GO) run ./scripts/cilocal merge $(ARGS) $(PR)
+
+.PHONY: secret-scan
+secret-scan: ## gitleaks (pinned) on the files changed since the merge base, or every tracked file with ARGS=--all
+	$(GO) run ./scripts/cilocal secret-scan $(if $(ARGS),$(ARGS),--base $$(git merge-base HEAD $$(. scripts/branches.sh && landing_ref)))
+
 .PHONY: check-fast
-check-fast: ## Before every push: gofmt, vet, golangci-lint, plain tests for only what your changes vs origin/dev (else origin/main) affect (seconds)
+check-fast: ## Before every push: gofmt, vet, golangci-lint, plain tests for only what your changes vs origin/main affect (seconds)
 	./scripts/check-fast.sh
 
 .PHONY: release-smoke
@@ -130,7 +158,7 @@ hooks-remove: ## Remove the pre-push hook make hooks installed
 	./scripts/install-hooks.sh --uninstall
 
 .PHONY: affected
-affected: ## Show what CI checks for this branch (packages affected vs origin/dev, else origin/main)
+affected: ## Show which packages this branch affects vs origin/main (what to lint and test before make ci-local)
 	./scripts/affected.sh
 
 .PHONY: bench-devloop
@@ -307,7 +335,7 @@ DEPLOY_READS := -reads 'web=*,!ADMIN_*,!BACKUP_*' \
 DEPLOY_KEEP ?=
 
 .PHONY: deploy-check
-deploy-check: ## vet and lint the deploy/ module (it has no tests), then deploy-vars
+deploy-check: ## vet and lint the deploy/ module (it has no tests: AGENTS.md "Test boundaries"), then deploy-vars
 	$(GO) build -o bin/namelint ./scripts/namelint
 	cd deploy && $(GO) vet ./... && (cd .railway && $(GO) vet railway.go) && $(GO) tool -modfile=../tools/go.mod golangci-lint run -c ../.golangci.yml ./... && ../bin/namelint ./...
 	$(MAKE) --no-print-directory deploy-vars

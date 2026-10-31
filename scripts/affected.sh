@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Decides what CI must check for a change: the Go packages whose own files
-# changed plus every package whose code or tests import them, transitively
-# (Go's package graph via `go list -test -deps`). Changes to shared inputs
-# (go.mod/go.sum, tooling, workflows, lint config, migrations, generator
-# config) mean a full run.
+# Decides what the root module's checks cover for a change (make check-fast,
+# and the LINT_DIRS/TEST_PKGS to run before make ci-local): the Go packages whose own files changed plus every
+# package whose code or tests import them, transitively (Go's package graph
+# via `go list -test -deps`). Changes to shared inputs (go.mod/go.sum,
+# tooling, scripts, lint config, migrations, generator config) mean a full run.
 #
-# Usage: scripts/affected.sh [<base>]   (default: merge-base with origin/dev,
-#        or origin/main when there is no dev: scripts/branches.sh)
+# Usage: scripts/affected.sh [<base>]   (default: merge-base with origin/main,
+#        scripts/branches.sh)
 #        AFFECTED_FILES="a.go b.md" scripts/affected.sh   (explicit file list)
 # Prints key=value lines (and appends them to $GITHUB_OUTPUT when set):
 #   full=true|false     run everything (./...)
@@ -39,12 +39,12 @@ out() {
 }
 
 # Shared inputs: anything here can change every package's result.
-# AFFECTED_FULL=1 forces a full run (pushes to dev/main, merge queue, manual runs).
+# AFFECTED_FULL=1 forces a full run.
 full=false
 [ -n "${AFFECTED_FULL:-}" ] && full=true && echo "full run: AFFECTED_FULL" >&2
 [ "$full" = true ] || for f in "${changed[@]}"; do
   case $f in
-  go.mod | go.sum | mise.toml | Makefile | .golangci.yml | tools/* | scripts/* | .github/* | \
+  go.mod | go.sum | mise.toml | Makefile | .golangci.yml | tools/* | scripts/* | \
     */migrations/* | packages/database/sqlc.yaml)
     full=true
     echo "full run: $f" >&2

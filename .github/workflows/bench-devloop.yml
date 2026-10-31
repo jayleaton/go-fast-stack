@@ -4,15 +4,14 @@
 # the same machine (separate runs land on different machines; their noise
 # hides changes of tens of percent). The report is the run's summary page.
 # Run it by hand (Actions > Bench dev loop), or push a branch to bench/<name>
-# to compare it with the branch work lands on (dev, or main without one:
-# scripts/branches.sh).
+# to compare it with the branch work lands on (main: scripts/branches.sh).
 name: Bench dev loop
 
 on:
   workflow_dispatch:
     inputs:
       base:
-        description: Ref to compare against (A/B of the test run on the same machine; empty = origin/dev, else origin/main)
+        description: Ref to compare against (A/B of the test run on the same machine; empty = origin/main)
         default: ''
       rounds:
         description: Alternating A/B rounds (the median is compared)
@@ -36,7 +35,7 @@ jobs:
       BENCH_BASE: ${{ inputs.base }}
       BENCH_ROUNDS: ${{ inputs.rounds || '3' }}
     steps:
-      # Same Postgres as CI's db shard.
+      # A throwaway Postgres on tmpfs, as make test's.
       - name: Start Postgres
         run: |
           docker run -d --name pg -p 5432:5432 -e POSTGRES_PASSWORD=postgres \
@@ -45,8 +44,9 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0 # the A/B base ref
-      # Read-only: the module cache CI saves. Build and lint caches start
-      # empty on purpose; the bench measures cold and warm itself.
+      # Read-only module cache (nothing saves it since PR checks moved to the
+      # agent's machine; a miss downloads). Build and lint caches start empty on
+      # purpose; the bench measures cold and warm itself.
       - uses: actions/cache/restore@v6
         with:
           path: ~/go/pkg/mod

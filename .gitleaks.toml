@@ -1,0 +1,26 @@
+# gitleaks configuration for the secret scan (scripts/cilocal secret-scan,
+# docs/CI.md "Secret scan"): gitleaks' own rules, with one exception for the
+# dev-loop bench script, which boots the binaries with throwaway values. Only
+# those exact synthetic strings are allowed, and only in that script: a real
+# secret in a test, in testdata, in an example env file or in the bench script
+# is a leak. A new deliberate fixture gets its own obviously fake value and an
+# exact entry here; a real secret is removed and rotated, because history
+# keeps it.
+[extend]
+useDefault = true
+
+# Rule-scoped and value-based: the generic-api-key rule, in the bench script,
+# matching the bench's synthetic values. condition = "AND" is what narrows it:
+# gitleaks ORs an allowlist's paths and regexes by default, which would allow
+# every value in the script.
+[[rules]]
+id = "generic-api-key"
+
+[[rules.allowlists]]
+description = "scripts/bench-devloop.sh boots the binaries with these synthetic values"
+condition = "AND"
+paths = ['''^scripts/bench-devloop\.sh$''']
+regexes = [
+  '''^bench-secret-bench-secret-0123456789abcdef$''',
+  '''^bench-admin-secret-0123456789abcdef0123$''',
+]

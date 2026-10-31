@@ -1,0 +1,134 @@
+name: Deploy staging
+# The title names the deployed commit. "Staging catch-up" reads the latest
+# successful run's title to know what staging runs.
+run-name: Deploy staging ${{ github.sha }}
+
+# Staging always runs the latest main (docs/RELEASES.md). Every commit pushed
+# to main that make ci-local attested (cilocal attest: local-ci passed on the
+# commit, or on the exact head of the pull request whose merge made it; GitHub
+# runs no verification on main) goes to Railway staging: web (whose pre-deploy
+# command migrates the database), admin when platform.yaml has it, the backup
+# cron when backups are on, then the /healthz readiness checks
+# (.github/scripts/deploy-railway.sh). Production is never touched: the token
+# is a Railway project token scoped to the staging environment. The hourly
+# "Staging catch-up" dispatches this on main whenever staging is behind.
+# "Deploy production" and "Draft release" read these runs (the title, the
+# run's success and the deploy job's result) as proof that staging ran a
+# commit, so keep the title and the job name as they are.
+#
+# Until the RAILWAY_DEPLOY repository variable is `true`, the deploy job is
+# skipped and "Dry run" prints the commands it would run instead, so a fresh
+# copy of the template goes green without Railway. A dry run proves nothing to
+# Deploy production.
+#
+# Runner: the CI_RUNNER repository variable, as in ci.yml.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# A newer main supersedes an older deploy, but never midway through changing
+# staging. Each job holds its own group: the plan only reads, so a newer run
+# cancels it (and the older run deploys nothing); the rollout changes staging,
+# so rollouts run one at a time and are never cancelled once started. A newer
+# one waiting replaces an older one waiting, which has changed nothing yet.
+
+permissions:
+  contents: read
+
+env:
+  DEPLOY_SHA: ${{ github.sha }}
+
+jobs:
+  plan:
+    name: Plan the staging services
+    runs-on: ${{ fromJSON(vars.CI_RUNNER || '"ubuntu-latest"') }}
+    timeout-minutes: 5
+    concurrency:
+      group: deploy-staging-plan
+      cancel-in-progress: true
+    permissions:
+      contents: read
+      # The local attestation: the commit's and its pull request head's
+      # local-ci status, and the pull request that merged it.
+      statuses: read
+      pull-requests: read
+    steps:
+      # The staging environment refuses other refs too; this says why.
+      - name: Refuse a dispatch from anywhere but main
+        if: github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::Staging runs main only. Dispatch Deploy staging from main, not $GITHUB_REF."
+          exit 1
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.DEPLOY_SHA }}
+          sparse-checkout: scripts/cilocal # and the root files (cone mode)
+      # The tool imports only the standard library: no module downloads.
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: false
+      # Nothing deploys a commit make ci-local did not attest; the error says
+      # why and how to attest it.
+      - name: Require the local attestation of this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: go run ./scripts/cilocal attest "$DEPLOY_SHA"
+
+  deploy:
+    name: Deploy main to Railway staging
+    needs: plan
+    if: ${{ !cancelled() && needs.plan.result == 'success' && vars.RAILWAY_DEPLOY == 'true' }}
+    runs-on: ${{ fromJSON(vars.CI_RUNNER || '"ubuntu-latest"') }}
+    timeout-minutes: 90
+    # Migrations and the rollout: never cancelled midway.
+    concurrency:
+      group: deploy-staging-rollout
+      cancel-in-progress: false
+    # Holds its own RAILWAY_TOKEN (scoped to staging) and admits only main, so no branch workflow
+    # can read the token or put branch code on staging.
+    environment:
+      name: staging
+      url: ${{ vars.STAGING_WEB_URL }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.DEPLOY_SHA }}
+      # deploy-services reads deploy/platform.yaml.
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: deploy/go.mod
+          cache-dependency-path: deploy/go.sum
+      - name: Install the Railway CLI
+        run: npm install --global @railway/cli@5.71.0
+      - name: Deploy
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          WEB_URL: ${{ vars.STAGING_WEB_URL }}
+          ADMIN_URL: ${{ vars.STAGING_ADMIN_URL }}
+        run: sh .github/scripts/deploy-railway.sh staging "$DEPLOY_SHA"
+
+  dry-run:
+    name: Dry run (RAILWAY_DEPLOY is not true)
+    needs: plan
+    if: ${{ !cancelled() && needs.plan.result == 'success' && vars.RAILWAY_DEPLOY != 'true' }}
+    runs-on: ${{ fromJSON(vars.CI_RUNNER || '"ubuntu-latest"') }}
+    timeout-minutes: 10
+    # No environment and no token: it prints the commands and deploys nothing.
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.DEPLOY_SHA }}
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: deploy/go.mod
+          cache-dependency-path: deploy/go.sum
+      - name: Print the staging deploy
+        env:
+          DRY_RUN: '1'
+          WEB_URL: ${{ vars.STAGING_WEB_URL }}
+          ADMIN_URL: ${{ vars.STAGING_ADMIN_URL }}
+        run: |
+          echo "::notice::Dry run: set the RAILWAY_DEPLOY repository variable to true to deploy (docs/RELEASES.md)."
+          sh .github/scripts/deploy-railway.sh staging "$DEPLOY_SHA"
