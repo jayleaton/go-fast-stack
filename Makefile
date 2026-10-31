@@ -107,6 +107,24 @@ else
 endif
 	$(COVERAGE)
 
+# The flake hunt make nightly runs: every test five times, in a shuffled
+# order, with -race (no coverage or time budgets: five runs of each test).
+FLAKY := $(GO) test -race -count=5 -shuffle=on $(TEST_PKGS)
+
+.PHONY: test-flaky
+test-flaky: ## go test -race -count=5 -shuffle=on against this checkout's throwaway Postgres (make nightly runs it)
+ifdef TEST_DATABASE_URL
+	$(FLAKY)
+else
+	@$(MAKE) --no-print-directory test-db-up
+	@port=$$($(COMPOSE) port postgres-test 5432 | sed 's/.*://'); \
+	  TEST_DATABASE_URL="postgres://postgres:postgres@127.0.0.1:$$port/postgres?sslmode=disable" $(FLAKY)
+endif
+
+.PHONY: nightly
+nightly: ## The full suite on origin/main: make ci, test-flaky, secret-scan --all; attests green, opens an issue on red (docs/CI.md "Nightly")
+	./scripts/nightly.sh
+
 .PHONY: ci
 ci: ## Every check, on this checkout as it is (make ci-local then attests a PR head)
 	$(GO) build ./...
