@@ -302,11 +302,15 @@ func fetchCommit(ctx context.Context, rev string) error {
 // copyCheckout copies the named files (every tracked one when nil) from the
 // checkout into `scan`.
 func copyCheckout(ctx context.Context, files []string, scan string) (int, error) {
+	out, err := git(ctx, "", "ls-files")
+	if err != nil {
+		return 0, err
+	}
+	tracked := map[string]bool{}
+	for _, file := range strings.Split(out, "\n") {
+		tracked[file] = true
+	}
 	if files == nil {
-		out, err := git(ctx, "", "ls-files")
-		if err != nil {
-			return 0, err
-		}
 		files = strings.Split(out, "\n")
 	}
 	root, err := git(ctx, "", "rev-parse", "--show-toplevel")
@@ -315,7 +319,7 @@ func copyCheckout(ctx context.Context, files []string, scan string) (int, error)
 	}
 	copied := 0
 	for _, file := range files {
-		if file == "" {
+		if file == "" || verify.GeneratedTempl(file, func(path string) bool { return tracked[path] }) {
 			continue
 		}
 		// Symlinks and submodules are not content of their own.

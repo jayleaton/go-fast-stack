@@ -52,6 +52,14 @@ func TestScanTargets(test *testing.T) {
 	if want := []string{".gitleaks.toml", "scripts/cilocal/bypass.go"}; problem != "" || !slices.Equal(paths(listed), want) {
 		test.Fatalf("ScanTargets(listed) = %q, %q; want %q", paths(listed), problem, want)
 	}
+	generated := append(slices.Clone(entries),
+		verify.TreeEntry{Mode: "100644", Blob: "t1", Path: "ui/page.templ"},
+		verify.TreeEntry{Mode: "100644", Blob: "t2", Path: "ui/page_templ.go"},
+		verify.TreeEntry{Mode: "100644", Blob: "t3", Path: "ui/orphan_templ.go"})
+	scanned, problem := verify.ScanTargets(generated, []string{"ui/page.templ", "ui/page_templ.go", "ui/orphan_templ.go"})
+	if want := []string{"ui/page.templ", "ui/orphan_templ.go"}; problem != "" || !slices.Equal(paths(scanned), want) {
+		test.Fatalf("ScanTargets(templ) = %q, %q; want %q (generated Go skipped only beside its source)", paths(scanned), problem, want)
+	}
 	for _, path := range []string{"../outside", "/etc/passwd", "a/../../b"} {
 		crafted := append(slices.Clone(entries), verify.TreeEntry{Mode: "100644", Blob: "b7", Path: path})
 		targets, problem := verify.ScanTargets(crafted, nil)
@@ -136,6 +144,19 @@ func TestGitleaksArgs(test *testing.T) {
 	for _, want := range []string{"dir . ", "--config /trusted/.gitleaks.toml", "--gitleaks-ignore-path /trusted/.gitleaksignore", "--ignore-gitleaks-allow", "--redact", "--exit-code 1"} {
 		if !strings.Contains(args, want) {
 			test.Errorf("GitleaksArgs = %q, want %q", args, want)
+		}
+	}
+}
+
+func TestGeneratedTempl(test *testing.T) {
+	test.Parallel()
+	tree := map[string]bool{"ui/page.templ": true, "ui/page_templ.go": true, "ui/orphan_templ.go": true, "ui/plain.go": true}
+	has := func(path string) bool { return tree[path] }
+	for path, want := range map[string]bool{
+		"ui/page_templ.go": true, "ui/orphan_templ.go": false, "ui/plain.go": false, "ui/page.templ": false, "page_templ.go": false,
+	} {
+		if got := verify.GeneratedTempl(path, has); got != want {
+			test.Errorf("GeneratedTempl(%q) = %v, want %v", path, got, want)
 		}
 	}
 }
