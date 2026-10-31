@@ -241,6 +241,20 @@ func pruneStale(ctx context.Context, dir string, paths []string) (int, error) {
 	return pruned, nil
 }
 
+// commitTree makes the box's files its git HEAD: Davit syncs an index but
+// no commit, so `git status` there lists every file as added, and steps that
+// read it (make check-generated) would see a dirty tree. The tree was just
+// proven to be the head's, so the commit holds exactly the head's files,
+// like the clean worktree a local run uses.
+func commitTree(ctx context.Context, dir string) error {
+	if _, err := git(ctx, dir, "add", "--all"); err != nil {
+		return err
+	}
+	_, err := git(ctx, dir, "-c", "user.name=cilocal", "-c", "user.email=cilocal@localhost", "-c", "commit.gpgsign=false",
+		"commit", "--quiet", "--no-verify", "--allow-empty", "-m", "cilocal: the head's tree")
+	return err
+}
+
 // execCommand is `cilocal exec`: the executor inside a Davit box. It refuses
 // to run anything unless the box's tree is the head's, runs the steps, then
 // reports the tree as it is afterwards (a step that rewrote a tracked file
@@ -268,6 +282,9 @@ func execCommand(ctx context.Context, _ []string) error {
 	marker(os.Stdout, "tree", before)
 	if before != work.Tree {
 		return fmt.Errorf("the box's tree %s is not the head's %s: nothing ran", verify.Short(before), verify.Short(work.Tree))
+	}
+	if err := commitTree(ctx, dir); err != nil {
+		return err
 	}
 	if work.Affected {
 		lines, err := affectedIn(ctx, dir, work.Env)
