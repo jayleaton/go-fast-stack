@@ -144,7 +144,7 @@ vulncheck: ## Known vulnerabilities: govulncheck (pinned) on every Go module + p
 	$(GO) run ./scripts/vulncheck $(ARGS)
 
 .PHONY: check-fast
-check-fast: ## Before every push: gofmt, vet, golangci-lint, plain tests for only what your changes vs origin/main affect (seconds)
+check-fast: ## Before every push: gofmt, golangci-lint (incl. govet), plain tests for only what your changes vs origin/main affect (seconds)
 	./scripts/check-fast.sh
 
 .PHONY: release-smoke

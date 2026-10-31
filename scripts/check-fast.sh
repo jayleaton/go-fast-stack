@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # The pre-push check (`make check-fast`, and the hook `make hooks` installs):
-# gofmt, go vet, golangci-lint and plain go test for only the packages this
-# checkout's changes can affect, the generators whose inputs changed, and the
-# deploy/ module when it changed, the migration order when a migration
-# changed, and make vulncheck when a dependency manifest or lockfile changed. "Changes" are everything that differs from
+# gofmt, golangci-lint (its govet runs go vet's analyzers, so no separate go
+# vet) and plain go test for only the packages this checkout's changes can
+# affect, the generators whose inputs changed, the deploy/ module when it
+# changed, the migration order when a migration changed, and make vulncheck
+# when a dependency manifest or lockfile changed. "Changes" are everything that differs from
 # the merge base with origin/main (scripts/branches.sh): commits, staged, unstaged and untracked
 # files. scripts/affected.sh maps them to packages (as make affected prints them), so a
 # change to a shared input (go.mod, tooling, lint config, migrations,
@@ -11,7 +12,7 @@
 #
 # No -race and no Postgres: database tests skip unless TEST_DATABASE_URL is
 # set; make test runs -race against Postgres. It catches what fails it most often
-# (format, lint, vet, a broken test, stale generated code) in seconds.
+# (format, lint, a broken test, stale generated code) in seconds.
 #
 # Usage: scripts/check-fast.sh   (CHECK_BASE=<ref> compares with another base)
 set -euo pipefail
@@ -135,9 +136,6 @@ if printf '%s\n' "${changed[@]}" | grep -qE '(^|/)(go\.(mod|sum)|package\.json|p
 fi
 
 if [ "${#pkgs[@]}" -gt 0 ]; then
-  step "go vet"
-  if ! out=$("$GO" vet "${pkgs[@]}" 2>&1); then done_; echo "$out" | sed 's/^/  /'; fail vet; else done_; fi
-
   step "golangci-lint"
   if ! out=$(lint run "${pkgdirs[@]}" 2>&1); then done_; echo "$out" | sed 's/^/  /'; fail golangci-lint; else done_; fi
 
@@ -163,9 +161,9 @@ if [ "${#pkgs[@]}" -gt 0 ]; then
 fi
 
 if [ "$deploy" = true ] && [ -d deploy ]; then
-  step "deploy/ vet, lint, names, vars"
+  step "deploy/ lint, names, vars"
   if ! out=$(mkdir -p .cache && "$GO" build -o .cache/namelint ./scripts/namelint 2>&1 &&
-    cd deploy && { "$GO" vet ./... && "$GO" tool -modfile=../tools/go.mod golangci-lint run -c ../.golangci.yml ./... && ../.cache/namelint ./... && cd .. && make --no-print-directory deploy-vars >/dev/null; } 2>&1); then
+    cd deploy && { "$GO" tool -modfile=../tools/go.mod golangci-lint run -c ../.golangci.yml ./... && ../.cache/namelint ./... && cd .. && make --no-print-directory deploy-vars >/dev/null; } 2>&1); then
     done_
     echo "$out" | grep -vE '^(ok|\?) ' | sed 's/^/  /'
     fail deploy
