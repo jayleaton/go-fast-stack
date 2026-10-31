@@ -116,6 +116,7 @@ ci: ## Every check, on this checkout as it is (make ci-local then attests a PR h
 	$(MAKE) lint-layering
 	$(MAKE) lint-tests PROFILE=.cache/coverage.out # the probes reuse make test's profile
 	$(MAKE) deploy-check
+	$(MAKE) vulncheck
 
 # make ci-local's statements reach it unexpanded and as single arguments:
 # taken raw ($(value)), exported, and quoted by the shell, so a $, a quote
@@ -137,6 +138,10 @@ pr-merge: ## Squash-merge PRs attested on their exact head: make pr-merge PR="12
 .PHONY: secret-scan
 secret-scan: ## gitleaks (pinned) on the files changed since the merge base, or every tracked file with ARGS=--all
 	$(GO) run ./scripts/cilocal secret-scan $(if $(ARGS),$(ARGS),--base $$(git merge-base HEAD $$(. scripts/branches.sh && landing_ref)))
+
+.PHONY: vulncheck
+vulncheck: ## Known vulnerabilities: govulncheck (pinned) on every Go module + pnpm audit on the mobile lockfile; exceptions in scripts/vulncheck/allowlist.txt (ARGS=-go-only)
+	$(GO) run ./scripts/vulncheck $(ARGS)
 
 .PHONY: check-fast
 check-fast: ## Before every push: gofmt, vet, golangci-lint, plain tests for only what your changes vs origin/main affect (seconds)

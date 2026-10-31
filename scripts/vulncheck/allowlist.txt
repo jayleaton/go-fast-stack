@@ -1,0 +1,41 @@
+# Known vulnerabilities `make vulncheck` lets through (scripts/vulncheck).
+#
+# Only for an advisory with no fix, or none its consumer can take, that this
+# repository cannot reach, or reaches only in dev tooling or on one client
+# device (the reason says which). Anything with a usable fix gets bumped.
+# One entry per line:
+#
+#   <id> <package> <review-by YYYY-MM-DD> <reason>
+#
+# <id> is the GO- id for Go (govulncheck), the GHSA id for npm (pnpm audit).
+# <package> is the Go module or npm package the advisory names.
+# Past its review date an entry fails the check: re-check the advisory and the
+# reachability, then move the date (at most 3 months) or delete the entry.
+# An entry that matches nothing fails too: delete it. A Go entry whose symbol
+# our code calls fails even when listed.
+
+# Go
+
+# The advisory is the whole golang.org/x/crypto/openpgp package (deprecated,
+# unmaintained), so it matches every x/crypto version. No module imports it
+# (go list -deps -test ./... in each module; govulncheck: module level only).
+# We use argon2, scrypt, chacha20poly1305, hkdf and curve25519 from x/crypto.
+GO-2026-5932 golang.org/x/crypto 2027-01-31 openpgp is never imported; x/crypto is needed for argon2/scrypt and has no openpgp-free release
+
+# npm (apps/mobile-app/pnpm-lock.yaml)
+
+# expo-router > query-string@7 (CommonJS) calls require('decode-uri-component')
+# as a function; the fixed 0.5.x is ESM-only, so an override breaks routing.
+# The newest expo-router ~57 still uses query-string 7. Input is a URL this
+# device opens: the worst case is one app instance hanging, not the server.
+GHSA-qr28-fpjm-wq7f decode-uri-component 2027-01-31 fix is ESM-only, query-string 7 under expo-router 57 requires CJS; client-side DoS only
+GHSA-vcc3-ghjq-m6fr decode-uri-component 2027-01-31 same as GHSA-qr28-fpjm-wq7f
+# expo > @expo/cli requires zod ^3.25.76; the fix is zod 4 (a major API break).
+# Runs only on the developer's machine (expo CLI), never in the app bundle;
+# the app's own zod is 4.6.7.
+GHSA-mrhx-c7xc-m3w5 zod 2027-01-31 dev-time only (@expo/cli needs zod 3); fix needs zod 4
+# eslint 9 and its plugins require('minimatch') as a function; minimatch 11's
+# CJS export is an object. Lint-time only, on our own source globs.
+GHSA-g3hv-75wg-m249 minimatch 2027-01-31 dev-only (eslint 9 needs minimatch 3); fix is minimatch 11
+# expo > @expo/config merges our own app config at build time; no release fixes it.
+GHSA-gcqx-w48m-w2h4 deepmerge 2027-01-31 no fix published; build-time only, merges our own config

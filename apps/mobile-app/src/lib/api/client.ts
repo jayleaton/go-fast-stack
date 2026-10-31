@@ -12,7 +12,7 @@ import { env } from '@/lib/config/env'
  * errors, like on the web. A string body is sent as JSON.
  */
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<ApiResponse<T>> {
-  const cookie = authClient.getCookie()
+  const cookie = await authClient.getCookie()
 
   let response: Response
   try {
