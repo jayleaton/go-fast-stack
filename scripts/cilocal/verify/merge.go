@@ -10,8 +10,9 @@ import (
 // The merge decision (make pr-merge, docs/CI.md "Merging on local
 // verification"): each listed pull request merges now or is reported with
 // its next step. Nothing waits: a draft, unattested, failing, pending or
-// conflicting PR is left alone so it never holds up the others, and a head
-// behind main merges unless it conflicts.
+// conflicting PR is left alone so it never holds up the others. A head
+// behind its base is refused: GitHub would squash it into a tree (the base
+// plus the PR) that nobody built, which is how two green PRs broke main.
 
 // Main is the branch pull requests land on (scripts/branches.sh).
 const Main = "main"
@@ -197,7 +198,11 @@ type Pull struct {
 	Draft     bool
 	Base      string
 	Mergeable string // MERGEABLE, CONFLICTING, UNKNOWN
-	Checks    []Check
+	// Behind is how many commits of the base branch the head lacks
+	// (GitHub's compare): 0 when the head contains the base, so the tree
+	// that was verified is exactly the tree the merge makes.
+	Behind int
+	Checks []Check
 	Verification
 }
 
@@ -244,9 +249,13 @@ func Decide(pull Pull, options MergeOptions) Verdict {
 		return skip("is stacked on "+pull.Base,
 			fmt.Sprintf("merge its parent first (make pr-merge retargets it to %s), or gh pr edit %d --base %s", Main, pull.Number, Main))
 	case pull.Mergeable == "CONFLICTING":
-		// A head behind main still merges when GitHub can apply it cleanly:
-		// only a conflict stops it.
 		return skip("conflicts with "+pull.Base, fmt.Sprintf("git rebase origin/%s, push, %s", pull.Base, NextStep))
+	case pull.Behind > 0:
+		// Merging it would squash a tree nobody built: the base's newer
+		// commits plus this PR. Two green PRs broke main this way (one
+		// removed what the other still called).
+		return skip(fmt.Sprintf("is %d commit(s) behind %s: the merged tree (%s plus this PR) was never built or tested", pull.Behind, pull.Base, pull.Base),
+			fmt.Sprintf("rebase onto origin/%s and re-attest: git rebase origin/%s, push, %s", pull.Base, pull.Base, NextStep))
 	}
 	if problems := LocalVerificationProblems(pull.Verification); len(problems) > 0 {
 		return skip("is not verified locally: "+strings.Join(problems, "; "), NextStep)
