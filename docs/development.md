@@ -74,4 +74,4 @@ Read [AGENTS.md](../AGENTS.md) (architecture, test boundaries, how to add a serv
 
 ### Remote boxes
 
-Heavy commands (`make test`, `make ci`) can run in a Davit box: `davit box run -- make ci`. The project image comes from [.davit/setup.sh](../.davit/setup.sh), which downloads the modules and warms the Go build, test and lint caches, so a new box's first `make lint` takes about 16 s instead of 89 s. Rebuild it with `davit box image update` when `go.mod` or `tools/go.mod` moves on.
+Heavy commands (`make test`, `make ci`) can run in a Davit box: `make box-ci COMMIT=<sha>` runs check-generated, lint, build and test on exactly that commit (stale files in the box removed) and prints one PASS/FAIL line; `davit box run -- make ci` runs anything else. The project image comes from [.davit/setup.sh](../.davit/setup.sh), which downloads the modules and warms the Go build, test and lint caches, so a new box's first `make lint` takes about 16 s instead of 89 s. Rebuild it with `davit box image update` when `go.mod` or `tools/go.mod` moves on.

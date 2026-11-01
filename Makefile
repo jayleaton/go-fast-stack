@@ -144,6 +144,10 @@ override FAILED := $(value FAILED)
 override COMMIT := $(value COMMIT)
 export RAN FAILED COMMIT
 
+.PHONY: box-ci
+box-ci: ## The full checks (check-generated, lint, build, test) on exactly COMMIT (default HEAD) in a Davit box; one PASS/FAIL line
+	./scripts/box-ci.sh
+
 .PHONY: ci-local
 ci-local: ## Attest the pushed PR head after running what it needs: make ci-local RAN="make lint test TEST_PKGS=./x" (FAILED="<what>", COMMIT=<main sha>); runs nothing, posts local-ci, fills the PR body
 	$(GO) run ./scripts/cilocal run $${RAN:+--ran "$$RAN"} $${FAILED:+--failed "$$FAILED"} $${COMMIT:+--commit "$$COMMIT"}
