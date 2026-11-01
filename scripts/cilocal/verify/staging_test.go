@@ -93,3 +93,57 @@ func TestStaging(test *testing.T) {
 		})
 	}
 }
+
+func TestDeployedCommit(test *testing.T) {
+	test.Parallel()
+	sha := strings.Repeat("d3", 20)
+	for message, want := range map[string]string{
+		"make railway-up " + sha:            sha,
+		"make railway-up " + sha + "\n":     sha,
+		"make railway-up":                   "",
+		"make railway-up " + sha + " dirty": "",
+		"make railway-up d3523df":           "",
+		"Deploy " + sha:                     "",
+	} {
+		if got := verify.DeployedCommit(message); got != want {
+			test.Errorf("DeployedCommit(%q) = %q, want %q", message, got, want)
+		}
+	}
+}
+
+func TestStagingFromRailway(test *testing.T) {
+	test.Parallel()
+	head, older := strings.Repeat("a", 40), strings.Repeat("b", 40)
+	ok := verify.Readiness{URL: "https://web", Code: 200, Status: "ok"}
+	down := verify.Readiness{URL: "https://admin", Code: 502}
+	up := func(service, status, commit string) verify.RailwayDeploy {
+		message := "make railway-up"
+		if commit != "" {
+			message += " " + commit
+		}
+		return verify.RailwayDeploy{Service: service, Status: status, Message: message}
+	}
+	for _, testCase := range []struct {
+		name          string
+		services      []verify.RailwayDeploy
+		ready         []verify.Readiness
+		settled, pass bool
+		says          string
+	}{
+		{"both run the commit and answer ready", []verify.RailwayDeploy{up("web", "SUCCESS", head), up("admin", "SUCCESS", head)}, []verify.Readiness{ok, ok}, true, true, "Railway runs it on web and admin"},
+		{"one runs another commit", []verify.RailwayDeploy{up("web", "SUCCESS", head), up("admin", "SUCCESS", older)}, []verify.Readiness{ok, ok}, true, false, "admin runs bbbbbbbbbbbb"},
+		{"no commit recorded", []verify.RailwayDeploy{up("web", "SUCCESS", ""), up("admin", "SUCCESS", head)}, []verify.Readiness{ok, ok}, true, false, "records no commit"},
+		{"a deploy is running", []verify.RailwayDeploy{up("web", "DEPLOYING", head), up("admin", "SUCCESS", head)}, []verify.Readiness{ok, ok}, false, false, "running (web)"},
+		{"a deploy failed", []verify.RailwayDeploy{up("web", "CRASHED", head), up("admin", "SUCCESS", head)}, []verify.Readiness{ok, ok}, true, false, "web crashed"},
+		{"deployed but not ready", []verify.RailwayDeploy{up("web", "SUCCESS", head), up("admin", "SUCCESS", head)}, []verify.Readiness{ok, down}, true, false, "top priority"},
+		{"nothing on Railway", nil, nil, true, false, "lists no staging app deployment"},
+	} {
+		test.Run(testCase.name, func(test *testing.T) {
+			test.Parallel()
+			verdict := verify.StagingFromRailway(head, testCase.services, testCase.ready)
+			if verdict.Settled != testCase.settled || verdict.OK != testCase.pass || !strings.Contains(verdict.Summary, testCase.says) {
+				test.Fatalf("StagingFromRailway = %+v, want settled %v ok %v saying %q", verdict, testCase.settled, testCase.pass, testCase.says)
+			}
+		})
+	}
+}

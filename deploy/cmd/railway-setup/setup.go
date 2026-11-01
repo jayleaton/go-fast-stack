@@ -408,6 +408,7 @@ func (setup *setup) upload(ctx context.Context, env string, missingOnly bool) er
 		return fmt.Errorf("%s is not set up yet: run make railway-apply first", env)
 	}
 	var errs []error // one failed service does not stop the others
+	message := uploadMessage(ctx, setup.root)
 	for _, svc := range setup.allServices() {
 		if missingOnly {
 			if st, err := setup.deploymentStatus(ctx, svc, env); err == nil && (st == "SUCCESS" || !settled(st)) {
@@ -415,7 +416,7 @@ func (setup *setup) upload(ctx context.Context, env string, missingOnly bool) er
 			}
 		}
 		setup.say("== %s/%s: railway up", env, svc)
-		code, err := setup.rw.streamIn(ctx, setup.root, "up", "--service", svc, "--environment", env, "--ci", "-m", "make railway-up")
+		code, err := setup.rw.streamIn(ctx, setup.root, "up", "--service", svc, "--environment", env, "--ci", "-m", message)
 		switch {
 		case err != nil:
 			return err
@@ -424,6 +425,27 @@ func (setup *setup) upload(ctx context.Context, env string, missingOnly bool) er
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// uploadMessage is the deployment message of a railway up from `root`:
+// "make railway-up <commit>" for a clean checkout, so make pr-merge
+// ARGS="--check-deploy <sha>" can tell which commit a service runs without a
+// Deploy staging run (scripts/cilocal/verify DeployedCommit). A dirty or
+// unreadable checkout records no commit: what it uploaded is no commit.
+func uploadMessage(ctx context.Context, root string) string {
+	const plain = "make railway-up"
+	head, err := exec.CommandContext(ctx, "git", "-C", root, "rev-parse", "HEAD").Output()
+	if err != nil {
+		return plain
+	}
+	dirty, err := exec.CommandContext(ctx, "git", "-C", root, "status", "--porcelain").Output()
+	if err != nil {
+		return plain
+	}
+	if len(bytes.TrimSpace(dirty)) > 0 {
+		return plain + " (uncommitted changes on " + strings.TrimSpace(string(head)) + ")"
+	}
+	return plain + " " + strings.TrimSpace(string(head))
 }
 
 // repairDatabases fixes a Railway IaC bug (docs/railway-go-iac-issues.md #0):
