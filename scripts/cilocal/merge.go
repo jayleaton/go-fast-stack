@@ -144,6 +144,7 @@ func mergeOne(ctx context.Context, hub github, number int, opts mergeFlags) (ver
 			return verify.Verdict{}, err
 		}
 	}
+	opts.options.Now = time.Now()
 	verdict := verify.Decide(verify.Pull{
 		Number: number, State: pull.State, Draft: pull.IsDraft, Base: pull.BaseRefName, Mergeable: pull.Mergeable,
 		Behind: behind, Checks: pull.Checks, Verification: verification,
@@ -198,8 +199,8 @@ func retargetStack(ctx context.Context, hub github, number int, pull pullRequest
 				return err
 			}
 		}
-		fmt.Printf("#%d: retargeted stacked #%s to %s; after this merge rebase it: git rebase --onto origin/%s %s <its branch>\n",
-			number, child, verify.Main, verify.Main, pull.HeadRefOid)
+		fmt.Printf("#%d: retargeted stacked #%s to %s; after this merge rebase it: %s (make land PR=%s does it)\n",
+			number, child, verify.Main, verify.OntoCommand(verify.Main, pull.HeadRefOid, "<its branch>"), child)
 	}
 	return nil
 }

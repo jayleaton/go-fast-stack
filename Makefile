@@ -157,6 +157,11 @@ pr-merge: ## Squash-merge PRs attested on their exact head: make pr-merge PR="12
 	@test -n "$(PR)$(ARGS)" || (echo 'usage: make pr-merge PR="<number>..." [ARGS=...], or ARGS="--check-deploy <sha>|--check-staging"' && exit 2)
 	$(GO) run ./scripts/cilocal merge $(ARGS) $(PR)
 
+.PHONY: land
+land: ## Land one PR inside one hold of /tmp/gfs-ci.lock: rebase + push, make ci-pg, make ci-local, wait for its checks, make pr-merge, release (run on its branch: make land PR=12)
+	@test -n "$(PR)" || (echo 'usage: make land PR=<number>, in a clean worktree on its branch' && exit 2)
+	./scripts/land.sh $(PR)
+
 .PHONY: secret-scan
 secret-scan: ## gitleaks (pinned) on the files changed since the merge base, or every tracked file with ARGS=--all
 	$(GO) run ./scripts/cilocal secret-scan $(if $(ARGS),$(ARGS),--base $$(git merge-base HEAD $$(. scripts/branches.sh && landing_ref)))
@@ -172,6 +177,10 @@ check-pr: ## Before make ci-local: run what this branch's changes need (docs/CI.
 .PHONY: check-fast
 check-fast: ## Before every push: gofmt, golangci-lint (incl. govet), plain tests for only what your changes vs origin/main affect (seconds)
 	./scripts/check-fast.sh
+
+.PHONY: ci-pg
+ci-pg: ## make ci + check-migrations + release smoke on a throwaway Postgres 18 (initdb, no Docker); clean tree, takes /tmp/gfs-ci.lock, prints the RAN line
+	./scripts/ci-pg.sh
 
 .PHONY: release-smoke
 release-smoke: db-up ## Build every Dockerfile's binary as its image does (fail if dynamic), migrate, boot web + admin in production mode (CI runs it too)
