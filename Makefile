@@ -5,6 +5,13 @@
 export
 
 GO        ?= go
+# The Go toolchain go.mod pins (mise.toml pins the same). A local go of
+# another version (a newer Homebrew go, say) would otherwise build and test
+# with itself; this makes it fetch and run the pinned one, once, into the
+# module cache. scripts/check-fast.sh does the same for the pre-push hook.
+# A GOTOOLCHAIN already in the environment wins.
+GO_PIN    := $(shell sed -n 's/^go //p' go.mod)
+export GOTOOLCHAIN ?= go$(GO_PIN)+auto
 TOOL      := $(GO) tool -modfile=tools/go.mod
 COMPOSE   := docker compose
 BIN       := bin/server

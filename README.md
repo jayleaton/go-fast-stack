@@ -91,7 +91,7 @@ Agents do their best work when the rules are checked by machines, not by review.
 
 ## Quick start
 
-Needs Go and Docker. [mise](https://mise.jdx.dev) installs the pinned Go version.
+Needs Go and Docker. [mise](https://mise.jdx.dev) installs the pinned Go version. Without it, any Go works: `make` and the pre-push hook set `GOTOOLCHAIN` to the version in `go.mod`, so Go fetches and runs that one (a `GOTOOLCHAIN` you set yourself wins).
 
 ```sh
 mise install    # the Go version pinned in mise.toml
