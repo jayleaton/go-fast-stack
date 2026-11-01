@@ -68,10 +68,14 @@ func Decode[Value any, PT interface {
 // DecodeInto is Decode for a target only known as a Validator (the API's
 // generic endpoints): one JSON object into target, then target.Validate().
 func DecodeInto(reader io.Reader, target Validator) error {
-	decoder := json.NewDecoder(reader)
+	body, err := io.ReadAll(reader) // the server caps request bodies before this
+	if err != nil {
+		return &Error{Fields: map[string]string{"body": "could not be read"}}
+	}
+	decoder := json.NewDecoder(bytes.NewReader(body))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(target); err != nil {
-		return &Error{Fields: map[string]string{"body": jsonMessage(err)}}
+		return &Error{Fields: map[string]string{"body": jsonMessage(err, body, target)}}
 	}
 	if decoder.More() {
 		return &Error{Fields: map[string]string{"body": "must be a single JSON object"}}
@@ -79,18 +83,54 @@ func DecodeInto(reader io.Reader, target Validator) error {
 	return target.Validate()
 }
 
-func jsonMessage(err error) string {
+func jsonMessage(err error, body []byte, target any) string {
 	var typeErr *json.UnmarshalTypeError
 	switch {
 	case errors.Is(err, io.EOF):
 		return "is empty"
 	case errors.As(err, &typeErr):
-		return fmt.Sprintf("%s must be %s", typeErr.Field, jsonType(typeErr.Type))
+		field := typeErr.Field
+		if field == "" {
+			field = failingMember(body, target)
+		}
+		if field == "" {
+			return "a field must be " + jsonType(typeErr.Type)
+		}
+		return fmt.Sprintf("%s must be %s", field, jsonType(typeErr.Type))
 	case strings.HasPrefix(err.Error(), "json: unknown field"):
 		return strings.TrimPrefix(err.Error(), "json: ")
 	default:
 		return "must be valid JSON"
 	}
+}
+
+// failingMember is the member of the JSON object `body` whose value is the
+// wrong type for its field in target, found by decoding each member alone
+// into a fresh target. The decoder names the field itself, except for a type
+// error that a field's own UnmarshalJSON returns (Nullable): Go 1.27 dropped
+// that context, so without this the message would name no field.
+func failingMember(body []byte, target any) string {
+	kind := reflect.TypeOf(target)
+	var members map[string]json.RawMessage
+	if kind == nil || kind.Kind() != reflect.Pointer || json.Unmarshal(body, &members) != nil {
+		return ""
+	}
+	names := make([]string, 0, len(members))
+	for name := range members {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		single, err := json.Marshal(map[string]json.RawMessage{name: members[name]})
+		if err != nil {
+			continue
+		}
+		var typeErr *json.UnmarshalTypeError
+		if errors.As(json.Unmarshal(single, reflect.New(kind.Elem()).Interface()), &typeErr) {
+			return name
+		}
+	}
+	return ""
 }
 
 // jsonType names t the way a JSON client sees it, never as a Go type.

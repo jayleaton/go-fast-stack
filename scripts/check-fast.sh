@@ -24,6 +24,13 @@ set -euo pipefail
 unset $(git rev-parse --local-env-vars)
 cd "$(dirname "$0")/.."
 . scripts/branches.sh
+# The pinned Go toolchain, as the Makefile exports it: the pre-push hook runs
+# this script without make, and a local go of another version would test with
+# itself. A GOTOOLCHAIN already in the environment wins.
+if [ -z "${GOTOOLCHAIN:-}" ]; then
+  GOTOOLCHAIN="go$(sed -n 's/^go //p' go.mod)+auto"
+  export GOTOOLCHAIN
+fi
 
 GO=${GO:-go}
 lint() { "$GO" tool -modfile=tools/go.mod golangci-lint "$@"; }
