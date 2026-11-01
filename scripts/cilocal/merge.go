@@ -284,7 +284,13 @@ func readStaging(ctx context.Context, hub github, commit string) (verify.Staging
 		}
 		deploys = append(deploys, run.DeployRun)
 	}
-	return verify.Staging(head, deploys, readiness(ctx, hub)), nil
+	verdict := verify.Staging(head, deploys, readiness(ctx, hub, "STAGING_WEB_URL"))
+	if len(deploys) == 0 {
+		// No Deploy staging run (Actions off, or deployed with make
+		// railway-up): ask Railway what staging runs.
+		verdict = railwayFallback(ctx, hub, head, verdict)
+	}
+	return verdict, nil
 }
 
 func runJobs(ctx context.Context, hub github, run string) ([]verify.Job, error) {
@@ -307,13 +313,13 @@ const (
 	readyBody    = 1 << 16 // 64 KiB: a /healthz answer is a few bytes
 )
 
-// readiness GETs <STAGING_WEB_URL>/healthz: from the env, else the
-// repository variable; unset when neither has it (the template has no
-// default staging URL).
-func readiness(ctx context.Context, hub github) verify.Readiness {
-	url := os.Getenv("STAGING_WEB_URL")
+// readiness GETs <origin>/healthz, the origin from the env variable `name`,
+// else the repository variable of that name; unset when neither has it (the
+// template has no default staging URL).
+func readiness(ctx context.Context, hub github, name string) verify.Readiness {
+	url := os.Getenv(name)
 	if url == "" {
-		url, _ = output(ctx, "", "gh", "variable", "get", "STAGING_WEB_URL", "-R", hub.repo)
+		url, _ = output(ctx, "", "gh", "variable", "get", name, "-R", hub.repo)
 	}
 	url = strings.TrimRight(strings.TrimSpace(url), "/")
 	if url == "" {

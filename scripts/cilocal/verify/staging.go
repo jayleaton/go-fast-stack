@@ -3,6 +3,7 @@ package verify
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -140,4 +141,86 @@ func Staging(head string, deploys []DeployRun, ready Readiness) StagingVerdict {
 		return StagingVerdict{Settled: true, OK: false, Summary: fmt.Sprintf("%s: deployed; %s (top priority)", at, ready)}
 	}
 	return StagingVerdict{Settled: true, OK: true, Summary: fmt.Sprintf("%s: deployed; %s", at, ready)}
+}
+
+// When no Deploy staging run exists for a commit (Actions off, or a deploy
+// by hand with make railway-up), Railway itself says what staging runs:
+// each app service's newest deployment, whose message make railway-up
+// writes as "make railway-up <commit>" from a clean checkout.
+
+// RailwayDeploy is one staging app service's newest Railway deployment.
+type RailwayDeploy struct {
+	Service string
+	Status  string // SUCCESS, FAILED, CRASHED, BUILDING, DEPLOYING, ...
+	Message string // the deployment's message (railway up -m)
+}
+
+// railwayUpCommit is the message make railway-up gives a deployment of a
+// clean checkout.
+var railwayUpCommit = regexp.MustCompile(`^make railway-up ([0-9a-f]{40})$`)
+
+// DeployedCommit is the commit a deployment message records, or "" when it
+// records none (an older make railway-up, a dirty checkout, a hand deploy).
+func DeployedCommit(message string) string {
+	match := railwayUpCommit.FindStringSubmatch(strings.TrimSpace(message))
+	if match == nil {
+		return ""
+	}
+	return match[1]
+}
+
+// railwayRunning are deployment states that have not settled.
+var railwayRunning = map[string]bool{"INITIALIZING": true, "QUEUED": true, "WAITING": true, "BUILDING": true, "DEPLOYING": true}
+
+// RedeployStep is how staging gets a deployment that records its commit.
+const RedeployStep = "make railway-up PLATFORM_ENV=staging from a clean checkout of the commit (it records the commit)"
+
+// StagingFromRailway is the staging verdict for main commit `head` from the
+// staging app services' newest Railway deployments and their /healthz
+// answers: OK only when every service runs exactly `head` and every
+// readiness answer is ready.
+func StagingFromRailway(head string, services []RailwayDeploy, ready []Readiness) StagingVerdict {
+	at := "main " + Short(head)
+	if len(services) == 0 {
+		return StagingVerdict{Settled: true, OK: false, Summary: at + ": no Deploy staging run, and Railway lists no staging app deployment"}
+	}
+	running, failed, unknown, other, runs := []string{}, []string{}, []string{}, []string{}, []string{}
+	for _, service := range services {
+		commit := DeployedCommit(service.Message)
+		switch {
+		case railwayRunning[service.Status]:
+			running = append(running, service.Service)
+		case service.Status != "SUCCESS":
+			failed = append(failed, service.Service+" "+strings.ToLower(service.Status))
+		case commit == "":
+			unknown = append(unknown, fmt.Sprintf("%s (%q)", service.Service, service.Message))
+		case commit != head:
+			other = append(other, service.Service+" runs "+Short(commit))
+		default:
+			runs = append(runs, service.Service)
+		}
+	}
+	switch {
+	case len(running) > 0:
+		return StagingVerdict{Settled: false, OK: false, Summary: fmt.Sprintf("%s: Railway deploy running (%s)", at, strings.Join(running, ", "))}
+	case len(failed) > 0:
+		return StagingVerdict{Settled: true, OK: false,
+			Summary: fmt.Sprintf("%s: Railway deploy %s. A failed staging deploy is the top priority: fix it forward before merging anything else", at, strings.Join(failed, ", "))}
+	case len(other) > 0:
+		return StagingVerdict{Settled: true, OK: false, Summary: fmt.Sprintf("%s: not deployed: %s", at, strings.Join(other, ", "))}
+	case len(unknown) > 0:
+		return StagingVerdict{Settled: true, OK: false,
+			Summary: fmt.Sprintf("%s: cannot tell: the staging deployment of %s records no commit; %s", at, strings.Join(unknown, ", "), RedeployStep)}
+	}
+	answers := []string{}
+	ok := true
+	for _, answer := range ready {
+		answers = append(answers, answer.String())
+		ok = ok && answer.Ready()
+	}
+	summary := fmt.Sprintf("%s: Railway runs it on %s (no Deploy staging run); %s", at, strings.Join(runs, " and "), strings.Join(answers, "; "))
+	if !ok {
+		return StagingVerdict{Settled: true, OK: false, Summary: summary + " (top priority)"}
+	}
+	return StagingVerdict{Settled: true, OK: true, Summary: summary}
 }
