@@ -22,10 +22,15 @@ name: CI
 permissions:
   contents: read
 
-# A newer edit of a pull request cancels the run it supersedes.
+# A pull request's runs go one at a time, newest last: a newer edit waits for
+# the running one (and replaces any still waiting) instead of cancelling it.
+# Cancelling a run before the claim job finished left the local job cancelled
+# under its unevaluated name expression (needs.claim.outputs.claimed == ...),
+# a check that shows as failed on the head; make ci-local's own body edit
+# right after another edit did that every time.
 concurrency:
   group: ci-pr-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 on:
   pull_request_target:

@@ -85,6 +85,19 @@ if printf '%s\n' "${changed[@]}" | grep -qE '(^|/)migrations/[^/]*\.sql$'; then
   if ! out=$(./scripts/check-migration-order.sh ${CHECK_BASE:+"$CHECK_BASE"} 2>&1); then done_; echo "$out" | sed 's/^/  /'; fail migration-order; else done_; fi
 fi
 
+# The CI lock and the scripts that take it, when one changed: stale-lock
+# takeover, and a cleanup trap that always releases the lock.
+if printf '%s\n' "${changed[@]}" | grep -qE '^scripts/(ci-lock|ci-lock-test|ci-pg|land)\.sh$'; then
+  step "CI lock"
+  if ! out=$(./scripts/ci-lock-test.sh 2>&1); then done_; echo "$out" | sed 's/^/  /'; fail ci-lock; else done_; fi
+fi
+
+# make land runs main's land.sh and cilocal, never a PR branch's older copy.
+if printf '%s\n' "${changed[@]}" | grep -qE '^scripts/(land|land-main-test)\.sh$|^scripts/cilocal/'; then
+  step "make land runs main's"
+  if ! out=$(./scripts/land-main-test.sh 2>&1); then done_; echo "$out" | sed 's/^/  /'; fail land-main; else done_; fi
+fi
+
 # Format: the changed Go files (everything on a full run).
 step "gofmt"
 mapfile -t gofiles < <(for f in "${changed[@]}"; do [[ $f == *.go && -f $f ]] && echo "$f"; done)

@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // The merge decision (make pr-merge, docs/CI.md "Merging on local
@@ -210,6 +211,38 @@ type Pull struct {
 type MergeOptions struct {
 	AnyBase        bool // merge a PR stacked on another branch
 	RequireActions bool // refuse when no GitHub CI job ran on the head
+	// Now is when the decision is made (ActionsStartGrace); zero skips the
+	// grace.
+	Now time.Time
+}
+
+// ActionsStartGrace is how long after make ci-local posts local-ci a head
+// with no GitHub CI job still counts as not started yet rather than as
+// Actions not running. make ci-local edits the PR body right after the
+// status, and GitHub creates the run that edit starts a few seconds later
+// (one PR: local-ci at 10:55:31, its CI run at 10:55:37): in between, the
+// rollup holds local-ci alone. Read as "no job ran", that gap made make
+// pr-merge merge on local-ci alone, and made make land report that Actions
+// never ran, for a head whose checks then ran and passed.
+const ActionsStartGrace = 2 * time.Minute
+
+// attestedAt is when the head's local-ci status was posted, or zero.
+func attestedAt(rollup []Check) time.Time {
+	for _, check := range rollup {
+		if check.Typename == "StatusContext" && check.Context == StatusContext {
+			if at, err := time.Parse(time.RFC3339, check.StartedAt); err == nil {
+				return at
+			}
+		}
+	}
+	return time.Time{}
+}
+
+// startingYet is whether a head with no GitHub CI job was attested within
+// ActionsStartGrace of `now`: its PR run may not exist yet.
+func startingYet(rollup []Check, now time.Time) bool {
+	at := attestedAt(rollup)
+	return !now.IsZero() && !at.IsZero() && now.Sub(at) < ActionsStartGrace
 }
 
 // Actions of a verdict.
@@ -263,6 +296,9 @@ func Decide(pull Pull, options MergeOptions) Verdict {
 	checks := ClassifyChecks(pull.Checks)
 	note := "GitHub's checks are green"
 	switch {
+	case !checks.Ran && startingYet(pull.Checks, options.Now):
+		return skip("has no GitHub CI job on the head yet: GitHub starts the PR run a few seconds after make ci-local edits the body",
+			"run this again in a few seconds; nothing else waits on it")
 	case !checks.Ran && options.RequireActions:
 		return skip("has no GitHub CI job that ran on the head (Actions off, or blocked so GitHub never started them)",
 			"edit the PR body once to start CI, or drop --require-actions where Actions cannot run")

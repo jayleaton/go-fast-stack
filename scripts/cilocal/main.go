@@ -10,6 +10,8 @@
 //	cilocal attest <sha>                the staging gate (Deploy staging, Staging catch-up)
 //	cilocal secret-scan ...             gitleaks on changed files (secret-scan -h)
 //	cilocal migration-order ...         scripts/check-migration-order.sh
+//	cilocal land-rebase <pr>            make land's rebase plan: plain, or --onto past a squash-merged parent
+//	cilocal land-migrations <base>      make land's renumbering of new migrations above origin/<base>'s highest
 package main
 
 import (
@@ -41,11 +43,11 @@ func main() {
 	}
 	commands := map[string]func(context.Context, []string) error{
 		"run": runCommand, "check": checkCommand, "merge": mergeCommand, "attest": attestCommand,
-		"secret-scan": secretScan, "migration-order": migrationOrder,
+		"secret-scan": secretScan, "migration-order": migrationOrder, "land-rebase": landRebaseCommand, "land-migrations": landMigrationsCommand,
 	}
 	run, known := commands[command]
 	if !known {
-		fmt.Fprintf(os.Stderr, "cilocal: unknown command %q (run, check, merge, attest, secret-scan, migration-order)\n", command)
+		fmt.Fprintf(os.Stderr, "cilocal: unknown command %q (run, check, merge, attest, secret-scan, migration-order, land-rebase, land-migrations)\n", command)
 		stop()
 		os.Exit(exitUsage)
 	}

@@ -2,6 +2,13 @@
 # depguard rules below still reject forbidden imports.
 version: "2"
 
+run:
+  # Every entry point (make lint, check-fast, the pre-push hook make land's
+  # push runs, make lint-layering, deploy/) may start while another worktree
+  # lints: wait for golangci-lint's lock instead of failing with "parallel
+  # golangci-lint is running" (which once failed a landing's push).
+  allow-serial-runners: true
+
 linters:
   default: standard # errcheck, govet, ineffassign, staticcheck, unused
   enable:

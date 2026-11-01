@@ -56,14 +56,16 @@ PR CI runs only `Secret scan` and `Local verification`, the two checks the main 
 ## 5. Merge
 
 ```bash
+make land PR=<PR>                      # the whole landing inside one hold of /tmp/gfs-ci.lock (below)
 make pr-merge PR="<PR> [<PR> ...]"     # merges every green PR now, reports the rest
 make pr-merge PR=<PR> ARGS=--dry-run   # says what it would do
 ```
 
+- **Land inside the CI lock** on this machine: `make land PR=<PR>` in a clean worktree on its branch takes `/tmp/gfs-ci.lock`, rebases and pushes, runs `make ci-pg` inside that hold, attests, waits for the checks, merges with `make pr-merge` and releases the lock, so nothing lands between the rebase and the merge (docs/CI.md, "Merging on local verification").
 - **Green** means `local-ci` and the section attest the exact head, GitHub can merge it without conflicts, and the checks passed. It squash-merges with `--match-head-commit <head>`, so only the attested head lands. A head behind `main` is refused ("rebase onto origin/main and re-attest"): the merged tree must be the one you verified. Where Actions cannot run (no CI job ran, or GitHub never started them), it merges on `local-ci` alone and says so.
 - Anything else (draft, unattested, pending, failing, conflicting, stacked) is reported with its next step; the script never waits. A head behind `main` or a conflict needs rebase, push, run what it needs, attest; after each merge in a burst, rebase the next PR.
 - **After each merge, check its deploy** (a follow-up, never a gate; merge the next PR now): it prints `make pr-merge ARGS="--check-deploy <squash sha>"`. Run it once "Deploy staging" has run for that commit. Failed or refused: top priority, fix forward. Cancelled by a newer main deploy: `make pr-merge ARGS=--check-staging` checks main's head. A dry run (`RAILWAY_DEPLOY` not `true`) deployed nothing. With Actions off, it reads what Railway runs instead: deploy with `make railway-up PLATFORM_ENV=staging` from a clean checkout of the commit, which records it. After a burst, `ARGS=--then-check-staging` follows main's deploy (bounded).
-- **Stacked children** are retargeted to `main` before their parent merges. Then `git rebase --onto origin/main <old parent head> <child>`, `git push --force-with-lease`, attest.
+- **Stacked children** are retargeted to `main` before their parent merges. Then `make land PR=<child>` rebases it `--onto origin/main <old parent head>` itself (by hand: that command, `git push --force-with-lease`, attest).
 - Integration branches (`feat/<x>`): `make pr-merge PR=<PR> ARGS=--any-base`.
 - Never `gh pr merge --delete-branch`: it closes every PR stacked on the branch and deletes any worktree holding it. Never write your own merge or queue script; change `scripts/cilocal` (rules and tests in `scripts/cilocal/verify`).
 - **Admin bypass** only when the developer authorized it and a GitHub check is red for a reason outside the code, and only after `make ci-local RAN="…"` attested the head: `gh pr merge <n> --squash --admin --match-head-commit <sha>`, then a PR comment "Authorized by <who>, merged by <agent>" with the attestation.
