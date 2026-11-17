@@ -34,8 +34,3 @@ GHSA-vcc3-ghjq-m6fr decode-uri-component 2027-01-31 same as GHSA-qr28-fpjm-wq7f
 # Runs only on the developer's machine (expo CLI), never in the app bundle;
 # the app's own zod is 4.6.7.
 GHSA-mrhx-c7xc-m3w5 zod 2027-01-31 dev-time only (@expo/cli needs zod 3); fix needs zod 4
-# eslint 9 and its plugins require('minimatch') as a function; minimatch 11's
-# CJS export is an object. Lint-time only, on our own source globs.
-GHSA-g3hv-75wg-m249 minimatch 2027-01-31 dev-only (eslint 9 needs minimatch 3); fix is minimatch 11
-# expo > @expo/config merges our own app config at build time; no release fixes it.
-GHSA-gcqx-w48m-w2h4 deepmerge 2027-01-31 no fix published; build-time only, merges our own config

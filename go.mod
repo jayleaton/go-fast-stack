@@ -1,6 +1,6 @@
 module github.com/jayleaton/go-fast-stack
 
-go 1.26.10
+go 1.26.11
 
 require (
 	filippo.io/age v1.3.2
@@ -22,7 +22,7 @@ require (
 	filippo.io/hpke v0.4.0 // indirect
 	github.com/CAFxX/httpcompression v0.0.9 // indirect
 	github.com/a-h/parse v0.0.0-20250122154542-74294addb73e // indirect
-	github.com/andybalholm/brotli v1.2.6 // indirect
+	github.com/andybalholm/brotli v1.2.7 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cli/browser v1.3.0 // indirect
 	github.com/ebitengine/purego v0.10.1 // indirect
@@ -30,7 +30,7 @@ require (
 	github.com/fsnotify/fsnotify v1.10.1 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
-	github.com/klauspost/compress v1.20.1 // indirect
+	github.com/klauspost/compress v1.20.2 // indirect
 	github.com/mattn/go-colorable v0.1.15 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect
 	github.com/mfridman/interpolate v0.0.2 // indirect

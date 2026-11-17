@@ -1,6 +1,6 @@
 module github.com/jayleaton/go-fast-stack/deploy
 
-go 1.26.10
+go 1.26.11
 
 require (
 	github.com/railwayapp/railway-go-sdk v0.6.0
