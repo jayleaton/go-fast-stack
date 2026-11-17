@@ -43,7 +43,7 @@ file holds the names.
 | service error | a named `*services.Error` matched with `errors.Is`, plus kind sentinels | `apps/web/internal/services/` |
 | mock / mock session | generated mockgen output; `apitest.AsUser` / `apitest.Anonymous` for handler tests | `services/mocks`, `api/mocks`, `api/apitest` |
 | test boundary | one of the only places tests may live, each with allowed imports and a coverage floor | AGENTS.md "Test boundaries" |
-| local verification | run what the change needs on the pushed head, then `make ci-local RAN="…"` attests it | `scripts/cilocal/`, the github-prs skill |
+| local verification | run what the change needs on the pushed head, then `make ci-local RAN="…"` attests it | `scripts/cilocal/`, the local-ci skill |
 | attested / claimed / failed head | a head whose attestation holds / that `make ci-local` has touched / that failed and stays failed | `scripts/cilocal/verify` |
 | release | a published `vX.Y.Z` on a `main` commit staging already ran; the only path to production | `Deploy production`, `docs/RELEASES.md` |
 | routes config | `AppRoutes` (pages) and `APIRoutes` (endpoints) | `apps/web/internal/config/routes.go` |
