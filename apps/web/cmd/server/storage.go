@@ -18,14 +18,14 @@ import (
 // imageConcurrency bounds how many images are decoded at once. Measured peak
 // RSS above an idle server: about 30 MB for one 12 MP photo, 70 MB for one
 // 48 MP photo (the decoded pixels and the WebP encoder; resizing uses at most
-// 8 MiB), 120 MB for two 12 MP photos at once (docs/storage.md).
+// 8 MiB), 120 MB for two 12 MP photos at once.
 const imageConcurrency = 2
 
 // newImages builds the image endpoints over object storage, or returns nil
 // (routes not mounted) when STORAGE_S3_BUCKET is unset. A bucket that the
 // keys cannot reach fails boot, like a database that cannot be reached.
 // The bucket and keys are live secrets: a new set is probed with one real
-// call and swapped in only if it works (docs/storage.md).
+// call and swapped in only if it works.
 func newImages(ctx context.Context, cfg config.Config, gate *access.Gate, log *slog.Logger) (*api.Images, error) {
 	creds, err := cfg.Secrets.Storage()
 	if err != nil {

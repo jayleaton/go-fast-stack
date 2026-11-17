@@ -49,10 +49,10 @@ linters:
         # route's policy. See exclusions for where each is allowed.
         - pattern: ^auth\.UserFrom$
           pkg: ^github\.com/jayleaton/go-fast-stack/packages/auth$
-          msg: "the caller comes from the route's access policy: register the route with api.Route / the UI's page or action and use the caller it passes (AGENTS.md \"Architecture\", docs/route-access.md)"
+          msg: "the caller comes from the route's access policy: register the route with api.Route / the UI's page or action and use the caller it passes (AGENTS.md \"Architecture\", apps/web/internal/access)"
         - pattern: ^access\.Gate\.Admit$
           pkg: ^github\.com/jayleaton/go-fast-stack/apps/(web|admin)/internal/access$
-          msg: "only the central route handler admits a request: register the route with api.Route / the UI's page or action and its access.Policy (docs/route-access.md)"
+          msg: "only the central route handler admits a request: register the route with api.Route / the UI's page or action and its access.Policy (apps/web/internal/access)"
         # UIs only (see exclusions): a page never links to, fetches or posts
         # to the JSON API; forms post to the UI's own action routes.
         - pattern: ^config\.APIRoutes$

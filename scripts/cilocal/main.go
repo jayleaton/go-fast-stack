@@ -1,4 +1,4 @@
-// Command cilocal is local verification (docs/CI.md, "Local verification"):
+// Command cilocal is local verification:
 // the agent runs what its change needs on the exact pushed head, then
 // attests it, recorded on GitHub as the `local-ci` commit status and the PR
 // body's "Local verification" section. The rules live in

@@ -9,8 +9,7 @@ import (
 )
 
 // The Secret scan job reads a pull request's head as data: the files of its
-// tree, from git's objects, never a checkout of it (docs/CI.md, "Secret
-// scan"). The code that scans, and its .gitleaks.toml, are the base's.
+// tree, from git's objects, never a checkout of it. The code that scans, and its .gitleaks.toml, are the base's.
 
 // TreeEntry is one entry of `git ls-tree -r -z <commit>`.
 type TreeEntry struct {
@@ -128,7 +127,7 @@ func PolicyProblem(changed []string) string {
 	if len(changed) == 0 {
 		return ""
 	}
-	return fmt.Sprintf("the change edits the secret scan's policy (%s), which the scan never takes from the change it scans: it ran with the trusted base's. A maintainer reviews the policy change and merges it on its own (docs/CI.md, \"Secret scan\")",
+	return fmt.Sprintf("the change edits the secret scan's policy (%s), which the scan never takes from the change it scans: it ran with the trusted base's. A maintainer reviews the policy change and merges it on its own",
 		strings.Join(changed, ", "))
 }
 

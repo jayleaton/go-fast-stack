@@ -280,7 +280,7 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	adminSvc := services.NewAdminService(server.NewAdminAccounts(admins, adminrepo.NewAdmins(adminPool)), auditLog, adminPolicy)
 	auditSvc := services.NewAuditService(auditLog, adminPolicy)
 	analytics := services.NewAnalyticsService(adminrepo.NewStats(appPool), adminPolicy)
-	// One gate decides route access for both transports (docs/route-access.md).
+	// One gate decides route access for both transports (package access).
 	gate := access.NewGate(server.NewCallers(admins).Resolve)
 	// The UI reaches data only through the API, in-process: the same
 	// endpoints, policies and validation a /api/admin/v1 request would take.

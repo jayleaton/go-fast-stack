@@ -17,7 +17,10 @@ const (
 
 // Live secrets: names served by the secrets provider instead of the env, so
 // they rotate without a redeploy when the provider is remote. Each gets a
-// typed accessor on Secrets. To add one, see AGENTS.md "Adding a secret".
+// typed accessor on Secrets. To add one: name it in liveSecrets, check it in
+// validateLive, add its accessor next to OnDatabaseURL, register its hook in
+// cmd/server (package secrets, "Hooks"), and list it in .env.example and
+// every Doppler config.
 // Only DOPPLER_TOKEN (the credential that reaches the provider) is not one.
 const (
 	secretResendAPIKey = "RESEND_API_KEY"

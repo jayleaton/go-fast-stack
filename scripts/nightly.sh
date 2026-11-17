@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The nightly full suite on main (`make nightly`, docs/CI.md "Nightly"):
+# The nightly full suite on main (`make nightly`):
 # everything a pull request may have skipped by running only what it
 # affected. In a detached checkout of origin/main (.cache/nightly) it runs
 # make ci, make test-flaky (-race -count=5 -shuffle=on) and
@@ -11,7 +11,7 @@
 # never posts a failed local-ci: that is final for the commit and would keep
 # it off staging over what may be a flake.
 #
-# Run it from cron on a machine with Docker and gh (docs/CI.md "Nightly").
+# Run it from cron on a machine with Docker and gh.
 # NIGHTLY_COMMIT=<rev> checks another commit; NIGHTLY_REPORT=0 skips the fetch
 # and every GitHub call (attest, issue).
 set -euo pipefail

@@ -15,7 +15,7 @@ const minSecretLength = 32
 // Live secrets of the admin service: served by SECRETS_PROVIDER (its own
 // Doppler config and token) and rotated without a redeploy when the provider
 // is remote. Only DOPPLER_TOKEN is not one. See the web app's
-// config/secrets.go and AGENTS.md "Adding a secret".
+// config/secrets.go for how to add one.
 const (
 	secretAppDatabaseURL   = "DATABASE_URL"       // the app database (users being administered)
 	secretAdminDatabaseURL = "ADMIN_DATABASE_URL" // the admin database (admins, audit log)

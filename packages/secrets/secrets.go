@@ -1,23 +1,3 @@
-// Package secrets serves secrets that can change while the server runs.
-//
-// A Provider fetches a whole Snapshot (every secret of one service and
-// environment) in one request. A Manager polls the provider, validates each
-// snapshot before publishing it, keeps the last good one when the provider is
-// down, reports itself unhealthy once that copy is older than the staleness
-// limit, and calls per-key change hooks so consumers can rebuild their clients:
-//
-//	m := secrets.NewManager(secrets.NewDoppler(secrets.NewSecret(token)), secrets.Options{Keys: []string{"RESEND_API_KEY"}})
-//	if err := m.Start(ctx); err != nil { ... } // first fetch; fails boot without a valid snapshot
-//	defer m.Stop()
-//	m.OnChange("RESEND_API_KEY", func(v secrets.Secret) error { mailer.Swap(newMailer(reveal.Value(v))); return nil })
-//
-// Values are Secret, which formats, logs and marshals as "[redacted]". No
-// method returns the value: only reveal.Value (package
-// packages/secrets/reveal) does, and only apps/*/cmd may import it (depguard).
-// Nothing in this package logs a value, a token or a provider response body. NewRedactingHandler wraps the binaries' slog
-// handler so credentials that reach a log anyway are redacted. The package
-// never reads the environment:
-// apps/web/internal/config builds the Manager.
 package secrets
 
 import (

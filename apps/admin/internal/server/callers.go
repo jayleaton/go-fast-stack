@@ -11,7 +11,7 @@ import (
 // Callers turns the admin session that the admin auth.Middleware loaded into
 // the caller both transports see. It also reads whether the admin has 2FA
 // on, for services.Policy (sessions can predate ADMIN_REQUIRE_2FA). To give
-// policies more to go on (roles), add the lookup here (docs/route-access.md);
+// policies more to go on (roles), add the lookup here;
 // routes and middleware stay as they are.
 type Callers struct {
 	auth *auth.Auth

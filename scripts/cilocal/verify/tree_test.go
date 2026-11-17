@@ -35,7 +35,7 @@ func TestScanTargets(test *testing.T) {
 		{Mode: "100755", Blob: "b3", Path: "scripts/run.sh"},
 		{Mode: "120000", Blob: "b4", Path: "link"},
 		{Mode: "160000", Blob: "b5", Path: "vendor/sub"},
-		{Mode: "100644", Blob: "b6", Path: "docs/old.md"},
+		{Mode: "100644", Blob: "b6", Path: "notes/old.md"},
 	}
 	paths := func(targets []verify.TreeEntry) []string {
 		names := []string{}
@@ -45,7 +45,7 @@ func TestScanTargets(test *testing.T) {
 		return names
 	}
 	every, problem := verify.ScanTargets(entries, nil)
-	if want := []string{".gitleaks.toml", "scripts/cilocal/bypass.go", "scripts/run.sh", "docs/old.md"}; problem != "" || !slices.Equal(paths(every), want) {
+	if want := []string{".gitleaks.toml", "scripts/cilocal/bypass.go", "scripts/run.sh", "notes/old.md"}; problem != "" || !slices.Equal(paths(every), want) {
 		test.Fatalf("ScanTargets(every) = %q, %q; want %q", paths(every), problem, want)
 	}
 	listed, problem := verify.ScanTargets(entries, []string{".gitleaks.toml", "scripts/cilocal/bypass.go", "link", "deleted.go"})

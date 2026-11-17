@@ -33,7 +33,7 @@
 #                    it: what the workflows do until RAILWAY_DEPLOY is true
 #
 # Never pass a variable named RAILWAY_ENV: it switches the Railway CLI to
-# Railway's internal API (docs/railway-go-iac-issues.md).
+# Railway's internal API.
 set -eu
 
 usage="usage: sh .github/scripts/deploy-railway.sh <environment> <sha>"

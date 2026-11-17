@@ -123,7 +123,7 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	}
 
 	users := services.NewUserService(database.NewUserRepository(pool), server.NewAccountCredentials(authn))
-	// One gate decides route access for both transports (docs/route-access.md).
+	// One gate decides route access for both transports (package access).
 	gate := access.NewGate(server.Callers)
 	usersAPI := api.NewUsers(users, gate)
 	socialAPI := api.NewSocial(services.NewSocialSignInService(server.NewSocialAuth(authn)), gate)

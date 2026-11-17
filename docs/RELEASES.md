@@ -7,13 +7,13 @@ pipeline enforces them.
 
 The layout it expects is one Railway project with two environments, `staging`
 and `production` (`deploy/platform.yaml`: `environments: staging,production`),
-created once with `make railway-setup` ([deploy.md](deploy.md)). Railway's own
+created once with `make railway-setup`. Railway's own
 GitHub auto-deploy stays off (`repo: ""`): only these workflows ship code.
 
 ## The flow
 
 1. **Merge to `main`.** `make ci-local` attested the PR's head
-   ([CI.md](CI.md)), then `Deploy staging` checks that attestation and ships
+   ([github-prs](../.claude/skills/github-prs/SKILL.md)), then `Deploy staging` checks that attestation and ships
    the commit to Railway staging (see [Railway rollout](#railway-rollout)).
 2. **Draft a release.** Actions → **Draft release** → Run workflow (`bump`
    patch, minor or major, or an exact `version`). It drafts a release at the
@@ -129,7 +129,7 @@ leaked admin token can push a `v*` tag as easily as it can publish a release.
 `Deploy staging` run's commit is not `main`'s head (a refused, failed or
 cancelled deploy), it dispatches `Deploy staging` on `main`. A `main` that is
 not attested is refused again, every hour, until someone attests it
-([CI.md](CI.md#required-checks-and-staging)).
+([github-prs](../.claude/skills/github-prs/SKILL.md)).
 
 ## Rollback or redeploy
 
@@ -149,7 +149,7 @@ The pipeline is inert until this is done: staging dry-runs, and every
 production run stops at the gate with an error naming what is missing.
 
 1. **Create the project:** `make railway-setup ARGS="--environments staging,production ..."`
-   (AGENTS.md, "Deploy to Railway"), with `repo: ""` in `deploy/platform.yaml`.
+   (AGENTS.md, "Deploying"), with `repo: ""` in `deploy/platform.yaml`.
 2. **Environments and the tag ruleset:** `.github/scripts/release-settings.sh`
    (an administrator's `gh` login) creates `staging` (branch `main`) and
    `production` (branch `main`, tag `v*`) and the "Release tags" ruleset,

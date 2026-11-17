@@ -59,7 +59,7 @@ func migrationOrder(ctx context.Context, args []string) error {
 		fmt.Fprintln(os.Stderr, problem)
 	}
 	if len(problems) > 0 {
-		fmt.Fprintf(os.Stderr, "check-migration-order: number a new migration above every one on %s, per set (AGENTS.md \"Migrations\")\n", label)
+		fmt.Fprintf(os.Stderr, "check-migration-order: number a new migration above every one on %s, per set; merged migrations are append-only\n", label)
 		return errNotVerified
 	}
 	return nil

@@ -10,7 +10,7 @@ import (
 	"github.com/jayleaton/go-fast-stack/packages/secrets"
 )
 
-// Object storage (docs/storage.md) is optional: off unless
+// Object storage (packages/storage) is optional: off unless
 // STORAGE_S3_BUCKET is set. Which bucket and which keys are live secrets, so
 // a bucket move or a key rotation needs no redeploy; the region and
 // addressing style are plain env.
