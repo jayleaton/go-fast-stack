@@ -18,7 +18,7 @@ type RedactOptions struct {
 	// KeepDevMailLinks leaves the "url" attribute of the dev mailer's records
 	// (packages/auth DevMailer: message "auth: … (dev mode, not sent)")
 	// readable, so developers can copy verification, reset and invite links
-	// from the log (AGENTS.md "Dev loop"). Every other attribute of those
+	// from the log. Every other attribute of those
 	// records is still redacted. Enable it only outside production.
 	KeepDevMailLinks bool
 }

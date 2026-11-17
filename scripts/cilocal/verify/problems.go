@@ -58,7 +58,7 @@ func FailedHeadRefusal(head string, statuses []Status) string {
 // the body's section names it. Until then nothing is attested, so ci.yml
 // names its checking job "Awaiting make ci-local" and the required check
 // `Local verification` stays "Expected" rather than red; once claimed, every
-// problem fails it (docs/CI.md, "What runs").
+// problem fails it.
 func ClaimsHead(body, head string, statuses []Status) bool {
 	for _, status := range statuses {
 		if status.Context == StatusContext {

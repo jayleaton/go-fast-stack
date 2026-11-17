@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # The machine-wide CI lock, /tmp/gfs-ci.lock, shared by make ci-pg and make
-# land (sourced; docs/CI.md "Local verification"). A directory, because mkdir
+# land (sourced). A directory, because mkdir
 # is atomic. Its `owner` file is one line: "pid <pid> (<user>) <what>, since
 # <time>".
 #

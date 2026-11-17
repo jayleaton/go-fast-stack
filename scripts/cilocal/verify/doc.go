@@ -1,5 +1,4 @@
-// Package verify holds the rules of local verification (docs/CI.md, "Local
-// verification"): the agent runs what its change needs, then `make ci-local
+// Package verify holds the rules of local verification: the agent runs what its change needs, then `make ci-local
 // RAN="<what you ran>"` attests it on the exact pushed head. This package
 // renders the PR body section that attestation fills and decides, for the
 // Local verification job in ci.yml, `make pr-merge` and the staging gate,

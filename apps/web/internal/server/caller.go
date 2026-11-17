@@ -10,8 +10,8 @@ import (
 
 // Callers is the access.Resolver over packages/auth: it turns the session
 // that auth.Middleware loaded into the caller both transports see. To give
-// policies more to go on (roles, the tenant), wrap it here with the lookup
-// (docs/route-access.md); routes and middleware stay as they are.
+// policies more to go on (roles, the tenant), wrap it here with the lookup;
+// routes and middleware stay as they are.
 var Callers = access.FromContext(callerFrom)
 
 func callerFrom(ctx context.Context) (access.Caller, bool) {

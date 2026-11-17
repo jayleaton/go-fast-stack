@@ -8,7 +8,7 @@ import (
 
 // volumeSnapshots sets Railway's own backup schedule (backups.volume_snapshots:
 // daily, weekly, monthly) on every Postgres volume in env, idempotently.
-// IaC cannot express it (docs/railway-go-iac-issues.md #19); Railway's API
+// IaC cannot express it; Railway's API
 // can, and changing it redeploys nothing. Not in platform.yaml: the
 // schedule is left as it is. Existing snapshots are never deleted: an
 // emptied schedule only stops new ones. Railway refusing it (the Hobby plan

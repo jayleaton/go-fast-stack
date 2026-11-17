@@ -3,7 +3,8 @@
 #   make railway-apply   # create or update the project to match
 # Re-running converges; changing a value here updates every environment.
 # Removing things (admin: false after true, an environment) never deletes
-# anything unless you pass CONFIRM_DESTRUCTIVE=1. See docs/deploy.md.
+# anything unless you pass CONFIRM_DESTRUCTIVE=1. Never edit Railway in the
+# dashboard: the next apply undoes it.
 version: 1
 
 # Railway project name: created on the first apply if it does not exist,
@@ -72,7 +73,7 @@ email:
 # secrets (with secrets.provider: doppler): doppler (default) switches the
 # environment's services to Doppler; staged fills Doppler and seals the
 # token without a deploy, so they keep their Railway secrets until a release
-# sets it to doppler (docs/secrets.md "Staged environments").
+# sets it to doppler.
 # per_environment:
 #   production:
 #     public_url: https://app.example.com
@@ -81,7 +82,7 @@ email:
 
 # admin_bootstrap_email: you@example.com   # first admin, seeded by `admin migrate`
 
-# Nightly database backups (docs/backups.md): a small cron
+# Nightly database backups (packages/backup): a small cron
 # service, backup, dumps the app database (pg_dump, compressed), encrypts it
 # with BACKUP_ENCRYPTION_KEY (generated; keep a copy outside Railway) and
 # stores it in a Railway storage bucket, then prunes. Restore: make
@@ -95,7 +96,7 @@ backups:
   region: ""              # bucket region: sjc, iad, ams, sin ("": nearest region:, else sjc)
   # railway: a Railway storage bucket (no other account). external: your own
   # S3-compatible bucket off Railway (Cloudflare R2, Backblaze B2, AWS S3);
-  # set backup/BACKUP_S3_* yourself (docs/backups.md).
+  # set backup/BACKUP_S3_* yourself.
   storage: railway
   # Railway's own snapshots of every Postgres volume (Pro plan only): daily
   # (kept 6 days), weekly (27 days), monthly (89 days). Setup sets the

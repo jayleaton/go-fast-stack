@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-// The migration order (AGENTS.md "Migrations"; scripts/check-migration-order.sh
+// The migration order (scripts/check-migration-order.sh
 // runs `cilocal migration-order`): a goose migration a checkout adds must be
 // numbered above the highest version every deployed base already has in the
 // same set. Goose refuses out-of-order migrations, so once a deployed

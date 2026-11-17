@@ -448,7 +448,7 @@ func uploadMessage(ctx context.Context, root string) string {
 	return plain + " " + strings.TrimSpace(string(head))
 }
 
-// repairDatabases fixes a Railway IaC bug (docs/railway-go-iac-issues.md #0):
+// repairDatabases fixes a Railway IaC bug:
 // a database added to a second environment keeps POSTGRES_PASSWORD as the
 // unevaluated generator text `secret(32, "...")`, so its password is the
 // same public string everywhere and DATABASE_URL does not parse (spaces).
@@ -478,13 +478,13 @@ func (setup *setup) rotateDatabases(ctx context.Context, env string) error {
 			return err
 		}
 		if setup.onDoppler(vars) {
-			setup.say("  ! %s/%s reads DATABASE_URL from Doppler: if it uses the superuser, update it there (docs/secrets.md: rotate the database password)", env, svc)
+			setup.say("  ! %s/%s reads DATABASE_URL from Doppler: if it uses the superuser, update it there", env, svc)
 			continue
 		}
 		args := []string{"redeploy", "--service", svc, "--environment", env, "--yes"}
 		if !setup.cfg.Upload() {
 			// The branch's latest commit: a plain redeploy repeats the latest
-			// deployment's build, which may be an old one (docs/deploy.md).
+			// deployment's build, which may be an old one.
 			args = append(args, "--from-source")
 		}
 		if _, err := setup.rw.output(ctx, nil, args...); err != nil {

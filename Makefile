@@ -129,7 +129,7 @@ else
 endif
 
 .PHONY: nightly
-nightly: ## The full suite on origin/main: make ci, test-flaky, secret-scan --all; attests green, opens an issue on red (docs/CI.md "Nightly")
+nightly: ## The full suite on origin/main: make ci, test-flaky, secret-scan --all; attests green, opens an issue on red (cron on a machine with Docker and gh: 0 3 * * * make nightly)
 	./scripts/nightly.sh
 
 .PHONY: ci
@@ -178,7 +178,7 @@ vulncheck: ## Known vulnerabilities: govulncheck (pinned) on every Go module + p
 	$(GO) run ./scripts/vulncheck $(ARGS)
 
 .PHONY: check-pr
-check-pr: ## Before make ci-local: run what this branch's changes need (docs/CI.md "What to run"), then print the RAN line (ARGS=--dry-run: only say what)
+check-pr: ## Before make ci-local: run what this branch's changes need, then print the RAN line (ARGS=--dry-run: only say what)
 	./scripts/check-pr.sh $(ARGS)
 
 .PHONY: check-fast

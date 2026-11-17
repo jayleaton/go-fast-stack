@@ -23,7 +23,7 @@ import (
 	"github.com/jayleaton/go-fast-stack/scripts/cilocal/verify"
 )
 
-// The secret scan (docs/CI.md, "Secret scan"): the files a change touches,
+// The secret scan: the files a change touches,
 // copied out and scanned with gitleaks (pinned, checksum-verified), using
 // .gitleaks.toml. make secret-scan runs it on the branch's changed files; the
 // Secret scan job in ci.yml runs it on the pull request's file list, so it
@@ -430,7 +430,7 @@ func runGitleaks(ctx context.Context, scan, policy string, copied int) error {
 	command.Env = slices.DeleteFunc(os.Environ(), func(variable string) bool { return strings.HasPrefix(variable, "GITLEAKS_") })
 	command.Stdout, command.Stderr = os.Stdout, os.Stderr
 	if err := command.Run(); err != nil {
-		return fmt.Errorf("the secret scan found credential-shaped values (above, redacted): remove a real secret and rotate it; a deliberate fixture gets an obviously fake value and an exact allowlist entry in .gitleaks.toml (docs/CI.md, \"Secret scan\"): %w", err)
+		return fmt.Errorf("the secret scan found credential-shaped values (above, redacted): remove a real secret and rotate it; a deliberate fixture gets an obviously fake value and an exact allowlist entry in .gitleaks.toml: %w", err)
 	}
 	return nil
 }

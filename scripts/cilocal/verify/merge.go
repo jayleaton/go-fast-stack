@@ -8,8 +8,7 @@ import (
 	"time"
 )
 
-// The merge decision (make pr-merge, docs/CI.md "Merging on local
-// verification"): each listed pull request merges now or is reported with
+// The merge decision (make pr-merge): each listed pull request merges now or is reported with
 // its next step. Nothing waits: a draft, unattested, failing, pending or
 // conflicting PR is left alone so it never holds up the others. A head
 // behind its base is refused: GitHub would squash it into a tree (the base

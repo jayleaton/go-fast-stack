@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # go generate, one process per package, as many at once as there are CPUs
 # (make generate, make check-fast): `go generate ./...` runs every mockgen
-# directive one after another (5.5-7.1 s on 4 vCPU against 2.7 s in parallel,
-# docs/ci-speed.md). Each package's own directives still run in order.
+# directive one after another (5.5-7.1 s on 4 vCPU against 2.7 s in parallel). Each package's own directives still run in order.
 #
 # Usage: scripts/go-generate.sh [<package dir>...]
 #        (default: every root-module package with a //go:generate directive)

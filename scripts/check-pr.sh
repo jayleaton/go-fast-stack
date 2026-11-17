@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # What a pull request needs before make ci-local (`make check-pr`): runs the
-# checks docs/CI.md "What to run" lists for this checkout's changes against
+# checks this checkout's changes need against
 # the merge base with origin/main, in order, stopping at the first failure,
 # then prints the `make ci-local RAN="…"` line that says exactly what ran.
 #
@@ -89,7 +89,7 @@ plan+=("make secret-scan")
 echo "check-pr: ${#changed[@]} changed files vs $base_ref$([ "$full" = true ] && echo ', a shared input: everything')"
 printf '  %s\n' "${plan[@]}"
 if [ "$mobile" = true ]; then
-  echo "  (not run here: apps/mobile-app's pnpm checks, docs/CI.md \"What to run\")"
+  echo "  (not run here: apps/mobile-app's pnpm checks: pnpm typecheck, lint and test in apps/mobile-app)"
 fi
 [ "$dry" = false ] || exit 0
 

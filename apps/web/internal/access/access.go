@@ -16,8 +16,7 @@
 // Extend access here, in one place, without touching middleware or handlers:
 // add what a policy needs to Caller (Roles, TenantID), fill it in the
 // Resolver (server.Callers), and add a Policy next to SignedIn. A route then
-// opts in on its registration line: access.Role("admin"). docs/route-access.md
-// has the worked examples for roles and tenants.
+// opts in on its registration line: access.Role("admin").
 package access
 
 import (

@@ -1,5 +1,5 @@
-# gitleaks configuration for the secret scan (scripts/cilocal secret-scan,
-# docs/CI.md "Secret scan"): gitleaks' own rules, with one exception for the
+# gitleaks configuration for the secret scan (scripts/cilocal secret-scan):
+# gitleaks' own rules, with one exception for the
 # dev-loop bench script, which boots the binaries with throwaway values. Only
 # those exact synthetic strings are allowed, and only in that script: a real
 # secret in a test, in testdata, in an example env file or in the bench script

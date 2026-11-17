@@ -121,7 +121,7 @@ var graphSet = []string{"DATABASE_URL", "ADMIN_DATABASE_URL"}
 func GraphSet() []string { return slices.Clone(graphSet) }
 
 // RailwayCopies are a service's Railway variables made redundant once it
-// reads Doppler (docs/secrets.md "Where secrets live"): every Doppler-owned name but
+// reads Doppler: every Doppler-owned name but
 // the graph's database references.
 func RailwayCopies(service string) []string {
 	return slices.DeleteFunc(DopplerNames(service), func(name string) bool { return slices.Contains(graphSet, name) })

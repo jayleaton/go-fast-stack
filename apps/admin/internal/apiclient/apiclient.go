@@ -251,7 +251,7 @@ type (
 	Gate          = access.Gate
 )
 
-// The shipped policies and access errors (docs/route-access.md).
+// The shipped policies and access errors (package access).
 var (
 	Public       = access.Public
 	SignedIn     = access.SignedIn

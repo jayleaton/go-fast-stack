@@ -1,11 +1,10 @@
 # Pull requests only: the agent runs what its change needs before merge and
-# attests it with `make ci-local RAN="<what you ran>"` (docs/CI.md, "Local
-# verification"), and main runs no CI. This keeps the two small checks the
+# attests it with `make ci-local RAN="<what you ran>"`, and main runs no CI. This keeps the two small checks the
 # main ruleset requires: the secret scan, and the check that make ci-local's
 # attestation holds for the head. A push to main is gated separately: Deploy
 # staging deploys only a commit make ci-local attested (deploy-staging.yml).
 #
-# Trusted code only (docs/CI.md, "What runs"): pull_request_target runs this
+# Trusted code only: pull_request_target runs this
 # file and checks out the code as they are on the base branch, never the pull
 # request's. The jobs read the head as data, through the API and git's
 # objects, and never run it, so a branch or a fork that rewrites
@@ -35,8 +34,7 @@ concurrency:
 on:
   pull_request_target:
     # Edits only: make ci-local posts local-ci, then fills the PR body, and
-    # that edit starts the run that checks both (docs/CI.md, "Local
-    # verification"). A push or a new PR starts nothing, and an edit before
+    # that edit starts the run that checks both. A push or a new PR starts nothing, and an edit before
     # make ci-local claims the head runs Local verification under another
     # name, so until it attests the required checks wait as "Expected",
     # never red; a job skipped by `if` would count as passed.
@@ -45,8 +43,7 @@ on:
 jobs:
   secrets:
     name: Secret scan
-    # The pull request's changed files, docs included (docs/CI.md, "Secret
-    # scan"), read from the head's objects and scanned with the base's
+    # The pull request's changed files, docs included, read from the head's objects and scanned with the base's
     # scanner and policy (.gitleaks.toml, .gitleaksignore); a head that edits
     # that policy fails for review. It does not depend on the agent's machine.
     runs-on: ${{ fromJSON(vars.CI_RUNNER || '"ubuntu-latest"') }}
@@ -102,8 +99,7 @@ jobs:
         run: go run ./scripts/cilocal check --claim
 
   local:
-    # The agent ran the PR's checks on its machine (docs/CI.md, "Local
-    # verification"). For a claimed head this is the required check, and
+    # The agent ran the PR's checks on its machine. For a claimed head this is the required check, and
     # fails unless the local-ci status on the head and the PR body's section
     # attest them. For any other it passes under another name and posts
     # nothing the ruleset reads.

@@ -1,67 +1,83 @@
 # CONTEXT.md: shared language
 
-Use these words when talking about Go Fast Stack (this repo), in code review, commits and agent output.
+Use these words in code, commits, review and agent output. The **Code** column
+gives the canonical identifier or place to use; where a word and the code
+disagree, the code is what ships. [AGENTS.md](AGENTS.md) holds the rules; this
+file holds the names.
 
-| Term | Means | Lives in |
+## Who is who
+
+| Term | Means | Code |
 |---|---|---|
-| you | the agent reading this and changing the template | |
+| you, agent | an AI assistant changing the repo, on a branch, never on `main` | AGENTS.md |
 | we, maintainers | the people building this template | |
 | developer | the person who cloned the template and directs agents | |
-| user | a person signed in to the app (row in `"user"`) | |
-| app | a product surface: the **web app** (`apps/web`) or the **mobile app** (`apps/mobile-app`) | `apps/` |
-| package | shared Go code under `packages/` (`database`, `auth`, `secrets`, `uikit`) | `packages/` |
-| migration | a goose SQL file; auth and app migrations are tracked separately (`goose_auth`, `goose_app`) | `packages/*/migrations/` |
-| query | a sqlc-annotated SQL statement; `make generate` turns it into Go | `packages/database/queries/` |
+| user | a person signed in to the app | `"user"`, `model.User` |
+| admin | a person who can sign in to the admin app; never a row in the app's `"user"` | admin `"user"`, `apps/admin/internal/access` |
+
+## Engineering vocabulary
+
+| Term | Means | Code |
+|---|---|---|
+| app | a product surface: **web** (`apps/web`), **admin** (`apps/admin`), **backup** (`apps/backup`) or **mobile** (`apps/mobile-app`) | `apps/` |
+| package | shared Go code under `packages/` | `packages/` |
+| migration | a goose SQL file; three sets: `goose_auth`, `goose_app` (web), and `goose_auth` + `goose_admin` in the admin database | `packages/*/migrations/` |
+| query | a sqlc-annotated statement; `make generate` turns it into Go | `packages/database/queries/` |
 | repository | data access over sqlc implementing a service's port; returns `model` types and `model.ErrNotFound` | `packages/database/*.go` |
 | model | plain data types repositories return; services re-export them | `packages/database/model/` |
 | service | business rules; returns `*services.Error` with a `Kind` | `apps/web/internal/services/` |
-| validator | an input type with `Validate()`, named by CRUD verb (`UpdateUserSettings`, `UpdateUserEmail`); shape only, rules that need state are the service's | `apps/web/internal/validate/` |
-| transport | code that speaks HTTP: the **JSON API** or the **UI**; the UI sits above the API (UI → API → services) | `apps/web/internal/api/`, `apps/web/ui/` |
-| endpoint | `api.Endpoint`: one API operation declared once (method, path, access policy, handler), served over HTTP (`Serve`) and called in-process (`Call`) | `apps/web/internal/api/` |
-| API client | `apiclient.Client`: the API as the UI calls it; `api.Client` implements it in-process (no network hop, no base URL) | `apps/web/internal/apiclient/`, `apps/web/internal/api/client.go` |
-| server action | a UI action route a form or Datastar action posts to (CSRF-protected); it calls the API client and answers with HTML. The browser never calls `/api/` | `apps/web/ui/` (`action(...)`) |
-| sign-in endpoints | `api.Sessions`: sign-up, sign-in, sign-out, verification, password reset (and 2FA in admin) as endpoints over `api.Authenticator`; results carry cookies as data that the UI sets with `setCookies` | `apps/*/internal/api/auth.go`, `apps/*/ui/cookies.go` |
+| validator | an input type with `Validate()`, named by CRUD verb; shape only | `apps/web/internal/validate/` |
+| transport | code that speaks HTTP: the **JSON API** or the **UI** (UI → API → services) | `apps/web/internal/api/`, `apps/web/ui/` |
+| endpoint | `api.Endpoint`: one API operation declared once (method, path, policy, handler), served over HTTP and called in-process | `apps/web/internal/api/` |
+| API client | `apiclient.Client`: the API as the UI calls it; `api.Client` implements it in-process | `apps/web/internal/apiclient/` |
+| server action | a UI action route a form or Datastar action posts to (CSRF-protected); answers with HTML | `apps/web/ui/` (`action(...)`) |
+| sign-in endpoints | `api.Sessions`: sign-up, sign-in, sign-out, verification, password reset (and 2FA in admin) over `api.Authenticator`; the UI sets the cookies they return | `apps/*/internal/api/auth.go`, `apps/*/ui/cookies.go` |
 | envelope | every JSON response: `{"data": T\|null, "error": string\|null}` | `api.WriteData`, `api.WriteError` |
-| route handler | the one handler per transport every route goes through: `api.Route(gate, policy, handler)` (body limit, envelope, error mapping) and the UI's `page`/`action` | `apps/web/internal/api/route.go`, `apps/web/ui/route.go` |
-| route access | the coarse gate: who may reach a route at all, declared per route as an access policy and enforced by the gate (401/redirect signed out, 403 denied) | `apps/web/internal/access/` |
-| access policy | `access.Policy`: `access.Public`, `access.SignedIn`, or one a team adds (`access.Role("admin")`, a tenant check) | `apps/web/internal/access/` |
-| gate | `access.Gate`: resolves the caller (the Resolver, `server.Callers`) and checks a route's policy; one per app, shared by both transports | `apps/web/internal/access/` |
-| resource authorization | may this caller act on this record: a business rule in the service, from the actor, never in a policy | `apps/web/internal/services/` |
-| caller | the user + session a request comes from (the zero Caller when signed out), resolved by the gate and passed to the handler | `access.Caller` |
-| actor | the caller as a service sees it: user ID, email and session ID (`services.Actor`; the contract calls it ServiceContext) | `apps/web/internal/services/` |
-| port | an interface a layer declares for what it needs from below (`services.UserRepository`, `services.AccountCredentials`, `api.UserService`); the consumer owns it | next to its consumer |
-| adapter | a thin type that makes another package satisfy a port, converting types and errors only (`server.AccountCredentials` over `*auth.Auth`, `server.Callers`) | `apps/web/internal/server/` |
-| service error | a named `*services.Error` value (`services.ErrEmailTaken`), matched with `errors.Is`; kind sentinels (`ErrNotFound`...) match a whole kind | `apps/web/internal/services/` |
-| mock | mockgen output for a port, generated by `go generate` into `<package>/mocks`, committed, never hand-written | `services/mocks`, `api/mocks` |
-| mock session | `apitest.AsUser(u)` / `apitest.Anonymous`: who a handler test request is signed in as (admitted by `apitest.Gate()`) | `apps/web/internal/api/apitest/` |
-| test boundary | one of the only places tests may live (service, route handler, backend auth, local verification), each with fixed allowed dependencies and a coverage floor | AGENTS.md "Test boundaries" |
-| local verification | the agent runs what its change needs on the exact pushed head, then attests it with `make ci-local RAN="<what you ran>"` (which runs nothing), recorded as the `local-ci` commit status and the PR body's "Local verification" section | `scripts/cilocal/`, docs/CI.md |
-| `local-ci` | the commit status `make ci-local` posts on the head it attests; its description carries the result and the section's digest, so a hand-edited section no longer matches | `scripts/cilocal/verify/section.go` |
-| claimed | a head `make ci-local` has touched: a `local-ci` on it, or a section naming it. Until then ci.yml's checking job runs as `Awaiting make ci-local` and the required `Local verification` stays "Expected" | `verify.ClaimsHead` |
-| attested | a head whose section names it and says what ran, with a `local-ci` success matching the section and no failure ever; a main commit is attested by `local-ci` on it, or on the merged head of the pull request that made it. Only attested commits deploy to staging (Deploy staging) | `verify.LocalVerificationProblems`, `cilocal attest` |
-| release | a published `vX.Y.Z` GitHub release on a `main` commit staging already ran; the only way code reaches production | `Deploy production`, docs/RELEASES.md |
-| failed head | a head with a failed `local-ci` (`make ci-local FAILED=`): final, never attested again; the fix is a new commit | `verify.FailedHeadRefusal` |
-| boundary test | a test at a test boundary, e.g. the four cases of a route test (401, 403, 400, 2xx) | `*_test.go` in a boundary dir |
-| routes config | `AppRoutes` (pages), `APIRoutes` (endpoints) | `apps/web/internal/config/routes.go` |
-| feature toggles | `config.Features`: email verification, template welcome, Expo dev origins | `apps/web/internal/config/features.go` |
-| session | a row in `"session"`; the signed `better-auth.session_token` cookie (web) or `Authorization: Bearer <token>` (mobile) points at it | `packages/auth/` |
-| dev mailer | logs auth email links instead of sending them (no `RESEND_API_KEY`) | `packages/auth/mailer.go` |
-| live secret | a secret served by the secrets provider that rotates without a redeploy (`DATABASE_URL`, `AUTH_SECRET`, `AUTH_SECRET_PREVIOUS`, `RESEND_API_KEY`: everything but `DOPPLER_TOKEN`); consumers reach it through a typed accessor on `config.Secrets` | `apps/web/internal/config/secrets.go` |
-| secrets provider | where live secrets come from (`SECRETS_PROVIDER`): `env` (read once at boot) or `doppler` (polled) | `packages/secrets/` |
-| snapshot | the whole set of secrets one fetch returned; validated before it replaces the last good one | `packages/secrets/` |
-| keyring | the auth secrets `packages/auth` holds: the current one signs, previous ones still verify until their grace period ends (retirement time stored in `"authKey"`) | `packages/auth/keyring.go` |
-| data key | a random key protecting data at rest (TOTP secrets, backup-code hashes), stored wrapped by the auth secret so a rotation rewraps it instead of breaking 2FA | `packages/auth/keyring.go` |
-| pool swap | `database.Pool.Swap`: a rotated `DATABASE_URL` opens and probes a new pool, switches atomically and drains the old one | `packages/database/pool.go` |
-| max staleness | how long the last good snapshot may be served while the provider fails before `/healthz` reports 503 | `SECRETS_MAX_STALENESS` |
-| backup | an encrypted `pg_dump -Fc` of one database, stored as `<db>/<UTC time>.dump.age` (its id) in the backup bucket | `packages/backup/` |
-| backup service | the always-on `backup` Railway service (`apps/backup`): runs nightly, prunes, and is where `railway-restore` runs | `apps/backup/` |
-| sandbox database | the Docker Postgres from `make db-up`; the only database you may break | `docker-compose.yml` |
-| uikit | the templ component set and design tokens both UIs share; `theme.css` holds every color as `light-dark(<light>, <dark>)` | `packages/uikit/` |
-| theme | light, dark or system: the `theme` cookie, rendered by the server as `<html class>`; no class follows `prefers-color-scheme` | `packages/uikit/` |
-| Datastar | the SSE-first hypermedia library the UI uses (core only, no Pro) | `apps/web/ui/` |
-| admin app | the optional dashboard for the people running the app (`apps/admin`), its own binary, database and auth instance | `apps/admin/` |
-| admin | a person who can sign in to the admin app (row in the admin database's `"user"`); never a row in the app's `"user"` | admin database |
-| admin database | `ADMIN_DATABASE_URL`: the admin auth tables + `admin_audit_log` | `packages/database/adminrepo/migrations/` |
-| audit log | append-only record of every mutating admin action (`admin_audit_log`), written by the admin services | `packages/database/adminrepo/` |
-| invite | a set-password link for a new admin, from the Admins page or `admin invite <email>`; there is no admin sign-up | `apps/admin/internal/services/admins.go` |
-| ban | an admin blocking a user's sign-in (reason, optional expiry); revokes every session at once | `packages/auth` (`UserAdmin.BanUser`) |
+| route handler | the one handler per transport every route goes through | `api.Route`, the UI's `page`/`action` |
+| route access | the coarse gate: who may reach a route, declared per route as a policy | `apps/web/internal/access/` |
+| access policy | `access.Public`, `access.SignedIn`, or a team's (`access.Role("admin")`) | `apps/web/internal/access/` |
+| gate | `access.Gate`: resolves the caller and enforces a route's policy | `apps/web/internal/access/` |
+| resource authorization | may this caller act on this record: a rule in the service, never a policy | `apps/web/internal/services/` |
+| caller / actor | the request's user and session; the actor is how a service sees them | `access.Caller`, `services.Actor` |
+| port / adapter | an interface a layer declares for what it needs; a thin type that satisfies it | next to its consumer, `apps/*/internal/server` |
+| service error | a named `*services.Error` matched with `errors.Is`, plus kind sentinels | `apps/web/internal/services/` |
+| mock / mock session | generated mockgen output; `apitest.AsUser` / `apitest.Anonymous` for handler tests | `services/mocks`, `api/mocks`, `api/apitest` |
+| test boundary | one of the only places tests may live, each with allowed imports and a coverage floor | AGENTS.md "Test boundaries" |
+| local verification | run what the change needs on the pushed head, then `make ci-local RAN="…"` attests it | `scripts/cilocal/`, the github-prs skill |
+| attested / claimed / failed head | a head whose attestation holds / that `make ci-local` has touched / that failed and stays failed | `scripts/cilocal/verify` |
+| release | a published `vX.Y.Z` on a `main` commit staging already ran; the only path to production | `Deploy production`, `docs/RELEASES.md` |
+| routes config | `AppRoutes` (pages) and `APIRoutes` (endpoints) | `apps/web/internal/config/routes.go` |
+| feature toggle | `config.Features`: email verification, template welcome, Expo dev origins | `apps/web/internal/config/features.go` |
+| session | a `"session"` row behind the signed cookie (web) or bearer token (mobile) | `packages/auth/` |
+| dev mailer | logs auth email links instead of sending them | `packages/auth/mailer.go` |
+| live secret | a secret served by the provider that rotates without a redeploy | `apps/web/internal/config/secrets.go` |
+| secrets provider | where live secrets come from (`SECRETS_PROVIDER`): `env` or `doppler` | `packages/secrets/` |
+| keyring / data key | current and previous auth secrets; a data key wrapped by them protects data at rest | `packages/auth/keyring.go` |
+| pool swap | `database.Pool.Swap`: a rotated `DATABASE_URL` probes, switches and drains | `packages/database/pool.go` |
+| backup | an encrypted `pg_dump -Fc` stored as `<db>/<time>.dump.age` | `packages/backup/`, `apps/backup` |
+| sandbox database | the dev Postgres from `make db-up`; the only database you may break | `docker-compose.yml` |
+| uikit / theme | the shared templ components and design tokens; `theme.css` holds every colour | `packages/uikit/` |
+| Datastar | the SSE hypermedia library the UI uses (core only) | `apps/web/ui/` |
+| audit log | the append-only record of admin mutations (intent, then outcome) | `admin_audit_log`, `admin_audit_outcome` |
+| ban | blocks sign-in and revokes every session | `auth.UserAdmin.BanUser` |
+
+## Where code lives
+
+- `apps/web/cmd/server`: the binary (`server serve`, `server migrate`).
+- `apps/web/internal/config`: env config, `AppRoutes`/`APIRoutes`, `Features`.
+- `apps/web/internal/server`: middleware (`apiOnly` hides the API and `/healthz` from browsers), `/healthz`, the mounts (auth at `/api/auth/`, API, UI at `/`), and the adapters from `packages/auth` to service ports (`AccountCredentials`) and to the access gate (`Callers`, the `access.Resolver`).
+- `apps/web/internal/access`: route access: `Caller`, `Policy` (`Public`, `SignedIn`, yours), `Gate`. Both transports register routes with a policy; the gate decides.
+- `apps/web/internal/apiclient`: the API as the UI calls it: `Client`, and aliases of the types, inputs, errors and access policies it uses. A contract only (no `net/http`).
+- `apps/web/internal/api`: JSON API `/api/core/v1`: envelope, `Route` and `Endpoint` (served over HTTP, called in-process by `api.Client`), handlers, the service ports they call; `api/mocks` (generated) and `api/apitest` (mock session) for handler tests.
+- `apps/web/internal/services`: business rules and the ports they need; `services/mocks` (generated) for service tests. `apps/web/internal/validate`: input types.
+- `apps/web/ui`: templ pages, Datastar handlers (server actions that call `apiclient.Client`), i18n, static assets, and the browser security headers (`security.go`).
+- `packages/uikit`: the templ components and design tokens both UIs share (`theme.css` is the one file to re-theme). It renders translated strings and values only; depguard keeps it from importing `apps/` or the data, auth and secrets packages.
+- `packages/storage`: the optional S3 client, `safefetch` (SSRF-safe fetch of user URLs, rules injected from `services.PublicAddr`/`FetchURLAllowed`) and `imaging` (pure-Go decode/normalise to WebP; build with `-tags nodynamic`). Services reach it only through ports (`ObjectStore`, `ImageFetcher`, `ImageCodec`; depguard).
+- `apps/backup`, `packages/backup`: the nightly encrypted Postgres backup and restore.
+- `packages/database`: pool (`Pool`: swaps itself when `DATABASE_URL` rotates), `migrations/` (goose, embedded), `queries/` (sqlc input), `sqlc/` (generated, never edit), repositories, `model/`.
+- `packages/secrets`: live secrets: `Manager` (polling, validation, last-good cache, staleness, change hooks) and providers (`Env`, `Doppler`; Infisical/1Password stubs behind build tags), `Secret`, and the redacting log handler. Self-contained; never reads the env.
+- `packages/auth`: Better Auth–style auth: its own migrations, queries, endpoints (Better Auth paths and response shapes, not the envelope), sessions, mailers. Self-contained: it never imports `apps/` or `packages/database` (depguard).
+- `apps/mobile-app`: the Expo app, which talks to the JSON API with bearer tokens.
+- `apps/admin`: the optional admin dashboard (see "Admin app" in AGENTS.md); `packages/database/adminrepo`: its data layer (audit log, stats; migrations, queries and sqlc output under it).
+- `deploy/`: the Railway setup, its own Go module (the Railway IaC SDK never enters the app's `go.mod`). `platform.yaml` is what a team edits; `platform/` turns it into the IaC graph; `.railway/railway.go` is the shim the Railway CLI evaluates; `cmd/railway-setup` does what IaC cannot (project, environments, domains, sealed secrets, previews). Run it through `make railway-plan` / `make railway-apply`, never by hand-editing Railway. Railway bugs we work around are commented where the workaround lives.
+- Root: `Makefile`, `docker-compose.yml`, `Dockerfile`, `.golangci.yml`, `tools/` (pinned dev tools, run via `go tool -modfile=tools/go.mod`).

@@ -43,7 +43,7 @@ type SecretKind int
 const (
 	// Generated: 48 random bytes, created once per service and environment,
 	// never copied between environments. Not sealed: rotating an auth secret
-	// needs its old value (AUTH_SECRET_PREVIOUS / _REVOKED, see docs/secrets.md),
+	// needs its old value (AUTH_SECRET_PREVIOUS / _REVOKED, package secrets),
 	// and a sealed value can never be read back.
 	Generated SecretKind = iota
 	// Provider: SECRETS_PROVIDER, set by setup from whether this service and
@@ -138,7 +138,7 @@ func (config Config) PublicServices() []string {
 
 // Project is what deploy/.railway/railway.go returns to the Railway CLI. The
 // CLI calls Graph(). It wraps railway.Project because the Go SDK cannot set
-// the project-level variables policy (see docs/railway-go-iac-issues.md).
+// the project-level variables policy.
 type Project struct {
 	railway.Project
 	Ignore []string
@@ -216,7 +216,7 @@ func (config Config) Build(env string) (Project, error) {
 		}
 	}
 	// A pattern scoped to a service this environment does not have is an
-	// error to Railway, not a no-op (docs/railway-go-iac-issues.md #18):
+	// error to Railway, not a no-op:
 	// keep only the ones whose service is in the graph.
 	for _, pattern := range config.Unmanaged {
 		if service, _, scoped := strings.Cut(pattern, "/"); !scoped || config.HasService(service) {

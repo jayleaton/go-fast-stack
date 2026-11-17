@@ -7,12 +7,12 @@ description: How every agent verifies and attests locally (`make ci-local RAN="�
 
 Run the checks your change needs (lint, tests, build), then attest with `make ci-local RAN="…"` and merge right away. `make ci-local` runs nothing: it tells the PR you checked, and what. GitHub runs no verification on `main`, and on a PR only two small jobs that check the attestation. Stack PRs and merge each the moment it is attested; after the merge, check its staging deploy.
 
-The rules on what may merge are in `AGENTS.md` ("Verifying", "Pull requests", "Environments: staging is always current"); the detail is in `docs/CI.md` ("What runs", "What to run", "Local verification", "Merging on local verification"). This skill is how you do it.
+The rules on what may merge are in `AGENTS.md` ("Verifying", "Pull requests", "Environments: staging is always current"). This skill is how you do it.
 
 ## 1. Before every commit
 
 - **Never skip the hooks.** `make hooks` installs the pre-push hook (`make check-fast`); when it fails, fix what it found and push again; never skip it.
-- **Default: `make check-pr`.** It runs what the branch's changes need (the table is `docs/CI.md`, "What to run"), fails when the affected-package selection does not match the diff, and prints the `make ci-local RAN="…"` line to attest with. By hand: `make lint LINT_DIRS=<dirs>` and `make test TEST_PKGS=<pkgs>` for the Go packages it can affect (`scripts/affected.sh` prints them; `make check-fast` is the seconds-long pass), `make check-generated` for sqlc, templ or mock inputs, `make check-migrations` for a migration, `make deploy-check` for `deploy/`, `make actionlint` for workflows, `make release-smoke` for a Dockerfile or what it builds, `make ci` for a change to the tooling. In a Davit box, `make box-ci COMMIT=<sha>` runs check-generated, lint, build and test on exactly that commit and prints one PASS/FAIL line; never hand-write an inline `davit box run -- bash -lc "... rm ..."`. Tests only at the test boundaries (`AGENTS.md`, "Test boundaries"); never a test in `deploy/` or the UI.
+- **Default: `make check-pr`.** It runs what the branch's changes need (the table is in `scripts/check-pr.sh`), fails when the affected-package selection does not match the diff, and prints the `make ci-local RAN="…"` line to attest with. By hand: `make lint LINT_DIRS=<dirs>` and `make test TEST_PKGS=<pkgs>` for the Go packages it can affect (`scripts/affected.sh` prints them; `make check-fast` is the seconds-long pass), `make check-generated` for sqlc, templ or mock inputs, `make check-migrations` for a migration, `make deploy-check` for `deploy/`, `make actionlint` for workflows, `make release-smoke` for a Dockerfile or what it builds, `make ci` for a change to the tooling. In a Davit box, `make box-ci COMMIT=<sha>` runs check-generated, lint, build and test on exactly that commit and prints one PASS/FAIL line; never hand-write an inline `davit box run -- bash -lc "... rm ..."`. Tests only at the test boundaries (`AGENTS.md`, "Test boundaries"); never a test in `deploy/` or the UI.
 - A change adds no lint or format findings, warnings included.
 - Add the paths you changed; never `git add -A` in an old worktree.
 
@@ -71,7 +71,7 @@ make pr-merge PR=<PR> ARGS=--dry-run   # says what it would do
 ## 6. Checks that fail outside the code
 
 - **Lost runner** ("lost communication with the server", "received a shutdown signal", "The operation was canceled.", a timeout with no log): `gh run rerun <run id> --failed`, once, by hand. Nothing re-runs it automatically.
-- **Actions blocked** (billing or a spending limit: "The job was not started because…"): those jobs count as not run; `make pr-merge` merges on `local-ci` alone (`docs/CI.md`, "When Actions cannot run").
+- **Actions blocked** (billing or a spending limit: "The job was not started because…"): those jobs count as not run; `make pr-merge` merges on `local-ci` alone.
 - A real failure belongs to the PR's owner; the rest of the burst doesn't wait for it.
 - One read per question (`gh pr checks <n>`, `gh run view <id> --json jobs`), never a polling loop.
 

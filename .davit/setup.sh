@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # The Davit project image (`davit box image build`): modules downloaded and
 # the Go build, test and lint caches warmed for this tree, so a new box's
-# first make lint / make test reuses them instead of compiling everything
-# (docs/development.md, "Remote boxes"). Davit runs it from a copy, in the synced tree
+# first make lint / make test reuses them instead of compiling everything.
+# Davit runs it from a copy, in the synced tree
 # (the working directory). Rebuild the image (`davit box image update`) when
 # go.mod or tools/go.mod moves on: a stale cache still helps, it warms less.
 set -euo pipefail

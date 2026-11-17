@@ -66,7 +66,7 @@ clicked.
 path in `ApiRoutes` is missing there. `ApiRoutes` therefore uses the same
 patterns as Go (`/api/core/v1/users/{id}`); build concrete paths with the
 helpers in `routes.ts`. It runs in plain `pnpm test`, so the mobile checks catch a renamed
-endpoint without Docker. Run them before attesting a change to that Go file too (docs/CI.md, "What to run").
+endpoint without Docker. Run them before attesting a change to that Go file too (`make check-pr` names them).
 
 ### Contract test
 

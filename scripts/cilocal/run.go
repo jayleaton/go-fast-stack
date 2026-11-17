@@ -15,7 +15,7 @@ import (
 )
 
 // make ci-local runs no checks. The agent runs what its change needs first
-// (docs/CI.md, "What to run"), commits and pushes; this then refuses a dirty
+// (make check-pr), commits and pushes; this then refuses a dirty
 // or unpushed tree, or a head that already failed, posts the `local-ci`
 // commit status on that exact SHA and fills the PR body's "Local
 // verification" section with the statement and the head. It takes seconds.
@@ -35,7 +35,7 @@ type options struct {
 
 const runUsage = `usage: make ci-local RAN="<what you ran>" [FAILED="<what failed>"] [COMMIT=<main sha>]
        go run ./scripts/cilocal run --ran "<what you ran>" [--failed "<what failed>"] [--commit <sha>]
-make ci-local runs nothing: run what the change needs first (docs/CI.md, "What to run")`
+make ci-local runs nothing: run what the change needs first (make check-pr)`
 
 func parseOptions(args []string) (options, error) {
 	flags := flag.NewFlagSet("ci-local", flag.ContinueOnError)
