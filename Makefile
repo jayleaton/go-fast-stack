@@ -178,7 +178,7 @@ vulncheck: ## Known vulnerabilities: govulncheck (pinned) on every Go module + p
 	$(GO) run ./scripts/vulncheck $(ARGS)
 
 .PHONY: check-pr
-check-pr: ## Before make ci-local: run what this branch's changes need, then print the RAN line (ARGS=--dry-run: only say what)
+check-pr: ## Before make ci-local: run what this branch's changes need (the local-ci skill), then print the RAN line (ARGS=--dry-run: only say what)
 	./scripts/check-pr.sh $(ARGS)
 
 .PHONY: check-fast

@@ -13,7 +13,7 @@ GitHub auto-deploy stays off (`repo: ""`): only these workflows ship code.
 ## The flow
 
 1. **Merge to `main`.** `make ci-local` attested the PR's head
-   ([github-prs](../.claude/skills/github-prs/SKILL.md)), then `Deploy staging` checks that attestation and ships
+   (the [local-ci](../.claude/skills/local-ci/SKILL.md) skill), then `Deploy staging` checks that attestation and ships
    the commit to Railway staging (see [Railway rollout](#railway-rollout)).
 2. **Draft a release.** Actions → **Draft release** → Run workflow (`bump`
    patch, minor or major, or an exact `version`). It drafts a release at the
@@ -129,7 +129,7 @@ leaked admin token can push a `v*` tag as easily as it can publish a release.
 `Deploy staging` run's commit is not `main`'s head (a refused, failed or
 cancelled deploy), it dispatches `Deploy staging` on `main`. A `main` that is
 not attested is refused again, every hour, until someone attests it
-([github-prs](../.claude/skills/github-prs/SKILL.md)).
+([github-prs](../.claude/skills/github-prs/SKILL.md), "After the merge").
 
 ## Rollback or redeploy
 

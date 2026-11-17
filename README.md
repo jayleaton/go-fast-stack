@@ -71,7 +71,7 @@ A new project made from this template attests its first `main` commit once:
 | `make generate check-generated lint test build` | Regenerate sqlc/mocks/templ, prove the output is committed, lint, race tests with time budgets and coverage floors, build the server |
 | `make ci` | Everything, on this checkout as it is: the above plus the layering probes and `make vulncheck` |
 | `make release-smoke` | Build every Dockerfile's binary, migrate, boot web and admin in production mode |
-| `make check-pr`, `make ci-local` | What a branch's change needs, and the attestation that records it ([github-prs skill](.claude/skills/github-prs/SKILL.md)) |
+| `make check-pr`, `make ci-local` | What a branch's change needs, and the attestation that records it ([local-ci skill](.claude/skills/local-ci/SKILL.md)) |
 
 Tests live only at the boundaries described in [AGENTS.md](AGENTS.md#test-boundaries-mandatory).
 Lint enforces the layers, and `make lint-layering` proves the rules still
@@ -87,7 +87,7 @@ rules are in [docs/RELEASES.md](docs/RELEASES.md).
 
 ## Learn more
 
-- [Releases](docs/RELEASES.md) · [Pull requests](.claude/skills/github-prs/SKILL.md)
+- [Releases](docs/RELEASES.md) · [Local CI](.claude/skills/local-ci/SKILL.md) · [Pull requests](.claude/skills/github-prs/SKILL.md)
 - [Mobile app](apps/mobile-app/README.md) · [Auth](packages/auth/README.md) · [UI kit](packages/uikit/README.md)
 - [AGENTS.md](AGENTS.md) (rules for agents and contributors) · [CONTEXT.md](CONTEXT.md) (shared vocabulary)
 

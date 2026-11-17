@@ -32,7 +32,7 @@ The most common defect is a change that works on the path you tested and is miss
 
 ## Verifying
 
-- Verify code changes both ways and walk the tree for failures and regressions. How to verify and attest a PR: the [github-prs](.claude/skills/github-prs/SKILL.md) skill.
+- Verify code changes both ways and walk the tree for failures and regressions. CI runs locally: the [local-ci](.claude/skills/local-ci/SKILL.md) skill.
 - Merged migrations are append-only; a new one takes the next number above the highest on origin/main (`make check-migrations`).
 
 ## Test boundaries (mandatory)
@@ -74,12 +74,12 @@ The platform runs on Railway: environments are declared in [deploy/platform.yaml
 
 - **Staging always runs the latest `main`.** Every merge of a head `make ci-local` attested deploys to staging automatically (`Deploy staging`, `.github/workflows/deploy-staging.yml`), and the hourly "Staging catch-up" deploys `main` whenever staging is behind ([docs/RELEASES.md](docs/RELEASES.md)).
 - **Production may lag staging, never lead it.** Production only ever runs a commit that staging has already run and passed its readiness check on. No hotfixes straight to production, no production deploys of branches, and never a production commit that staging has not run.
-- **A failed staging deploy, or an unattested `main` that staging refuses, is the top priority.** After a merge, check its deploy once with `make pr-merge ARGS="--check-deploy <squash sha>"` (one read, not a polling loop); "Post-merge report" also comments on the merged PR when Deploy staging fails on `main`. If it failed, fix it, or attest and dispatch `main` ([github-prs](.claude/skills/github-prs/SKILL.md)), before merging anything else. Never leave staging behind `main`.
+- **A failed staging deploy, or an unattested `main` that staging refuses, is the top priority.** After a merge, check its deploy once with `make pr-merge ARGS="--check-deploy <squash sha>"` (one read, not a polling loop); "Post-merge report" also comments on the merged PR when Deploy staging fails on `main`. If it failed, fix it, or attest and dispatch `main` ([github-prs](.claude/skills/github-prs/SKILL.md), "After the merge"), before merging anything else. Never leave staging behind `main`.
 - **Production ships only as a GitHub release** ([docs/RELEASES.md](docs/RELEASES.md)): publishing a `vX.Y.Z` release starts "Deploy production", whose gate proves staging ran that commit, still runs it or a later `main` commit and is healthy, and that the publisher is in `PRODUCTION_RELEASERS`. An agent publishes or dispatches one only when the developer explicitly says so.
 
 ## Branches and releases
 
-`main` is the only long-lived branch, named once in `scripts/branches.sh`. Agents push feature branches and open PRs that target `main`; CI runs locally and every PR is attested before it merges.
+`main` is the only long-lived branch, named once in `scripts/branches.sh`. Agents push feature branches and open PRs that target `main`; CI runs locally: every PR runs the [local-ci](.claude/skills/local-ci/SKILL.md) skill before it merges.
 
 ## Pull requests
 

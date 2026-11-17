@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # What a pull request needs before make ci-local (`make check-pr`): runs the
-# checks this checkout's changes need against
+# checks this checkout's changes need (the local-ci skill) against
 # the merge base with origin/main, in order, stopping at the first failure,
 # then prints the `make ci-local RAN="…"` line that says exactly what ran.
 #
